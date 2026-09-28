@@ -41,7 +41,9 @@ describe("MediaBrainOrchestrator", () => {
       id: "yandex",
       list: async () => [],
       stat: async () => null,
-      createFolder: async (path) => created.push(path),
+      createFolder: async (path) => {
+        created.push(path);
+      },
       upload: async () => undefined,
       move: async () => undefined,
       copy: async () => undefined,
