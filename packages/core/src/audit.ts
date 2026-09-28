@@ -1,0 +1,1 @@
+export interface AuditEntry{actionId:string;tool:string;entityId:string;before:unknown;after:unknown;at:string;source:'ui'|'erika'|'system';} export interface AuditStore{append(e:AuditEntry):Promise<void>;byAction(actionId:string):Promise<AuditEntry[]>;}
