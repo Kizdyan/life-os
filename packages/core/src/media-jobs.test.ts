@@ -106,26 +106,33 @@ describe("Media autonomous jobs", () => {
     }
   });
 
-  it("does not run a downstream job before its dependency completes", async () => {
+  it("runs dependencies in order even when both are runnable in one worker tick", async () => {
     const store = new JobStore();
     store.jobs.push(
       queuedJob("classify", "classify"),
       queuedJob("analyze", "analyze", "classify"),
     );
+    const calls: string[] = [];
 
     const worker = new MediaWorker({
       store,
       capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
       now: () => "2026-09-28T20:01:00.000Z",
-      handlers,
+      handlers: {
+        ...handlers,
+        classify: async () => {
+          calls.push("classify");
+        },
+        analyze: async () => {
+          calls.push("analyze");
+        },
+      },
     });
 
-    const firstRun = await worker.runOnce();
-    expect(firstRun.map((job) => job.id)).toEqual(["classify"]);
-    expect(store.jobs.find((job) => job.id === "analyze")?.state).toBe("queued");
-
-    const secondRun = await worker.runOnce();
-    expect(secondRun.map((job) => job.id)).toEqual(["analyze"]);
+    const result = await worker.runOnce();
+    expect(result.map((job) => job.id)).toEqual(["classify", "analyze"]);
+    expect(calls).toEqual(["classify", "analyze"]);
+    expect(store.jobs.find((job) => job.id === "analyze")?.state).toBe("completed");
   });
 
   it("stops at review instead of publishing autonomously", async () => {
