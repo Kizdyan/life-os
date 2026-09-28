@@ -1,0 +1,1 @@
+export function outcomeIdempotencyKey(x:{userId?:string;itemId:string;plannedDate:string;command:string;carryForward?:boolean;nextDate?:string}){return['outcome',x.userId??'self',x.itemId,x.plannedDate,x.command,x.carryForward?'carry':'terminal',x.nextDate??'-'].join(':');}
