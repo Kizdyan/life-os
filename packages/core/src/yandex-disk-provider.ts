@@ -91,7 +91,7 @@ export class YandexDiskProvider implements MediaStorageProvider {
     const uploadResponse = await this.fetchImpl(link.href, {
       method: "PUT",
       headers: mimeType ? { "Content-Type": mimeType } : undefined,
-      body: bytes,
+      body: Uint8Array.from(bytes).buffer,
     });
     if (!uploadResponse.ok) {
       throw new Error(
