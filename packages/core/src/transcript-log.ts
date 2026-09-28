@@ -1,0 +1,3 @@
+export interface TranscriptEntry{id:string;text:string;createdAt:string;applied:boolean;error?:string;}
+export interface TranscriptLog{append(entry:TranscriptEntry):Promise<void>;recent(limit:number):Promise<TranscriptEntry[]>;}
+export function transcriptEntry(text:string,applied:boolean,error?:string):TranscriptEntry{return{id:crypto.randomUUID(),text,createdAt:new Date().toISOString(),applied,error};}
