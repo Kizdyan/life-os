@@ -1,6 +1,7 @@
 import type {
   MediaAsset,
   MediaAssetSource,
+  MediaSection,
   MediaStorageEntry,
   MediaStorageProvider,
 } from "./media-brain";
@@ -20,6 +21,11 @@ export interface IngestOptions {
   classifySource?: (entry: MediaStorageEntry) => MediaAssetSource;
 }
 
+export interface IngestSectionOptions extends IngestOptions {
+  section: Extract<MediaSection, "inbox" | "references">;
+  defaultSource: MediaAssetSource;
+}
+
 export interface IngestResult {
   imported: MediaAsset[];
   existing: MediaAsset[];
@@ -35,9 +41,11 @@ export async function ensureMediaBrainFolders(
   }
 }
 
-export async function ingestInbox(options: IngestOptions): Promise<IngestResult> {
-  const inboxPath = mediaSectionPath(options.rootPath, "inbox");
-  const entries = await options.provider.list(inboxPath);
+export async function ingestSection(
+  options: IngestSectionOptions,
+): Promise<IngestResult> {
+  const sectionPath = mediaSectionPath(options.rootPath, options.section);
+  const entries = await options.provider.list(sectionPath);
   const imported: MediaAsset[] = [];
   const existing: MediaAsset[] = [];
 
@@ -58,8 +66,8 @@ export async function ingestInbox(options: IngestOptions): Promise<IngestResult>
       providerPath: entry.path,
       contentHash: entry.contentHash,
       mimeType: entry.mimeType,
-      source: options.classifySource?.(entry) ?? "own_raw",
-      section: "inbox",
+      source: options.classifySource?.(entry) ?? options.defaultSource,
+      section: options.section,
       status: "ingested",
       projectId: null,
       createdAt: entry.modifiedAt,
@@ -76,4 +84,22 @@ export async function ingestInbox(options: IngestOptions): Promise<IngestResult>
   }
 
   return { imported, existing };
+}
+
+export async function ingestInbox(options: IngestOptions): Promise<IngestResult> {
+  return ingestSection({
+    ...options,
+    section: "inbox",
+    defaultSource: "own_raw",
+  });
+}
+
+export async function ingestReferences(
+  options: IngestOptions,
+): Promise<IngestResult> {
+  return ingestSection({
+    ...options,
+    section: "references",
+    defaultSource: "reference",
+  });
 }
