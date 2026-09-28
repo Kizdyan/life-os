@@ -29,3 +29,8 @@ export * from './planner';
 export * from './daily-checkin';
 export * from './status';
 export * from './quick-capture';
+
+export * from './recurrence';
+export * from './reminders';
+export * from './calendar-sync';
+export * from './dependencies';
