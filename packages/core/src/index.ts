@@ -16,3 +16,6 @@ export * from './erika-outcome';
 
 export * from './supabase-repository';
 export * from './outcome-service';
+
+export * from './erika-runtime';
+export * from './today-actions';
