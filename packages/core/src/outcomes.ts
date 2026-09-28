@@ -29,7 +29,9 @@ export interface ApplyOutcomeResult {
   successor: LifeItem | null;
 }
 
-function statusFor(command: OutcomeCommand): LifeItemStatus {
+type FinalOutcomeStatus = Exclude<LifeItemStatus, 'planned'>;
+
+function statusFor(command: OutcomeCommand): FinalOutcomeStatus {
   if (command === 'complete') return 'completed';
   if (command === 'partial') return 'partial';
   if (command === 'move') return 'moved';
