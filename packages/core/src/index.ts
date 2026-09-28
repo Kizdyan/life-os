@@ -10,3 +10,4 @@ export * from "./media-brain";
 export * from "./yandex-disk";
 export * from "./yandex-disk-provider";
 export * from "./media-ingestion";
+export * from "./capcut-work-package";
