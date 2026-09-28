@@ -24,3 +24,4 @@ export * from "./capcut-export";
 export * from "./media-project-storage";
 export * from "./divem-strategy-client";
 export * from "./media-projects";
+export * from "./content-factory";
