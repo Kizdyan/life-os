@@ -26,6 +26,7 @@ export interface MediaJob {
   assetId: string | null;
   projectId: string | null;
   state: MediaJobState;
+  dependsOnJobId: string | null;
   attempts: number;
   maxAttempts: number;
   notBefore: string | null;
@@ -36,6 +37,7 @@ export interface MediaJob {
 
 export interface MediaJobStore {
   enqueue(job: MediaJob): Promise<void>;
+  get(jobId: string): Promise<MediaJob | null>;
   listRunnable(now: string, limit: number): Promise<MediaJob[]>;
   save(job: MediaJob): Promise<void>;
 }
@@ -66,6 +68,8 @@ export class MediaWorker {
     const results: MediaJob[] = [];
 
     for (const job of jobs) {
+      if (!(await this.dependencySatisfied(job))) continue;
+
       const next = { ...job, state: "running" as const, updatedAt: now };
       await this.options.store.save(next);
 
@@ -81,6 +85,12 @@ export class MediaWorker {
     }
 
     return results;
+  }
+
+  private async dependencySatisfied(job: MediaJob): Promise<boolean> {
+    if (!job.dependsOnJobId) return true;
+    const dependency = await this.options.store.get(job.dependsOnJobId);
+    return dependency?.state === "completed";
   }
 
   private async execute(job: MediaJob): Promise<MediaJob> {
@@ -123,8 +133,6 @@ export class MediaWorker {
         await this.options.handlers.learn(job);
         break;
       case "ingest":
-        // Ingestion is handled by the storage watcher before downstream jobs
-        // are created. Keep the job type for audit/history compatibility.
         break;
       default:
         return assertNever(job.type);
@@ -166,19 +174,26 @@ export function createDownstreamJobs(input: {
     "await_review",
   ];
 
-  return types.map((type) => ({
-    id: input.createId(),
-    type,
-    assetId: input.asset.id,
-    projectId: input.asset.projectId,
-    state: "queued",
-    attempts: 0,
-    maxAttempts: 4,
-    notBefore: null,
-    lastError: null,
-    createdAt: input.now,
-    updatedAt: input.now,
-  }));
+  let previousId: string | null = null;
+  return types.map((type) => {
+    const id = input.createId();
+    const job: MediaJob = {
+      id,
+      type,
+      assetId: input.asset.id,
+      projectId: input.asset.projectId,
+      state: "queued",
+      dependsOnJobId: previousId,
+      attempts: 0,
+      maxAttempts: 4,
+      notBefore: null,
+      lastError: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    previousId = id;
+    return job;
+  });
 }
 
 export function retrySeconds(attempt: number): number {
