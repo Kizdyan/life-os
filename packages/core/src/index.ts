@@ -27,3 +27,4 @@ export * from "./media-projects";
 export * from "./content-factory";
 export * from "./content-planner";
 export * from "./yandex-connection";
+export * from "./media-digest";
