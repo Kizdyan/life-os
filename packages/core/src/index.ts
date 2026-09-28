@@ -15,3 +15,4 @@ export * from "./media-pipeline";
 export * from "./media-jobs";
 export * from "./style-memory";
 export * from "./media-orchestrator";
+export * from "./media-project-lifecycle";
