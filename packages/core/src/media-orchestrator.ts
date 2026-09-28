@@ -2,10 +2,12 @@ import type { MediaCapabilities, MediaStorageProvider } from "./media-brain";
 import {
   ensureMediaBrainFolders,
   ingestInbox,
+  ingestReferences,
   type MediaAssetStore,
 } from "./media-ingestion";
 import {
   createDownstreamJobs,
+  createReferenceJobs,
   type MediaJob,
   type MediaJobStore,
 } from "./media-jobs";
@@ -23,7 +25,9 @@ export interface MediaBrainOrchestratorOptions {
 
 export interface MediaBrainTickResult {
   importedAssetIds: string[];
+  importedReferenceIds: string[];
   existingAssetIds: string[];
+  existingReferenceIds: string[];
   enqueuedJobIds: string[];
 }
 
@@ -36,20 +40,39 @@ export class MediaBrainOrchestrator {
 
   async tick(): Promise<MediaBrainTickResult> {
     const now = this.options.now();
-    const result = await ingestInbox({
-      provider: this.options.provider,
-      assetStore: this.options.assetStore,
-      rootPath: this.options.rootPath,
-      now: () => now,
-      createId: this.options.createAssetId,
-    });
+
+    const [inbox, references] = await Promise.all([
+      ingestInbox({
+        provider: this.options.provider,
+        assetStore: this.options.assetStore,
+        rootPath: this.options.rootPath,
+        now: () => now,
+        createId: this.options.createAssetId,
+      }),
+      ingestReferences({
+        provider: this.options.provider,
+        assetStore: this.options.assetStore,
+        rootPath: this.options.rootPath,
+        now: () => now,
+        createId: this.options.createAssetId,
+      }),
+    ]);
 
     const jobs: MediaJob[] = [];
-    for (const asset of result.imported) {
+    for (const asset of inbox.imported) {
       jobs.push(
         ...createDownstreamJobs({
           asset,
           capabilities: this.options.capabilities,
+          now,
+          createId: this.options.createJobId,
+        }),
+      );
+    }
+    for (const asset of references.imported) {
+      jobs.push(
+        ...createReferenceJobs({
+          asset,
           now,
           createId: this.options.createJobId,
         }),
@@ -61,8 +84,10 @@ export class MediaBrainOrchestrator {
     }
 
     return {
-      importedAssetIds: result.imported.map((asset) => asset.id),
-      existingAssetIds: result.existing.map((asset) => asset.id),
+      importedAssetIds: inbox.imported.map((asset) => asset.id),
+      importedReferenceIds: references.imported.map((asset) => asset.id),
+      existingAssetIds: inbox.existing.map((asset) => asset.id),
+      existingReferenceIds: references.existing.map((asset) => asset.id),
       enqueuedJobIds: jobs.map((job) => job.id),
     };
   }
