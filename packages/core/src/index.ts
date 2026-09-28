@@ -19,3 +19,8 @@ export * from './outcome-service';
 
 export * from './erika-runtime';
 export * from './today-actions';
+
+export * from './automation';
+export * from './outbox';
+export * from './analytics';
+export * from './erika-intent';
