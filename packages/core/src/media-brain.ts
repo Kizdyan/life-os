@@ -144,6 +144,7 @@ export interface DiveMContentAssessmentRequest {
   currentFocus: string[];
   proposedHook?: string | null;
   proposedStructure?: string[] | null;
+  evidence?: Record<string, number>;
 }
 
 export interface DiveMContentAssessment {
@@ -157,6 +158,8 @@ export interface DiveMContentAssessment {
     | "result"
     | null;
   revisionSuggestions: string[];
+  confidence: number;
+  evidenceState: "sufficient" | "partial" | "insufficient";
 }
 
 export interface DiveMStrategyService {
