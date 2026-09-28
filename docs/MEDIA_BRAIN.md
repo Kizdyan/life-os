@@ -80,3 +80,32 @@ A saved reference is a weak signal. Publishing, explicit approval and specific e
 - Do not destructively move/delete the original until the Observer verifies the new state.
 - Unknown metadata stays null.
 - Public publishing remains a separate approved action.
+
+## Runtime state
+
+Media Brain now has a versioned durable state boundary through `MediaStateStore`.
+
+The store persists:
+- ingested assets keyed by provider/path/hash
+- autonomous jobs and their dependency state
+- active project mappings
+- Style Memory observations
+- audience-performance signals
+
+The storage implementation itself is provider-neutral through a simple `KeyValueStore` contract so the final Life OS runtime can bind it to IndexedDB, SQLite, PostgreSQL or another durable backend without changing Media Brain domain logic.
+
+Style/taste evidence and audience-response analytics remain separate collections by design.
+
+## Autonomous supervisor
+
+`MediaSupervisor` performs one bounded cycle:
+
+1. scan Inbox and References
+2. enqueue only newly discovered assets
+3. drain runnable autonomous jobs in dependency order
+4. stop when idle or when the configured pass limit is reached
+
+The supervisor is deliberately bounded so one broken or self-generating workflow cannot spin forever.
+
+External scheduling (app wake-up, server cron, mobile background task, etc.) stays outside the core module.
+
