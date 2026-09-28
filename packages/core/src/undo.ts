@@ -1,0 +1,1 @@
+export interface UndoableChange<T>{before:T;after:T;versionAfter:number;} export function undoChange<T extends{version:number;updatedAt:string}>(c:UndoableChange<T>,now:string,currentVersion:number):T{if(currentVersion!==c.versionAfter)throw new Error('undo_conflict');return{...c.before,version:currentVersion+1,updatedAt:now};}
