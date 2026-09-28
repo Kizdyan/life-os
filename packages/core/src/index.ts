@@ -40,7 +40,6 @@ export * from './erika-commands';
 export * from './day-plan';
 export * from './transcript-log';
 
-export * from './audit';
 export * from './idempotency';
 export * from './retry';
 export * from './undo';
