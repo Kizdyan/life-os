@@ -17,3 +17,6 @@ export async function observe(action: ActionRequest, verifier: Verifier): Promis
     };
   }
 }
+
+export interface OutcomeVerification { ok: boolean; issues: string[]; }
+export function verifyOutcome(x:{requested:string;status:string;successorExpected:boolean;successorId?:string|null}):OutcomeVerification { const issues:string[]=[]; if(x.requested==='complete'&&x.status!=='completed')issues.push('completion_not_persisted'); if(x.successorExpected&&!x.successorId)issues.push('successor_missing'); return {ok:issues.length===0,issues}; }
