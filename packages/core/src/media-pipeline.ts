@@ -71,6 +71,7 @@ export interface DraftPipelineInput {
   currentFocus: string[];
   styleMemoryNotes: string[];
   lifeOsContext?: Record<string, unknown> | null;
+  strategyEvidence?: Record<string, number>;
 }
 
 export interface DraftPipelineResult {
@@ -107,6 +108,7 @@ export async function prepareContentForReview(
       proposedStructure: candidate.workPackage.clips.map(
         (clip) => `${clip.order}:${clip.reason}`,
       ),
+      evidence: input.strategyEvidence,
     };
     assessment = await input.strategy.assessContent(request);
 
