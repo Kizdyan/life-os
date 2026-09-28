@@ -29,3 +29,4 @@ export * from "./content-planner";
 export * from "./yandex-connection";
 export * from "./media-digest";
 export * from "./media-state-store";
+export * from "./media-supervisor";
