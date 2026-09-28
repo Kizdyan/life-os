@@ -41,22 +41,22 @@ export class MediaBrainOrchestrator {
   async tick(): Promise<MediaBrainTickResult> {
     const now = this.options.now();
 
-    const [inbox, references] = await Promise.all([
-      ingestInbox({
-        provider: this.options.provider,
-        assetStore: this.options.assetStore,
-        rootPath: this.options.rootPath,
-        now: () => now,
-        createId: this.options.createAssetId,
-      }),
-      ingestReferences({
-        provider: this.options.provider,
-        assetStore: this.options.assetStore,
-        rootPath: this.options.rootPath,
-        now: () => now,
-        createId: this.options.createAssetId,
-      }),
-    ]);
+    // Keep ingestion sequential: asset-store check+save is intentionally simple in
+    // core and must not race across sections before a transactional store exists.
+    const inbox = await ingestInbox({
+      provider: this.options.provider,
+      assetStore: this.options.assetStore,
+      rootPath: this.options.rootPath,
+      now: () => now,
+      createId: this.options.createAssetId,
+    });
+    const references = await ingestReferences({
+      provider: this.options.provider,
+      assetStore: this.options.assetStore,
+      rootPath: this.options.rootPath,
+      now: () => now,
+      createId: this.options.createAssetId,
+    });
 
     const jobs: MediaJob[] = [];
     for (const asset of inbox.imported) {
