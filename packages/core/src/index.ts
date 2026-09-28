@@ -6,3 +6,13 @@ export * from "./actions";
 export * from "./engine";
 export * from "./memory";
 export * from "./skills";
+
+export * from './outcomes';
+export * from './commands';
+
+export * from './outcome-store';
+export * from './outcome-tool';
+export * from './erika-outcome';
+
+export * from './supabase-repository';
+export * from './outcome-service';
