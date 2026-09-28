@@ -114,7 +114,7 @@ describe("MediaBrainOrchestrator", () => {
     expect(first.enqueuedJobIds).toHaveLength(6);
     expect(second.importedAssetIds).toHaveLength(0);
     expect(second.enqueuedJobIds).toHaveLength(0);
-    expect(jobStore.jobs).toHaveLength(6);
+    expect(jobStore.jobs.size).toBe(6);
 
     const chain = [...jobStore.jobs.values()];
     expect(chain.map((job) => job.type)).toEqual([
