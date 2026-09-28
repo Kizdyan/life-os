@@ -20,6 +20,10 @@ class JobStore implements MediaJobStore {
     this.jobs.push(job);
   }
 
+  async get(jobId: string): Promise<MediaJob | null> {
+    return this.jobs.find((job) => job.id === jobId) ?? null;
+  }
+
   async listRunnable(): Promise<MediaJob[]> {
     return this.jobs.filter((job) => job.state === "queued" || job.state === "failed");
   }
@@ -51,6 +55,33 @@ const asset: MediaAsset = {
   },
 };
 
+function queuedJob(id: string, type: MediaJob["type"], dependsOnJobId: string | null = null): MediaJob {
+  return {
+    id,
+    type,
+    assetId: "asset-1",
+    projectId: null,
+    state: "queued",
+    dependsOnJobId,
+    attempts: 0,
+    maxAttempts: 4,
+    notBefore: null,
+    lastError: null,
+    createdAt: "2026-09-28T20:00:00.000Z",
+    updatedAt: "2026-09-28T20:00:00.000Z",
+  };
+}
+
+const handlers = {
+  classify: async () => undefined,
+  analyze: async () => undefined,
+  draft: async () => undefined,
+  diveMReview: async () => undefined,
+  prepareEdit: async () => undefined,
+  measure: async () => undefined,
+  learn: async () => undefined,
+};
+
 describe("Media autonomous jobs", () => {
   it("adds DiveM review only for the personal capability profile", () => {
     let id = 0;
@@ -69,37 +100,43 @@ describe("Media autonomous jobs", () => {
 
     expect(personal.map((job) => job.type)).toContain("divem_review");
     expect(standard.map((job) => job.type)).not.toContain("divem_review");
+
+    for (let index = 1; index < personal.length; index += 1) {
+      expect(personal[index].dependsOnJobId).toBe(personal[index - 1].id);
+    }
   });
 
-  it("stops at review instead of publishing autonomously", async () => {
+  it("does not run a downstream job before its dependency completes", async () => {
     const store = new JobStore();
-    store.jobs.push({
-      id: "review",
-      type: "await_review",
-      assetId: "asset-1",
-      projectId: null,
-      state: "queued",
-      attempts: 0,
-      maxAttempts: 4,
-      notBefore: null,
-      lastError: null,
-      createdAt: "2026-09-28T20:00:00.000Z",
-      updatedAt: "2026-09-28T20:00:00.000Z",
-    });
+    store.jobs.push(
+      queuedJob("classify", "classify"),
+      queuedJob("analyze", "analyze", "classify"),
+    );
 
     const worker = new MediaWorker({
       store,
       capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
       now: () => "2026-09-28T20:01:00.000Z",
-      handlers: {
-        classify: async () => undefined,
-        analyze: async () => undefined,
-        draft: async () => undefined,
-        diveMReview: async () => undefined,
-        prepareEdit: async () => undefined,
-        measure: async () => undefined,
-        learn: async () => undefined,
-      },
+      handlers,
+    });
+
+    const firstRun = await worker.runOnce();
+    expect(firstRun.map((job) => job.id)).toEqual(["classify"]);
+    expect(store.jobs.find((job) => job.id === "analyze")?.state).toBe("queued");
+
+    const secondRun = await worker.runOnce();
+    expect(secondRun.map((job) => job.id)).toEqual(["analyze"]);
+  });
+
+  it("stops at review instead of publishing autonomously", async () => {
+    const store = new JobStore();
+    store.jobs.push(queuedJob("review", "await_review"));
+
+    const worker = new MediaWorker({
+      store,
+      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
+      now: () => "2026-09-28T20:01:00.000Z",
+      handlers,
     });
 
     const [result] = await worker.runOnce();
@@ -108,34 +145,17 @@ describe("Media autonomous jobs", () => {
 
   it("retries bounded failures with exponential backoff", async () => {
     const store = new JobStore();
-    store.jobs.push({
-      id: "analyze",
-      type: "analyze",
-      assetId: "asset-1",
-      projectId: null,
-      state: "queued",
-      attempts: 0,
-      maxAttempts: 4,
-      notBefore: null,
-      lastError: null,
-      createdAt: "2026-09-28T20:00:00.000Z",
-      updatedAt: "2026-09-28T20:00:00.000Z",
-    });
+    store.jobs.push(queuedJob("analyze", "analyze"));
 
     const worker = new MediaWorker({
       store,
       capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
       now: () => "2026-09-28T20:01:00.000Z",
       handlers: {
-        classify: async () => undefined,
+        ...handlers,
         analyze: async () => {
           throw new Error("temporary");
         },
-        draft: async () => undefined,
-        diveMReview: async () => undefined,
-        prepareEdit: async () => undefined,
-        measure: async () => undefined,
-        learn: async () => undefined,
       },
     });
 
