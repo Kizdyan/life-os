@@ -51,12 +51,21 @@ describe("personal media pipeline", () => {
       currentFocus: ["acting", "music"],
       styleMemoryNotes: ["без дешёвого кликбейта"],
       lifeOsContext: { event: "rehearsal" },
+      strategyEvidence: {
+        distribution_strength: 0.8,
+        profile_bridge_clarity: 0.7,
+        hook_clarity: 0.25,
+        cta_clarity: 0.65,
+        proof_strength: 0.75,
+      },
       strategy: {
         assessContent: async () => ({
           fit: "mixed",
           notes: ["контекст понятен не сразу"],
           weakTransition: "interest",
           revisionSuggestions: ["усилить первые 2 секунды"],
+          confidence: 1,
+          evidenceState: "sufficient",
         }),
       },
       contentFactory: {
