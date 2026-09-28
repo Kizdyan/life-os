@@ -27,6 +27,7 @@ export interface MediaJob {
   projectId: string | null;
   state: MediaJobState;
   dependsOnJobId: string | null;
+  approvalGranted?: boolean;
   attempts: number;
   maxAttempts: number;
   notBefore: string | null;
@@ -98,9 +99,10 @@ export class MediaWorker {
       case "publish":
         return {
           ...job,
-          state: this.options.capabilities.approvalBeforePublish
-            ? "waiting_approval"
-            : "completed",
+          state:
+            this.options.capabilities.approvalBeforePublish && !job.approvalGranted
+              ? "waiting_approval"
+              : "completed",
           updatedAt: this.options.now(),
         };
       case "await_review":
@@ -184,6 +186,7 @@ export function createDownstreamJobs(input: {
       projectId: input.asset.projectId,
       state: "queued",
       dependsOnJobId: previousId,
+      approvalGranted: false,
       attempts: 0,
       maxAttempts: 4,
       notBefore: null,
@@ -212,6 +215,7 @@ export function createReferenceJobs(input: {
       projectId: input.asset.projectId,
       state: "queued",
       dependsOnJobId: previousId,
+      approvalGranted: false,
       attempts: 0,
       maxAttempts: 4,
       notBefore: null,
@@ -243,6 +247,7 @@ export function createPostApprovalJobs(input: {
       projectId: input.projectId,
       state: "queued",
       dependsOnJobId: previousId,
+      approvalGranted: type === "publish",
       attempts: 0,
       maxAttempts: 4,
       notBefore: null,
