@@ -29,3 +29,7 @@ export * from './planner';
 export * from './daily-checkin';
 export * from './status';
 export * from './quick-capture';
+
+export * from './erika-commands';
+export * from './day-plan';
+export * from './transcript-log';
