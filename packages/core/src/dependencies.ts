@@ -1,0 +1,1 @@
+export interface Dependency{taskId:string;dependsOnTaskId:string;active:boolean;} export function blockedTaskIds(d:Dependency[],completed:Set<string>):Set<string>{const b=new Set<string>();for(const x of d)if(x.active&&!completed.has(x.dependsOnTaskId))b.add(x.taskId);return b;}

@@ -31,3 +31,11 @@ export * from './status';
 export * from './quick-capture';
 
 export * from './supabase-rpc-repository';
+
+export * from './recurrence';
+export * from './reminders';
+export * from './calendar-sync';
+export * from './dependencies';
+export * from './erika-commands';
+export * from './day-plan';
+export * from './transcript-log';

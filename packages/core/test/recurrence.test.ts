@@ -1,0 +1,1 @@
+import{describe,expect,it}from'vitest';import{nextOccurrence}from'../src/recurrence';describe('recurrence',()=>{it('advances daily',()=>expect(nextOccurrence('2026-09-29',{frequency:'daily',interval:1})).toBe('2026-09-30'));});
