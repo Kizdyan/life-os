@@ -72,17 +72,20 @@ describe("MediaBrainOrchestrator", () => {
   it("enqueues the autonomous chain only once per new Inbox asset", async () => {
     const provider: MediaStorageProvider = {
       id: "yandex",
-      list: async () => [
-        {
-          id: "remote-1",
-          path: "/Media/Inbox/video.mov",
-          name: "video.mov",
-          mimeType: "video/quicktime",
-          size: 1000,
-          modifiedAt: "2026-09-29T09:00:00.000Z",
-          contentHash: "sha-video",
-        },
-      ],
+      list: async (path) =>
+        path.endsWith("/Inbox")
+          ? [
+              {
+                id: "remote-1",
+                path: "/Media/Inbox/video.mov",
+                name: "video.mov",
+                mimeType: "video/quicktime",
+                size: 1000,
+                modifiedAt: "2026-09-29T09:00:00.000Z",
+                contentHash: "sha-video",
+              },
+            ]
+          : [],
       stat: async () => null,
       createFolder: async () => undefined,
       upload: async () => undefined,
@@ -111,8 +114,10 @@ describe("MediaBrainOrchestrator", () => {
     const second = await orchestrator.tick();
 
     expect(first.importedAssetIds).toEqual(["asset-1"]);
+    expect(first.importedReferenceIds).toHaveLength(0);
     expect(first.enqueuedJobIds).toHaveLength(6);
     expect(second.importedAssetIds).toHaveLength(0);
+    expect(second.importedReferenceIds).toHaveLength(0);
     expect(second.enqueuedJobIds).toHaveLength(0);
     expect(jobStore.jobs.size).toBe(6);
 
@@ -127,5 +132,60 @@ describe("MediaBrainOrchestrator", () => {
     ]);
     expect(chain[0].dependsOnJobId).toBeNull();
     expect(chain[5].dependsOnJobId).toBe(chain[4].id);
+  });
+
+  it("analyzes intentional references without creating content drafts", async () => {
+    const provider: MediaStorageProvider = {
+      id: "yandex",
+      list: async (path) =>
+        path.endsWith("/References")
+          ? [
+              {
+                id: "reference-remote",
+                path: "/Media/References/edit-style.mp4",
+                name: "edit-style.mp4",
+                mimeType: "video/mp4",
+                size: 2000,
+                modifiedAt: "2026-09-29T09:30:00.000Z",
+                contentHash: "ref-hash",
+              },
+            ]
+          : [],
+      stat: async () => null,
+      createFolder: async () => undefined,
+      upload: async () => undefined,
+      move: async () => undefined,
+      copy: async () => undefined,
+      archive: async () => undefined,
+    };
+
+    const assetStore = new AssetStore();
+    const jobStore = new JobStore();
+    let assetCounter = 0;
+    let jobCounter = 0;
+    const orchestrator = new MediaBrainOrchestrator({
+      provider,
+      assetStore,
+      jobStore,
+      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
+      rootPath: "/Media",
+      now: () => "2026-09-29T10:00:00.000Z",
+      createAssetId: () => `asset-${++assetCounter}`,
+      createJobId: () => `job-${++jobCounter}`,
+    });
+
+    const result = await orchestrator.tick();
+
+    expect(result.importedReferenceIds).toEqual(["asset-1"]);
+    expect(result.importedAssetIds).toHaveLength(0);
+    expect([...jobStore.jobs.values()].map((job) => job.type)).toEqual([
+      "classify",
+      "analyze",
+      "learn",
+    ]);
+    expect([...assetStore.byKey.values()][0]).toMatchObject({
+      section: "references",
+      source: "reference",
+    });
   });
 });
