@@ -29,3 +29,5 @@ export * from './planner';
 export * from './daily-checkin';
 export * from './status';
 export * from './quick-capture';
+
+export * from './supabase-rpc-repository';
