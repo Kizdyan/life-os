@@ -22,3 +22,4 @@ export * from "./media-life-context";
 export * from "./media-analytics";
 export * from "./capcut-export";
 export * from "./media-project-storage";
+export * from "./divem-strategy-client";
