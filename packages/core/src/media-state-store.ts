@@ -181,27 +181,20 @@ export class MediaStateStore
   private async update(
     mutate: (state: MediaStateSnapshot) => void,
   ): Promise<void> {
-    let resolveCurrent!: () => void;
-    let rejectCurrent!: (error: unknown) => void;
-    const current = new Promise<void>((resolve, reject) => {
-      resolveCurrent = resolve;
-      rejectCurrent = reject;
-    });
-    const previous = this.queue;
-    this.queue = current;
+    const operation = this.queue
+      .catch(() => undefined)
+      .then(async () => {
+        const state = await this.read();
+        mutate(state);
+        state.revision += 1;
+        state.updatedAt = this.options.now();
+        await this.options.kv.set(this.key, JSON.stringify(state));
+      });
 
-    try {
-      await previous.catch(() => undefined);
-      const state = await this.read();
-      mutate(state);
-      state.revision += 1;
-      state.updatedAt = this.options.now();
-      await this.options.kv.set(this.key, JSON.stringify(state));
-      resolveCurrent();
-    } catch (error) {
-      rejectCurrent(error);
-      throw error;
-    }
+    // Keep the internal serialization chain healthy after a caller-visible
+    // failure, while still propagating this operation's error to its caller.
+    this.queue = operation.catch(() => undefined);
+    await operation;
   }
 }
 
