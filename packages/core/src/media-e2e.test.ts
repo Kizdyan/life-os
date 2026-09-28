@@ -132,14 +132,30 @@ describe("personal Media Brain closed loop", () => {
       capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
       now: () => "2026-09-29T10:05:00.000Z",
       handlers: {
-        classify: async () => calls.push("classify"),
-        analyze: async () => calls.push("analyze"),
-        draft: async () => calls.push("draft"),
-        diveMReview: async () => calls.push("divem_review"),
-        prepareEdit: async () => calls.push("prepare_edit"),
-        publish: async () => calls.push("publish"),
-        measure: async () => calls.push("measure"),
-        learn: async () => calls.push("learn"),
+        classify: async () => {
+          calls.push("classify");
+        },
+        analyze: async () => {
+          calls.push("analyze");
+        },
+        draft: async () => {
+          calls.push("draft");
+        },
+        diveMReview: async () => {
+          calls.push("divem_review");
+        },
+        prepareEdit: async () => {
+          calls.push("prepare_edit");
+        },
+        publish: async () => {
+          calls.push("publish");
+        },
+        measure: async () => {
+          calls.push("measure");
+        },
+        learn: async () => {
+          calls.push("learn");
+        },
       },
     });
 
