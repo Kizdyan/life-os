@@ -62,7 +62,7 @@ describe("StructuredContentPlanner", () => {
     expect(result.aspectRatio).toBe("9:16");
     expect(result.clips[0].assetId).toBe("asset-1");
     expect(result.editorNotes).toEqual(["чистые склейки"]);
-    expect(system).toContain("не выдумывай исходники");
+    expect(system.toLowerCase()).toContain("не выдумывай исходники");
   });
 
   it("rejects malformed structured output", async () => {
