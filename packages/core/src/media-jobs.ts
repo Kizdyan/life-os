@@ -49,6 +49,7 @@ export interface MediaJobHandlers {
   draft(job: MediaJob): Promise<void>;
   diveMReview(job: MediaJob): Promise<void>;
   prepareEdit(job: MediaJob): Promise<void>;
+  publish(job: MediaJob): Promise<void>;
   measure(job: MediaJob): Promise<void>;
   learn(job: MediaJob): Promise<void>;
 }
@@ -97,14 +98,15 @@ export class MediaWorker {
   private async execute(job: MediaJob): Promise<MediaJob> {
     switch (job.type) {
       case "publish":
-        return {
-          ...job,
-          state:
-            this.options.capabilities.approvalBeforePublish && !job.approvalGranted
-              ? "waiting_approval"
-              : "completed",
-          updatedAt: this.options.now(),
-        };
+        if (this.options.capabilities.approvalBeforePublish && !job.approvalGranted) {
+          return {
+            ...job,
+            state: "waiting_approval",
+            updatedAt: this.options.now(),
+          };
+        }
+        await this.options.handlers.publish(job);
+        break;
       case "await_review":
         return {
           ...job,
