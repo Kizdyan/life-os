@@ -196,6 +196,34 @@ export function createDownstreamJobs(input: {
   });
 }
 
+export function createReferenceJobs(input: {
+  asset: MediaAsset;
+  now: string;
+  createId: () => string;
+}): MediaJob[] {
+  const types: MediaJobType[] = ["classify", "analyze", "learn"];
+  let previousId: string | null = null;
+  return types.map((type) => {
+    const id = input.createId();
+    const job: MediaJob = {
+      id,
+      type,
+      assetId: input.asset.id,
+      projectId: input.asset.projectId,
+      state: "queued",
+      dependsOnJobId: previousId,
+      attempts: 0,
+      maxAttempts: 4,
+      notBefore: null,
+      lastError: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    previousId = id;
+    return job;
+  });
+}
+
 export function retrySeconds(attempt: number): number {
   return Math.min(3600, 30 * 2 ** Math.max(0, attempt - 1));
 }
