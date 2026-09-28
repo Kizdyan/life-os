@@ -78,6 +78,7 @@ const handlers = {
   draft: async () => undefined,
   diveMReview: async () => undefined,
   prepareEdit: async () => undefined,
+  publish: async () => undefined,
   measure: async () => undefined,
   learn: async () => undefined,
 };
