@@ -1,10 +1,12 @@
 # Yandex.Disk for Media Brain
 
-Yandex.Disk is the primary media storage provider for Kostya's Media Brain.
+Yandex.Disk is the primary media storage provider for Kostya's personal Media Brain.
 
-## Runtime configuration
+## Runtime model
 
-Use a server-side Yandex OAuth connection. Credentials must stay outside source control and browser code.
+The app uses the official Yandex OAuth authorization-code flow. PKCE is supported by the core helper and should be enabled for the production web/mobile flow.
+
+The OAuth access token must remain server-side. Do not store it in browser code, source control, generated media packages, logs, or user-visible diagnostics.
 
 Default media root:
 
@@ -15,27 +17,44 @@ Bootstrap creates only:
 - References
 - Projects
 
-## Production direction
+Everything else is metadata/status.
 
-Use a server-side OAuth flow and encrypted secret storage. The user interface should expose only connection status and reconnect/revoke actions.
+## OAuth
 
-## Ingestion policy
+Core helpers:
+- `buildYandexAuthorizationUrl`
+- `createPkceChallenge`
+- `assertYandexOAuthState`
+- `exchangeYandexAuthorizationCode`
 
-- New files are discovered from Inbox.
+Recommended Disk permissions:
+- `cloud_api:disk.read`
+- `cloud_api:disk.write`
+
+The app registration itself is still a one-time manual Yandex-side step because the account owner must explicitly authorize access.
+
+## Ingestion
+
+The orchestrator watches both:
+- `Inbox` for own/raw materials
+- `References` for intentional inspiration
+
+Inbox assets receive the personal content-production chain:
+`classify -> analyze -> draft -> DiveM review -> prepare edit -> await review`
+
+Reference assets receive a learning-only chain:
+`classify -> analyze -> learn`
+
+The worker enforces dependency order, retries transient failures with exponential backoff, and stops at approval instead of publishing by itself.
+
+## Safety
+
 - Ingestion is idempotent using provider/path/hash.
-- Originals are not deleted or destructively moved by the ingest worker.
+- Originals are not destructively moved or deleted by ingestion.
 - Archive is copy-first and non-destructive in v1.
-- Any future deletion requires approval plus Observer verification.
-
-## User workflow
-
-The user only needs to:
-- drop raw materials into Inbox,
-- place intentional inspiration into References when useful,
-- review generated work in Projects.
-
-Classification, tagging, project linking and status changes are system responsibilities.
+- Public publishing remains approval-gated.
+- Any future deletion requires explicit approval plus Observer verification.
 
 ## Large video files
 
-For large source videos, prefer the native Yandex.Disk desktop/mobile upload route. Media Brain consumes the file after it appears in Inbox; Life OS does not need to proxy large binary uploads.
+Large originals should normally be uploaded with the native Yandex.Disk client or mobile app. Media Brain consumes them once they appear in Inbox; Life OS does not need to proxy large binary uploads.
