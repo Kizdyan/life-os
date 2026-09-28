@@ -16,3 +16,4 @@ export * from "./media-jobs";
 export * from "./style-memory";
 export * from "./media-orchestrator";
 export * from "./media-project-lifecycle";
+export * from "./yandex-oauth";
