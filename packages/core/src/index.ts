@@ -18,3 +18,4 @@ export * from "./media-orchestrator";
 export * from "./media-project-lifecycle";
 export * from "./yandex-oauth";
 export * from "./media-review";
+export * from "./media-life-context";
