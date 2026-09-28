@@ -13,3 +13,6 @@ export * from './commands';
 export * from './outcome-store';
 export * from './outcome-tool';
 export * from './erika-outcome';
+
+export * from './supabase-repository';
+export * from './outcome-service';
