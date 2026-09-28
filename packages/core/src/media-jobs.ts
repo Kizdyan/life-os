@@ -224,6 +224,37 @@ export function createReferenceJobs(input: {
   });
 }
 
+export function createPostApprovalJobs(input: {
+  assetId: string | null;
+  projectId: string | null;
+  approvedReviewJobId: string;
+  now: string;
+  createId: () => string;
+}): MediaJob[] {
+  const types: MediaJobType[] = ["publish", "measure", "learn"];
+  let previousId: string | null = input.approvedReviewJobId;
+
+  return types.map((type) => {
+    const id = input.createId();
+    const job: MediaJob = {
+      id,
+      type,
+      assetId: input.assetId,
+      projectId: input.projectId,
+      state: "queued",
+      dependsOnJobId: previousId,
+      attempts: 0,
+      maxAttempts: 4,
+      notBefore: null,
+      lastError: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    previousId = id;
+    return job;
+  });
+}
+
 export function retrySeconds(attempt: number): number {
   return Math.min(3600, 30 * 2 ** Math.max(0, attempt - 1));
 }
