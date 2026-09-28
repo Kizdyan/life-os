@@ -228,6 +228,44 @@ export function createReferenceJobs(input: {
   });
 }
 
+export function createRevisionJobs(input: {
+  assetId: string | null;
+  projectId: string | null;
+  completedReviewJobId: string;
+  capabilities: MediaCapabilities;
+  now: string;
+  createId: () => string;
+}): MediaJob[] {
+  const types: MediaJobType[] = [
+    "draft",
+    ...(input.capabilities.useDiveMPrePublishAnalysis ? (["divem_review"] as const) : []),
+    "prepare_edit",
+    "await_review",
+  ];
+  let previousId: string | null = input.completedReviewJobId;
+
+  return types.map((type) => {
+    const id = input.createId();
+    const job: MediaJob = {
+      id,
+      type,
+      assetId: input.assetId,
+      projectId: input.projectId,
+      state: "queued",
+      dependsOnJobId: previousId,
+      approvalGranted: false,
+      attempts: 0,
+      maxAttempts: 4,
+      notBefore: null,
+      lastError: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    previousId = id;
+    return job;
+  });
+}
+
 export function createPostApprovalJobs(input: {
   assetId: string | null;
   projectId: string | null;
