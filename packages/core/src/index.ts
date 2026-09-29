@@ -47,3 +47,6 @@ export * from './undo';
 export * from './natural-plan';
 export { scheduleBefore, scheduledLabel } from './relative-scheduler';
 export type { ScheduledTask } from './relative-scheduler';
+
+export * from './erika-benchmark';
+export * from './erika-cases';
