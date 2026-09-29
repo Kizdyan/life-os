@@ -54,3 +54,6 @@ export * from './erika-cases';
 export * from './plan-validation';
 
 export * from './atomic-plan';
+
+export { updateContext, resolveReference, wantsDayReplan } from './erika-context';
+export type { ConversationRef } from './erika-context';
