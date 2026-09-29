@@ -45,4 +45,5 @@ export * from './retry';
 export * from './undo';
 
 export * from './natural-plan';
-export * from './relative-scheduler';
+export { scheduleBefore, scheduledLabel } from './relative-scheduler';
+export type { ScheduledTask } from './relative-scheduler';
