@@ -1,0 +1,1 @@
+import{startVoiceSession}from'./voice';export function autoVoice(onText:(t:string)=>void,onProcessing:()=>void){return startVoiceSession({silenceMs:5000,onText,onState:s=>{if(s==='processing')onProcessing()}})}
