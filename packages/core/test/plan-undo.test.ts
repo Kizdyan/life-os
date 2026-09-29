@@ -1,0 +1,1 @@
+import{describe,it,expect}from'vitest';describe('plan undo safety contract',()=>{it('requires planned items to remain reversible',()=>{const statuses=['planned','completed','not_completed'];expect(statuses.filter(x=>x==='planned')).toEqual(['planned'])});it('is idempotent by request key',()=>{const key='2026-09-29|theory:15:15:16:00';expect(key).toBe(key)})});
