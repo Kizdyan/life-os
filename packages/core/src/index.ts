@@ -52,3 +52,5 @@ export * from './erika-benchmark';
 export * from './erika-cases';
 
 export * from './plan-validation';
+
+export * from './atomic-plan';
