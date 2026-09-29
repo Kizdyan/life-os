@@ -43,3 +43,6 @@ export * from './transcript-log';
 export * from './idempotency';
 export * from './retry';
 export * from './undo';
+
+export * from './natural-plan';
+export * from './relative-scheduler';
