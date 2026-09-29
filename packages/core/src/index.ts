@@ -43,3 +43,7 @@ export * from './transcript-log';
 export * from './idempotency';
 export * from './retry';
 export * from './undo';
+
+export * from './natural-plan';
+export { scheduleBefore, scheduledLabel } from './relative-scheduler';
+export type { ScheduledTask } from './relative-scheduler';
