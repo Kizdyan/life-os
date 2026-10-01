@@ -22,6 +22,7 @@ export class StructuredContentPlanner implements ContentPlanner {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
+    formatMemoryNotes: string[];
     lifeOsContext: Record<string, unknown> | null;
   }): Promise<PlannedContentDraft> {
     const raw = await this.ai.completeJson({
@@ -35,6 +36,7 @@ export class StructuredContentPlanner implements ContentPlanner {
           channel: input.channel,
           goal: input.goal,
           style_memory: input.styleMemoryNotes,
+          format_memory: input.formatMemoryNotes,
           life_os_context: input.lifeOsContext,
         },
         null,
@@ -74,6 +76,8 @@ const BASE_SYSTEM_PROMPT = [
   "Не выдумывай исходники, людей, события или фрагменты, которых нет среди allowed_asset_ids.",
   "Не превращай личную жизнь в обязательный контент: Life OS context — только дополнительный контекст.",
   "Соблюдай Style Memory, но не копируй референсы буквально.",
+  "Format Memory описывает механику подачи, а не истинность тезисов референса.",
+  "Не переноси спорные или непроверенные утверждения из референсов в фактические тезисы.",
   "DiveM-рекомендации используются как гипотезы стратегии, а не как гарантия вирусности.",
   "Избегай дешёвого кликбейта, если он противоречит Style Memory.",
   "План должен быть пригоден для последующей сборки в CapCut.",
