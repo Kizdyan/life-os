@@ -12,6 +12,7 @@ export * from "./productivity-digest";
 export * from "./media-brain";
 export * from "./reference-evidence";
 export * from "./format-memory";
+export * from "./personal-format-seed";
 export * from "./yandex-disk";
 export * from "./yandex-disk-provider";
 export * from "./media-ingestion";
