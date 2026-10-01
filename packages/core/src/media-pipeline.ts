@@ -5,6 +5,7 @@ import type {
   MediaCapabilities,
 } from "./media-brain";
 import type { CapCutWorkPackage } from "./capcut-work-package";
+import { PERSONAL_FORMAT_SEEDS } from "./personal-format-seed";
 
 export interface ContentCandidate {
   id: string;
@@ -86,13 +87,15 @@ export interface DraftPipelineResult {
 export async function prepareContentForReview(
   input: DraftPipelineInput,
 ): Promise<DraftPipelineResult> {
+  const formatMemoryNotes = resolveFormatMemoryNotes(input);
+
   let candidate = await input.contentFactory.createDraft({
     projectId: input.projectId,
     assetIds: input.assetIds,
     channel: input.channel,
     goal: input.goal,
     styleMemoryNotes: input.styleMemoryNotes,
-    formatMemoryNotes: input.formatMemoryNotes ?? [],
+    formatMemoryNotes,
     lifeOsContext: input.capabilities.lifeOsContextEnabled
       ? input.lifeOsContext ?? null
       : null,
@@ -164,4 +167,16 @@ export async function publishReviewedContent(input: {
     verified: verification.verified,
     notes: verification.notes,
   };
+}
+
+function resolveFormatMemoryNotes(input: DraftPipelineInput): string[] {
+  if (input.formatMemoryNotes && input.formatMemoryNotes.length > 0) {
+    return [...input.formatMemoryNotes];
+  }
+
+  if (input.capabilities.usePersonalFormatSeed !== true) return [];
+
+  return PERSONAL_FORMAT_SEEDS.map(
+    (seed) => `${seed.formatKey}: ${seed.mechanics.join("; ")}`,
+  );
 }
