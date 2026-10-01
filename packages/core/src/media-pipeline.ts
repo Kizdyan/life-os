@@ -23,6 +23,7 @@ export interface ContentFactory {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
+    formatMemoryNotes?: string[];
     lifeOsContext?: Record<string, unknown> | null;
   }): Promise<ContentCandidate>;
 
@@ -70,6 +71,7 @@ export interface DraftPipelineInput {
   goal: string;
   currentFocus: string[];
   styleMemoryNotes: string[];
+  formatMemoryNotes?: string[];
   lifeOsContext?: Record<string, unknown> | null;
   strategyEvidence?: Record<string, number>;
 }
@@ -90,6 +92,7 @@ export async function prepareContentForReview(
     channel: input.channel,
     goal: input.goal,
     styleMemoryNotes: input.styleMemoryNotes,
+    formatMemoryNotes: input.formatMemoryNotes ?? [],
     lifeOsContext: input.capabilities.lifeOsContextEnabled
       ? input.lifeOsContext ?? null
       : null,
