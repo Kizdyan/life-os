@@ -29,7 +29,7 @@ export interface ContentPlanner {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
-    formatMemoryNotes: string[];
+    formatMemoryNotes?: string[];
     lifeOsContext: Record<string, unknown> | null;
   }): Promise<PlannedContentDraft>;
 
