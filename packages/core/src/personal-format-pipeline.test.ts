@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEDIA_CAPABILITIES,
   PERSONAL_HIGH_AUTONOMY_MEDIA,
+  type MediaCapabilities,
 } from "./media-brain";
 import { buildCapCutWorkPackage } from "./capcut-work-package";
 import { prepareContentForReview } from "./media-pipeline";
@@ -37,7 +38,7 @@ const candidate = {
   }),
 };
 
-function baseInput(capabilities: typeof PERSONAL_HIGH_AUTONOMY_MEDIA) {
+function baseInput(capabilities: MediaCapabilities) {
   let captured: string[] | undefined;
   return {
     captured: () => captured,
