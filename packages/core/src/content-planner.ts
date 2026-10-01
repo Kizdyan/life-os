@@ -22,7 +22,7 @@ export class StructuredContentPlanner implements ContentPlanner {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
-    formatMemoryNotes: string[];
+    formatMemoryNotes?: string[];
     lifeOsContext: Record<string, unknown> | null;
   }): Promise<PlannedContentDraft> {
     const raw = await this.ai.completeJson({
@@ -36,7 +36,7 @@ export class StructuredContentPlanner implements ContentPlanner {
           channel: input.channel,
           goal: input.goal,
           style_memory: input.styleMemoryNotes,
-          format_memory: input.formatMemoryNotes,
+          format_memory: input.formatMemoryNotes ?? [],
           life_os_context: input.lifeOsContext,
         },
         null,
