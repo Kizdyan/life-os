@@ -9,6 +9,7 @@ export * from "./skills";
 export * from "./recovery-protocol";
 export * from "./attention-load";
 export * from "./productivity-digest";
+export * from "./behavior-experiment";
 export * from "./media-brain";
 export * from "./reference-evidence";
 export * from "./format-memory";
