@@ -29,6 +29,7 @@ export interface ContentPlanner {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
+    formatMemoryNotes: string[];
     lifeOsContext: Record<string, unknown> | null;
   }): Promise<PlannedContentDraft>;
 
@@ -51,10 +52,16 @@ export class ProviderNeutralContentFactory implements ContentFactory {
     channel: "instagram" | "youtube" | "other";
     goal: string;
     styleMemoryNotes: string[];
+    formatMemoryNotes?: string[];
     lifeOsContext?: Record<string, unknown> | null;
   }): Promise<ContentCandidate> {
     const plan = await this.planner.createPlan({
-      ...input,
+      projectId: input.projectId,
+      assetIds: input.assetIds,
+      channel: input.channel,
+      goal: input.goal,
+      styleMemoryNotes: input.styleMemoryNotes,
+      formatMemoryNotes: input.formatMemoryNotes ?? [],
       lifeOsContext: input.lifeOsContext ?? null,
     });
 
