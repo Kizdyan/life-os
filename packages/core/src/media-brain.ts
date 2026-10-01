@@ -85,6 +85,8 @@ export interface MediaCapabilities {
   autoGenerateVisuals: boolean;
   approvalBeforePublish: boolean;
   lifeOsContextEnabled: boolean;
+  /** Personal-only seed formats. Optional for backward-compatible profiles. */
+  usePersonalFormatSeed?: boolean;
 }
 
 export const DEFAULT_MEDIA_CAPABILITIES: MediaCapabilities = {
@@ -96,6 +98,7 @@ export const DEFAULT_MEDIA_CAPABILITIES: MediaCapabilities = {
   autoGenerateVisuals: false,
   approvalBeforePublish: true,
   lifeOsContextEnabled: false,
+  usePersonalFormatSeed: false,
 };
 
 export const PERSONAL_HIGH_AUTONOMY_MEDIA: MediaCapabilities = {
@@ -107,6 +110,7 @@ export const PERSONAL_HIGH_AUTONOMY_MEDIA: MediaCapabilities = {
   autoGenerateVisuals: true,
   approvalBeforePublish: true,
   lifeOsContextEnabled: true,
+  usePersonalFormatSeed: true,
 };
 
 const STYLE_SIGNAL_WEIGHT: Record<StyleSignal, number> = {
