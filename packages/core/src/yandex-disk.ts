@@ -39,6 +39,12 @@ export function yandexUploadLinkUrl(path: string, overwrite = false): string {
   return url.toString();
 }
 
+export function yandexDownloadLinkUrl(path: string): string {
+  const url = new URL("https://cloud-api.yandex.net/v1/disk/resources/download");
+  url.searchParams.set("path", normalizeDiskPath(path));
+  return url.toString();
+}
+
 export function yandexMoveUrl(fromPath: string, toPath: string, overwrite = false): string {
   const url = new URL("https://cloud-api.yandex.net/v1/disk/resources/move");
   url.searchParams.set("from", normalizeDiskPath(fromPath));
