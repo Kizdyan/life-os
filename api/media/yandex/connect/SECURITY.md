@@ -1,0 +1,1 @@
+Security invariants: PKCE + state required; token exchange happens server-side; access/refresh tokens never appear in browser-readable responses or logs; OAuth session cookie is short-lived, Secure, HttpOnly and SameSite=Lax.
