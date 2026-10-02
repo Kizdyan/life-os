@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './types';
-import { pendingMutations, type SyncStorage } from './runtimeSync';
+import { pendingMutations, queueMutation, type SyncStorage } from './runtimeSync';
 import {
   completeRemoteBootstrapIfAcknowledged,
   queueLocalBootstrap,
@@ -38,6 +38,23 @@ describe('remote bootstrap', () => {
       },
     ]);
     expect(remoteBootstrapState(storage)).toBe('queued');
+  });
+
+  it('does not queue a bootstrap mutation for a record already represented in the outbox', () => {
+    const storage = new MemoryStorage();
+    queueMutation(storage, {
+      mutationId: 'plan:item-1',
+      userId: 'self',
+      recordId: 'item-1',
+      kind: 'life_item',
+      expectedVersion: null,
+      payload: { id: 'item-1', title: 'item-1', status: 'planned' },
+      deleted: false,
+      clientUpdatedAt: '2026-10-02T20:00:00.000Z',
+    });
+
+    expect(queueLocalBootstrap(storage, [item('item-1')])).toBe(0);
+    expect(pendingMutations(storage).map((mutation) => mutation.mutationId)).toEqual(['plan:item-1']);
   });
 
   it('is idempotent while bootstrap mutations are waiting for the network', () => {
