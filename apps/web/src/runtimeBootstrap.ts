@@ -18,13 +18,16 @@ export function remoteBootstrapState(storage: SyncStorage): RemoteBootstrapState
 export function queueLocalBootstrap(storage: SyncStorage, items: Item[]): number {
   if (remoteBootstrapState(storage) === 'complete') return 0;
 
+  const pending = pendingMutations(storage);
+  const pendingRecordIds = new Set(pending.map((mutation) => mutation.recordId));
   let queued = 0;
+
   for (const item of items) {
     if (typeof item.version === 'number') continue;
-    const mutationId = `${BOOTSTRAP_PREFIX}${item.id}`;
-    const before = pendingMutations(storage).length;
+    if (pendingRecordIds.has(item.id)) continue;
+
     queueMutation(storage, {
-      mutationId,
+      mutationId: `${BOOTSTRAP_PREFIX}${item.id}`,
       userId: 'self',
       recordId: item.id,
       kind: 'life_item',
@@ -33,7 +36,8 @@ export function queueLocalBootstrap(storage: SyncStorage, items: Item[]): number
       deleted: false,
       clientUpdatedAt: new Date().toISOString(),
     });
-    if (pendingMutations(storage).length > before) queued += 1;
+    pendingRecordIds.add(item.id);
+    queued += 1;
   }
 
   storage.setItem(BOOTSTRAP_KEY, 'queued');
