@@ -49,8 +49,8 @@ export function parseErikaDiscourse(
   const rawClauses=semanticClauses(text);
   let dateContext:string|null=null;
   const clauses:Clause[]=rawClauses.map(raw=>{
-    if(/\bсегодня\b/i.test(raw))dateContext=context.today;
-    if(/\bзавтра\b/i.test(raw))dateContext=addDays(context.today,1);
+    if(/сегодня/i.test(raw))dateContext=context.today;
+    if(/завтра/i.test(raw))dateContext=addDays(context.today,1);
     return{text:raw,date:dateContext};
   });
 
@@ -70,7 +70,7 @@ export function parseErikaDiscourse(
       continue;
     }
 
-    if(isConditionalDaughterTrip(source)){ 
+    if(isConditionalDaughterTrip(source)){
       if(!theatreKey){
         ambiguities.push(source);
         continue;
@@ -177,14 +177,15 @@ export function parseErikaDiscourse(
     }
 
     if(isCallDashaClause(source)){
+      const time=extractTime(source);
       items.push({
         key:'call-dasha',
         title:'Позвонить Даше',
         kind:'task',
         date:clause.date,
-        startTime:extractTime(source),
+        startTime:time,
         endTime:null,
-        fixed:Boolean(extractTime(source)),
+        fixed:Boolean(time),
         relation:null,
         constraints:[],
         condition:null,
@@ -212,8 +213,8 @@ function semanticClauses(text:string):string[]{
     .filter(Boolean);
   const clauses:string[]=[];
   for(const sentence of sentences){
-    if(/\bпотом\b/i.test(sentence)&&!/^после\s+театр/i.test(sentence)){
-      const pieces=sentence.split(/\s*,?\s*\bпотом\b\s*/i).map(value=>value.trim()).filter(Boolean);
+    if(/потом/i.test(sentence)&&!/^после\s+театр/i.test(sentence)){
+      const pieces=sentence.split(/\s*,?\s*потом\s*/i).map(value=>value.trim()).filter(Boolean);
       clauses.push(...pieces);
     }else{
       clauses.push(sentence.replace(/,$/,'').trim());
@@ -223,23 +224,23 @@ function semanticClauses(text:string):string[]{
 }
 
 function isTheatreClause(text:string):boolean{
-  return /\bтеатр\b/i.test(text)&&Boolean(extractTime(text))&&!/^до\s+театр/i.test(text)&&!/^после\s+театр/i.test(text);
+  return /театр/i.test(text)&&Boolean(extractTime(text))&&!/^до\s+театр/i.test(text)&&!/^после\s+театр/i.test(text);
 }
 
 function isExplicitPerformance(text:string):boolean{
-  return /\b(спектакл\w*|показ\w*|выступлен\w*)\b/i.test(text);
+  return /(спектакл\w*|показ\w*|выступлен\w*)/i.test(text);
 }
 
 function isDepartureClause(text:string):boolean{
-  return /\bвыйти\b/i.test(text)&&Boolean(extractTime(text));
+  return /выйти/i.test(text)&&Boolean(extractTime(text));
 }
 
 function isGymClause(text:string):boolean{
-  return /\bзал\b|тренировк\w*/i.test(text)&&!/после\s+зал/i.test(text);
+  return /(?:^|\s)зал(?:\s|,|$)|тренировк\w*/i.test(text)&&!/после\s+зал/i.test(text);
 }
 
 function isMealClause(text:string):boolean{
-  return /\bпоесть\b|\bпокушать\b|\bобед\w*\b|\bужин\w*\b/i.test(text);
+  return /поесть|покушать|обед\w*|ужин\w*/i.test(text);
 }
 
 function isCallDashaClause(text:string):boolean{
@@ -251,16 +252,16 @@ function isConditionalDaughterTrip(text:string):boolean{
 }
 
 function hasUnresolvedPronounReference(text:string):boolean{
-  return /^после\s+(него|не[её]|этого)\b/i.test(text);
+  return /^после\s+(него|не[её]|этого)(?:\s|$)/i.test(text);
 }
 
 function extractCondition(text:string):string|null{
-  const match=text.match(/\bесли\s+(.+?)(?=,\s*(?:поехать|ехать)|$)/i);
+  const match=text.match(/если\s+(.+?)(?=,\s*(?:поехать|ехать)|$)/i);
   return match?`если ${match[1].trim()}`:null;
 }
 
 function extractTime(text:string):string|null{
-  const match=text.match(/(?:\bв\b|\bк\b)?\s*(\d{1,2}):(\d{2})/);
+  const match=text.match(/(\d{1,2}):(\d{2})/);
   if(!match)return null;
   const hours=Number(match[1]),minutes=Number(match[2]);
   if(hours<0||hours>23||minutes<0||minutes>59)return null;
