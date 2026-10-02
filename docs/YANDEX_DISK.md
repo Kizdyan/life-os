@@ -52,6 +52,22 @@ A future durable secret backend may replace the environment-secret implementatio
 
 The app registration and first account authorization remain one-time manual Yandex-side actions because the account owner must explicitly grant access.
 
+## Durable internal state
+
+Media Brain persists its versioned runtime state in one internal file:
+
+`/Apps/Kostya Media Brain/.lifeos-state-v1.json`
+
+That file backs the provider-neutral `MediaStateStore` and keeps job state, project mappings, Style Memory and audience-response learning across serverless restarts. Writes are re-read and verified before they are treated as persisted.
+
+It is a system resource, not a fourth user-facing media section. The visible workflow remains Inbox / References / Projects.
+
+## Distributed worker lease
+
+`YandexDiskLeaseStore` uses atomic creation of an internal dot-prefixed lock directory to ensure only one background Media Brain worker owns a poll cycle at a time. Owner metadata is heartbeat-renewed and verified by readback.
+
+Important safety choice: the runtime does **not** automatically delete/reclaim an expired orphan lock. Yandex.Disk REST does not provide a conditional compare-and-swap delete strong enough to prove that a stale worker cannot race with a new owner. An orphan therefore fails safe as a surfaced exception instead of risking duplicate processing/publication. A future lease backend with atomic TTL/CAS can replace this store through the existing `MediaLeaseStore` contract.
+
 ## Ingestion
 
 The orchestrator watches both:
@@ -74,6 +90,7 @@ The worker enforces dependency order, retries transient failures with exponentia
 - Public publishing remains approval-gated.
 - Any future deletion requires explicit approval plus Observer verification.
 - OAuth failure clears transient session material instead of leaving stale tokens around.
+- Internal lease deletion is allowed only after the lock owner is re-read and matches the releasing worker.
 
 ## Large video files
 
