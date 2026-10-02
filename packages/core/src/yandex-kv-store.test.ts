@@ -56,7 +56,8 @@ describe("YandexDiskKeyValueStore", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("merges a value and overwrites the single hidden state file", async () => {
+  it("merges a value, overwrites one hidden state file, and verifies the persisted value", async () => {
+    let persisted = JSON.stringify({ schemaVersion: 1, values: { existing: "keep-me" } });
     let uploaded = "";
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = String(input);
@@ -67,10 +68,10 @@ describe("YandexDiskKeyValueStore", () => {
         });
       }
       if (url === "https://download.example.test/state") {
-        return new Response(
-          JSON.stringify({ schemaVersion: 1, values: { existing: "keep-me" } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(persisted, {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       if (url.includes("/resources/upload")) {
         const parsed = new URL(url);
@@ -89,6 +90,7 @@ describe("YandexDiskKeyValueStore", () => {
         if (typeof body === "string") uploaded = body;
         else if (body instanceof Uint8Array) uploaded = new TextDecoder().decode(body);
         else if (body instanceof ArrayBuffer) uploaded = new TextDecoder().decode(new Uint8Array(body));
+        persisted = uploaded;
         expect(init?.method).toBe("PUT");
         return new Response(null, { status: 201 });
       }
@@ -99,6 +101,7 @@ describe("YandexDiskKeyValueStore", () => {
       oauthToken: "test-token",
       rootPath: "/Apps/Kostya Media Brain",
       fetchImpl,
+      sleep: async () => undefined,
     });
 
     await store.set("lifeos:media-brain:v1", "new-state");
