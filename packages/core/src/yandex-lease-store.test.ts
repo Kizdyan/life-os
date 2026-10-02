@@ -5,7 +5,6 @@ type Lease = { schemaVersion: 1; ownerId: string; expiresAt: string; updatedAt: 
 
 class FakeYandexLeaseApi {
   folderExists = false;
-  folderModified = "2026-10-02T10:00:00.000Z";
   lease: Lease | null = null;
   deletes = 0;
 
@@ -59,7 +58,6 @@ class FakeYandexLeaseApi {
           });
         }
         this.folderExists = true;
-        this.folderModified = "2026-10-02T12:00:00.000Z";
         return new Response(null, { status: 201 });
       }
       if (method === "DELETE") {
@@ -75,13 +73,10 @@ class FakeYandexLeaseApi {
             headers: { "Content-Type": "application/json" },
           });
         }
-        return new Response(
-          JSON.stringify({
-            type: "dir",
-            modified: this.folderModified,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ type: "dir" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
     }
 
@@ -96,7 +91,6 @@ function store(api: FakeYandexLeaseApi) {
     oauthToken: "test-token",
     rootPath: "/Apps/Kostya Media Brain",
     fetchImpl: api.fetch,
-    orphanGraceMs: 60_000,
     verifyAttempts: 1,
     sleep: async () => undefined,
   });
@@ -128,7 +122,7 @@ describe("YandexDiskLeaseStore", () => {
     expect(api.lease.ownerId).toBe("worker-a");
   });
 
-  it("reclaims an expired lease and lets only the new owner continue", async () => {
+  it("fails safe on an expired orphan instead of racing a destructive takeover", async () => {
     const api = new FakeYandexLeaseApi();
     api.folderExists = true;
     api.lease = {
@@ -138,9 +132,9 @@ describe("YandexDiskLeaseStore", () => {
       expiresAt: "2026-10-02T11:56:00.000Z",
     };
 
-    await expect(store(api).acquire("media-brain:poller", "worker-b", 120_000, now)).resolves.toBe(true);
-    expect(api.deletes).toBe(1);
-    expect(api.lease?.ownerId).toBe("worker-b");
+    await expect(store(api).acquire("media-brain:poller", "worker-b", 120_000, now)).resolves.toBe(false);
+    expect(api.deletes).toBe(0);
+    expect(api.lease.ownerId).toBe("dead-worker");
   });
 
   it("renews only a live lease owned by the caller", async () => {
@@ -156,6 +150,20 @@ describe("YandexDiskLeaseStore", () => {
     await expect(store(api).renew("media-brain:poller", "worker-b", 120_000, now)).resolves.toBe(false);
     await expect(store(api).renew("media-brain:poller", "worker-a", 180_000, now)).resolves.toBe(true);
     expect(api.lease?.expiresAt).toBe("2026-10-02T12:03:00.000Z");
+  });
+
+  it("does not resurrect an already expired lease during heartbeat", async () => {
+    const api = new FakeYandexLeaseApi();
+    api.folderExists = true;
+    api.lease = {
+      schemaVersion: 1,
+      ownerId: "worker-a",
+      updatedAt: "2026-10-02T11:55:00.000Z",
+      expiresAt: "2026-10-02T11:59:00.000Z",
+    };
+
+    await expect(store(api).renew("media-brain:poller", "worker-a", 120_000, now)).resolves.toBe(false);
+    expect(api.lease.expiresAt).toBe("2026-10-02T11:59:00.000Z");
   });
 
   it("releases only the caller's own lease", async () => {
