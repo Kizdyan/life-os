@@ -92,3 +92,4 @@ export * from './yandex-connection';
 export * from './media-digest';
 export * from './media-state-store';
 export * from './media-supervisor';
+export * from './media-runtime';
