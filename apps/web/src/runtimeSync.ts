@@ -33,6 +33,12 @@ export interface RuntimeSyncRecord {
   updatedAt: string;
 }
 
+export interface RuntimeConflictState {
+  mutationId: string;
+  expectedVersion: number | null;
+  currentVersion: number | null;
+}
+
 export interface RuntimeSyncResponse {
   storeRevision: number;
   results: Array<{
@@ -51,15 +57,12 @@ export interface RemoteLifeOsGateway {
 
 export interface ReplicaSyncResult {
   storeRevision: number;
-  conflicts: Array<{
-    mutationId: string;
-    expectedVersion: number | null;
-    currentVersion: number | null;
-  }>;
+  conflicts: RuntimeConflictState[];
 }
 
 const OUTBOX_KEY = 'life-os:runtime-outbox:v1';
 const REVISION_KEY = 'life-os:runtime-revision:v1';
+const CONFLICT_KEY = 'life-os:runtime-conflicts:v1';
 
 export function pendingMutations(storage: SyncStorage): RuntimeSyncMutation[] {
   try {
@@ -67,6 +70,18 @@ export function pendingMutations(storage: SyncStorage): RuntimeSyncMutation[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter(isMutation) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function readRuntimeConflicts(storage: SyncStorage): RuntimeConflictState[] {
+  try {
+    const raw = storage.getItem(CONFLICT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isConflict);
   } catch {
     return [];
   }
@@ -114,6 +129,7 @@ export async function syncLocalReplica(
       currentVersion: result.conflict!.currentVersion,
     }));
 
+  storage.setItem(CONFLICT_KEY, JSON.stringify(conflicts));
   return { storeRevision: response.storeRevision, conflicts };
 }
 
@@ -153,4 +169,12 @@ function isMutation(value: unknown): value is RuntimeSyncMutation {
     && typeof candidate.payload === 'object'
     && typeof candidate.deleted === 'boolean'
     && typeof candidate.clientUpdatedAt === 'string';
+}
+
+function isConflict(value: unknown): value is RuntimeConflictState {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<RuntimeConflictState>;
+  return typeof candidate.mutationId === 'string'
+    && (candidate.expectedVersion === null || typeof candidate.expectedVersion === 'number')
+    && (candidate.currentVersion === null || typeof candidate.currentVersion === 'number');
 }
