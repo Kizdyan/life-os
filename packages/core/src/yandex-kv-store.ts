@@ -20,17 +20,23 @@ export interface YandexDiskKeyValueStoreOptions {
   rootPath: string;
   stateFileName?: string;
   fetchImpl?: typeof fetch;
+  verifyAttempts?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export class YandexDiskKeyValueStore implements KeyValueStore {
   private readonly token: string;
   private readonly fetchImpl: typeof fetch;
   private readonly statePath: string;
+  private readonly verifyAttempts: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(options: YandexDiskKeyValueStoreOptions) {
     this.token = options.oauthToken.trim();
     if (!this.token) throw new Error("Yandex.Disk OAuth token is required");
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.verifyAttempts = Math.max(1, Math.floor(options.verifyAttempts ?? 3));
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     const root = normalizeDiskPath(options.rootPath);
     const fileName = (options.stateFileName ?? ".lifeos-state-v1.json").trim();
     if (!fileName || fileName.includes("/") || fileName.includes("\\")) {
@@ -50,6 +56,13 @@ export class YandexDiskKeyValueStore implements KeyValueStore {
     const envelope = (await this.readEnvelope()) ?? emptyEnvelope();
     envelope.values[key] = value;
     await this.writeEnvelope(envelope);
+
+    for (let attempt = 1; attempt <= this.verifyAttempts; attempt += 1) {
+      const observed = await this.readEnvelope();
+      if (observed?.values[key] === value) return;
+      if (attempt < this.verifyAttempts) await this.sleep(100 * attempt);
+    }
+    throw new Error("Yandex.Disk state write verification failed");
   }
 
   private async readEnvelope(): Promise<StateEnvelope | null> {
