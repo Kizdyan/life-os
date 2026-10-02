@@ -42,6 +42,8 @@ describe("YandexDiskKeyValueStore Observer verification", () => {
       oauthToken: "test-token",
       rootPath: "/Apps/Kostya Media Brain",
       fetchImpl,
+      verifyAttempts: 2,
+      sleep: async () => undefined,
     });
 
     await expect(
