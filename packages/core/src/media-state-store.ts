@@ -7,6 +7,10 @@ import type {
   AudiencePerformanceSignal,
   AudiencePerformanceStore,
 } from "./media-analytics";
+import type {
+  MediaCandidateRecord,
+  MediaCandidateStore,
+} from "./media-candidate-store";
 
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
@@ -19,6 +23,8 @@ export interface MediaStateSnapshot {
   assetsByIngestKey: Record<string, MediaAsset>;
   jobsById: Record<string, MediaJob>;
   projectsByKey: Record<string, MediaProject>;
+  candidatesById: Record<string, MediaCandidateRecord>;
+  latestCandidateIdByProject: Record<string, string>;
   styleObservations: StyleMemoryObservation[];
   audienceSignals: AudiencePerformanceSignal[];
   updatedAt: string;
@@ -35,6 +41,7 @@ export class MediaStateStore
     MediaAssetStore,
     MediaJobStore,
     MediaProjectStore,
+    MediaCandidateStore,
     StyleMemoryStore,
     AudiencePerformanceStore
 {
@@ -115,6 +122,36 @@ export class MediaStateStore
     return project;
   }
 
+  async saveCandidate(record: MediaCandidateRecord): Promise<void> {
+    const candidateId = record.candidate.id.trim();
+    const projectId = record.candidate.projectId.trim();
+    if (!candidateId) throw new Error("Media candidate id is required");
+    if (!projectId) throw new Error("Media candidate projectId is required");
+
+    await this.update((state) => {
+      state.candidatesById[candidateId] = clone(record);
+      state.latestCandidateIdByProject[projectId] = candidateId;
+    });
+  }
+
+  async getCandidateRecord(
+    candidateId: string,
+  ): Promise<MediaCandidateRecord | null> {
+    const state = await this.read();
+    const record = state.candidatesById[candidateId];
+    return record ? clone(record) : null;
+  }
+
+  async getLatestCandidateForProject(
+    projectId: string,
+  ): Promise<MediaCandidateRecord | null> {
+    const state = await this.read();
+    const candidateId = state.latestCandidateIdByProject[projectId];
+    if (!candidateId) return null;
+    const record = state.candidatesById[candidateId];
+    return record ? clone(record) : null;
+  }
+
   async append(observation: StyleMemoryObservation): Promise<void>;
   async append(signal: AudiencePerformanceSignal): Promise<void>;
   async append(
@@ -169,6 +206,8 @@ export class MediaStateStore
       assetsByIngestKey: parsed.assetsByIngestKey ?? {},
       jobsById: parsed.jobsById ?? {},
       projectsByKey: parsed.projectsByKey ?? {},
+      candidatesById: parsed.candidatesById ?? {},
+      latestCandidateIdByProject: parsed.latestCandidateIdByProject ?? {},
       styleObservations: parsed.styleObservations ?? [],
       audienceSignals: parsed.audienceSignals ?? [],
       updatedAt:
@@ -205,6 +244,8 @@ function emptyState(now: string): MediaStateSnapshot {
     assetsByIngestKey: {},
     jobsById: {},
     projectsByKey: {},
+    candidatesById: {},
+    latestCandidateIdByProject: {},
     styleObservations: [],
     audienceSignals: [],
     updatedAt: now,
