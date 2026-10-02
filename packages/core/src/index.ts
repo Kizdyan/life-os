@@ -57,3 +57,9 @@ export * from './atomic-plan';
 
 export { updateContext, resolveReference, wantsDayReplan } from './erika-context';
 export type { ConversationRef } from './erika-context';
+
+export * from './recovery-protocol';
+export * from './recovery-planner';
+export * from './attention-load';
+export * from './productivity-digest';
+export * from './behavior-experiment';
