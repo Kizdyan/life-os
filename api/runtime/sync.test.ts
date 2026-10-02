@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handleRuntimeSync } from './sync';
+import { handleRuntimeSync, type RuntimeSyncContext } from './sync';
 import type {
   RuntimeMutationInput,
   RuntimeMutationResult,
@@ -9,11 +9,13 @@ import type {
 
 class FakeStore implements RuntimeRemoteStore {
   applied: RuntimeMutationInput[] = [];
+  principals: string[] = [];
   records: RuntimeRecordDto[] = [];
   results = new Map<string, RuntimeMutationResult>();
   currentRevision = 0;
 
-  async apply(_accessToken: string, mutation: RuntimeMutationInput): Promise<RuntimeMutationResult> {
+  async apply(principal: string, mutation: RuntimeMutationInput): Promise<RuntimeMutationResult> {
+    this.principals.push(principal);
     this.applied.push(mutation);
     const configured = this.results.get(mutation.mutationId);
     if (configured) return configured;
@@ -27,29 +29,32 @@ class FakeStore implements RuntimeRemoteStore {
     };
   }
 
-  async listSince(): Promise<RuntimeRecordDto[]> {
+  async listSince(principal: string): Promise<RuntimeRecordDto[]> {
+    this.principals.push(principal);
     return this.records;
   }
 
-  async revision(): Promise<number> {
+  async revision(principal: string): Promise<number> {
+    this.principals.push(principal);
     return this.currentRevision;
   }
 }
 
-function request(body: unknown, authorization = 'Bearer user-token'): Request {
+function request(body: unknown): Request {
   return new Request('https://life.example/api/runtime/sync', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(authorization ? { Authorization: authorization } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
 
+function context(store: RuntimeRemoteStore | null, userId: string | null = 'canonical-user'): RuntimeSyncContext {
+  return { store, userId, configured: Boolean(store) };
+}
+
 const mutation = {
   mutationId: 'm-1',
-  userId: 'self',
+  userId: 'spoofed-client-user',
   recordId: 'item-1',
   kind: 'life_item',
   expectedVersion: null,
@@ -60,18 +65,25 @@ const mutation = {
 
 describe('POST /api/runtime/sync', () => {
   it('fails closed when canonical storage is not configured', async () => {
-    const response = await handleRuntimeSync(request({ mutations: [], sinceRevision: 0 }), null);
+    const response = await handleRuntimeSync(
+      request({ mutations: [], sinceRevision: 0 }),
+      { store: null, userId: null, configured: false },
+    );
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'runtime_not_configured' });
   });
 
-  it('requires an authenticated bearer token', async () => {
-    const response = await handleRuntimeSync(request({ mutations: [], sinceRevision: 0 }, ''), new FakeStore());
+  it('requires an authenticated Life OS owner session', async () => {
+    const store = new FakeStore();
+    const response = await handleRuntimeSync(
+      request({ mutations: [], sinceRevision: 0 }),
+      { store, userId: null, configured: true },
+    );
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'authentication_required' });
   });
 
-  it('ignores client userId and applies validated mutations under server auth', async () => {
+  it('ignores client userId and applies mutations under the sealed server principal', async () => {
     const store = new FakeStore();
     store.records = [{
       id: 'item-1',
@@ -83,7 +95,10 @@ describe('POST /api/runtime/sync', () => {
       updatedAt: '2026-10-02T20:01:00.000Z',
     }];
 
-    const response = await handleRuntimeSync(request({ mutations: [mutation], sinceRevision: 0 }), store);
+    const response = await handleRuntimeSync(
+      request({ mutations: [mutation], sinceRevision: 0 }),
+      context(store),
+    );
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -95,6 +110,7 @@ describe('POST /api/runtime/sync', () => {
       payload: { title: 'Зал' },
       deleted: false,
     }]);
+    expect(store.principals.every((principal) => principal === 'canonical-user')).toBe(true);
     expect(payload.records).toEqual(store.records);
   });
 
@@ -109,10 +125,10 @@ describe('POST /api/runtime/sync', () => {
     });
     store.currentRevision = 4;
 
-    const response = await handleRuntimeSync(request({
-      mutations: [{ ...mutation, expectedVersion: 1 }],
-      sinceRevision: 2,
-    }), store);
+    const response = await handleRuntimeSync(
+      request({ mutations: [{ ...mutation, expectedVersion: 1 }], sinceRevision: 2 }),
+      context(store),
+    );
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -126,13 +142,16 @@ describe('POST /api/runtime/sync', () => {
 
   it('rejects malformed or oversized mutation batches', async () => {
     const store = new FakeStore();
-    const malformed = await handleRuntimeSync(request({ mutations: [{ nope: true }], sinceRevision: 0 }), store);
+    const malformed = await handleRuntimeSync(
+      request({ mutations: [{ nope: true }], sinceRevision: 0 }),
+      context(store),
+    );
     expect(malformed.status).toBe(400);
 
     const oversized = await handleRuntimeSync(request({
       mutations: Array.from({ length: 101 }, (_, index) => ({ ...mutation, mutationId: `m-${index}` })),
       sinceRevision: 0,
-    }), store);
+    }), context(store));
     expect(oversized.status).toBe(400);
   });
 });
