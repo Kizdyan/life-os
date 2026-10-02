@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { backendMode } from './api';
+import { readRuntimeConflicts } from './runtimeSync';
 import {
   getRuntimeSessionStatus,
   loginRuntimeSession,
@@ -12,13 +13,23 @@ export default function RuntimeSyncCard({ onConnected }: { onConnected: () => vo
   const [passcode, setPasscode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [conflictCount, setConflictCount] = useState(0);
 
   useEffect(() => {
     if (backendMode !== 'remote') return;
     void refresh();
+    refreshConflicts();
+    const onSync = () => refreshConflicts();
+    window.addEventListener('lifeos-runtime-sync', onSync);
+    return () => window.removeEventListener('lifeos-runtime-sync', onSync);
   }, []);
 
   if (backendMode !== 'remote') return null;
+
+  function refreshConflicts() {
+    if (typeof localStorage === 'undefined') return;
+    setConflictCount(readRuntimeConflicts(localStorage).length);
+  }
 
   async function refresh() {
     try {
@@ -68,6 +79,22 @@ export default function RuntimeSyncCard({ onConnected }: { onConnected: () => vo
       <div className="runtimeCard bad">
         <b>Серверная память не настроена</b>
         <span>Life OS продолжает работать офлайн, но межустройственная синхронизация пока выключена.</span>
+      </div>
+    );
+  }
+
+  if (status.authenticated && conflictCount > 0) {
+    return (
+      <div className="runtimeCard bad">
+        <div>
+          <b>Нужна сверка синхронизации</b>
+          <span>
+            {conflictCount === 1 ? '1 изменение' : `${conflictCount} изменения`} столкнулось с более новой версией на другом устройстве.
+            Life OS не перезаписывает её автоматически.
+          </span>
+        </div>
+        <button className="ghost" disabled={busy} onClick={() => void onConnected()}>Перечитать данные</button>
+        {error && <small className="runtimeError">{error}</small>}
       </div>
     );
   }
