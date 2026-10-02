@@ -1,0 +1,28 @@
+name: deploy-readiness
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "vercel.json"
+      - "package.json"
+      - ".github/workflows/deploy-readiness.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "vercel.json"
+      - "package.json"
+
+jobs:
+  preview-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run web:build
+      - name: Verify deploy artifact
+        run: test -f apps/web/dist/index.html
