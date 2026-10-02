@@ -2,12 +2,17 @@ import { parseErikaOutcome } from './erika-outcome';
 import { setOutcomeAction } from './commands';
 import type { AutonomyEngine } from './engine';
 import type { AuditEntry } from './actions';
+import type { LifeItem } from './life-item';
+import { buildErikaProductivityReply, isProductivityFocusQuestion } from './erika-productivity';
 
 export interface ErikaItemMatch { id:string; title:string; plannedDate:string; }
 export interface ErikaContext {
   findItem(query:string, plannedDate:string):Promise<ErikaItemMatch|null>;
   today():string;
   tomorrow():string;
+  now?():string;
+  listItems?():Promise<LifeItem[]>;
+  consecutiveMissesByItem?():Promise<Record<string,number>>;
 }
 
 export interface ErikaExecution {
@@ -20,6 +25,21 @@ export class ErikaRuntime {
   constructor(private readonly engine:AutonomyEngine, private readonly context:ErikaContext) {}
 
   async execute(text:string):Promise<ErikaExecution> {
+    if(isProductivityFocusQuestion(text) && this.context.listItems){
+      const items=await this.context.listItems();
+      const consecutiveMissesByItem=this.context.consecutiveMissesByItem
+        ? await this.context.consecutiveMissesByItem()
+        : {};
+      return {
+        understood:true,
+        message:buildErikaProductivityReply({
+          items,
+          now:this.context.now?.() ?? new Date().toISOString(),
+          consecutiveMissesByItem,
+        }),
+      };
+    }
+
     const today=this.context.today();
     const tomorrow=this.context.tomorrow();
     const item=await this.context.findItem(text,today);
