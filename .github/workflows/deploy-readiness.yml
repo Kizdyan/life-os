@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "apps/web/**"
+      - "api/**"
       - "vercel.json"
       - "package.json"
       - ".github/workflows/deploy-readiness.yml"
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      - "api/**"
       - "vercel.json"
       - "package.json"
 
@@ -23,6 +25,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm install
+      - run: npm run api:typecheck
       - run: npm run web:build
       - name: Verify deploy artifact
         run: test -f apps/web/dist/index.html
