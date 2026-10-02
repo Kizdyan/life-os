@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   pendingMutations,
   queueMutation,
+  readRuntimeConflicts,
   syncLocalReplica,
   type RemoteLifeOsGateway,
   type RuntimeSyncMutation,
@@ -57,12 +58,13 @@ describe('offline-first runtime sync', () => {
     expect(result.conflicts).toEqual([]);
     expect(result.storeRevision).toBe(2);
     expect(pendingMutations(storage)).toEqual([]);
+    expect(readRuntimeConflicts(storage)).toEqual([]);
     expect(appliedRecords).toHaveLength(1);
   });
 
-  it('keeps a stale mutation queued and surfaces an explicit conflict', async () => {
+  it('keeps a stale mutation queued and persists an explicit conflict', async () => {
     const storage = new MemoryStorage();
-    queueMutation(storage, mutation('m-stale'));
+    queueMutation(storage, { ...mutation('m-stale'), expectedVersion: 1 });
 
     const gateway: RemoteLifeOsGateway = {
       sync: async () => ({
@@ -79,9 +81,42 @@ describe('offline-first runtime sync', () => {
     };
 
     const result = await syncLocalReplica(storage, gateway, () => undefined);
+    const expected = [{ mutationId: 'm-stale', expectedVersion: 1, currentVersion: 4 }];
 
-    expect(result.conflicts).toEqual([{ mutationId: 'm-stale', expectedVersion: 1, currentVersion: 4 }]);
+    expect(result.conflicts).toEqual(expected);
+    expect(readRuntimeConflicts(storage)).toEqual(expected);
     expect(pendingMutations(storage).map((item) => item.mutationId)).toEqual(['m-stale']);
+  });
+
+  it('clears a previous conflict only after a later successful sync', async () => {
+    const storage = new MemoryStorage();
+    queueMutation(storage, { ...mutation('m-1'), expectedVersion: 1 });
+
+    await syncLocalReplica(storage, {
+      sync: async () => ({
+        storeRevision: 2,
+        results: [{
+          mutationId: 'm-1',
+          status: 'conflict',
+          storeRevision: 2,
+          record: null,
+          conflict: { expectedVersion: 1, currentVersion: 2 },
+        }],
+        records: [],
+      }),
+    }, () => undefined);
+    expect(readRuntimeConflicts(storage)).toHaveLength(1);
+
+    await syncLocalReplica(storage, {
+      sync: async () => ({
+        storeRevision: 3,
+        results: [{ mutationId: 'm-1', status: 'applied', storeRevision: 3, record: null, conflict: null }],
+        records: [],
+      }),
+    }, () => undefined);
+
+    expect(readRuntimeConflicts(storage)).toEqual([]);
+    expect(pendingMutations(storage)).toEqual([]);
   });
 
   it('preserves the outbox when the network request fails', async () => {
