@@ -1,0 +1,111 @@
+# Media Brain v1
+
+Personal media automation for Kostya. This module is designed to work with Erika, Life OS and DiveM without changing default DiveM behavior for other users.
+
+## Visible storage model
+
+Only three user-visible sections:
+
+- Inbox
+- References
+- Projects
+
+Published, approved, archived and review states are metadata/status, not folders the user must maintain.
+
+## Primary storage
+
+Yandex.Disk is the primary media store.
+
+The domain layer depends on `MediaStorageProvider`, not on Yandex-specific paths or credentials.
+
+Suggested root:
+
+`/Apps/Kostya Media Brain`
+
+Expected folders:
+
+- `/Apps/Kostya Media Brain/Inbox`
+- `/Apps/Kostya Media Brain/References`
+- `/Apps/Kostya Media Brain/Projects`
+
+OAuth token is supplied at runtime through `YANDEX_DISK_OAUTH_TOKEN`. Never commit it.
+
+## Editing
+
+CapCut is the preferred human-facing editing workbench.
+
+Media Brain should prepare:
+- selected source clips
+- cut order
+- hooks
+- rough timing
+- captions
+- overlays/text
+- sound/music cues
+- aspect-ratio targets
+- cover ideas
+- revision notes
+
+The core must not depend on undocumented/private CapCut APIs. If a stable supported integration becomes available, add it behind an editing adapter.
+
+## Pipeline
+
+Erika
+-> Life OS context
+-> Media Brain
+-> DiveM pre-publish strategy assessment
+-> Content Factory
+-> CapCut
+-> Observer
+-> user approval
+-> publish
+-> analytics
+-> Style Memory
+
+## Personal autonomy
+
+Use `PERSONAL_HIGH_AUTONOMY_MEDIA` only for the explicitly configured personal profile. Default users retain `DEFAULT_MEDIA_CAPABILITIES`.
+
+Initial public publishing remains approval-gated.
+
+## Style Memory
+
+A saved reference is a weak signal. Publishing, explicit approval and specific edit feedback are stronger signals. Store preferences by dimension instead of assuming the user likes every aspect of a reference.
+
+## Ingestion invariants
+
+- Create an immutable asset record on ingest.
+- Preserve provider/path provenance.
+- Prefer content hash + provider path for idempotency.
+- Do not destructively move/delete the original until the Observer verifies the new state.
+- Unknown metadata stays null.
+- Public publishing remains a separate approved action.
+
+## Runtime state
+
+Media Brain now has a versioned durable state boundary through `MediaStateStore`.
+
+The store persists:
+- ingested assets keyed by provider/path/hash
+- autonomous jobs and their dependency state
+- active project mappings
+- Style Memory observations
+- audience-performance signals
+
+The storage implementation itself is provider-neutral through a simple `KeyValueStore` contract so the final Life OS runtime can bind it to IndexedDB, SQLite, PostgreSQL or another durable backend without changing Media Brain domain logic.
+
+Style/taste evidence and audience-response analytics remain separate collections by design.
+
+## Autonomous supervisor
+
+`MediaSupervisor` performs one bounded cycle:
+
+1. scan Inbox and References
+2. enqueue only newly discovered assets
+3. drain runnable autonomous jobs in dependency order
+4. stop when idle or when the configured pass limit is reached
+
+The supervisor is deliberately bounded so one broken or self-generating workflow cannot spin forever.
+
+External scheduling (app wake-up, server cron, mobile background task, etc.) stays outside the core module.
+

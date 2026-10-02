@@ -1,0 +1,29 @@
+name: Media Brain CI
+
+on:
+  pull_request:
+    paths:
+      - "packages/core/**"
+      - "docs/MEDIA_BRAIN.md"
+      - "docs/YANDEX_DISK.md"
+      - "package.json"
+      - "tsconfig.json"
+      - ".github/workflows/media-brain-ci.yml"
+  push:
+    branches:
+      - "feature/media-brain-v1"
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm install
+      - name: Test
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
