@@ -10,6 +10,7 @@ import {
   HttpRemoteLifeOsGateway,
   queueMutation,
   syncLocalReplica,
+  type RuntimeConflictState,
   type RuntimeSyncMutation,
 } from './runtimeSync';
 
@@ -23,6 +24,13 @@ export const backendMode = remoteEnabled
   : legacySupabaseUrl && legacySupabaseKey
     ? 'legacy-supabase'
     : 'local';
+
+export class RuntimeConflictError extends Error {
+  constructor(readonly conflicts: RuntimeConflictState[]) {
+    super('Есть конфликт синхронизации между устройствами. Изменение не перезаписано автоматически.');
+    this.name = 'RuntimeConflictError';
+  }
+}
 
 function legacyHeaders() {
   return {
@@ -71,7 +79,15 @@ async function tryRemoteSync(): Promise<void> {
   if (!remoteEnabled) return;
   const local = storage();
   const gateway = new HttpRemoteLifeOsGateway(remoteApiUrl);
-  await syncLocalReplica(local, gateway, (records) => applyRemoteRuntimeRecords(local, records));
+  const result = await syncLocalReplica(local, gateway, (records) => applyRemoteRuntimeRecords(local, records));
+  notifyRuntimeSyncState();
+  if (result.conflicts.length) throw new RuntimeConflictError(result.conflicts);
+}
+
+function notifyRuntimeSyncState(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event('lifeos-runtime-sync'));
+  }
 }
 
 export async function today(date: string): Promise<Item[]> {
@@ -79,7 +95,8 @@ export async function today(date: string): Promise<Item[]> {
     try {
       await tryRemoteSync();
     } catch {
-      // Offline-first: Today remains usable from the local replica.
+      // Offline-first: Today remains usable from the local replica. A persisted
+      // conflict is shown separately by RuntimeSyncCard and is never discarded.
     }
     return readLocalToday(storage(), date);
   }
@@ -102,8 +119,9 @@ export async function outcome(item: Item, command: 'complete' | 'not_complete') 
     if (result.successor) queueItemMutation(result.successor, crypto.randomUUID(), null);
     try {
       await tryRemoteSync();
-    } catch {
-      // The mutation stays in the durable outbox and will retry later.
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: mutation remains in durable outbox for retry.
     }
     return result;
   }
@@ -151,8 +169,9 @@ export async function applyPlan(idempotencyKey: string, items: PlanInput[]) {
     }
     try {
       await tryRemoteSync();
-    } catch {
-      // The plan is usable locally and remains queued until remote sync succeeds.
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: plan remains usable locally and queued for retry.
     }
     return result;
   }
