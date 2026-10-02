@@ -72,6 +72,7 @@ export * from './personal-format-seed';
 export * from './yandex-disk';
 export * from './yandex-disk-provider';
 export * from './yandex-kv-store';
+export * from './yandex-lease-store';
 export * from './media-ingestion';
 export * from './capcut-work-package';
 export * from './media-pipeline';
