@@ -46,7 +46,7 @@ describe("Erika productivity focus",()=>{
     expect(reply).toContain("Театр");
     expect(reply).toContain("Зал");
     expect(reply).not.toContain("Поздняя задача");
-    expect(reply).toContain("ещё 1");
+    expect(reply).toContain("Ещё 1");
   });
 
   it("explains recovery action after a repeated miss without pretending it already executed",()=>{
