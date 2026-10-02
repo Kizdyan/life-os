@@ -3,9 +3,14 @@ import {
   applyLocalOutcome,
   applyLocalPlan,
   applyRemoteRuntimeRecords,
+  readAllLocalItems,
   readLocalItemsByIds,
   readLocalToday,
 } from './localRuntime';
+import {
+  completeRemoteBootstrapIfAcknowledged,
+  queueLocalBootstrap,
+} from './runtimeBootstrap';
 import {
   HttpRemoteLifeOsGateway,
   queueMutation,
@@ -78,8 +83,15 @@ function queueItemMutation(
 async function tryRemoteSync(): Promise<void> {
   if (!remoteEnabled) return;
   const local = storage();
+
+  // One-time cutover: existing purely-local items enter the same durable,
+  // idempotent outbox. Records already known to the remote store (versioned)
+  // or already represented by a pending mutation are not duplicated.
+  queueLocalBootstrap(local, readAllLocalItems(local));
+
   const gateway = new HttpRemoteLifeOsGateway(remoteApiUrl);
   const result = await syncLocalReplica(local, gateway, (records) => applyRemoteRuntimeRecords(local, records));
+  completeRemoteBootstrapIfAcknowledged(local);
   notifyRuntimeSyncState();
   if (result.conflicts.length) throw new RuntimeConflictError(result.conflicts);
 }
