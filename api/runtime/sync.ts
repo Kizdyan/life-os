@@ -4,26 +4,35 @@ import {
   type RuntimeMutationInput,
   type RuntimeRemoteStore,
 } from './_store';
+import {
+  runtimeSessionConfigFromEnv,
+  runtimeSessionFromRequest,
+} from './_session';
 
 interface SyncRequestBody {
   mutations?: unknown;
   sinceRevision?: unknown;
 }
 
+export interface RuntimeSyncContext {
+  store: RuntimeRemoteStore | null;
+  userId: string | null;
+  configured: boolean;
+}
+
 export async function handleRuntimeSync(
   request: Request,
-  store: RuntimeRemoteStore | null = runtimeStoreFromEnv(),
+  override?: RuntimeSyncContext,
 ): Promise<Response> {
   if (request.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST' });
   }
 
-  if (!store) {
+  const context = override ?? await contextFromEnv(request);
+  if (!context.configured || !context.store) {
     return json({ error: 'runtime_not_configured' }, 503);
   }
-
-  const accessToken = bearerToken(request);
-  if (!accessToken) {
+  if (!context.userId) {
     return json({ error: 'authentication_required' }, 401);
   }
 
@@ -53,12 +62,12 @@ export async function handleRuntimeSync(
   try {
     const results = [];
     for (const mutation of mutations) {
-      results.push(await store.apply(accessToken, mutation));
+      results.push(await context.store.apply(context.userId, mutation));
     }
 
     const [records, storeRevision] = await Promise.all([
-      store.listSince(accessToken, sinceRevision),
-      store.revision(accessToken),
+      context.store.listSince(context.userId, sinceRevision),
+      context.store.revision(context.userId),
     ]);
 
     return json({ storeRevision, results, records });
@@ -74,10 +83,12 @@ export default {
   },
 };
 
-function bearerToken(request: Request): string | null {
-  const authorization = request.headers.get('authorization') ?? '';
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
+async function contextFromEnv(request: Request): Promise<RuntimeSyncContext> {
+  const store = runtimeStoreFromEnv();
+  const sessionConfig = runtimeSessionConfigFromEnv();
+  if (!store || !sessionConfig) return { store, userId: null, configured: false };
+  const session = await runtimeSessionFromRequest(request, sessionConfig);
+  return { store, userId: session?.userId ?? null, configured: true };
 }
 
 function normalizeRevision(value: unknown): number | null {
