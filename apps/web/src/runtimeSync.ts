@@ -118,13 +118,13 @@ export async function syncLocalReplica(
 }
 
 export class HttpRemoteLifeOsGateway implements RemoteLifeOsGateway {
-  constructor(private readonly baseUrl: string, private readonly fetchImpl: typeof fetch = fetch) {}
+  constructor(private readonly baseUrl = '', private readonly fetchImpl: typeof fetch = fetch) {}
 
   async sync(input: { mutations: RuntimeSyncMutation[]; sinceRevision: number }): Promise<RuntimeSyncResponse> {
     const base = this.baseUrl.trim().replace(/\/+$/, '');
-    if (!base) throw new Error('Remote Life OS API URL is required');
+    const endpoint = base ? `${base}/api/runtime/sync` : '/api/runtime/sync';
 
-    const response = await this.fetchImpl(`${base}/api/runtime/sync`, {
+    const response = await this.fetchImpl(endpoint, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
