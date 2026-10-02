@@ -76,6 +76,7 @@ export * from './yandex-lease-store';
 export * from './media-ingestion';
 export * from './capcut-work-package';
 export * from './media-pipeline';
+export * from './media-candidate-store';
 export * from './media-jobs';
 export * from './style-memory';
 export * from './media-orchestrator';
