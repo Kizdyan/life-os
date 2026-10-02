@@ -22,6 +22,10 @@ interface LocalState {
 
 const KEY = 'life-os:local-runtime:v1';
 
+export function readAllLocalItems(storage: StorageLike): Item[] {
+  return read(storage).items.map((item) => ({ ...item }));
+}
+
 export function readLocalToday(storage: StorageLike, date: string): Item[] {
   return read(storage).items
     .filter((item) => item.planned_start?.slice(0, 10) === date)
