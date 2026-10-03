@@ -19,7 +19,7 @@ Legacy `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` remain migration co
 
 ### 2. Same-origin Life OS API
 
-The API owns authentication, sync semantics and backend credentials. The browser never receives a database service key.
+The API owns authentication, sync semantics and backend credentials. The browser never receives a database service/secret key.
 
 Required server-only configuration:
 
@@ -27,7 +27,9 @@ Required server-only configuration:
 - `LIFE_OS_OWNER_PASSCODE_SHA256` — SHA-256 of the owner connection passcode.
 - `LIFE_OS_SESSION_SECRET` — random secret of at least 32 characters used to seal the HttpOnly session cookie.
 - `LIFE_OS_DATA_URL` — PostgreSQL/PostgREST-compatible data endpoint for the first adapter.
-- `LIFE_OS_SERVICE_KEY` — server-only key used by the first database adapter. Never expose it through `VITE_*`, source code or client logs.
+- `LIFE_OS_SERVICE_KEY` — server-only elevated database key. Prefer a current Supabase `sb_secret_*` key. A legacy `service_role` JWT remains compatibility-only. Never expose either form through `VITE_*`, source code or client logs.
+
+For current Supabase secret keys, the server adapter sends the credential as the `apikey` header only. Legacy service-role JWTs retain the bearer header for backwards compatibility. Do not put an `sb_secret_*` key into `Authorization: Bearer`.
 
 The owner passcode creates a sealed `HttpOnly; Secure; SameSite=Strict` Life OS session. The passcode itself is not persisted by the browser.
 
@@ -49,6 +51,10 @@ Apply, in order, to a **dedicated Life OS database**:
 1. existing Life OS migrations required by the selected deployment;
 2. `supabase/migrations/20261002_autonomous_runtime_v1.sql`;
 3. `supabase/migrations/20261002_autonomous_runtime_server_rpc.sql`.
+
+The server-RPC migration grants `service_role` access only to the runtime tables, audit identity sequence and RPC required by the adapter. This is intentional: current Supabase projects do not necessarily auto-grant new public-schema tables to Data API roles.
+
+Run `supabase/tests/autonomous_runtime_v1.sql` against the dedicated database and run Supabase security/performance advisors before production cutover.
 
 Do not apply Life OS runtime migrations to DiveM integration-test or DiveM production.
 
@@ -84,6 +90,8 @@ npm run web:build
 The deploy artifact must contain `apps/web/dist/index.html`.
 
 GitHub `deploy-readiness` also rejects AppDeploy domains/SDK imports in production source and configuration.
+
+For the complete provisioning, cutover, offline/two-client acceptance, rollback and AppDeploy-retirement procedure, follow `docs/AUTONOMOUS_RUNTIME_RUNBOOK.md`.
 
 ## Backup and restore
 
