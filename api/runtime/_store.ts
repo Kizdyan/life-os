@@ -110,9 +110,10 @@ export interface SupabaseServiceRuntimeStoreConfig {
 }
 
 /**
- * Server-only adapter for the personal Life OS deployment. The service key
+ * Server-only adapter for the personal Life OS deployment. The elevated key
  * never leaves the API runtime; the principal is the user id from the sealed
- * Life OS owner session.
+ * Life OS owner session. Modern sb_secret_* keys are sent only as `apikey`;
+ * legacy service_role JWTs keep the Authorization header for compatibility.
  */
 export class SupabaseServiceRuntimeStore implements RuntimeRemoteStore {
   private readonly fetchImpl: typeof fetch;
@@ -162,11 +163,14 @@ export class SupabaseServiceRuntimeStore implements RuntimeRemoteStore {
   }
 
   private serviceHeaders(): Record<string, string> {
-    return {
+    const headers: Record<string, string> = {
       apikey: this.config.serviceKey,
-      Authorization: `Bearer ${this.config.serviceKey}`,
       'Content-Type': 'application/json',
     };
+    if (!this.config.serviceKey.startsWith('sb_secret_')) {
+      headers.Authorization = `Bearer ${this.config.serviceKey}`;
+    }
+    return headers;
   }
 
   private url(path: string): string {
