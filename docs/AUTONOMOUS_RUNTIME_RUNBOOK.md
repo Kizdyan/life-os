@@ -19,6 +19,7 @@ npm install
 npm test
 npm run typecheck
 npm run api:typecheck
+npm run api:smoke
 npm run web:build
 ```
 
@@ -26,6 +27,7 @@ Required result:
 
 - all tests pass;
 - both TypeScript checks pass;
+- the emitted API routes load and respond under the Node ESM runtime;
 - `apps/web/dist/index.html` exists;
 - GitHub `core`, `web`, `Media Brain CI` and `deploy-readiness` are green;
 - production source/config contains no AppDeploy production dependency.

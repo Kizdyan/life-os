@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SupabaseServiceRuntimeStore,
   type RuntimeMutationInput,
-} from './_store';
+} from './_store.js';
 
 const mutation: RuntimeMutationInput = {
   mutationId: 'm-1',

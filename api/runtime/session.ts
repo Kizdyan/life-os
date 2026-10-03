@@ -1,4 +1,4 @@
-import { json } from '../_media-session';
+import { json } from '../_media-session.js';
 import {
   clearRuntimeSessionCookie,
   createRuntimeSessionCookie,
@@ -6,7 +6,7 @@ import {
   runtimeSessionFromRequest,
   verifyOwnerPasscode,
   type RuntimeSessionConfig,
-} from './_session';
+} from './_session.js';
 
 export async function handleRuntimeSession(
   request: Request,

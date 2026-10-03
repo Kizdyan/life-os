@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { handleRuntimeSync, type RuntimeSyncContext } from './sync';
+import { handleRuntimeSync, type RuntimeSyncContext } from './sync.js';
 import type {
   RuntimeMutationInput,
   RuntimeMutationResult,
   RuntimeRecordDto,
   RuntimeRemoteStore,
-} from './_store';
+} from './_store.js';
 
 class FakeStore implements RuntimeRemoteStore {
   applied: RuntimeMutationInput[] = [];

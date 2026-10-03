@@ -1,4 +1,4 @@
-import{buildYandexAuthorizationUrl,createPkceChallenge}from'../../../../packages/core/src/yandex-oauth';import{env,json,randomUrlSafe,seal,setCookie}from'../../../_media-session';
+import{buildYandexAuthorizationUrl,createPkceChallenge}from'../../../../packages/core/src/yandex-oauth.js';import{env,json,randomUrlSafe,seal,setCookie}from'../../../_media-session.js';
 
 type OAuthSession={state:string;verifier:string;createdAt:number;redirectUri:string};
 

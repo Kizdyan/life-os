@@ -1,4 +1,4 @@
-import{assertYandexOAuthState,exchangeYandexAuthorizationCode}from'../../../../packages/core/src/yandex-oauth';import{clearCookie,cookie,env,json,seal,setCookie,unseal}from'../../../_media-session';
+import{assertYandexOAuthState,exchangeYandexAuthorizationCode}from'../../../../packages/core/src/yandex-oauth.js';import{clearCookie,cookie,env,json,seal,setCookie,unseal}from'../../../_media-session.js';
 
 type OAuthSession={state:string;verifier:string;createdAt:number;redirectUri:string};
 type TokenSession={accessToken:string;refreshToken:string|null;createdAt:number;expiresAt:number|null};

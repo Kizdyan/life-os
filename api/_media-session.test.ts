@@ -1,4 +1,4 @@
-import{describe,expect,it}from'vitest';import{clearCookie,cookie,json,randomUrlSafe,seal,setCookie,unseal}from'./_media-session';
+import{describe,expect,it}from'vitest';import{clearCookie,cookie,json,randomUrlSafe,seal,setCookie,unseal}from'./_media-session.js';
 
 describe('media server session helpers',()=>{
   it('seals and unseals server-only session payloads',async()=>{const secret='12345678901234567890123456789012',payload={accessToken:'secret-token',createdAt:123};const sealed=await seal(payload,secret);expect(sealed).not.toContain('secret-token');await expect(unseal(sealed,secret)).resolves.toEqual(payload)});

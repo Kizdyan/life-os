@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { handleRuntimeSession } from './session';
-import type { RuntimeSessionConfig } from './_session';
+import { handleRuntimeSession } from './session.js';
+import type { RuntimeSessionConfig } from './_session.js';
 
 async function config(): Promise<RuntimeSessionConfig> {
   const bytes = new TextEncoder().encode('correct horse battery staple');

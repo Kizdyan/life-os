@@ -1,13 +1,13 @@
-import { json } from '../_media-session';
+import { json } from '../_media-session.js';
 import {
   runtimeStoreFromEnv,
   type RuntimeMutationInput,
   type RuntimeRemoteStore,
-} from './_store';
+} from './_store.js';
 import {
   runtimeSessionConfigFromEnv,
   runtimeSessionFromRequest,
-} from './_session';
+} from './_session.js';
 
 interface SyncRequestBody {
   mutations?: unknown;

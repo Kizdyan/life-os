@@ -1,4 +1,4 @@
-import{afterEach,describe,expect,it}from'vitest';import handler from'./status';import{seal}from'../_media-session';
+import{afterEach,describe,expect,it}from'vitest';import handler from'./status.js';import{seal}from'../_media-session.js';
 const original={...process.env};afterEach(()=>{process.env={...original}});
 
 describe('Media Brain status endpoint',()=>{
