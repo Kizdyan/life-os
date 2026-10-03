@@ -55,23 +55,21 @@ The SQL verification must complete without an exception.
 
 Run Supabase security and performance advisors after migration and resolve any runtime-related warning before production cutover.
 
-## 3. Create production secrets
+## 3. Create production secret
 
-Create and store these values only in the production host secret store:
+For the current `life-os-web` Vercel adapter, the repository pins only non-secret deployment configuration (`LIFE_OS_DATA_URL`, `LIFE_OS_OWNER_ID`, the owner passcode hash and remote-mode build flag). The host secret store therefore needs only:
 
-- `LIFE_OS_OWNER_ID` — stable UUID for the Life OS owner.
-- `LIFE_OS_OWNER_PASSCODE_SHA256` — lowercase SHA-256 hex of the owner connection passcode.
-- `LIFE_OS_SESSION_SECRET` — cryptographically random secret, at least 32 characters.
-- `LIFE_OS_DATA_URL` — dedicated Life OS Supabase project URL.
 - `LIFE_OS_SERVICE_KEY` — preferably a modern Supabase `sb_secret_*` key; legacy `service_role` JWT is compatibility only.
 
 The runtime adapter sends a modern `sb_secret_*` key only in the `apikey` header. Legacy service-role JWTs keep the bearer header for compatibility.
 
-Never place `LIFE_OS_SERVICE_KEY`, the raw passcode, or `LIFE_OS_SESSION_SECRET` in the browser bundle, repository, logs, screenshots or `VITE_*` variables.
+If `LIFE_OS_SESSION_SECRET` is not explicitly set, the owner-session encryption key is domain-separated and derived server-side from `LIFE_OS_SERVICE_KEY`; rotating the service key therefore invalidates existing owner sessions, which is an intentional fail-closed behavior.
+
+Never place `LIFE_OS_SERVICE_KEY`, the raw owner passcode or a session secret in the browser bundle, logs, screenshots or `VITE_*` variables.
 
 ## 4. Configure the public client
 
-Production build-time configuration:
+The Vercel adapter builds the client with remote runtime enabled:
 
 ```text
 VITE_LIFE_OS_REMOTE_ENABLED=true
@@ -87,11 +85,12 @@ Deploy the static web client plus `api/**` routes to an HTTPS host that supports
 
 Vercel is an initial deployment adapter, not canonical infrastructure. Another compatible host must be able to replace it without migrating Life OS data.
 
-For the `life-os-web` Vercel project, leave **Root Directory** empty (repository root). The root `vercel.json` sets `npm run web:build`, the `apps/web/dist` output directory and the SPA fallback, and the root `api/**` directory supplies the server functions. Setting Root Directory to `apps/web` skips that configuration and can fail with `STATIC_BUILD_NO_OUT_DIR` even when Vite succeeds. Redeploy the preview after correcting the project setting.
+For the `life-os-web` Vercel project, leave **Root Directory** empty (repository root). The root `vercel.json` sets the web build, `apps/web/dist`, runtime non-secret configuration and the SPA fallback, while the root `api/**` directory supplies the server functions. Keep the deployment within the Hobby function-count limit; runtime health is exposed through the existing session function rather than a separate function.
 
 After deployment, verify:
 
 - `/` loads the client;
+- `GET /api/runtime/session?health=1` returns `configured:true`, `databaseReachable:true` and a numeric `storeRevision`;
 - `GET /api/runtime/session` returns configured-but-unauthenticated state before login;
 - owner passcode login returns a sealed `HttpOnly; Secure; SameSite=Strict` session cookie;
 - `/api/runtime/sync` rejects requests without that owner session;
@@ -104,11 +103,11 @@ Before creating new production data, preserve/export the current local Life OS s
 On the production client:
 
 1. authenticate the owner session;
-2. enable the remote runtime;
-3. sync the local replica/outbox to the dedicated database;
-4. confirm the server revision becomes greater than zero when data exists;
-5. confirm records appear under the single expected `user_id`;
-6. confirm mutation receipts and audit rows are created.
+2. sync the local replica/outbox to the dedicated database;
+3. confirm the server revision becomes greater than zero when data exists;
+4. confirm records appear under the single expected `user_id`;
+5. confirm mutation receipts and audit rows are created;
+6. verify Sleep & Energy records rehydrate through the same canonical revision stream as normal Life OS items.
 
 Do not delete the local rollback copy after the first successful sync.
 
@@ -118,9 +117,9 @@ Run this on the iPhone/PWA:
 
 1. load Life OS online and complete a successful sync;
 2. disable network access;
-3. create/edit at least one Life OS item and one outcome;
+3. create/edit at least one Life OS item and one outcome plus a Sleep & Energy measurement;
 4. reload/reopen the client while still offline;
-5. verify the changes remain visible and are marked pending/offline rather than lost;
+5. verify the changes remain visible and are pending/offline rather than lost;
 6. restore network access;
 7. run sync;
 8. verify each local mutation is applied exactly once and the outbox clears only after acknowledgment;
@@ -172,7 +171,7 @@ After the acceptance writes are synced:
 2. if possible, clear only ephemeral runtime state without deleting the explicit rollback export;
 3. sign in from a second device/browser profile;
 4. sync from revision zero;
-5. verify canonical records, versions and relevant audit history rehydrate correctly.
+5. verify canonical records, versions, Sleep & Energy and relevant audit history rehydrate correctly.
 
 This proves the durable database — not one browser or hosting provider — owns recoverable truth.
 
@@ -180,6 +179,7 @@ This proves the durable database — not one browser or hosting provider — own
 
 Before declaring cutover complete, verify:
 
+- runtime health reports the database reachable;
 - runtime store revision is readable;
 - expected record counts and user ownership are correct;
 - mutation receipts prevent duplicate replay;
@@ -224,6 +224,7 @@ AppDeploy is irrelevant to production only after all of the following are verifi
 - two-client stale writes conflict explicitly;
 - Erika changes persist through the durable API;
 - audit/undo works after reload;
+- Sleep & Energy survives second-device rehydration;
 - Media Brain/Yandex works independently;
 - a fresh/second client rehydrates canonical state from the dedicated database;
 - backup/export is verified.
