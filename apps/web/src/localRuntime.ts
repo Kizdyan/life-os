@@ -1,5 +1,6 @@
 import type { Item } from './types';
 import type { RuntimeSyncRecord } from './runtimeSync';
+import { applyRemoteSleepRecords } from './sleepEnergy';
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -146,6 +147,8 @@ export function undoLocalOutcome(
 
 export function applyRemoteRuntimeRecords(storage: StorageLike, records: RuntimeSyncRecord[]): void {
   if (!records.length) return;
+  applyRemoteSleepRecords(storage, records);
+
   const state = read(storage);
   const byId = new Map(state.items.map((item) => [item.id, item]));
 
