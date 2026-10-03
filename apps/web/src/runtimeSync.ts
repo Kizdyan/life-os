@@ -102,6 +102,14 @@ export function currentStoreRevision(storage: SyncStorage): number {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+export function expectedVersionAfterPendingMutation(
+  pending: RuntimeSyncMutation | undefined,
+  currentVersion: number | null,
+): number | null {
+  if (!pending) return currentVersion;
+  return (pending.expectedVersion ?? 0) + 1;
+}
+
 export function resolveRuntimeConflicts(
   storage: SyncStorage,
   resolution: RuntimeConflictResolution,
