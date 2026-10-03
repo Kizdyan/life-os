@@ -161,3 +161,15 @@ revoke all on function public.life_runtime_apply_mutation_server(uuid,text,text,
   from public, anon, authenticated;
 grant execute on function public.life_runtime_apply_mutation_server(uuid,text,text,text,integer,jsonb,boolean)
   to service_role;
+
+-- New Supabase projects no longer expose public-schema tables through the Data API
+-- by default. Secret keys map to the service_role Postgres role, but Postgres
+-- grants are still evaluated before RLS/BYPASSRLS, so grant only the runtime
+-- objects this server adapter needs explicitly.
+grant select, insert, update, delete on table
+  public.life_runtime_state,
+  public.life_runtime_records,
+  public.life_runtime_mutations,
+  public.life_runtime_audit
+  to service_role;
+grant usage, select on sequence public.life_runtime_audit_audit_id_seq to service_role;
