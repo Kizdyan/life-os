@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { handleRuntimeSession } from './session.js';
 import type { RuntimeSessionConfig } from './_session.js';
+import type { RuntimeRemoteStore } from './_store.js';
 
 async function config(): Promise<RuntimeSessionConfig> {
   const bytes = new TextEncoder().encode('correct horse battery staple');
@@ -10,6 +11,14 @@ async function config(): Promise<RuntimeSessionConfig> {
     userId: '11111111-1111-1111-1111-111111111111',
     passcodeSha256: hash,
     sessionSecret: 'this-is-a-long-server-only-session-secret-12345',
+  };
+}
+
+function store(revision = 7): RuntimeRemoteStore {
+  return {
+    async apply() { throw new Error('not used'); },
+    async listSince() { return []; },
+    async revision() { return revision; },
   };
 }
 
@@ -52,6 +61,43 @@ describe('/api/runtime/session', () => {
 
     expect(status.status).toBe(200);
     expect(await status.json()).toEqual({ configured: true, authenticated: true });
+  });
+
+  it('checks canonical database health without a separate serverless route', async () => {
+    const response = await handleRuntimeSession(
+      new Request('https://life.example/api/runtime/session?health=1'),
+      await config(),
+      store(12),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      configured: true,
+      authenticated: false,
+      databaseReachable: true,
+      storeRevision: 12,
+    });
+  });
+
+  it('reports database health failure without leaking backend details', async () => {
+    const failing: RuntimeRemoteStore = {
+      async apply() { throw new Error('not used'); },
+      async listSince() { return []; },
+      async revision() { throw new Error('secret backend detail'); },
+    };
+    const response = await handleRuntimeSession(
+      new Request('https://life.example/api/runtime/session?health=1'),
+      await config(),
+      failing,
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      configured: true,
+      authenticated: false,
+      databaseReachable: false,
+      storeRevision: null,
+    });
   });
 
   it('clears the owner session explicitly', async () => {
