@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { applyRemoteRuntimeRecords } from './localRuntime';
 import { applyRemoteSleepRecords, newSleepEntry, readSleepEntry, saveSleepEntry, suggestedSleepWindows, type SleepStorage } from './sleepEnergy';
 import type { RuntimeSyncRecord } from './runtimeSync';
 
@@ -19,7 +20,7 @@ describe('durable sleep runtime', () => {
     expect(entry.id).toBe('sleep:2026-10-03');
   });
 
-  it('rehydrates canonical sleep settings with their server version', () => {
+  it('rehydrates canonical sleep settings through the unified runtime apply path', () => {
     const storage = new MemoryStorage();
     const record: RuntimeSyncRecord = {
       id: 'sleep:2026-10-03',
@@ -43,7 +44,7 @@ describe('durable sleep runtime', () => {
       updatedAt: '2026-10-03T07:35:00Z',
     };
 
-    applyRemoteSleepRecords(storage, [record]);
+    applyRemoteRuntimeRecords(storage, [record]);
     expect(readSleepEntry(storage, '2026-10-03')).toMatchObject({
       id: 'sleep:2026-10-03',
       durationMinutes: 450,
