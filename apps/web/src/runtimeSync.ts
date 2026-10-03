@@ -39,6 +39,8 @@ export interface RuntimeConflictState {
   currentVersion: number | null;
 }
 
+export type RuntimeConflictResolution = 'accept_remote' | 'retry_local';
+
 export interface RuntimeSyncResponse {
   storeRevision: number;
   results: Array<{
@@ -100,6 +102,47 @@ export function currentStoreRevision(storage: SyncStorage): number {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+export function resolveRuntimeConflicts(
+  storage: SyncStorage,
+  resolution: RuntimeConflictResolution,
+  createMutationId: () => string = () => crypto.randomUUID(),
+  now: () => string = () => new Date().toISOString(),
+): number {
+  const conflicts = readRuntimeConflicts(storage);
+  if (!conflicts.length) return 0;
+
+  const conflictByMutation = new Map(conflicts.map((conflict) => [conflict.mutationId, conflict]));
+  let resolved = 0;
+  const nextOutbox: RuntimeSyncMutation[] = [];
+
+  for (const mutation of pendingMutations(storage)) {
+    const conflict = conflictByMutation.get(mutation.mutationId);
+    if (!conflict) {
+      nextOutbox.push(mutation);
+      continue;
+    }
+
+    resolved += 1;
+    if (resolution === 'accept_remote') continue;
+
+    const replacement: RuntimeSyncMutation = {
+      ...mutation,
+      mutationId: createMutationId(),
+      expectedVersion: conflict.currentVersion,
+      clientUpdatedAt: now(),
+    };
+    validateMutation(replacement);
+    nextOutbox.push(replacement);
+  }
+
+  storage.setItem(OUTBOX_KEY, JSON.stringify(nextOutbox));
+  // Conflict state describes the previous outbox generation. Orphan entries have
+  // no local mutation left to resolve, so keeping them would create a permanent
+  // false-positive conflict banner.
+  storage.setItem(CONFLICT_KEY, JSON.stringify([]));
+  return resolved;
+}
+
 export async function syncLocalReplica(
   storage: SyncStorage,
   gateway: RemoteLifeOsGateway,
@@ -109,7 +152,18 @@ export async function syncLocalReplica(
   const sinceRevision = currentStoreRevision(storage);
   const response = await gateway.sync({ mutations, sinceRevision });
 
-  applyRecords(response.records);
+  // A stale client can already be at the server's current store revision. In
+  // that case listSince(sinceRevision) is empty even though a conflict result
+  // contains the canonical record that must replace the stale local replica.
+  // Seed with conflict records, then let the end-of-request snapshot win when
+  // the same record also appears there.
+  const canonicalRecords = new Map<string, RuntimeSyncRecord>();
+  for (const result of response.results) {
+    if (result.status !== 'conflict' || !result.record) continue;
+    canonicalRecords.set(recordKey(result.record), result.record);
+  }
+  for (const record of response.records) canonicalRecords.set(recordKey(record), record);
+  applyRecords([...canonicalRecords.values()]);
 
   const acknowledged = new Set(
     response.results
@@ -152,6 +206,10 @@ export class HttpRemoteLifeOsGateway implements RemoteLifeOsGateway {
   }
 }
 
+function recordKey(record: RuntimeSyncRecord): string {
+  return `${record.userId}\u0000${record.id}`;
+}
+
 function validateMutation(mutation: RuntimeSyncMutation): void {
   if (!mutation.mutationId.trim()) throw new Error('mutationId is required');
   if (!mutation.userId.trim()) throw new Error('userId is required');
@@ -167,6 +225,8 @@ function isMutation(value: unknown): value is RuntimeSyncMutation {
     && typeof candidate.kind === 'string'
     && (candidate.expectedVersion === null || typeof candidate.expectedVersion === 'number')
     && typeof candidate.payload === 'object'
+    && candidate.payload !== null
+    && !Array.isArray(candidate.payload)
     && typeof candidate.deleted === 'boolean'
     && typeof candidate.clientUpdatedAt === 'string';
 }
