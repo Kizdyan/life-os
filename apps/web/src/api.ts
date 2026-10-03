@@ -6,13 +6,16 @@ import {
   readAllLocalItems,
   readLocalItemsByIds,
   readLocalToday,
+  undoLocalOutcome,
 } from './localRuntime';
 import {
   completeRemoteBootstrapIfAcknowledged,
   queueLocalBootstrap,
 } from './runtimeBootstrap';
 import {
+  expectedVersionAfterPendingMutation,
   HttpRemoteLifeOsGateway,
+  pendingMutations,
   queueMutation,
   resolveRuntimeConflicts as resolveQueuedRuntimeConflicts,
   syncLocalReplica,
@@ -31,6 +34,17 @@ export const backendMode = remoteEnabled
   : legacySupabaseUrl && legacySupabaseKey
     ? 'legacy-supabase'
     : 'local';
+
+export interface OutcomeSyncMeta {
+  currentMutationId: string | null;
+  successorMutationId: string | null;
+}
+
+export interface LocalOutcomeResult {
+  current: Item;
+  successor: Item | null;
+  sync: OutcomeSyncMeta;
+}
 
 export class RuntimeConflictError extends Error {
   constructor(readonly conflicts: RuntimeConflictState[]) {
@@ -68,6 +82,7 @@ function queueItemMutation(
   item: Item,
   mutationId: string,
   expectedVersion: number | null,
+  deleted = false,
 ): void {
   const mutation: RuntimeSyncMutation = {
     mutationId,
@@ -76,7 +91,7 @@ function queueItemMutation(
     kind: 'life_item',
     expectedVersion,
     payload: itemPayload(item),
-    deleted: false,
+    deleted,
     clientUpdatedAt: new Date().toISOString(),
   };
   queueMutation(storage(), mutation);
@@ -148,19 +163,31 @@ export async function outcome(item: Item, command: 'complete' | 'not_complete') 
   if (backendMode === 'remote') {
     const previousVersion = item.version ?? null;
     const result = applyLocalOutcome(storage(), item, command, () => crypto.randomUUID());
-    queueItemMutation(result.current, crypto.randomUUID(), previousVersion);
-    if (result.successor) queueItemMutation(result.successor, crypto.randomUUID(), null);
+    const currentMutationId = crypto.randomUUID();
+    let successorMutationId: string | null = null;
+    queueItemMutation(result.current, currentMutationId, previousVersion);
+    if (result.successor) {
+      successorMutationId = crypto.randomUUID();
+      queueItemMutation(result.successor, successorMutationId, null);
+    }
     try {
       await tryRemoteSync();
     } catch (cause) {
       if (cause instanceof RuntimeConflictError) throw cause;
       // Network/server outage: mutation remains in durable outbox for retry.
     }
-    return result;
+    return {
+      ...result,
+      sync: { currentMutationId, successorMutationId },
+    } satisfies LocalOutcomeResult;
   }
 
   if (backendMode === 'local') {
-    return applyLocalOutcome(storage(), item, command, () => crypto.randomUUID());
+    const result = applyLocalOutcome(storage(), item, command, () => crypto.randomUUID());
+    return {
+      ...result,
+      sync: { currentMutationId: null, successorMutationId: null },
+    } satisfies LocalOutcomeResult;
   }
 
   const carry = command === 'not_complete' && !!item.carry_forward;
@@ -181,6 +208,52 @@ export async function outcome(item: Item, command: 'complete' | 'not_complete') 
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json();
+}
+
+export async function undoOutcome(
+  previous: Item,
+  successorId: string | null,
+  syncMeta: OutcomeSyncMeta,
+): Promise<void> {
+  if (backendMode === 'local') {
+    undoLocalOutcome(storage(), previous, successorId);
+    return;
+  }
+
+  if (backendMode !== 'remote') {
+    throw new Error('Undo для legacy backend не поддерживается; обнови Life OS до автономного runtime.');
+  }
+
+  const local = storage();
+  const beforeUndoOutbox = pendingMutations(local);
+  const currentPending = syncMeta.currentMutationId
+    ? beforeUndoOutbox.find((mutation) => mutation.mutationId === syncMeta.currentMutationId)
+    : undefined;
+  const successorPending = syncMeta.successorMutationId
+    ? beforeUndoOutbox.find((mutation) => mutation.mutationId === syncMeta.successorMutationId)
+    : undefined;
+
+  const undone = undoLocalOutcome(local, previous, successorId);
+  const restoreExpectedVersion = expectedVersionAfterPendingMutation(currentPending, undone.currentVersion);
+  queueItemMutation(undone.restored, crypto.randomUUID(), restoreExpectedVersion);
+
+  if (undone.removedSuccessor) {
+    const successorVersion = typeof undone.removedSuccessor.version === 'number'
+      ? undone.removedSuccessor.version
+      : null;
+    const deleteExpectedVersion = expectedVersionAfterPendingMutation(successorPending, successorVersion);
+    queueItemMutation(undone.removedSuccessor, crypto.randomUUID(), deleteExpectedVersion, true);
+  }
+
+  notifyRuntimeSyncState();
+  try {
+    await tryRemoteSync();
+  } catch (cause) {
+    if (cause instanceof RuntimeConflictError) throw cause;
+    // Compensation remains in the durable outbox. This is deliberate: even if
+    // the original request was partially applied before a network failure, the
+    // queued inverse mutation preserves the user's explicit undo intent.
+  }
 }
 
 export type PlanInput = {
