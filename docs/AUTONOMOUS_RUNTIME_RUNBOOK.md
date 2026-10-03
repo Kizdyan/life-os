@@ -85,6 +85,8 @@ Deploy the static web client plus `api/**` routes to an HTTPS host that supports
 
 Vercel is an initial deployment adapter, not canonical infrastructure. Another compatible host must be able to replace it without migrating Life OS data.
 
+For the `life-os-web` Vercel project, leave **Root Directory** empty (repository root). The root `vercel.json` sets `npm run web:build`, the `apps/web/dist` output directory and the SPA fallback, and the root `api/**` directory supplies the server functions. Setting Root Directory to `apps/web` skips that configuration and can fail with `STATIC_BUILD_NO_OUT_DIR` even when Vite succeeds. Redeploy the preview after correcting the project setting.
+
 After deployment, verify:
 
 - `/` loads the client;

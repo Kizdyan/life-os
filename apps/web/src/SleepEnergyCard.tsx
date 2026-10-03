@@ -16,11 +16,11 @@ export default function SleepEnergyCard({ date }: { date: string }) {
 
   function persist() {
     const numericHours = Number(hours.replace(',', '.'));
-    const window = windows.find((candidate) => candidate.label === selected) ?? windows[0];
-    if (!window) { setError('Сначала укажи длительность сна'); return; }
+    const sleepWindow = windows.find((candidate) => candidate.label === selected) ?? windows[0];
+    if (!sleepWindow) { setError('Сначала укажи длительность сна'); return; }
     try {
-      saveSleepEntry(localStorage, newSleepEntry({ date, hours: numericHours, window, energy, sleepQuality: quality }));
-      setSelected(window.label);
+      saveSleepEntry(localStorage, newSleepEntry({ date, hours: numericHours, window: sleepWindow, energy, sleepQuality: quality }));
+      setSelected(sleepWindow.label);
       setSaved(true);
       setError('');
       window.dispatchEvent(new Event('lifeos-life-sensor'));
