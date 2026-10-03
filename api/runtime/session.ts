@@ -7,16 +7,62 @@ import {
   verifyOwnerPasscode,
   type RuntimeSessionConfig,
 } from './_session.js';
+import { runtimeStoreFromEnv, type RuntimeRemoteStore } from './_store.js';
 
 export async function handleRuntimeSession(
   request: Request,
   config: RuntimeSessionConfig | null = runtimeSessionConfigFromEnv(),
+  store: RuntimeRemoteStore | null = runtimeStoreFromEnv(),
 ): Promise<Response> {
-  if (!config) return json({ configured: false, authenticated: false }, 503);
+  const healthRequested = request.method === 'GET'
+    && new URL(request.url).searchParams.get('health') === '1';
+
+  if (!config) {
+    if (healthRequested) {
+      return json({
+        configured: false,
+        authenticated: false,
+        databaseReachable: false,
+        storeRevision: null,
+      }, 503);
+    }
+    return json({ configured: false, authenticated: false }, 503);
+  }
 
   if (request.method === 'GET') {
     const session = await runtimeSessionFromRequest(request, config);
-    return json({ configured: true, authenticated: Boolean(session) });
+    const authenticated = Boolean(session);
+
+    if (!healthRequested) {
+      return json({ configured: true, authenticated });
+    }
+
+    if (!store) {
+      return json({
+        configured: false,
+        authenticated,
+        databaseReachable: false,
+        storeRevision: null,
+      }, 503);
+    }
+
+    try {
+      const storeRevision = await store.revision(config.userId);
+      return json({
+        configured: true,
+        authenticated,
+        databaseReachable: true,
+        storeRevision,
+      });
+    } catch (error) {
+      console.error('runtime health check failed', error);
+      return json({
+        configured: true,
+        authenticated,
+        databaseReachable: false,
+        storeRevision: null,
+      }, 503);
+    }
   }
 
   if (request.method === 'POST') {
