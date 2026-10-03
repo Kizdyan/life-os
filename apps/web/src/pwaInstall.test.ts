@@ -41,6 +41,10 @@ describe('iPhone PWA shell', () => {
     expect(serviceWorker).toContain('self.clients.claim()');
   });
 
+  it('falls back to the installed shell when a protected preview returns a non-success response', () => {
+    expect(serviceWorker).toContain("return caches.match('/').then((cached)=>cached||response)");
+  });
+
   it('respects iPhone safe areas and touch ergonomics', () => {
     expect(css).toContain('env(safe-area-inset-top)');
     expect(css).toContain('env(safe-area-inset-bottom)');
