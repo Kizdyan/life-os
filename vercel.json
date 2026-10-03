@@ -2,8 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install",
-  "buildCommand": "npm run web:build",
+  "buildCommand": "VITE_LIFE_OS_REMOTE_ENABLED=true npm run web:build",
   "outputDirectory": "apps/web/dist",
+  "env": {
+    "LIFE_OS_DATA_URL": "https://zhehdbhpkcucgcjwuhxm.supabase.co",
+    "LIFE_OS_OWNER_ID": "b48182e1-0802-4741-89a1-bba6341cb8c8"
+  },
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
