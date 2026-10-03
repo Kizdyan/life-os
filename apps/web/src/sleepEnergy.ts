@@ -1,3 +1,5 @@
+import type { RuntimeSyncRecord } from './runtimeSync';
+
 export interface SleepEnergyEntry {
   id: string;
   date: string;
@@ -10,6 +12,7 @@ export interface SleepEnergyEntry {
   note: string;
   createdAt: string;
   updatedAt: string;
+  version?: number;
 }
 
 export interface SleepWindow {
@@ -58,8 +61,16 @@ export function readSleepEntry(storage: SleepStorage, date: string): SleepEnergy
 
 export function saveSleepEntry(storage: SleepStorage, entry: SleepEnergyEntry): void {
   validate(entry);
-  const entries = readSleepEntries(storage).filter((candidate) => candidate.date !== entry.date);
-  entries.push(entry);
+  const current = readSleepEntries(storage);
+  const previous = current.find((candidate) => candidate.date === entry.date);
+  const next: SleepEnergyEntry = {
+    ...entry,
+    id: entry.id || previous?.id || `sleep:${entry.date}`,
+    createdAt: previous?.createdAt ?? entry.createdAt,
+    version: entry.version ?? previous?.version,
+  };
+  const entries = current.filter((candidate) => candidate.date !== entry.date);
+  entries.push(next);
   entries.sort((a, b) => a.date.localeCompare(b.date));
   storage.setItem(KEY, JSON.stringify(entries));
 }
@@ -82,9 +93,9 @@ export function newSleepEntry(input: {
   sleepQuality?: number | null;
   wellbeing?: number | null;
   note?: string;
-}, now = new Date().toISOString(), id = crypto.randomUUID()): SleepEnergyEntry {
+}, now = new Date().toISOString(), id?: string): SleepEnergyEntry {
   const entry: SleepEnergyEntry = {
-    id,
+    id: id ?? `sleep:${input.date}`,
     date: input.date,
     durationMinutes: durationToMinutes(input.hours),
     sleepStart: input.window.start,
@@ -100,19 +111,82 @@ export function newSleepEntry(input: {
   return entry;
 }
 
+export function sleepEntryPayload(entry: SleepEnergyEntry): Record<string, unknown> {
+  return {
+    entityType: 'sleep_log',
+    date: entry.date,
+    durationMinutes: entry.durationMinutes,
+    sleepStart: entry.sleepStart,
+    wakeTime: entry.wakeTime,
+    energy: entry.energy,
+    sleepQuality: entry.sleepQuality,
+    wellbeing: entry.wellbeing,
+    note: entry.note,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+export function applyRemoteSleepRecords(storage: SleepStorage, records: RuntimeSyncRecord[]): void {
+  const relevant = records.filter((record) => record.kind === 'setting' && record.payload.entityType === 'sleep_log');
+  if (!relevant.length) return;
+
+  let entries = readSleepEntries(storage);
+  for (const record of relevant) {
+    const date = typeof record.payload.date === 'string' ? record.payload.date : '';
+    if (record.deleted) {
+      entries = entries.filter((entry) => entry.id !== record.id && (!date || entry.date !== date));
+      continue;
+    }
+
+    const payload = record.payload;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (typeof payload.durationMinutes !== 'number' || typeof payload.sleepStart !== 'string'
+        || typeof payload.wakeTime !== 'string' || typeof payload.energy !== 'number') continue;
+
+    const previous = entries.find((entry) => entry.date === date);
+    const entry: SleepEnergyEntry = {
+      id: record.id,
+      date,
+      durationMinutes: payload.durationMinutes,
+      sleepStart: payload.sleepStart,
+      wakeTime: payload.wakeTime,
+      energy: payload.energy,
+      sleepQuality: nullableNumber(payload.sleepQuality),
+      wellbeing: nullableNumber(payload.wellbeing),
+      note: typeof payload.note === 'string' ? payload.note : '',
+      createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : previous?.createdAt ?? record.updatedAt,
+      updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : record.updatedAt,
+      version: record.version,
+    };
+    validate(entry);
+    entries = entries.filter((candidate) => candidate.date !== date);
+    entries.push(entry);
+  }
+
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  storage.setItem(KEY, JSON.stringify(entries));
+}
+
 function validate(entry: SleepEnergyEntry): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) throw new Error('Некорректная дата');
   if (!Number.isInteger(entry.durationMinutes) || entry.durationMinutes <= 0 || entry.durationMinutes > 1440) throw new Error('Некорректная длительность сна');
   if (entry.energy < 1 || entry.energy > 10) throw new Error('Энергия должна быть от 1 до 10');
   if (entry.sleepQuality !== null && (entry.sleepQuality < 1 || entry.sleepQuality > 10)) throw new Error('Качество сна должно быть от 1 до 10');
   if (entry.wellbeing !== null && (entry.wellbeing < 1 || entry.wellbeing > 10)) throw new Error('Самочувствие должно быть от 1 до 10');
+  if (entry.version !== undefined && (!Number.isInteger(entry.version) || entry.version < 1)) throw new Error('Некорректная версия записи сна');
 }
 
 function isEntry(value: unknown): value is SleepEnergyEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<SleepEnergyEntry>;
   return typeof entry.id === 'string' && typeof entry.date === 'string' && typeof entry.durationMinutes === 'number'
-    && typeof entry.sleepStart === 'string' && typeof entry.wakeTime === 'string' && typeof entry.energy === 'number';
+    && typeof entry.sleepStart === 'string' && typeof entry.wakeTime === 'string' && typeof entry.energy === 'number'
+    && (entry.version === undefined || (typeof entry.version === 'number' && Number.isInteger(entry.version) && entry.version > 0));
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function clock(minutes: number): string {
