@@ -14,6 +14,12 @@ export interface LocalPlanInput {
   carry_forward?: boolean;
 }
 
+export interface LocalOutcomeUndoResult {
+  restored: Item;
+  currentVersion: number | null;
+  removedSuccessor: Item | null;
+}
+
 interface LocalState {
   schemaVersion: 1;
   items: Item[];
@@ -102,6 +108,40 @@ export function applyLocalOutcome(
 
   write(storage, state);
   return { current, successor };
+}
+
+export function undoLocalOutcome(
+  storage: StorageLike,
+  previous: Item,
+  successorId: string | null,
+): LocalOutcomeUndoResult {
+  const state = read(storage);
+  const currentIndex = state.items.findIndex((candidate) => candidate.id === previous.id);
+  const current = currentIndex >= 0 ? state.items[currentIndex] : null;
+  const currentVersion = typeof current?.version === 'number'
+    ? current.version
+    : typeof previous.version === 'number'
+      ? previous.version
+      : null;
+  const restored: Item = {
+    ...previous,
+    version: currentVersion ?? undefined,
+  };
+
+  if (currentIndex >= 0) state.items[currentIndex] = restored;
+  else state.items.push(restored);
+
+  let removedSuccessor: Item | null = null;
+  if (successorId) {
+    const successorIndex = state.items.findIndex((candidate) => candidate.id === successorId);
+    if (successorIndex >= 0) {
+      removedSuccessor = state.items[successorIndex];
+      state.items.splice(successorIndex, 1);
+    }
+  }
+
+  write(storage, state);
+  return { restored, currentVersion, removedSuccessor };
 }
 
 export function applyRemoteRuntimeRecords(storage: StorageLike, records: RuntimeSyncRecord[]): void {
