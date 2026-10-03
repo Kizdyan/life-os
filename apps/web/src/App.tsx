@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { backendMode, outcome, today } from './api';
+import { backendMode, outcome, today, undoOutcome, type OutcomeSyncMeta } from './api';
 import { cacheToday, cachedToday, flush } from './offline';
 import { enqueueOutcome } from './outbox';
 import ErikaSheet from './ErikaSheet';
@@ -15,6 +15,12 @@ const labels: Record<string, string> = {
   missed_time: 'Не выполнено вовремя',
   not_completed: 'Не выполнено',
 };
+
+interface UndoState {
+  previous: Item;
+  successorId: string | null;
+  sync: OutcomeSyncMeta;
+}
 
 function localDate(): string {
   const value = new Date();
@@ -34,7 +40,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [offline, setOffline] = useState(!navigator.onLine);
   const [erika, setErika] = useState(false);
-  const [undo, setUndo] = useState<{ item: Item; command: 'complete' | 'not_complete' } | null>(null);
+  const [undo, setUndo] = useState<UndoState | null>(null);
 
   async function load() {
     try {
@@ -88,7 +94,7 @@ export default function App() {
   }, [items]);
 
   async function mark(item: Item, command: 'complete' | 'not_complete') {
-    setUndo({ item, command });
+    setUndo(null);
     const next = items.map((candidate) => candidate.id === item.id
       ? {
         ...candidate,
@@ -103,7 +109,22 @@ export default function App() {
     cacheToday(date, next);
 
     try {
-      await outcome(item, command);
+      const result = await outcome(item, command);
+      if (backendMode !== 'legacy-supabase'
+          && result
+          && typeof result === 'object'
+          && 'sync' in result
+          && 'successor' in result) {
+        const localResult = result as {
+          successor: Item | null;
+          sync: OutcomeSyncMeta;
+        };
+        setUndo({
+          previous: item,
+          successorId: localResult.successor?.id ?? null,
+          sync: localResult.sync,
+        });
+      }
       setError('');
     } catch (cause) {
       if (!navigator.onLine) {
@@ -114,6 +135,20 @@ export default function App() {
         cacheToday(date, items);
         setError(String(cause));
       }
+    }
+  }
+
+  async function undoLastOutcome() {
+    if (!undo) return;
+    const snapshot = undo;
+    setUndo(null);
+    try {
+      await undoOutcome(snapshot.previous, snapshot.successorId, snapshot.sync);
+      await load();
+      setError('');
+    } catch (cause) {
+      await load();
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
 
@@ -178,7 +213,7 @@ export default function App() {
       {undo && (
         <div className="toast">
           Изменение сохранено
-          <button onClick={() => { setUndo(null); void load(); }}>Обновить</button>
+          <button onClick={() => void undoLastOutcome()}>Отменить</button>
         </div>
       )}
 
