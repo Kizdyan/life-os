@@ -16,7 +16,9 @@ export interface RuntimeSessionConfig {
 export function runtimeSessionConfigFromEnv(): RuntimeSessionConfig | null {
   const userId = (process.env.LIFE_OS_OWNER_ID ?? '').trim();
   const passcodeSha256 = (process.env.LIFE_OS_OWNER_PASSCODE_SHA256 ?? '').trim().toLowerCase();
-  const sessionSecret = (process.env.LIFE_OS_SESSION_SECRET ?? '').trim();
+  const explicitSessionSecret = (process.env.LIFE_OS_SESSION_SECRET ?? '').trim();
+  const serviceKey = (process.env.LIFE_OS_SERVICE_KEY ?? '').trim();
+  const sessionSecret = explicitSessionSecret || (serviceKey ? `life-os-owner-session:v1:${serviceKey}` : '');
   if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) return null;
   if (!/^[0-9a-f]{64}$/.test(passcodeSha256)) return null;
   if (sessionSecret.length < 32) return null;
