@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { backendMode } from './api';
-import { readRuntimeConflicts } from './runtimeSync';
+import { backendMode, resolveSyncConflicts } from './api';
+import { readRuntimeConflicts, type RuntimeConflictResolution } from './runtimeSync';
 import {
   getRuntimeSessionStatus,
   loginRuntimeSession,
@@ -70,6 +70,23 @@ export default function RuntimeSyncCard({ onConnected }: { onConnected: () => vo
     }
   }
 
+  async function resolve(resolution: RuntimeConflictResolution) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await resolveSyncConflicts(resolution);
+      refreshConflicts();
+      setError('');
+      onConnected();
+    } catch (cause) {
+      refreshConflicts();
+      setError(cause instanceof Error ? cause.message : String(cause));
+      onConnected();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!status) {
     return <div className="runtimeCard"><span>Проверяю долговечную память…</span></div>;
   }
@@ -90,10 +107,17 @@ export default function RuntimeSyncCard({ onConnected }: { onConnected: () => vo
           <b>Нужна сверка синхронизации</b>
           <span>
             {conflictCount === 1 ? '1 изменение' : `${conflictCount} изменения`} столкнулось с более новой версией на другом устройстве.
-            Life OS не перезаписывает её автоматически.
+            Life OS уже показал актуальную серверную версию и ничего не перезаписывает без твоего выбора.
           </span>
         </div>
-        <button className="ghost" disabled={busy} onClick={() => void onConnected()}>Перечитать данные</button>
+        <div className="runtimeActions">
+          <button className="ghost" disabled={busy} onClick={() => void resolve('accept_remote')}>
+            Оставить серверную
+          </button>
+          <button disabled={busy} onClick={() => void resolve('retry_local')}>
+            Применить мою версию
+          </button>
+        </div>
         {error && <small className="runtimeError">{error}</small>}
       </div>
     );
