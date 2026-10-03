@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  expectedVersionAfterPendingMutation,
   pendingMutations,
   queueMutation,
   readRuntimeConflicts,
@@ -35,6 +36,13 @@ describe('offline-first runtime sync', () => {
     queueMutation(storage, mutation('m-2'));
 
     expect(pendingMutations(storage).map((item) => item.mutationId)).toEqual(['m-1', 'm-2']);
+  });
+
+  it('predicts the version an acknowledged-or-pending mutation will produce for safe compensation', () => {
+    expect(expectedVersionAfterPendingMutation({ ...mutation(), expectedVersion: null }, null)).toBe(1);
+    expect(expectedVersionAfterPendingMutation({ ...mutation(), expectedVersion: 7 }, 7)).toBe(8);
+    expect(expectedVersionAfterPendingMutation(undefined, 8)).toBe(8);
+    expect(expectedVersionAfterPendingMutation(undefined, null)).toBeNull();
   });
 
   it('removes applied and duplicate mutations after remote confirmation', async () => {
