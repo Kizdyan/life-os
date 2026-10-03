@@ -19,14 +19,15 @@ describe('durable sleep runtime', () => {
     expect(entry.id).toBe('sleep:2026-10-03');
   });
 
-  it('rehydrates canonical sleep_log records with their server version', () => {
+  it('rehydrates canonical sleep settings with their server version', () => {
     const storage = new MemoryStorage();
     const record: RuntimeSyncRecord = {
       id: 'sleep:2026-10-03',
       userId: 'self',
-      kind: 'sleep_log',
+      kind: 'setting',
       version: 3,
       payload: {
+        entityType: 'sleep_log',
         date: '2026-10-03',
         durationMinutes: 450,
         sleepStart: '00:00',
@@ -51,7 +52,7 @@ describe('durable sleep runtime', () => {
     });
   });
 
-  it('removes a sleep entry when the canonical record is deleted', () => {
+  it('removes a sleep entry when the canonical setting is deleted', () => {
     const storage = new MemoryStorage();
     saveSleepEntry(storage, newSleepEntry({
       date: '2026-10-03',
@@ -63,9 +64,9 @@ describe('durable sleep runtime', () => {
     applyRemoteSleepRecords(storage, [{
       id: 'sleep:2026-10-03',
       userId: 'self',
-      kind: 'sleep_log',
+      kind: 'setting',
       version: 2,
-      payload: { date: '2026-10-03' },
+      payload: { entityType: 'sleep_log', date: '2026-10-03' },
       deleted: true,
       updatedAt: '2026-10-03T08:10:00Z',
     }]);
