@@ -14,7 +14,7 @@ const mutation: RuntimeMutationInput = {
 };
 
 describe('SupabaseServiceRuntimeStore', () => {
-  it('keeps the service key in server headers and passes the sealed principal to the server RPC', async () => {
+  it('keeps the legacy service key in server headers and passes the sealed principal to the server RPC', async () => {
     let capturedUrl = '';
     let capturedHeaders: HeadersInit | undefined;
     let capturedBody = '';
@@ -50,6 +50,34 @@ describe('SupabaseServiceRuntimeStore', () => {
       p_record_id: 'item-1',
       p_expected_version: 2,
     });
+  });
+
+  it('sends modern Supabase secret keys only in the apikey header', async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      capturedHeaders = init?.headers;
+      return new Response(JSON.stringify({
+        mutationId: 'm-1',
+        status: 'applied',
+        storeRevision: 1,
+        record: null,
+        conflict: null,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    const store = new SupabaseServiceRuntimeStore({
+      url: 'https://db.example',
+      serviceKey: 'sb_secret_runtime_example',
+      fetchImpl,
+    });
+
+    await store.apply('11111111-1111-1111-1111-111111111111', mutation);
+
+    expect(capturedHeaders).toMatchObject({
+      apikey: 'sb_secret_runtime_example',
+      'Content-Type': 'application/json',
+    });
+    expect(capturedHeaders).not.toHaveProperty('Authorization');
   });
 
   it('scopes snapshot and revision reads to the server principal', async () => {
