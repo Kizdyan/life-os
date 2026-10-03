@@ -14,7 +14,9 @@ import {
 import {
   HttpRemoteLifeOsGateway,
   queueMutation,
+  resolveRuntimeConflicts as resolveQueuedRuntimeConflicts,
   syncLocalReplica,
+  type RuntimeConflictResolution,
   type RuntimeConflictState,
   type RuntimeSyncMutation,
 } from './runtimeSync';
@@ -100,6 +102,25 @@ function notifyRuntimeSyncState(): void {
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new Event('lifeos-runtime-sync'));
   }
+}
+
+export async function resolveSyncConflicts(resolution: RuntimeConflictResolution): Promise<number> {
+  if (backendMode !== 'remote') return 0;
+  const local = storage();
+  const resolved = resolveQueuedRuntimeConflicts(local, resolution);
+  notifyRuntimeSyncState();
+
+  if (resolution === 'retry_local' && resolved > 0) {
+    try {
+      await tryRemoteSync();
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: the rebased mutation stays queued and will retry
+      // later; explicit user intent is not lost just because connectivity is.
+    }
+  }
+
+  return resolved;
 }
 
 export async function today(date: string): Promise<Item[]> {
