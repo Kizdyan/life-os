@@ -31,8 +31,9 @@ self.addEventListener('fetch',(event)=>{
           if(response.ok){
             const copy=response.clone();
             void caches.open(CACHE).then((cache)=>cache.put('/',copy));
+            return response;
           }
-          return response;
+          return caches.match('/').then((cached)=>cached||response);
         })
         .catch(()=>caches.match('/'))
     );
