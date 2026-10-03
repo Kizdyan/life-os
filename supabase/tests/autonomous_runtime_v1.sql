@@ -25,6 +25,15 @@ begin
      or has_table_privilege('authenticated', 'public.life_runtime_audit', 'DELETE') then
     raise exception 'audit rows must be immutable to authenticated clients';
   end if;
+  if not has_table_privilege('service_role', 'public.life_runtime_state', 'SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('service_role', 'public.life_runtime_records', 'SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('service_role', 'public.life_runtime_mutations', 'SELECT,INSERT,UPDATE,DELETE')
+     or not has_table_privilege('service_role', 'public.life_runtime_audit', 'SELECT,INSERT,UPDATE,DELETE') then
+    raise exception 'service_role must have explicit runtime table grants';
+  end if;
+  if not has_sequence_privilege('service_role', 'public.life_runtime_audit_audit_id_seq', 'USAGE') then
+    raise exception 'service_role must have USAGE on the audit identity sequence';
+  end if;
   if has_function_privilege(
     'anon',
     'public.life_runtime_apply_mutation(text,text,text,integer,jsonb,boolean)',
@@ -38,6 +47,13 @@ begin
     'EXECUTE'
   ) then
     raise exception 'authenticated must execute runtime mutation RPC';
+  end if;
+  if not has_function_privilege(
+    'service_role',
+    'public.life_runtime_apply_mutation_server(uuid,text,text,text,integer,jsonb,boolean)',
+    'EXECUTE'
+  ) then
+    raise exception 'service_role must execute the server runtime mutation RPC';
   end if;
 end $$;
 
