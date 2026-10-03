@@ -5,6 +5,7 @@ import {
   applyLocalPlan,
   readAllLocalItems,
   readLocalToday,
+  undoLocalOutcome,
   type StorageLike,
 } from './localRuntime';
 
@@ -58,6 +59,20 @@ describe('browser-local Life OS runtime', () => {
     expect(updated.planned_end).toBe(gym.planned_end);
   });
 
+  it('restores the previous item when an outcome is undone', () => {
+    const storage = new MemoryStorage();
+    applyLocalPlan(storage, 'p', plan, () => 'gym');
+    const gym: Item = { ...readLocalToday(storage, '2026-10-02')[0], version: 7 };
+    applyLocalOutcome(storage, gym, 'complete', () => 'unused');
+
+    const undone = undoLocalOutcome(storage, gym, null);
+
+    expect(undone.currentVersion).toBe(7);
+    expect(undone.restored.status).toBe('planned');
+    expect(undone.removedSuccessor).toBeNull();
+    expect(readLocalToday(storage, '2026-10-02')[0]).toMatchObject({ id: 'gym', status: 'planned', version: 7 });
+  });
+
   it('carries a missed flexible item forward when carry_forward is enabled', () => {
     const storage = new MemoryStorage();
     let id = 0;
@@ -70,6 +85,20 @@ describe('browser-local Life OS runtime', () => {
     expect(result.successor?.status).toBe('planned');
     expect(result.successor?.planned_start?.startsWith('2026-10-03T12:00:00')).toBe(true);
     expect(readLocalToday(storage, '2026-10-03')).toHaveLength(1);
+  });
+
+  it('undoes carry-forward by restoring the original and removing the generated successor', () => {
+    const storage = new MemoryStorage();
+    let id = 0;
+    applyLocalPlan(storage, 'p', [{ ...plan[0], carry_forward: true }], () => `id-${++id}`);
+    const gym = readLocalToday(storage, '2026-10-02')[0];
+    const outcome = applyLocalOutcome(storage, gym, 'not_complete', () => `id-${++id}`);
+
+    const undone = undoLocalOutcome(storage, gym, outcome.successor!.id);
+
+    expect(undone.restored.status).toBe('planned');
+    expect(undone.removedSuccessor?.id).toBe(outcome.successor!.id);
+    expect(readLocalToday(storage, '2026-10-03')).toEqual([]);
   });
 
   it('keeps an unknown end null when carrying forward', () => {
