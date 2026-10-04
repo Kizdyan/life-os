@@ -3,285 +3,59 @@ import type { MediaAssetStore } from "./media-ingestion";
 import type { MediaJob, MediaJobStore } from "./media-jobs";
 import type { MediaProjectStore } from "./media-projects";
 import type { StyleMemoryStore } from "./style-memory";
-import type {
-  AudiencePerformanceSignal,
-  AudiencePerformanceStore,
-} from "./media-analytics";
-import type {
-  MediaCandidateRecord,
-  MediaCandidateStore,
-} from "./media-candidate-store";
+import type { AudiencePerformanceSignal, AudiencePerformanceStore } from "./media-analytics";
+import type { MediaCandidateRecord, MediaCandidateStore } from "./media-candidate-store";
+import type { PersonaApprovalRecord, PersonaLearningSignal, PersonaMetricSnapshot, PersonaPublicationJob } from "./persona-state";
 
-export interface KeyValueStore {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<void>;
-}
+export interface KeyValueStore { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; }
 
 export interface MediaStateSnapshot {
-  schemaVersion: 1;
-  revision: number;
-  assetsByIngestKey: Record<string, MediaAsset>;
-  jobsById: Record<string, MediaJob>;
-  projectsByKey: Record<string, MediaProject>;
-  candidatesById: Record<string, MediaCandidateRecord>;
-  latestCandidateIdByProject: Record<string, string>;
-  styleObservations: StyleMemoryObservation[];
+  schemaVersion: 1; revision: number;
+  assetsByIngestKey: Record<string, MediaAsset>; jobsById: Record<string, MediaJob>;
+  projectsByKey: Record<string, MediaProject>; candidatesById: Record<string, MediaCandidateRecord>;
+  latestCandidateIdByProject: Record<string, string>; styleObservations: StyleMemoryObservation[];
   audienceSignals: AudiencePerformanceSignal[];
+  personaApprovalsByCandidate: Record<string, PersonaApprovalRecord>;
+  personaPublicationJobsById: Record<string, PersonaPublicationJob>;
+  personaMetricSnapshots: PersonaMetricSnapshot[];
+  personaLearningSignals: PersonaLearningSignal[];
   updatedAt: string;
 }
+export interface MediaStateStoreOptions { kv: KeyValueStore; key?: string; now: () => string; }
 
-export interface MediaStateStoreOptions {
-  kv: KeyValueStore;
-  key?: string;
-  now: () => string;
-}
-
-export class MediaStateStore
-  implements
-    MediaAssetStore,
-    MediaJobStore,
-    MediaProjectStore,
-    MediaCandidateStore,
-    StyleMemoryStore,
-    AudiencePerformanceStore
-{
-  private readonly key: string;
-  private queue: Promise<void> = Promise.resolve();
-
-  constructor(private readonly options: MediaStateStoreOptions) {
-    this.key = options.key ?? "lifeos:media-brain:v1";
-  }
-
-  async findByIngestKey(key: string): Promise<MediaAsset | null> {
-    const state = await this.read();
-    return state.assetsByIngestKey[key] ?? null;
-  }
-
+export class MediaStateStore implements MediaAssetStore, MediaJobStore, MediaProjectStore, MediaCandidateStore, StyleMemoryStore, AudiencePerformanceStore {
+  private readonly key: string; private queue: Promise<void> = Promise.resolve();
+  constructor(private readonly options: MediaStateStoreOptions) { this.key = options.key ?? "lifeos:media-brain:v1"; }
+  async findByIngestKey(key: string) { return (await this.read()).assetsByIngestKey[key] ?? null; }
   async save(asset: MediaAsset, ingestKey: string): Promise<void>;
   async save(job: MediaJob): Promise<void>;
   async save(project: MediaProject, key: string): Promise<void>;
-  async save(
-    value: MediaAsset | MediaJob | MediaProject,
-    key?: string,
-  ): Promise<void> {
-    if (isMediaJob(value)) {
-      await this.update((state) => {
-        state.jobsById[value.id] = clone(value);
-      });
-      return;
-    }
-
-    if (isMediaProject(value)) {
-      if (!key) throw new Error("Project store key is required");
-      await this.update((state) => {
-        state.projectsByKey[key] = clone(value);
-      });
-      return;
-    }
-
-    if (!key) throw new Error("Asset ingest key is required");
-    await this.update((state) => {
-      state.assetsByIngestKey[key] = clone(value);
-    });
+  async save(value: MediaAsset | MediaJob | MediaProject, key?: string): Promise<void> {
+    if (isMediaJob(value)) return this.update(s => { s.jobsById[value.id] = clone(value); });
+    if (isMediaProject(value)) { if (!key) throw new Error("Project store key is required"); return this.update(s => { s.projectsByKey[key] = clone(value); }); }
+    if (!key) throw new Error("Asset ingest key is required"); return this.update(s => { s.assetsByIngestKey[key] = clone(value); });
   }
-
-  async enqueue(job: MediaJob): Promise<void> {
-    await this.update((state) => {
-      if (state.jobsById[job.id]) {
-        throw new Error(`Media job already exists: ${job.id}`);
-      }
-      state.jobsById[job.id] = clone(job);
-    });
-  }
-
-  async get(jobId: string): Promise<MediaJob | null> {
-    const state = await this.read();
-    return state.jobsById[jobId] ?? null;
-  }
-
-  async listRunnable(now: string, limit: number): Promise<MediaJob[]> {
-    const state = await this.read();
-    return Object.values(state.jobsById)
-      .filter((job) => job.state === "queued" || job.state === "failed")
-      .filter((job) => !job.notBefore || job.notBefore <= now)
-      .sort(
-        (a, b) =>
-          a.createdAt.localeCompare(b.createdAt) ||
-          a.id.localeCompare(b.id),
-      )
-      .slice(0, Math.max(0, limit));
-  }
-
-  async findActiveByKey(key: string): Promise<MediaProject | null> {
-    const state = await this.read();
-    const project = state.projectsByKey[key];
-    if (!project) return null;
-    if (["archived", "published", "rejected"].includes(project.status)) {
-      return null;
-    }
-    return project;
-  }
-
-  async saveCandidate(record: MediaCandidateRecord): Promise<void> {
-    const candidateId = record.candidate.id.trim();
-    const projectId = record.candidate.projectId.trim();
-    if (!candidateId) throw new Error("Media candidate id is required");
-    if (!projectId) throw new Error("Media candidate projectId is required");
-
-    await this.update((state) => {
-      state.candidatesById[candidateId] = clone(record);
-      state.latestCandidateIdByProject[projectId] = candidateId;
-    });
-  }
-
-  async getCandidateRecord(
-    candidateId: string,
-  ): Promise<MediaCandidateRecord | null> {
-    const state = await this.read();
-    const record = state.candidatesById[candidateId];
-    return record ? clone(record) : null;
-  }
-
-  async getLatestCandidateForProject(
-    projectId: string,
-  ): Promise<MediaCandidateRecord | null> {
-    const state = await this.read();
-    const candidateId = state.latestCandidateIdByProject[projectId];
-    if (!candidateId) return null;
-    const record = state.candidatesById[candidateId];
-    return record ? clone(record) : null;
-  }
-
-  async append(observation: StyleMemoryObservation): Promise<void>;
-  async append(signal: AudiencePerformanceSignal): Promise<void>;
-  async append(
-    value: StyleMemoryObservation | AudiencePerformanceSignal,
-  ): Promise<void> {
-    if (isAudiencePerformanceSignal(value)) {
-      await this.update((state) => {
-        state.audienceSignals.push(clone(value));
-      });
-      return;
-    }
-
-    await this.update((state) => {
-      state.styleObservations.push(clone(value));
-    });
-  }
-
-  async listByDimension(
-    dimension: StyleMemoryObservation["dimension"],
-  ): Promise<StyleMemoryObservation[]> {
-    const state = await this.read();
-    return state.styleObservations
-      .filter((item) => item.dimension === dimension)
-      .map(clone);
-  }
-
-  async listByCandidate(
-    candidateId: string,
-  ): Promise<AudiencePerformanceSignal[]> {
-    const state = await this.read();
-    return state.audienceSignals
-      .filter((signal) => signal.candidateId === candidateId)
-      .map(clone);
-  }
-
-  async snapshot(): Promise<MediaStateSnapshot> {
-    return this.read();
-  }
-
-  private async read(): Promise<MediaStateSnapshot> {
-    const raw = await this.options.kv.get(this.key);
-    if (!raw) return emptyState(this.options.now());
-
-    const parsed = JSON.parse(raw) as Partial<MediaStateSnapshot>;
-    if (parsed.schemaVersion !== 1) {
-      throw new Error("Unsupported Media Brain state schema");
-    }
-
-    return {
-      schemaVersion: 1,
-      revision: finiteInteger(parsed.revision, 0),
-      assetsByIngestKey: parsed.assetsByIngestKey ?? {},
-      jobsById: parsed.jobsById ?? {},
-      projectsByKey: parsed.projectsByKey ?? {},
-      candidatesById: parsed.candidatesById ?? {},
-      latestCandidateIdByProject: parsed.latestCandidateIdByProject ?? {},
-      styleObservations: parsed.styleObservations ?? [],
-      audienceSignals: parsed.audienceSignals ?? [],
-      updatedAt:
-        typeof parsed.updatedAt === "string"
-          ? parsed.updatedAt
-          : this.options.now(),
-    };
-  }
-
-  private async update(
-    mutate: (state: MediaStateSnapshot) => void,
-  ): Promise<void> {
-    const operation = this.queue
-      .catch(() => undefined)
-      .then(async () => {
-        const state = await this.read();
-        mutate(state);
-        state.revision += 1;
-        state.updatedAt = this.options.now();
-        await this.options.kv.set(this.key, JSON.stringify(state));
-      });
-
-    // Keep the internal serialization chain healthy after a caller-visible
-    // failure, while still propagating this operation's error to its caller.
-    this.queue = operation.catch(() => undefined);
-    await operation;
-  }
+  async enqueue(job: MediaJob) { await this.update(s => { if (s.jobsById[job.id]) throw new Error(`Media job already exists: ${job.id}`); s.jobsById[job.id] = clone(job); }); }
+  async get(jobId: string) { return (await this.read()).jobsById[jobId] ?? null; }
+  async listRunnable(now: string, limit: number) { return Object.values((await this.read()).jobsById).filter(j => j.state === "queued" || j.state === "failed").filter(j => !j.notBefore || j.notBefore <= now).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id)).slice(0,Math.max(0,limit)); }
+  async findActiveByKey(key: string) { const p=(await this.read()).projectsByKey[key]; return !p || ["archived","published","rejected"].includes(p.status) ? null : p; }
+  async saveCandidate(record: MediaCandidateRecord) { const id=record.candidate.id.trim(), projectId=record.candidate.projectId.trim(); if(!id) throw new Error("Media candidate id is required"); if(!projectId) throw new Error("Media candidate projectId is required"); await this.update(s=>{s.candidatesById[id]=clone(record);s.latestCandidateIdByProject[projectId]=id;}); }
+  async getCandidateRecord(id:string){const r=(await this.read()).candidatesById[id];return r?clone(r):null;}
+  async getLatestCandidateForProject(projectId:string){const s=await this.read(),id=s.latestCandidateIdByProject[projectId];const r=id?s.candidatesById[id]:undefined;return r?clone(r):null;}
+  async append(value: StyleMemoryObservation | AudiencePerformanceSignal) { if(isAudiencePerformanceSignal(value)) return this.update(s=>{s.audienceSignals.push(clone(value));}); return this.update(s=>{s.styleObservations.push(clone(value));}); }
+  async listByDimension(d:StyleMemoryObservation["dimension"]){return (await this.read()).styleObservations.filter(x=>x.dimension===d).map(clone);}
+  async listByCandidate(id:string){return (await this.read()).audienceSignals.filter(x=>x.candidateId===id).map(clone);}
+  async savePersonaApproval(value: PersonaApprovalRecord){await this.update(s=>{s.personaApprovalsByCandidate[value.candidateId]=clone(value);});}
+  async savePersonaPublicationJob(value: PersonaPublicationJob){await this.update(s=>{s.personaPublicationJobsById[value.id]=clone(value);});}
+  async appendPersonaMetric(value: PersonaMetricSnapshot){await this.update(s=>{s.personaMetricSnapshots.push(clone(value));});}
+  async appendPersonaLearningSignal(value: PersonaLearningSignal){await this.update(s=>{s.personaLearningSignals.push(clone(value));});}
+  async snapshot(){return this.read();}
+  private async read():Promise<MediaStateSnapshot>{const raw=await this.options.kv.get(this.key);if(!raw)return emptyState(this.options.now());const p=JSON.parse(raw) as Partial<MediaStateSnapshot>;if(p.schemaVersion!==1)throw new Error("Unsupported Media Brain state schema");return {schemaVersion:1,revision:finiteInteger(p.revision,0),assetsByIngestKey:p.assetsByIngestKey??{},jobsById:p.jobsById??{},projectsByKey:p.projectsByKey??{},candidatesById:p.candidatesById??{},latestCandidateIdByProject:p.latestCandidateIdByProject??{},styleObservations:p.styleObservations??[],audienceSignals:p.audienceSignals??[],personaApprovalsByCandidate:p.personaApprovalsByCandidate??{},personaPublicationJobsById:p.personaPublicationJobsById??{},personaMetricSnapshots:p.personaMetricSnapshots??[],personaLearningSignals:p.personaLearningSignals??[],updatedAt:typeof p.updatedAt==="string"?p.updatedAt:this.options.now()};}
+  private async update(m:(s:MediaStateSnapshot)=>void){const op=this.queue.catch(()=>undefined).then(async()=>{const s=await this.read();m(s);s.revision+=1;s.updatedAt=this.options.now();await this.options.kv.set(this.key,JSON.stringify(s));});this.queue=op.catch(()=>undefined);await op;}
 }
-
-function emptyState(now: string): MediaStateSnapshot {
-  return {
-    schemaVersion: 1,
-    revision: 0,
-    assetsByIngestKey: {},
-    jobsById: {},
-    projectsByKey: {},
-    candidatesById: {},
-    latestCandidateIdByProject: {},
-    styleObservations: [],
-    audienceSignals: [],
-    updatedAt: now,
-  };
-}
-
-function isMediaJob(
-  value: MediaAsset | MediaJob | MediaProject,
-): value is MediaJob {
-  return (
-    "type" in value &&
-    "maxAttempts" in value &&
-    "dependsOnJobId" in value
-  );
-}
-
-function isMediaProject(
-  value: MediaAsset | MediaJob | MediaProject,
-): value is MediaProject {
-  return "assetIds" in value && "channelTargets" in value;
-}
-
-function isAudiencePerformanceSignal(
-  value: StyleMemoryObservation | AudiencePerformanceSignal,
-): value is AudiencePerformanceSignal {
-  return "rates" in value && "raw" in value;
-}
-
-function finiteInteger(value: unknown, fallback: number): number {
-  return typeof value === "number" &&
-    Number.isFinite(value) &&
-    Number.isInteger(value)
-    ? value
-    : fallback;
-}
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
+function emptyState(now:string):MediaStateSnapshot{return {schemaVersion:1,revision:0,assetsByIngestKey:{},jobsById:{},projectsByKey:{},candidatesById:{},latestCandidateIdByProject:{},styleObservations:[],audienceSignals:[],personaApprovalsByCandidate:{},personaPublicationJobsById:{},personaMetricSnapshots:[],personaLearningSignals:[],updatedAt:now};}
+function isMediaJob(v:MediaAsset|MediaJob|MediaProject):v is MediaJob{return "type" in v&&"maxAttempts" in v&&"dependsOnJobId" in v;}
+function isMediaProject(v:MediaAsset|MediaJob|MediaProject):v is MediaProject{return "assetIds" in v&&"channelTargets" in v;}
+function isAudiencePerformanceSignal(v:StyleMemoryObservation|AudiencePerformanceSignal):v is AudiencePerformanceSignal{return "rates" in v&&"raw" in v;}
+function finiteInteger(v:unknown,f:number){return typeof v==="number"&&Number.isFinite(v)&&Number.isInteger(v)?v:f;}
+function clone<T>(v:T):T{return JSON.parse(JSON.stringify(v)) as T;}
