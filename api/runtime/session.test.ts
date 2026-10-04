@@ -63,6 +63,50 @@ describe('/api/runtime/session', () => {
     expect(await status.json()).toEqual({ configured: true, authenticated: true });
   });
 
+  it('uses Supabase Edge Runtime when Vercel has no database secret', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const edgeFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      calls.push(body);
+      if (body.op === 'login') {
+        return new Response(JSON.stringify({ authenticated: true, token: 'edge-token' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (body.op === 'status') {
+        return new Response(JSON.stringify({ authenticated: body.token === 'edge-token' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 500 });
+    };
+
+    const login = await handleRuntimeSession(new Request('https://life.example/api/runtime/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: 'owner-code' }),
+    }), null, null, 'https://edge.example/runtime', edgeFetch);
+
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get('set-cookie')!;
+    expect(cookie).toContain('lifeos_session=edge-token');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Strict');
+
+    const status = await handleRuntimeSession(new Request('https://life.example/api/runtime/session', {
+      headers: { Cookie: cookie.split(';')[0] },
+    }), null, null, 'https://edge.example/runtime', edgeFetch);
+
+    expect(status.status).toBe(200);
+    expect(await status.json()).toEqual({ configured: true, authenticated: true });
+    expect(calls).toEqual([
+      { op: 'login', passcode: 'owner-code' },
+      { op: 'status', token: 'edge-token' },
+    ]);
+  });
+
   it('checks canonical database health without a separate serverless route', async () => {
     const response = await handleRuntimeSession(
       new Request('https://life.example/api/runtime/session?health=1'),
