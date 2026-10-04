@@ -8,6 +8,8 @@ import {
   runtimeSessionConfigFromEnv,
   runtimeSessionFromRequest,
 } from './_session.js';
+import { edgeRuntimeUrlFromEnv } from './_edge.js';
+import { handleEdgeSync } from './_edge-sync.js';
 
 interface SyncRequestBody {
   mutations?: unknown;
@@ -23,9 +25,15 @@ export interface RuntimeSyncContext {
 export async function handleRuntimeSync(
   request: Request,
   override?: RuntimeSyncContext,
+  edgeUrl: string = edgeRuntimeUrlFromEnv(),
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
   if (request.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST' });
+  }
+
+  if (!override && edgeUrl) {
+    return handleEdgeSync(request, edgeUrl, fetchImpl);
   }
 
   const context = override ?? await contextFromEnv(request);
