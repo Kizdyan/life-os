@@ -40,10 +40,12 @@ class FakeStore implements RuntimeRemoteStore {
   }
 }
 
-function request(body: unknown): Request {
+function request(body: unknown, cookie?: string): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (cookie) headers.set('Cookie', cookie);
   return new Request('https://life.example/api/runtime/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -138,6 +140,39 @@ describe('POST /api/runtime/sync', () => {
       conflict: { expectedVersion: 1, currentVersion: 3 },
     });
     expect(payload.storeRevision).toBe(4);
+  });
+
+  it('proxies sync to Supabase Edge Runtime when Vercel has no service key', async () => {
+    const edgeFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        op: 'sync',
+        token: 'edge-token',
+        sinceRevision: 0,
+      });
+      expect(body.mutations).toEqual([mutation]);
+      return new Response(JSON.stringify({
+        storeRevision: 2,
+        results: [{
+          mutationId: 'm-1',
+          status: 'applied',
+          storeRevision: 2,
+          record: null,
+          conflict: null,
+        }],
+        records: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    const response = await handleRuntimeSync(
+      request({ mutations: [mutation], sinceRevision: 0 }, 'lifeos_session=edge-token'),
+      undefined,
+      'https://edge.example/runtime',
+      edgeFetch,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ storeRevision: 2 });
   });
 
   it('rejects malformed or oversized mutation batches', async () => {
