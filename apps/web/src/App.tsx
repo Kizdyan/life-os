@@ -4,6 +4,7 @@ import { cacheToday, cachedToday, flush } from './offline';
 import { enqueueOutcome } from './outbox';
 import ErikaSheet from './ErikaSheet';
 import MediaBrainCard from './MediaBrainCard';
+import PersonaCenter from './PersonaCenter';
 import RuntimeSyncCard from './RuntimeSyncCard';
 import SleepEnergyCard from './SleepEnergyCard';
 import type { Item } from './types';
@@ -20,6 +21,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [offline, setOffline] = useState(!navigator.onLine);
   const [erika, setErika] = useState(false);
+  const [persona, setPersona] = useState(false);
   const [undo, setUndo] = useState<UndoState | null>(null);
   async function load() { try { const fresh = await today(date); setItems(fresh); cacheToday(date, fresh); setError(''); await flush(fresh); } catch (cause) { if (!items.length) setError(String(cause)); } }
   useEffect(() => { void load(); const online = () => { setOffline(false); void load(); }; const offlineHandler = () => setOffline(true); addEventListener('online', online); addEventListener('offline', offlineHandler); return () => { removeEventListener('online', online); removeEventListener('offline', offlineHandler); }; }, []);
@@ -30,16 +32,16 @@ export default function App() {
   async function undoLastOutcome() { if (!undo) return; const snapshot = undo; setUndo(null); try { await undoOutcome(snapshot.previous, snapshot.successorId, snapshot.sync); await load(); setError(''); } catch (cause) { await load(); setError(cause instanceof Error ? cause.message : String(cause)); } }
   const mode = backendMode === 'remote' ? '· СИНХРОНИЗАЦИЯ' : backendMode === 'legacy-supabase' ? '· LEGACY' : '· ЛОКАЛЬНО';
   return <main>
-    <header><div><small>LIFE OS {mode} {offline ? '· ОФЛАЙН' : ''}</small><h1>Сегодня</h1></div><button className='erika' onClick={() => setErika(true)}>Эрика</button></header>
-    {active && <div className='nowCard'><small>{timestamp(active.planned_start) <= now ? 'СЕЙЧАС' : 'СЛЕДОМ'}</small><b>{active.title}</b><span>{active.planned_start?.slice(11, 16)}{active.planned_end ? `–${active.planned_end.slice(11, 16)}` : ''}</span></div>}
-    {free.length > 0 && <div className='freeRow'>{free.map((value) => <span key={value}>Свободно {value}</span>)}</div>}
-    <SleepEnergyCard date={date} />
-    <RuntimeSyncCard onConnected={() => void load()} />
-    <MediaBrainCard />
-    {error && <div className='error'>{error}</div>}
-    <section>{items.length === 0 && !error && <p className='empty'>На сегодня пока ничего нет. Можно надиктовать план Эрике — он сохранится локально{backendMode === 'remote' ? ' и синхронизируется с долговечной памятью.' : '.'}</p>}{items.map((item) => <article key={item.id}><div className='time'>{item.planned_start?.slice(11, 16) || '—'}</div><div className='body'><b>{item.title}</b><span>{labels[item.status] || item.kind}</span></div><button aria-label='Выполнено' onClick={() => void mark(item, 'complete')}>✓</button><button aria-label='Не выполнено' onClick={() => void mark(item, 'not_complete')}>×</button></article>)}</section>
-    {undo && <div className='toast'>Изменение сохранено <button onClick={() => void undoLastOutcome()}>Отменить</button></div>}
+    <header><div><small>LIFE OS {mode} {offline ? '· ОФЛАЙН' : ''}</small><h1>{persona ? 'Persona' : 'Сегодня'}</h1></div><button className='erika' onClick={() => setErika(true)}>Эрика</button></header>
+    {persona ? <PersonaCenter /> : <>
+      {active && <div className='nowCard'><small>{timestamp(active.planned_start) <= now ? 'СЕЙЧАС' : 'СЛЕДОМ'}</small><b>{active.title}</b><span>{active.planned_start?.slice(11, 16)}{active.planned_end ? `–${active.planned_end.slice(11, 16)}` : ''}</span></div>}
+      {free.length > 0 && <div className='freeRow'>{free.map((value) => <span key={value}>Свободно {value}</span>)}</div>}
+      <SleepEnergyCard date={date} /><RuntimeSyncCard onConnected={() => void load()} /><MediaBrainCard />
+      {error && <div className='error'>{error}</div>}
+      <section>{items.length === 0 && !error && <p className='empty'>На сегодня пока ничего нет. Можно надиктовать план Эрике — он сохранится локально{backendMode === 'remote' ? ' и синхронизируется с долговечной памятью.' : '.'}</p>}{items.map((item) => <article key={item.id}><div className='time'>{item.planned_start?.slice(11, 16) || '—'}</div><div className='body'><b>{item.title}</b><span>{labels[item.status] || item.kind}</span></div><button aria-label='Выполнено' onClick={() => void mark(item, 'complete')}>✓</button><button aria-label='Не выполнено' onClick={() => void mark(item, 'not_complete')}>×</button></article>)}</section>
+      {undo && <div className='toast'>Изменение сохранено <button onClick={() => void undoLastOutcome()}>Отменить</button></div>}
+    </>}
     {erika && <ErikaSheet items={items} onClose={() => setErika(false)} onApplied={() => void load()} />}
-    <nav><b>Сегодня</b><span>Неделя</span><span>Задачи</span><span>Календарь</span><span>Analytics</span></nav>
+    <nav><b onClick={() => setPersona(false)}>Сегодня</b><span>Неделя</span><span>Задачи</span><span>Календарь</span><span onClick={() => setPersona(true)}>Persona</span></nav>
   </main>;
 }
