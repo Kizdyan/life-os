@@ -83,3 +83,4 @@ export * from './media-supervisor';
 export * from './media-runtime';
 export * from './erika-discourse';
 export * from './persona-state';
+export * from './persona-approval';
