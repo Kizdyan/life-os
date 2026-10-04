@@ -1,18 +1,29 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const OWNER_ID = 'b48182e1-0802-4741-89a1-bba6341cb8c8';
-const OWNER_PASSCODE_SHA256 = '77500aa2c86b87a4875ed380ce61df82e7d125ac82b49917925129872133a333';
+const OWNER_PASSCODE_SHA256 = '7b9f92d5fff6262ad5ccecfd3c5e7e3eb2cf7cdc4af06804d27f90bf3defcafb';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+type RuntimeEnv = { url: string; serviceKey: string };
+type Session = { userId: string; issuedAt: number; expiresAt: number };
+type MutationInput = {
+  mutationId: string;
+  recordId: string;
+  kind: 'life_item' | 'life_outcome' | 'memory' | 'audit' | 'project' | 'goal' | 'setting';
+  expectedVersion: number | null;
+  payload: Record<string, unknown>;
+  deleted: boolean;
+};
+
 Deno.serve(async (request: Request) => {
   if (request.method === 'GET') {
     const url = new URL(request.url);
-    if (url.searchParams.get('health') === '1') return health();
-    return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
+    return url.searchParams.get('health') === '1'
+      ? health()
+      : json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
   }
-
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
 
   let body: Record<string, unknown>;
@@ -22,12 +33,13 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'invalid_json' }, 400);
   }
 
-  const op = body.op;
-  if (op === 'login') return login(body.passcode);
-  if (op === 'status') return status(body.token);
-  if (op === 'health') return health();
-  if (op === 'sync') return sync(body.token, body.mutations, body.sinceRevision);
-  return json({ error: 'unsupported_operation' }, 400);
+  switch (body.op) {
+    case 'login': return login(body.passcode);
+    case 'status': return status(body.token);
+    case 'health': return health();
+    case 'sync': return sync(body.token, body.mutations, body.sinceRevision);
+    default: return json({ error: 'unsupported_operation' }, 400);
+  }
 });
 
 async function login(rawPasscode: unknown): Promise<Response> {
@@ -40,15 +52,14 @@ async function login(rawPasscode: unknown): Promise<Response> {
 }
 
 async function status(rawToken: unknown): Promise<Response> {
-  const session = await verifySession(rawToken);
-  return json({ authenticated: Boolean(session) });
+  return json({ authenticated: Boolean(await verifySession(rawToken)) });
 }
 
 async function health(): Promise<Response> {
-  const env = runtimeEnv();
-  if (!env) return json({ configured: false, databaseReachable: false, storeRevision: null }, 503);
+  const runtime = runtimeEnv();
+  if (!runtime) return json({ configured: false, databaseReachable: false, storeRevision: null }, 503);
   try {
-    const revision = await readRevision(env);
+    const revision = await readRevision(runtime);
     return json({ configured: true, databaseReachable: true, storeRevision: revision });
   } catch {
     return json({ configured: true, databaseReachable: false, storeRevision: null }, 502);
@@ -58,9 +69,8 @@ async function health(): Promise<Response> {
 async function sync(rawToken: unknown, rawMutations: unknown, rawSinceRevision: unknown): Promise<Response> {
   const session = await verifySession(rawToken);
   if (!session) return json({ error: 'authentication_required' }, 401);
-  const env = runtimeEnv();
-  if (!env) return json({ error: 'runtime_not_configured' }, 503);
-
+  const runtime = runtimeEnv();
+  if (!runtime) return json({ error: 'runtime_not_configured' }, 503);
   if (!Array.isArray(rawMutations) || rawMutations.length > 100) return json({ error: 'invalid_mutations' }, 400);
   const sinceRevision = normalizeRevision(rawSinceRevision);
   if (sinceRevision === null) return json({ error: 'invalid_since_revision' }, 400);
@@ -74,10 +84,10 @@ async function sync(rawToken: unknown, rawMutations: unknown, rawSinceRevision: 
 
   try {
     const results = [];
-    for (const mutation of mutations) results.push(await applyMutation(env, session.userId, mutation));
+    for (const mutation of mutations) results.push(await applyMutation(runtime, session.userId, mutation));
     const [records, storeRevision] = await Promise.all([
-      listSince(env, session.userId, sinceRevision),
-      readRevision(env, session.userId),
+      listSince(runtime, session.userId, sinceRevision),
+      readRevision(runtime, session.userId),
     ]);
     return json({ storeRevision, results, records });
   } catch (error) {
@@ -86,27 +96,16 @@ async function sync(rawToken: unknown, rawMutations: unknown, rawSinceRevision: 
   }
 }
 
-type RuntimeEnv = { url: string; serviceKey: string };
-type Session = { userId: string; issuedAt: number; expiresAt: number };
-type MutationInput = {
-  mutationId: string;
-  recordId: string;
-  kind: 'life_item' | 'life_outcome' | 'memory' | 'audit' | 'project' | 'goal' | 'setting';
-  expectedVersion: number | null;
-  payload: Record<string, unknown>;
-  deleted: boolean;
-};
-
 function runtimeEnv(): RuntimeEnv | null {
   const url = (Deno.env.get('SUPABASE_URL') ?? '').trim();
   const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim();
   return url && serviceKey ? { url, serviceKey } : null;
 }
 
-async function applyMutation(env: RuntimeEnv, userId: string, mutation: MutationInput): Promise<unknown> {
-  const response = await fetch(`${env.url}/rest/v1/rpc/life_runtime_apply_mutation_server`, {
+async function applyMutation(runtime: RuntimeEnv, userId: string, mutation: MutationInput): Promise<unknown> {
+  const response = await fetch(`${runtime.url}/rest/v1/rpc/life_runtime_apply_mutation_server`, {
     method: 'POST',
-    headers: serviceHeaders(env.serviceKey),
+    headers: serviceHeaders(runtime.serviceKey),
     body: JSON.stringify({
       p_user_id: userId,
       p_mutation_id: mutation.mutationId,
@@ -121,13 +120,13 @@ async function applyMutation(env: RuntimeEnv, userId: string, mutation: Mutation
   return response.json();
 }
 
-async function listSince(env: RuntimeEnv, userId: string, sinceRevision: number): Promise<unknown[]> {
-  const url = new URL(`${env.url}/rest/v1/life_runtime_records`);
+async function listSince(runtime: RuntimeEnv, userId: string, sinceRevision: number): Promise<unknown[]> {
+  const url = new URL(`${runtime.url}/rest/v1/life_runtime_records`);
   url.searchParams.set('select', 'record_id,user_id,kind,version,payload,deleted,updated_at,server_revision');
   url.searchParams.set('user_id', `eq.${userId}`);
   url.searchParams.set('server_revision', `gt.${Math.max(0, Math.floor(sinceRevision))}`);
   url.searchParams.set('order', 'server_revision.asc');
-  const response = await fetch(url, { headers: serviceHeaders(env.serviceKey) });
+  const response = await fetch(url, { headers: serviceHeaders(runtime.serviceKey) });
   if (!response.ok) throw new Error(`snapshot:${response.status}`);
   const rows = await response.json() as Array<Record<string, unknown>>;
   return rows.map((row) => ({
@@ -141,23 +140,19 @@ async function listSince(env: RuntimeEnv, userId: string, sinceRevision: number)
   }));
 }
 
-async function readRevision(env: RuntimeEnv, userId = OWNER_ID): Promise<number> {
-  const url = new URL(`${env.url}/rest/v1/life_runtime_state`);
+async function readRevision(runtime: RuntimeEnv, userId = OWNER_ID): Promise<number> {
+  const url = new URL(`${runtime.url}/rest/v1/life_runtime_state`);
   url.searchParams.set('select', 'store_revision');
   url.searchParams.set('user_id', `eq.${userId}`);
   url.searchParams.set('limit', '1');
-  const response = await fetch(url, { headers: serviceHeaders(env.serviceKey) });
+  const response = await fetch(url, { headers: serviceHeaders(runtime.serviceKey) });
   if (!response.ok) throw new Error(`revision:${response.status}`);
   const rows = await response.json() as Array<{ store_revision?: number }>;
   return Number(rows[0]?.store_revision ?? 0);
 }
 
 function serviceHeaders(serviceKey: string): Record<string, string> {
-  return {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-    'Content-Type': 'application/json',
-  };
+  return { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' };
 }
 
 function parseMutation(value: unknown): MutationInput | null {
@@ -182,8 +177,7 @@ function parseMutation(value: unknown): MutationInput | null {
 
 function normalizeRevision(value: unknown): number | null {
   if (value === undefined) return 0;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null;
-  return value;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 async function verifySession(rawToken: unknown): Promise<Session | null> {
@@ -215,10 +209,9 @@ async function unseal<T>(token: string): Promise<T> {
 }
 
 async function sessionKey(): Promise<CryptoKey> {
-  const env = runtimeEnv();
-  if (!env) throw new Error('runtime not configured');
-  const material = encoder.encode(`life-os-edge-session-v1:${env.serviceKey}`);
-  const digest = await crypto.subtle.digest('SHA-256', material);
+  const runtime = runtimeEnv();
+  if (!runtime) throw new Error('runtime not configured');
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`life-os-edge-session-v1:${runtime.serviceKey}`));
   return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
