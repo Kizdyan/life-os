@@ -8,14 +8,22 @@ import {
   type RuntimeSessionConfig,
 } from './_session.js';
 import { runtimeStoreFromEnv, type RuntimeRemoteStore } from './_store.js';
+import { edgeRuntimeUrlFromEnv } from './_edge.js';
+import { handleEdgeSession } from './_edge-session.js';
 
 export async function handleRuntimeSession(
   request: Request,
   config: RuntimeSessionConfig | null = runtimeSessionConfigFromEnv(),
   store: RuntimeRemoteStore | null = runtimeStoreFromEnv(),
+  edgeUrl: string = edgeRuntimeUrlFromEnv(),
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
   const healthRequested = request.method === 'GET'
     && new URL(request.url).searchParams.get('health') === '1';
+
+  if (!config && edgeUrl) {
+    return handleEdgeSession(request, edgeUrl, fetchImpl);
+  }
 
   if (!config) {
     if (healthRequested) {
