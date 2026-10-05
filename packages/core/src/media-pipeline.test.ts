@@ -1,108 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { PERSONAL_HIGH_AUTONOMY_MEDIA } from "./media-brain";
 import { buildCapCutWorkPackage } from "./capcut-work-package";
-import {
-  prepareContentForReview,
-  publishReviewedContent,
-  type ContentCandidate,
-} from "./media-pipeline";
+import { prepareContentForReview,publishReviewedContent,type ContentCandidate } from "./media-pipeline";
 
-const baseCandidate: ContentCandidate = {
-  id: "candidate-1",
-  projectId: "project-1",
-  assetIds: ["asset-1"],
-  title: "Черновик",
-  caption: null,
-  createdAt: "2026-09-28T20:00:00.000Z",
-  workPackage: buildCapCutWorkPackage({
-    projectId: "project-1",
-    channel: "instagram",
-    aspectRatio: "9:16",
-    targetDurationMs: 25000,
-    hook: "Как проходит репетиция изнутри",
-    clips: [{ assetId: "asset-1", sourceStartMs: 0, sourceEndMs: 3000, order: 1, reason: "hook" }],
-    captions: [], overlays: [], audio: [], coverBrief: null,
-    diveMRevisionNotes: [], styleMemoryNotes: [],
-  }),
-};
+const baseCandidate:ContentCandidate={id:"candidate-1",projectId:"project-1",assetIds:["asset-1"],title:"Черновик",caption:null,createdAt:"2026-09-28T20:00:00.000Z",workPackage:buildCapCutWorkPackage({projectId:"project-1",channel:"instagram",aspectRatio:"9:16",targetDurationMs:25000,hook:"Как проходит репетиция изнутри",clips:[{assetId:"asset-1",sourceStartMs:0,sourceEndMs:3000,order:1,reason:"hook"}],captions:[],overlays:[],audio:[],coverBrief:null,diveMRevisionNotes:[],styleMemoryNotes:[]})};
+function observer(verifyDraft:(candidate:ContentCandidate)=>Promise<{verified:boolean;notes:string[]}>,verifyPublished=async()=>({verified:true,notes:[]})){return{verifyDraft,verifyPublished}}
+function common(){return{capabilities:PERSONAL_HIGH_AUTONOMY_MEDIA,profileId:"personal",projectId:"project-1",assetIds:["asset-1"],channel:"instagram" as const,goal:"publish a strong post",currentFocus:["acting"],styleMemoryNotes:[],strategy:{assessContent:async()=>({fit:"strong" as const,notes:[],weakTransition:null,revisionSuggestions:[],confidence:1,evidenceState:"sufficient" as const})}}}
 
-function observer(verifyDraft: (candidate: ContentCandidate) => Promise<{verified:boolean;notes:string[]}>) {
-  return { verifyDraft, verifyPublished: async () => ({ verified: true, notes: [] }) };
-}
-
-describe("personal media pipeline", () => {
-  it("runs DiveM assessment before review and applies revision", async () => {
-    let revised = false;
-    const result = await prepareContentForReview({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
-      assetIds: ["asset-1"], channel: "instagram", goal: "increase relevant actor profile visits",
-      currentFocus: ["acting", "music"], styleMemoryNotes: ["без дешёвого кликбейта"],
-      lifeOsContext: { event: "rehearsal" },
-      strategyEvidence: { distribution_strength: .8, profile_bridge_clarity: .7, hook_clarity: .25, cta_clarity: .65, proof_strength: .75 },
-      strategy: { assessContent: async () => ({ fit: "mixed", notes: ["контекст понятен не сразу"], weakTransition: "interest", revisionSuggestions: ["усилить первые 2 секунды"], confidence: 1, evidenceState: "sufficient" }) },
-      contentFactory: {
-        createDraft: async () => baseCandidate,
-        reviseDraft: async ({ candidate, assessment }) => { revised = true; return { ...candidate, workPackage: { ...candidate.workPackage, diveMRevisionNotes: assessment.revisionSuggestions } }; },
-      },
-      observer: observer(async () => ({ verified: true, notes: ["draft valid"] })),
-    });
-    expect(revised).toBe(true);
-    expect(result.readyForReview).toBe(true);
-    expect(result.assessment?.weakTransition).toBe("interest");
-  });
-
-  it("repairs a failed observer draft automatically before showing it to the user", async () => {
-    let revisions = 0;
-    let checks = 0;
-    const result = await prepareContentForReview({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
-      assetIds: ["asset-1"], channel: "instagram", goal: "publish a strong post",
-      currentFocus: ["acting"], styleMemoryNotes: [],
-      strategy: { assessContent: async () => ({ fit: "strong", notes: [], weakTransition: null, revisionSuggestions: [], confidence: 1, evidenceState: "sufficient" }) },
-      contentFactory: {
-        createDraft: async () => baseCandidate,
-        reviseDraft: async ({ candidate, assessment }) => { revisions++; return { ...candidate, title: "Исправленный материал", workPackage: { ...candidate.workPackage, diveMRevisionNotes: assessment.revisionSuggestions } }; },
-      },
-      observer: observer(async candidate => {
-        checks++;
-        return checks === 1
-          ? { verified: false, notes: ["Слишком слабый первый экран", "CTA выглядит искусственно"] }
-          : { verified: candidate.title === "Исправленный материал", notes: ["QA repair passed"] };
-      }),
-    });
-    expect(revisions).toBe(1);
-    expect(checks).toBe(2);
-    expect(result.readyForReview).toBe(true);
-    expect(result.candidate.title).toBe("Исправленный материал");
-    expect(result.observerNotes).toContain("QA repair passed");
-  });
-
-  it("stops the autonomous repair loop after a bounded number of attempts", async () => {
-    let revisions = 0;
-    const result = await prepareContentForReview({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
-      assetIds: ["asset-1"], channel: "instagram", goal: "publish", currentFocus: [], styleMemoryNotes: [],
-      strategy: { assessContent: async () => ({ fit: "strong", notes: [], weakTransition: null, revisionSuggestions: [], confidence: 1, evidenceState: "sufficient" }) },
-      contentFactory: { createDraft: async () => baseCandidate, reviseDraft: async ({candidate}) => { revisions++; return candidate; } },
-      observer: observer(async () => ({ verified: false, notes: ["still weak"] })),
-    });
-    expect(revisions).toBe(2);
-    expect(result.readyForReview).toBe(false);
-    expect(result.observerNotes).toContain("still weak");
-  });
-
-  it("blocks publishing without approval", async () => {
-    let publishCalls = 0;
-    const result = await publishReviewedContent({ capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, candidate: baseCandidate, review: null,
-      publisher: { publish: async () => { publishCalls++; return { externalId: "post-1" }; } }, observer: observer(async () => ({verified:true,notes:[]})) });
-    expect(result.published).toBe(false); expect(publishCalls).toBe(0);
-  });
-
-  it("publishes only an approved exact candidate and verifies outcome", async () => {
-    const result = await publishReviewedContent({ capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, candidate: baseCandidate,
-      review: { candidateId: "candidate-1", approved: true, feedback: [], reviewedAt: "2026-09-28T21:00:00.000Z" },
-      publisher: { publish: async () => ({ externalId: "post-1" }) },
-      observer: { verifyDraft: async () => ({ verified: true, notes: [] }), verifyPublished: async () => ({ verified: true, externalId: "post-1", notes: ["visible"] }) } });
-    expect(result).toEqual({ published: true, externalId: "post-1", verified: true, notes: ["visible"] });
-  });
+describe("personal media pipeline",()=>{
+ it("runs DiveM assessment before review and applies revision",async()=>{let revised=false;const result=await prepareContentForReview({...common(),goal:"increase relevant actor profile visits",currentFocus:["acting","music"],styleMemoryNotes:["без дешёвого кликбейта"],lifeOsContext:{event:"rehearsal"},strategyEvidence:{distribution_strength:.8,profile_bridge_clarity:.7,hook_clarity:.25,cta_clarity:.65,proof_strength:.75},strategy:{assessContent:async()=>({fit:"mixed" as const,notes:["контекст понятен не сразу"],weakTransition:"interest",revisionSuggestions:["усилить первые 2 секунды"],confidence:1,evidenceState:"sufficient" as const})},contentFactory:{createDraft:async()=>baseCandidate,reviseDraft:async({candidate,assessment}:any)=>{revised=true;return{...candidate,workPackage:{...candidate.workPackage,diveMRevisionNotes:assessment.revisionSuggestions}}}},observer:observer(async()=>({verified:true,notes:["draft valid"]}))});expect(revised).toBe(true);expect(result.readyForReview).toBe(true);expect(result.assessment?.weakTransition).toBe("interest")});
+ it("repairs a failed observer draft automatically before showing it to the user",async()=>{let revisions=0,checks=0;const result=await prepareContentForReview({...common(),contentFactory:{createDraft:async()=>baseCandidate,reviseDraft:async({candidate,assessment}:any)=>{revisions++;return{...candidate,title:"Исправленный материал",workPackage:{...candidate.workPackage,diveMRevisionNotes:assessment.revisionSuggestions}}}},observer:observer(async candidate=>{checks++;return checks===1?{verified:false,notes:["Слишком слабый первый экран","CTA выглядит искусственно"]}:{verified:candidate.title==="Исправленный материал",notes:["QA repair passed"]}})});expect(revisions).toBe(1);expect(checks).toBe(2);expect(result.readyForReview).toBe(true);expect(result.candidate.title).toBe("Исправленный материал")});
+ it("stops autonomous repair after bounded attempts",async()=>{let revisions=0;const result=await prepareContentForReview({...common(),contentFactory:{createDraft:async()=>baseCandidate,reviseDraft:async({candidate}:any)=>{revisions++;return candidate}},observer:observer(async()=>({verified:false,notes:["still weak"]}))});expect(revisions).toBe(2);expect(result.readyForReview).toBe(false)});
+ it("blocks publishing without approval",async()=>{let calls=0;const result=await publishReviewedContent({capabilities:PERSONAL_HIGH_AUTONOMY_MEDIA,candidate:baseCandidate,review:null,publisher:{publish:async()=>{calls++;return{externalId:"post-1"}}},observer:observer(async()=>({verified:true,notes:[]}))});expect(result.published).toBe(false);expect(calls).toBe(0)});
+ it("blocks approved publishing if final prepublish QA fails",async()=>{let calls=0;const result=await publishReviewedContent({capabilities:PERSONAL_HIGH_AUTONOMY_MEDIA,candidate:baseCandidate,review:{candidateId:"candidate-1",approved:true,feedback:[],reviewedAt:"2026-09-28T21:00:00.000Z"},publisher:{publish:async()=>{calls++;return{externalId:"post-1"}}},observer:observer(async()=>({verified:false,notes:["visual overflow detected"]}))});expect(result.published).toBe(false);expect(result.verified).toBe(false);expect(calls).toBe(0);expect(result.notes).toContain("visual overflow detected")});
+ it("publishes approved candidate, verifies outcome and retries publication once when verification fails",async()=>{let publishes=0,checks=0;const result=await publishReviewedContent({capabilities:PERSONAL_HIGH_AUTONOMY_MEDIA,candidate:baseCandidate,review:{candidateId:"candidate-1",approved:true,feedback:[],reviewedAt:"2026-09-28T21:00:00.000Z"},publisher:{publish:async()=>({externalId:`post-${++publishes}`})},observer:observer(async()=>({verified:true,notes:[]}),async()=>{checks++;return checks===1?{verified:false,notes:["post not visible"]}:{verified:true,externalId:"post-2",notes:["visible after retry"]}})});expect(publishes).toBe(2);expect(checks).toBe(2);expect(result).toEqual({published:true,externalId:"post-2",verified:true,notes:["visible after retry"]})});
 });
