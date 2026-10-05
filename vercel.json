@@ -9,6 +9,7 @@
   },
   "rewrites": [
     { "source": "/api/media/transcribe", "destination": "/api/media/status" },
+    { "source": "/api/persona", "destination": "/api/media/status" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
