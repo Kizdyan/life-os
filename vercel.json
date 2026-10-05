@@ -8,6 +8,7 @@
     "LIFE_OS_EDGE_RUNTIME_URL": "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime"
   },
   "rewrites": [
+    { "source": "/api/media/transcribe", "destination": "/api/media/status" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
