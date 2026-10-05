@@ -20,131 +20,89 @@ const baseCandidate: ContentCandidate = {
     aspectRatio: "9:16",
     targetDurationMs: 25000,
     hook: "Как проходит репетиция изнутри",
-    clips: [
-      {
-        assetId: "asset-1",
-        sourceStartMs: 0,
-        sourceEndMs: 3000,
-        order: 1,
-        reason: "hook",
-      },
-    ],
-    captions: [],
-    overlays: [],
-    audio: [],
-    coverBrief: null,
-    diveMRevisionNotes: [],
-    styleMemoryNotes: [],
+    clips: [{ assetId: "asset-1", sourceStartMs: 0, sourceEndMs: 3000, order: 1, reason: "hook" }],
+    captions: [], overlays: [], audio: [], coverBrief: null,
+    diveMRevisionNotes: [], styleMemoryNotes: [],
   }),
 };
+
+function observer(verifyDraft: (candidate: ContentCandidate) => Promise<{verified:boolean;notes:string[]}>) {
+  return { verifyDraft, verifyPublished: async () => ({ verified: true, notes: [] }) };
+}
 
 describe("personal media pipeline", () => {
   it("runs DiveM assessment before review and applies revision", async () => {
     let revised = false;
     const result = await prepareContentForReview({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
-      profileId: "personal",
-      projectId: "project-1",
-      assetIds: ["asset-1"],
-      channel: "instagram",
-      goal: "increase relevant actor profile visits",
-      currentFocus: ["acting", "music"],
-      styleMemoryNotes: ["без дешёвого кликбейта"],
+      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
+      assetIds: ["asset-1"], channel: "instagram", goal: "increase relevant actor profile visits",
+      currentFocus: ["acting", "music"], styleMemoryNotes: ["без дешёвого кликбейта"],
       lifeOsContext: { event: "rehearsal" },
-      strategyEvidence: {
-        distribution_strength: 0.8,
-        profile_bridge_clarity: 0.7,
-        hook_clarity: 0.25,
-        cta_clarity: 0.65,
-        proof_strength: 0.75,
-      },
-      strategy: {
-        assessContent: async () => ({
-          fit: "mixed",
-          notes: ["контекст понятен не сразу"],
-          weakTransition: "interest",
-          revisionSuggestions: ["усилить первые 2 секунды"],
-          confidence: 1,
-          evidenceState: "sufficient",
-        }),
-      },
+      strategyEvidence: { distribution_strength: .8, profile_bridge_clarity: .7, hook_clarity: .25, cta_clarity: .65, proof_strength: .75 },
+      strategy: { assessContent: async () => ({ fit: "mixed", notes: ["контекст понятен не сразу"], weakTransition: "interest", revisionSuggestions: ["усилить первые 2 секунды"], confidence: 1, evidenceState: "sufficient" }) },
       contentFactory: {
         createDraft: async () => baseCandidate,
-        reviseDraft: async ({ candidate, assessment }) => {
-          revised = true;
-          return {
-            ...candidate,
-            workPackage: {
-              ...candidate.workPackage,
-              diveMRevisionNotes: assessment.revisionSuggestions,
-            },
-          };
-        },
+        reviseDraft: async ({ candidate, assessment }) => { revised = true; return { ...candidate, workPackage: { ...candidate.workPackage, diveMRevisionNotes: assessment.revisionSuggestions } }; },
       },
-      observer: {
-        verifyDraft: async () => ({ verified: true, notes: ["draft valid"] }),
-        verifyPublished: async () => ({ verified: true, notes: [] }),
-      },
+      observer: observer(async () => ({ verified: true, notes: ["draft valid"] })),
     });
-
     expect(revised).toBe(true);
     expect(result.readyForReview).toBe(true);
     expect(result.assessment?.weakTransition).toBe("interest");
-    expect(result.candidate.workPackage.diveMRevisionNotes).toContain(
-      "усилить первые 2 секунды",
-    );
+  });
+
+  it("repairs a failed observer draft automatically before showing it to the user", async () => {
+    let revisions = 0;
+    let checks = 0;
+    const result = await prepareContentForReview({
+      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
+      assetIds: ["asset-1"], channel: "instagram", goal: "publish a strong post",
+      currentFocus: ["acting"], styleMemoryNotes: [],
+      strategy: { assessContent: async () => ({ fit: "strong", notes: [], weakTransition: null, revisionSuggestions: [], confidence: 1, evidenceState: "sufficient" }) },
+      contentFactory: {
+        createDraft: async () => baseCandidate,
+        reviseDraft: async ({ candidate, assessment }) => { revisions++; return { ...candidate, title: "Исправленный материал", workPackage: { ...candidate.workPackage, diveMRevisionNotes: assessment.revisionSuggestions } }; },
+      },
+      observer: observer(async candidate => {
+        checks++;
+        return checks === 1
+          ? { verified: false, notes: ["Слишком слабый первый экран", "CTA выглядит искусственно"] }
+          : { verified: candidate.title === "Исправленный материал", notes: ["QA repair passed"] };
+      }),
+    });
+    expect(revisions).toBe(1);
+    expect(checks).toBe(2);
+    expect(result.readyForReview).toBe(true);
+    expect(result.candidate.title).toBe("Исправленный материал");
+    expect(result.observerNotes).toContain("QA repair passed");
+  });
+
+  it("stops the autonomous repair loop after a bounded number of attempts", async () => {
+    let revisions = 0;
+    const result = await prepareContentForReview({
+      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, profileId: "personal", projectId: "project-1",
+      assetIds: ["asset-1"], channel: "instagram", goal: "publish", currentFocus: [], styleMemoryNotes: [],
+      strategy: { assessContent: async () => ({ fit: "strong", notes: [], weakTransition: null, revisionSuggestions: [], confidence: 1, evidenceState: "sufficient" }) },
+      contentFactory: { createDraft: async () => baseCandidate, reviseDraft: async ({candidate}) => { revisions++; return candidate; } },
+      observer: observer(async () => ({ verified: false, notes: ["still weak"] })),
+    });
+    expect(revisions).toBe(2);
+    expect(result.readyForReview).toBe(false);
+    expect(result.observerNotes).toContain("still weak");
   });
 
   it("blocks publishing without approval", async () => {
     let publishCalls = 0;
-    const result = await publishReviewedContent({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
-      candidate: baseCandidate,
-      review: null,
-      publisher: {
-        publish: async () => {
-          publishCalls += 1;
-          return { externalId: "post-1" };
-        },
-      },
-      observer: {
-        verifyDraft: async () => ({ verified: true, notes: [] }),
-        verifyPublished: async () => ({ verified: true, notes: [] }),
-      },
-    });
-
-    expect(result.published).toBe(false);
-    expect(publishCalls).toBe(0);
+    const result = await publishReviewedContent({ capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, candidate: baseCandidate, review: null,
+      publisher: { publish: async () => { publishCalls++; return { externalId: "post-1" }; } }, observer: observer(async () => ({verified:true,notes:[]})) });
+    expect(result.published).toBe(false); expect(publishCalls).toBe(0);
   });
 
   it("publishes only an approved exact candidate and verifies outcome", async () => {
-    const result = await publishReviewedContent({
-      capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA,
-      candidate: baseCandidate,
-      review: {
-        candidateId: "candidate-1",
-        approved: true,
-        feedback: [],
-        reviewedAt: "2026-09-28T21:00:00.000Z",
-      },
-      publisher: {
-        publish: async () => ({ externalId: "post-1" }),
-      },
-      observer: {
-        verifyDraft: async () => ({ verified: true, notes: [] }),
-        verifyPublished: async () => ({
-          verified: true,
-          externalId: "post-1",
-          notes: ["visible"],
-        }),
-      },
-    });
-
-    expect(result).toEqual({
-      published: true,
-      externalId: "post-1",
-      verified: true,
-      notes: ["visible"],
-    });
+    const result = await publishReviewedContent({ capabilities: PERSONAL_HIGH_AUTONOMY_MEDIA, candidate: baseCandidate,
+      review: { candidateId: "candidate-1", approved: true, feedback: [], reviewedAt: "2026-09-28T21:00:00.000Z" },
+      publisher: { publish: async () => ({ externalId: "post-1" }) },
+      observer: { verifyDraft: async () => ({ verified: true, notes: [] }), verifyPublished: async () => ({ verified: true, externalId: "post-1", notes: ["visible"] }) } });
+    expect(result).toEqual({ published: true, externalId: "post-1", verified: true, notes: ["visible"] });
   });
 });
