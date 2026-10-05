@@ -1,0 +1,40 @@
+export type IdeaStatus='candidate'|'now'|'later'|'rejected'|'used';
+export type ContentFormat='carousel'|'photo'|'reel'|'short'|'story';
+export type Platform='instagram'|'vk'|'youtube';
+export type JobStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval'|'revision'|'approved'|'publishing'|'published'|'blocked';
+export type TargetRole='strategist'|'writer'|'designer'|'photo'|'video'|'platform'|'marketing';
+
+export interface ContentIdea{ id:string; title:string; angle:string; format:ContentFormat; score:number; status:IdeaStatus; reason:string; source:string; }
+export interface QAReport{pass:boolean;score:number;issues:{code:string;message:string;target:TargetRole}[]}
+export interface ContentPackage{title:string;publicText:string;slides?:{title:string;body:string}[];platforms:Platform[];format:ContentFormat;assets:string[]}
+export interface ContentJob{id:string;idea:ContentIdea;stage:JobStage;package?:ContentPackage;qa?:QAReport;revisionCount:number;approvedAt?:string}
+
+const INTERNAL=/\bpersona\b/iu;
+export function publicCopyIsSafe(pkg:ContentPackage){return !INTERNAL.test([pkg.title,pkg.publicText,...(pkg.slides??[]).flatMap(s=>[s.title,s.body])].join(' '))}
+export function readableCarousel(pkg:ContentPackage){return (pkg.slides??[]).every(s=>s.title.length<=72&&s.body.length<=240)}
+export function runFinalQA(pkg:ContentPackage):QAReport{const issues:QAReport['issues']=[];if(!publicCopyIsSafe(pkg))issues.push({code:'internal_brand',message:'В публичном материале осталось внутреннее слово Persona',target:'writer'});if(pkg.format==='carousel'&&!readableCarousel(pkg))issues.push({code:'readability',message:'Карточка перегружена текстом для мобильного экрана',target:'designer'});const joined=[pkg.title,pkg.publicText,...(pkg.slides??[]).map(s=>s.title)].join(' ').toLowerCase();if(/(дальше).*(дальше)/u.test(joined))issues.push({code:'duplicate',message:'Есть повторяющаяся формулировка',target:'writer'});return{pass:issues.length===0,score:Math.max(0,100-issues.length*25),issues}}
+export function transition(job:ContentJob,next:JobStage):ContentJob{const allowed:Record<JobStage,JobStage[]>={strategy:['needs_assets','production'],needs_assets:['production','blocked'],production:['marketing_qa','blocked'],marketing_qa:['production','media_qa'],media_qa:['production','final_qa'],final_qa:['revision','approval','production'],approval:['revision','approved'],revision:['production'],approved:['publishing'],publishing:['published','blocked'],published:[],blocked:['production']};if(!allowed[job.stage].includes(next))throw new Error(`Invalid Persona transition: ${job.stage} -> ${next}`);if(next==='approval'&&(!job.qa?.pass||job.stage!=='final_qa'))throw new Error('Only QA-passed content can enter approval');if(next==='publishing'&&job.stage!=='approved')throw new Error('Publishing requires approval');return{...job,stage:next}}
+
+const seed:[string,string,ContentFormat,string][]=[
+['Что происходит за минуту до выхода на сцену','Показать невидимый зрителю момент перед спектаклем','carousel','theatre'],
+['Как четыре ноты становятся сценой','От музыкального зерна к драматургии и оркестру','carousel','musical'],
+['Что остаётся за кадром на репетиции','Живой backstage вместо результата из афиши','reel','theatre'],
+['Как рождается аранжировка','Показать путь от фортепиано к готовому звучанию','reel','music'],
+['Одна ошибка, которая улучшила сцену','История через конфликт и вывод','carousel','process'],
+['До и после: музыкальная тема','Дать услышать трансформацию идеи','short','music'],
+['Что актёр делает, когда ничего не получается','Честный профессиональный процесс','carousel','acting'],
+['Один день между театром и музыкой','Соединить профессии в личную историю','reel','journey'],
+['Почему красивого кадра недостаточно','Показать смысл за визуалом','photo','positioning'],
+['Фрагмент будущего мюзикла','Тизер проекта без спойлеров','short','musical'],
+['Три вещи, которые зритель не замечает','Обучающий backstage с сильным curiosity gap','carousel','theatre'],
+['Из заметки в готовую сцену','Показать реальный творческий pipeline','reel','process']];
+export function buildIdeaBank(history:Pick<ContentIdea,'title'|'status'>[]=[]):ContentIdea[]{const blocked=new Set(history.filter(x=>x.status==='used'||x.status==='rejected').map(x=>x.title.toLowerCase()));return seed.filter(([t])=>!blocked.has(t.toLowerCase())).map(([title,angle,format,source],i)=>({id:`idea-${i+1}`,title,angle,format,source,reason:'Баланс личного процесса, профессии и интереса аудитории',score:95-i*2,status:'candidate'}));}
+export function markIdea(ideas:ContentIdea[],id:string,status:IdeaStatus){return ideas.map(x=>x.id===id?{...x,status}:x)}
+
+export function captureAssignment(idea:ContentIdea,assets:string[]){if(assets.length)return null;if(idea.format==='reel'||idea.format==='short')return{kind:'video',instruction:'Сними 3 вертикальных фрагмента: общий план 5–7 сек., процесс 8–12 сек., короткую реплику в камеру 10–15 сек. Остальное — монтаж, текст, титры и музыка — делает система.'};if(idea.format==='photo')return{kind:'photo',instruction:'Сделай один естественный вертикальный кадр в контексте темы. Не обрабатывай: цвет, кадрирование и стиль делает система.'};return null}
+
+export interface RevisionIntent{summary:string;removeInternalBrand:boolean;fixReadability:boolean;strengthenMarketing:boolean;targets:TargetRole[];original:string}
+export function interpretRevision(text:string):RevisionIntent{const t=text.toLowerCase();const remove=/persona|персона/u.test(t)&&/(убер|не долж|внутрен)/u.test(t);const readability=/налез|читаб|много текста|перегруж|дизайн/u.test(t);const marketing=/маркет|цепля|подпис|интерес|прода/u.test(t);const targets=new Set<TargetRole>();if(remove)targets.add('writer');if(readability)targets.add('designer');if(marketing)targets.add('marketing');return{summary:[remove&&'убрать внутренний бренд',readability&&'исправить мобильную читаемость',marketing&&'усилить маркетинговую ценность'].filter(Boolean).join('; ')||'семантически применить пользовательскую правку',removeInternalBrand:remove,fixReadability:readability,strengthenMarketing:marketing,targets:[...targets],original:text}}
+
+export function sanitizePublicPackage(pkg:ContentPackage){const clean=(s:string)=>s.replace(/\bPERSONA\s*[·•—:-]*\s*/giu,'').replace(/\bPersona\b/giu,'').replace(/\s{2,}/g,' ').trim();return{...pkg,title:clean(pkg.title),publicText:clean(pkg.publicText),slides:pkg.slides?.map(s=>({title:clean(s.title),body:clean(s.body)}))}}
+export function applyRevision(pkg:ContentPackage,intent:RevisionIntent):ContentPackage{let out=intent.removeInternalBrand?sanitizePublicPackage(pkg):pkg;if(intent.fixReadability&&out.slides)out={...out,slides:out.slides.map(s=>({title:s.title.length>72?s.title.slice(0,69).replace(/\s+\S*$/u,'')+'…':s.title,body:s.body.length>240?s.body.slice(0,237).replace(/\s+\S*$/u,'')+'…':s.body}))};return out}
