@@ -1,5 +1,5 @@
 import{describe,expect,it}from'vitest';
-import handler from'./persona';
+import handler from'./persona.js';
 
 describe('persona v3 API guards',()=>{
  it('reports pipeline version and status on GET',async()=>{const response=await handler.fetch(new Request('https://life-os.test/api/persona'));expect(response.status).toBe(200);const body:any=await response.json();expect(body.pipelineVersion).toBe(3);expect(typeof body.personaAI).toBe('boolean')});
