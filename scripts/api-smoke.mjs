@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +12,9 @@ const output = mkdtempSync(join(temporaryDirectory, 'life-os-api-smoke-'));
 
 try {
   writeFileSync(join(output, 'package.json'), JSON.stringify({ type: 'module' }));
+  // Compiled API files live in a temp directory, so Node would not otherwise
+  // find runtime dependencies such as the AI SDK while importing them.
+  symlinkSync(join(root, 'node_modules'), join(output, 'node_modules'), 'junction');
   const config = join(output, 'tsconfig.json');
   writeFileSync(config, JSON.stringify({
     extends: join(root, 'api', 'tsconfig.json'),
