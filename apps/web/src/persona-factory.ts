@@ -27,8 +27,20 @@ const seed:[string,string,ContentFormat,string][]=[
 ['Почему красивого кадра недостаточно','Показать смысл за визуалом','photo','positioning'],
 ['Фрагмент будущего мюзикла','Тизер проекта без спойлеров','short','musical'],
 ['Три вещи, которые зритель не замечает','Обучающий backstage с сильным curiosity gap','carousel','theatre'],
-['Из заметки в готовую сцену','Показать реальный творческий pipeline','reel','process']];
-export function buildIdeaBank(history:Pick<ContentIdea,'title'|'status'>[]=[]):ContentIdea[]{const blocked=new Set(history.filter(x=>x.status==='used'||x.status==='rejected').map(x=>x.title.toLowerCase()));return seed.filter(([t])=>!blocked.has(t.toLowerCase())).map(([title,angle,format,source],i)=>({id:`idea-${i+1}`,title,angle,format,source,reason:'Баланс личного процесса, профессии и интереса аудитории',score:95-i*2,status:'candidate'}));}
+['Из заметки в готовую сцену','Показать реальный творческий pipeline','reel','process'],
+['Что происходит после «стоп, снято»','Показать момент, который обычно вырезают','reel','film'],
+['Как понять, что идея для поста слабая','Показать самопроверку автора до публикации','carousel','marketing'],
+['Почему я не хочу показывать только результат','Личный манифест о процессе','carousel','positioning'],
+['Одна репетиция, которую стоило бы увидеть зрителю','Невидимая работа перед спектаклем','reel','theatre'],
+['Как одна фраза меняет весь номер','Драматургия через микродеталь','carousel','musical'],
+['Что показать человеку, который впервые пришёл в театр','Вход в мир через личное наблюдение','photo','theatre'],
+['Почему некоторые идеи лучше оставить на потом','Как работает творческий банк','carousel','process'],
+['Что реально помогает пережить провальную пробу','Практический опыт без наставничества','carousel','acting'],
+['Как один предмет может рассказать о роли','Предмет как драматургический якорь','photo','acting'],
+['Что остаётся после репетиции','Один честный кадр вместо отчёта','photo','theatre'],
+['Как понять, что сцена уже живая','Признаки, которые замечает актёр','carousel','craft'],
+['Почему процесс иногда интереснее результата','История через незавершённость','carousel','positioning']];
+export function buildIdeaBank(history:Pick<ContentIdea,'title'|'status'>[]=[]):ContentIdea[]{const blocked=new Set(history.filter(x=>x.status==='used'||x.status==='rejected').map(x=>x.title.toLowerCase()));return seed.filter(([t])=>!blocked.has(t.toLowerCase())).map(([title,angle,format,source],i)=>({id:`idea-${i+1}`,title,angle,format,source,reason:'Баланс личного процесса, профессии и интереса аудитории',score:95-i,status:'candidate'}));}
 export function markIdea(ideas:ContentIdea[],id:string,status:IdeaStatus){return ideas.map(x=>x.id===id?{...x,status}:x)}
 
 export function captureAssignment(idea:ContentIdea,assets:string[]){if(assets.length)return null;if(idea.format==='reel'||idea.format==='short')return{kind:'video',instruction:'Сними 3 вертикальных фрагмента: общий план 5–7 сек., процесс 8–12 сек., короткую реплику в камеру 10–15 сек. Остальное — монтаж, текст, титры и музыка — делает система.'};if(idea.format==='photo')return{kind:'photo',instruction:'Сделай один естественный вертикальный кадр в контексте темы. Не обрабатывай: цвет, кадрирование и стиль делает система.'};return null}
