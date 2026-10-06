@@ -26,6 +26,7 @@ describe("processVideo", () => {
       inputPath: fixture.path,
       outputRoot,
       transcriptProvider,
+      transcriptRequired: true,
       exportPresets: [
         {
           id: "test-platform",
@@ -66,17 +67,50 @@ describe("processVideo", () => {
       "edit-decision.json",
       "captions.srt",
       "audio.json",
+      "stt-input.wav",
       "rough-cut.mp4",
+      "normalized-rough-cut.mp4",
       "vertical-master.mp4",
+      "captioned-vertical.mp4",
       "test-platform.mp4",
       "report.json",
     ]) {
       await expect(access(join(first.runPath, fileName))).resolves.toBeUndefined();
     }
     expect(first.platformOutputs[0].presetId).toBe("test-platform");
+    expect((await readFile(first.captionsPath, "utf8")).trim()).not.toBe("");
+    expect(first.transcriptionAudio?.path).toBe(join(first.runPath, "stt-input.wav"));
+    expect(first.transcriptProviderUsage).toMatchObject({
+      providerUsed: "fixture",
+      fallbackOccurred: false,
+      quotaDependency: false,
+      localProcessing: true,
+      externalCostRequired: false,
+    });
+    expect(first.audioNormalization).toMatchObject({
+      before: { status: "available" },
+      after: { status: "available", clippingRisk: false },
+      target: { integratedLoudnessLufs: -16, truePeakDb: -1.5 },
+      providerUsage: {
+        providerUsed: "ffmpeg-loudnorm-local",
+        quotaDependency: false,
+        localProcessing: true,
+        externalCostRequired: false,
+      },
+    });
+    expect(first.normalizedRoughCut.path).toBe(join(first.runPath, "normalized-rough-cut.mp4"));
+    expect(first.cleanMaster.path).toBe(join(first.runPath, "vertical-master.mp4"));
+    expect(first.captionedMaster?.path).toBe(join(first.runPath, "captioned-vertical.mp4"));
+    expect(first.platformOutputSource).toBe("captioned-vertical");
     expect(JSON.parse(await readFile(first.reportPath, "utf8"))).toMatchObject({
       status: "COMPLETED",
       runId: first.runId,
+      transcriptProviderUsage: {
+        providerUsed: "fixture",
+        quotaDependency: false,
+        externalCostRequired: false,
+      },
+      platformOutputSource: "captioned-vertical",
     });
   }, 60_000);
 
@@ -126,6 +160,8 @@ describe("runCli", () => {
 
     expect(code).toBe(0);
     expect(output.join("\n")).toContain("Usage:");
+    expect(output.join("\n")).toContain("--whisper-cpp");
+    expect(output.join("\n")).toContain("WHISPER_MODEL_PATH");
     expect(errors).toEqual([]);
   });
 

@@ -37,6 +37,7 @@ describe("persona video pipeline real E2E", () => {
           },
         ],
       }),
+      transcriptRequired: true,
     });
 
     expect(result.qa.status).not.toBe("FAIL");
@@ -48,7 +49,24 @@ describe("persona video pipeline real E2E", () => {
     expect(sha256(await readFile(fixture.path))).toBe(beforeHash);
     expect(result.inputSha256).toBe(beforeHash);
 
-    const outputs = [result.roughCut, result.verticalMaster, ...result.platformOutputs];
+    expect(result.transcriptProviderUsage).toMatchObject({
+      providerUsed: "e2e-fixture",
+      quotaDependency: false,
+      localProcessing: true,
+      externalCostRequired: false,
+    });
+    expect(result.audioNormalization).toMatchObject({
+      before: { status: "available" },
+      after: { status: "available", clippingRisk: false },
+    });
+    expect(result.platformOutputSource).toBe("captioned-vertical");
+    const outputs = [
+      result.roughCut,
+      result.normalizedRoughCut,
+      result.cleanMaster,
+      result.captionedMaster!,
+      ...result.platformOutputs,
+    ];
     for (const output of outputs) {
       const metadata = await probeVideo({
         inputPath: output.path,
@@ -59,8 +77,17 @@ describe("persona video pipeline real E2E", () => {
       expect(metadata.durationMs).toBeLessThan(3_500);
       expect(metadata.hasAudio).toBe(true);
       if (basename(output.path) !== "rough-cut.mp4") {
-        expect([metadata.width, metadata.height]).toEqual([1080, 1920]);
+        if (basename(output.path) !== "normalized-rough-cut.mp4") {
+          expect([metadata.width, metadata.height]).toEqual([1080, 1920]);
+        }
       }
+      await expect(
+        fixture.runner.run(
+          fixture.ffmpegPath,
+          ["-v", "error", "-i", output.path, "-f", "null", "-"],
+          { timeoutMs: 120_000 },
+        ),
+      ).resolves.toMatchObject({ exitCode: 0 });
     }
 
     const captions = await readFile(result.captionsPath, "utf8");
@@ -85,6 +112,11 @@ describe("persona video pipeline real E2E", () => {
     expect(report).toMatchObject({
       status: "COMPLETED",
       inputSha256: beforeHash,
+      platformOutputSource: "captioned-vertical",
+      transcriptProviderUsage: {
+        quotaDependency: false,
+        externalCostRequired: false,
+      },
       platformOutputs: expect.arrayContaining([
         expect.objectContaining({ presetId: "instagram-reels" }),
         expect.objectContaining({ presetId: "youtube-shorts" }),

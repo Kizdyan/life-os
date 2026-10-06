@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { analyzeAudio } from "./audio";
+import {
+  analyzeAudio,
+  FfmpegLoudnessNormalizer,
+  type AudioNormalizationProvider,
+} from "./audio";
+import { renderCaptionedVideo, type CaptionRenderStyle } from "./caption-render";
 import { captionsToSrt, retimeTranscriptToEdl } from "./captions";
 import type {
   ExportPreset,
@@ -21,15 +26,26 @@ import { renderRoughCut } from "./rough-cut";
 import {
   buildObjectiveSegments,
   detectSilence,
+  type SegmentationPolicy,
   type SilenceDetectionPolicy,
 } from "./segmentation";
 import { runTechnicalQa, type TechnicalQaPolicy } from "./technical-qa";
-import { resolveTranscript, type TranscriptProvider } from "./transcription";
+import {
+  resolveTranscript,
+  TranscriptProviderChain,
+  type TranscriptProvider,
+  type TranscriptProviderCandidate,
+} from "./transcription";
+import { extractTranscriptionAudio } from "./transcription-audio";
 
 export interface VideoProcessingRequest {
   inputPath: string;
   outputRoot: string;
   transcriptProvider?: TranscriptProvider | null;
+  transcriptCandidates?: TranscriptProviderCandidate[];
+  transcriptRequired?: boolean;
+  audioNormalizationProvider?: AudioNormalizationProvider;
+  captionStyle?: Partial<CaptionRenderStyle>;
   reframeInstruction?: ReframeInstruction;
   exportPresets?: ExportPreset[];
   ffmpegPath?: string;
@@ -37,6 +53,7 @@ export interface VideoProcessingRequest {
   runner?: ProcessRunner;
   qaPolicy?: Partial<TechnicalQaPolicy>;
   silencePolicy?: Partial<SilenceDetectionPolicy>;
+  segmentationPolicy?: Partial<SegmentationPolicy>;
   edlPolicy?: Partial<EdlPolicy>;
   onProgress?: (stage: PipelineStage) => void;
 }
@@ -97,10 +114,44 @@ export async function processVideo(
     }
 
     progress("CAPTIONS");
-    const transcriptResolution = await resolveTranscript(
-      request.transcriptProvider ?? null,
-      inputPath,
-    );
+    const candidates =
+      request.transcriptCandidates ??
+      (request.transcriptProvider
+        ? [{ provider: request.transcriptProvider, allowed: true }]
+        : []);
+    const v1Enabled =
+      request.transcriptRequired === true ||
+      request.transcriptCandidates !== undefined ||
+      request.audioNormalizationProvider !== undefined;
+    const transcriptionAudio =
+      candidates.length > 0
+        ? await extractTranscriptionAudio({
+            metadata,
+            outputPath: join(runPath, "stt-input.wav"),
+            ffmpegPath: tools.ffmpegPath,
+            ffprobePath: tools.ffprobePath,
+            runner,
+          })
+        : null;
+    const transcriptResolution =
+      candidates.length > 0 && transcriptionAudio
+        ? await new TranscriptProviderChain(candidates).resolve({
+            audioPath: transcriptionAudio.path,
+            language: "ru",
+            artifactDirectory: runPath,
+            runner,
+          })
+        : await resolveTranscript(null, inputPath);
+    if (
+      request.transcriptRequired &&
+      (transcriptResolution.status !== "available" ||
+        transcriptResolution.transcript.segments.length === 0)
+    ) {
+      throw new VideoPipelineError(
+        "INVALID_TRANSCRIPT",
+        transcriptResolution.warning || "Required transcript is unavailable",
+      );
+    }
     await writeJson(join(runPath, "transcript.json"), transcriptResolution);
     const captionsPath = join(runPath, "captions.srt");
 
@@ -118,6 +169,7 @@ export async function processVideo(
       metadata.durationMs,
       silence,
       transcriptResolution.transcript,
+      request.segmentationPolicy,
     );
     const editDecisionList = buildEditDecisionList(
       metadata.durationMs,
@@ -142,16 +194,34 @@ export async function processVideo(
     });
 
     progress("AUDIO");
-    const audio = await analyzeAudio({
-      metadata: roughCut.metadata,
-      ffmpegPath: tools.ffmpegPath,
-      runner,
-    });
-    await writeJson(join(runPath, "audio.json"), audio);
+    const audioNormalization = v1Enabled
+      ? await (
+          request.audioNormalizationProvider ?? new FfmpegLoudnessNormalizer()
+        ).normalize({
+          metadata: roughCut.metadata,
+          outputPath: join(runPath, "normalized-rough-cut.mp4"),
+          ffmpegPath: tools.ffmpegPath,
+          ffprobePath: tools.ffprobePath,
+          runner,
+        })
+      : null;
+    const normalizedRoughCut = audioNormalization?.output ?? roughCut;
+    const audio = audioNormalization?.after ??
+      (await analyzeAudio({
+        metadata: roughCut.metadata,
+        ffmpegPath: tools.ffmpegPath,
+        runner,
+      }));
+    await writeJson(
+      join(runPath, "audio.json"),
+      audioNormalization
+        ? { normalized: true, ...audioNormalization }
+        : { normalized: false, before: audio, after: audio },
+    );
 
     progress("REFRAMING");
     const verticalMaster = await renderVerticalMaster({
-      metadata: roughCut.metadata,
+      metadata: normalizedRoughCut.metadata,
       instruction: request.reframeInstruction ?? { mode: "CENTER" },
       outputPath: join(runPath, "vertical-master.mp4"),
       ffmpegPath: tools.ffmpegPath,
@@ -159,9 +229,27 @@ export async function processVideo(
       runner,
     });
 
+    const captionedMaster =
+      v1Enabled && outputTranscript && outputTranscript.segments.length > 0
+        ? await renderCaptionedVideo({
+            input: verticalMaster,
+            srtPath: captionsPath,
+            outputPath: join(runPath, "captioned-vertical.mp4"),
+            ffmpegPath: tools.ffmpegPath,
+            ffprobePath: tools.ffprobePath,
+            runner,
+            style: request.captionStyle,
+          })
+        : null;
+    if (request.transcriptRequired && !captionedMaster) {
+      throw new VideoPipelineError("INVALID_TRANSCRIPT", "Required captioned output is unavailable");
+    }
+    const platformMaster = captionedMaster ?? verticalMaster;
+    const platformOutputSource = captionedMaster ? "captioned-vertical" : "vertical-master";
+
     progress("EXPORTING");
     const platformOutputs = await renderPlatformVariants({
-      master: verticalMaster,
+      master: platformMaster,
       outputDirectory: runPath,
       presets: request.exportPresets,
       ffmpegPath: tools.ffmpegPath,
@@ -186,10 +274,22 @@ export async function processVideo(
       segments,
       editDecisionList,
       transcript: transcriptResolution.transcript,
+      transcriptionAudio,
+      transcriptProviderUsage: transcriptResolution.providerUsage,
+      transcriptDiagnosticArtifacts: transcriptResolution.diagnosticArtifacts,
+      transcriptProviderDetails:
+        transcriptResolution.status === "available" && transcriptResolution.providerDetails
+          ? transcriptResolution.providerDetails
+          : null,
       captionsPath,
       audio,
       roughCut,
+      normalizedRoughCut,
+      audioNormalization,
       verticalMaster,
+      cleanMaster: verticalMaster,
+      captionedMaster,
+      platformOutputSource,
       platformOutputs,
       reportPath,
       warnings,

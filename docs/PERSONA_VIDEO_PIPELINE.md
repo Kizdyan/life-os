@@ -1,4 +1,4 @@
-# Persona Video Pipeline V0
+# Persona Video Pipeline V1
 
 `packages/persona-video` is an isolated local processing engine. It does not read or mutate
 Persona UI state, domain stores, Supabase data, publishing state, or Vercel configuration.
@@ -22,9 +22,10 @@ technical `PersonaVideoProcessingRecord`, and returns a typed input for the exis
 state. The bridge does not invoke the planner or make editorial selections.
 
 The input is immutable and hashed with a streaming SHA-256 reader. Each invocation creates a new timestamped run directory and never
-reuses output paths. A successful run contains normalized metadata, technical QA, transcript
-resolution, objective segments, an EDL, an SRT captions intermediate, audio analysis, a real
-rough cut, a 1080x1920 vertical master, platform variants, and `report.json`.
+reuses output paths. A successful V1 run retains `stt-input.wav`, provider diagnostics, canonical
+transcript, objective segments, a hygienic EDL, non-empty UTF-8 SRT, rough cut, two-pass normalized
+rough cut, clean 1080x1920 vertical master, captioned master, captioned platform variants, and
+`report.json`.
 
 `transcript.json` retains source-media timestamps. `captions.srt` maps those cues through the
 final KEEP ranges, so its timestamps match the rough cut and derived outputs after removed
@@ -53,9 +54,13 @@ Commands use argument arrays with `shell: false`.
 ## Current capability boundary
 
 - Segmentation uses objective silence signals. Timed transcript ranges protect speech from cuts.
-- A real `TranscriptProvider` is required for real speech-to-text. With no provider, the pipeline
-  records transcript unavailability and writes an empty captions intermediate.
-- Captions are an SRT intermediate; V0 does not burn subtitles into video.
+- V1 selects ordered `TranscriptProvider` candidates. An explicitly permitted external provider
+  may run first, while `WhisperCppTranscriptProvider` is the zero-credit local fallback.
+- Provider-native data remains diagnostic. Canonical transcript state is provider-neutral.
+- FFmpeg performs measured two-pass normalization at the configurable speech/social target
+  (`-16 LUFS`, `-1.5 dBTP`, `11 LU` by default) and rejects an unsafe verified peak.
+- `vertical-master.mp4` remains clean; `captioned-vertical.mp4` burns the real retimed SRT.
+- V1 platform outputs use the captioned master and record that source in the report.
 - Reframing supports deterministic center crop and validated manual regions. `FACE_AWARE` fails
   with `UNSUPPORTED_CAPABILITY` until a real tracking adapter exists.
 - Instagram Reels, YouTube Shorts, and VK Clips files are configurable encoding presets. Their
@@ -64,8 +69,12 @@ Commands use argument arrays with `shell: false`.
 ## Local use
 
 ```text
-pnpm persona:video -- <input-file> --output <directory>
+pnpm persona:video -- <input-file> --output <directory> --whisper-cpp <path> --whisper-model <path> --language ru
 ```
+
+`WHISPER_CPP_PATH` and `WHISPER_MODEL_PATH` can replace the two path flags. Both point to local
+files outside Git. A fully local report has `quotaDependency=false`, `localProcessing=true`, and
+`externalCostRequired=false` for the selected transcript and audio providers.
 
 The command prints progress to stderr/stdout and prints the successful `report.json` path last.
 Generated runs under `output/persona-video/` and acceptance artifacts under

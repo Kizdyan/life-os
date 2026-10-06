@@ -1,3 +1,6 @@
+import type { AudioNormalizationResult } from "./audio";
+import type { ProviderUsageReport } from "./transcription";
+
 export type PipelineStage =
   | "PROBING"
   | "QA"
@@ -238,10 +241,19 @@ export interface ProcessedVideoResult {
   segments: VideoSegment[];
   editDecisionList: EditDecisionList;
   transcript: Transcript | null;
+  transcriptionAudio: VerifiedAudioArtifact | null;
+  transcriptProviderUsage: ProviderUsageReport;
+  transcriptDiagnosticArtifacts: string[];
+  transcriptProviderDetails: Record<string, string | number | boolean | null> | null;
   captionsPath: string;
   audio: AudioAnalysis;
   roughCut: VerifiedMediaOutput;
+  normalizedRoughCut: VerifiedMediaOutput;
+  audioNormalization: AudioNormalizationResult | null;
   verticalMaster: VerifiedMediaOutput;
+  cleanMaster: VerifiedMediaOutput;
+  captionedMaster: VerifiedMediaOutput | null;
+  platformOutputSource: "vertical-master" | "captioned-vertical";
   platformOutputs: PlatformOutput[];
   reportPath: string;
   warnings: string[];
