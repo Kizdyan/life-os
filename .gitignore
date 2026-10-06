@@ -8,3 +8,4 @@ coverage
 output/persona-video/
 artifacts/persona-video-e2e/
 .persona-video-fixtures/
+.worktrees/
