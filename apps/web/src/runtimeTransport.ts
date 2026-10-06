@@ -22,8 +22,8 @@ export interface RuntimeSessionClient {
 export function createRuntimeGateway(options: RuntimeTransportOptions): RemoteLifeOsGateway {
   const fetchImpl = options.fetchImpl ?? fetch;
   const edgeUrl = options.edgeUrl.trim();
-  if (edgeUrl) return new EdgeRuntimeClient(edgeUrl, options.storage, fetchImpl);
-  return new HttpRemoteLifeOsGateway(options.apiUrl, fetchImpl);
+  if (!edgeUrl) throw new Error('Supabase Edge runtime URL is required in production');
+  return new EdgeRuntimeClient(edgeUrl, options.storage, fetchImpl);
 }
 
 export function createRuntimeSessionClient(options: RuntimeTransportOptions): RuntimeSessionClient {
@@ -37,7 +37,7 @@ export function createRuntimeSessionClient(options: RuntimeTransportOptions): Ru
       logout: async () => client.logout(),
     };
   }
-  return new VercelRuntimeSessionClient(options.apiUrl, fetchImpl);
+  throw new Error('Supabase Edge runtime URL is required in production');
 }
 
 class VercelRuntimeSessionClient implements RuntimeSessionClient {
