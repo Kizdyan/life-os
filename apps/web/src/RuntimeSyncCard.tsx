@@ -139,7 +139,7 @@ export default function RuntimeSyncCard({ onConnected }: { onConnected: () => vo
   return (
     <div className="runtimeCard">
       <b>Подключить долговечную память</b>
-      <span>Код нужен только для создания защищённой HttpOnly-сессии и не сохраняется в браузере.</span>
+      <span>Код доступа не сохраняется: в браузере хранится только защищённый session token для синхронизации.</span>
       <div className="runtimeLogin">
         <input
           type="password"
