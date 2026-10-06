@@ -54,6 +54,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node -e "const fs=require('fs');const p='.autonomous/runtime-state.json';let s={};try{s=JSON.parse(fs.readFileSync(p))}catch{};s.lastRun={id:'${{ github.run_id }}',result:'${{ job.status }}',at:new Date().toISOString()};fs.writeFileSync(p,JSON.stringify(s,null,2))"
+          gh api repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --jq .body > /tmp/remote-state.md
+          node scripts/merge-runtime-state.mjs /tmp/remote-state.md .autonomous/runtime-state.json /tmp/merged-state.json
+          cp /tmp/merged-state.json .autonomous/runtime-state.json
           BODY=$(printf '<!-- ADR_RUNTIME_STATE -->\n```json\n%s\n```\nCanonical durable supervisor state mirror. Updated in-place by autonomous-runtime; do not use as a discussion thread.' "$(cat .autonomous/runtime-state.json)")
           jq -n --arg body "$BODY" '{body:$body}' > /tmp/body.json
           gh api --method PATCH repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --input /tmp/body.json
