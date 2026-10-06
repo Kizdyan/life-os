@@ -1,4 +1,4 @@
-import type { MediaSection } from "./media-brain";
+import type { MediaSection } from "./media-brain.js";
 
 export interface YandexDiskConfig {
   rootPath: string;
