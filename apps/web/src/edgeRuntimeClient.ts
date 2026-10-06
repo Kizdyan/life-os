@@ -38,6 +38,15 @@ export class EdgeRuntimeClient {
     return { configured: true, authenticated: true };
   }
 
+  async persona(payload: Record<string, unknown>): Promise<any> {
+    const token = this.token();
+    if (!token) throw new Error('Persona requires Edge runtime session');
+    const response = await this.post({ op: 'persona', token, payload });
+    const body = await response.json().catch(() => ({})) as any;
+    if (!response.ok) throw new Error(String(body?.error || `Persona Edge failed: ${response.status}`));
+    return body;
+  }
+
   async status(): Promise<EdgeRuntimeSessionStatus> {
     const token = this.token();
     if (!token) return { configured: true, authenticated: false };
@@ -103,4 +112,10 @@ export class EdgeRuntimeClient {
       body: JSON.stringify(payload),
     });
   }
+}
+
+export async function personaEdgeRequest(payload: Record<string, unknown>): Promise<any> {
+  const endpoint = (import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '').trim();
+  if (!endpoint) throw new Error('Persona Edge runtime URL is required');
+  return new EdgeRuntimeClient(endpoint, localStorage).persona(payload);
 }
