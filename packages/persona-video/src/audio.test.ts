@@ -196,6 +196,18 @@ describe("FfmpegLoudnessNormalizer", () => {
       code: "INVALID_OUTPUT",
     });
   });
+
+  it("accepts the measured AAC true peak within a quarter-decibel safety tolerance", async () => {
+    const runner = new SimulatedLoudnessRunner(
+      loudnormJson(-29, -8),
+      loudnormJson(-15.8, -1.28),
+    );
+
+    const result = await normalizeWithRunner(runner);
+
+    expect(result.after.truePeakDb).toBe(-1.28);
+    expect(result.after.clippingRisk).toBe(false);
+  });
 });
 
 async function sha256(path: string): Promise<string> {

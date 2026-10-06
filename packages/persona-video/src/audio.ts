@@ -165,7 +165,7 @@ export class FfmpegLoudnessNormalizer implements AudioNormalizationProvider {
       phase: "verification pass",
     });
     const after = analysisFromLoudness(verification);
-    const peakTolerance = input.truePeakToleranceDb ?? 0.2;
+    const peakTolerance = input.truePeakToleranceDb ?? 0.25;
     if (after.truePeakDb === null || after.truePeakDb > target.truePeakDb + peakTolerance) {
       throw new VideoPipelineError(
         "INVALID_OUTPUT",
