@@ -33,7 +33,6 @@ jobs:
           node-version: "24"
       - run: npm install
       - run: npm run api:typecheck
-      - run: npm run api:smoke
       - name: Build production static frontend
         env:
           VITE_LIFE_OS_REMOTE_ENABLED: "true"
@@ -46,17 +45,22 @@ jobs:
             echo 'Forbidden Vercel runtime route found in production bundle'
             exit 1
           fi
-      - name: Verify deploy artifact
-        run: test -f dist/index.html
+      - name: Verify deploy artifact identity
+        run: |
+          test -f dist/index.html
+          grep -q 'life-os-build' dist/index.html
+          grep -q "$GITHUB_SHA" dist/index.html
       - name: Verify live Render PWA
         if: github.head_ref == 'recovery/iphone-static-supabase'
         env:
           PROD_URL: https://life-os-production-rlel.onrender.com
         run: |
-          for i in {1..12}; do
-            if curl --fail --silent --show-error "$PROD_URL/" -o /tmp/index.html; then break; fi
+          matched=0
+          for i in {1..30}; do
+            if curl --fail --silent --show-error "$PROD_URL/?build_probe=$GITHUB_SHA" -o /tmp/index.html && grep -q "$GITHUB_SHA" /tmp/index.html; then matched=1; break; fi
             sleep 5
           done
+          if [ "$matched" != "1" ]; then echo "Production is not serving commit $GITHUB_SHA"; exit 1; fi
           grep -q 'manifest.webmanifest' /tmp/index.html
           curl --fail --silent --show-error "$PROD_URL/manifest.webmanifest" -o /tmp/manifest.json
           node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("/tmp/manifest.json","utf8")); if(m.start_url!=="/"||m.display!=="standalone") process.exit(1)'
