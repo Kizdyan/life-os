@@ -3,6 +3,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const OWNER_ID = 'b48182e1-0802-4741-89a1-bba6341cb8c8';
 const OWNER_PASSCODE_SHA256 = '7b9f92d5fff6262ad5ccecfd3c5e7e3eb2cf7cdc4af06804d27f90bf3defcafb';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -18,13 +23,16 @@ type MutationInput = {
 };
 
 Deno.serve(async (request: Request) => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (request.method === 'GET') {
     const url = new URL(request.url);
     return url.searchParams.get('health') === '1'
       ? health()
-      : json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
+      : json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET, OPTIONS' });
   }
-  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET, OPTIONS' });
 
   let body: Record<string, unknown>;
   try {
@@ -244,6 +252,7 @@ function fromBase64Url(value: string): Uint8Array {
 
 function json(payload: unknown, status = 200, headersInit?: HeadersInit): Response {
   const headers = new Headers(headersInit);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
   headers.set('Content-Type', 'application/json');
   headers.set('Cache-Control', 'no-store');
   return new Response(JSON.stringify(payload), { status, headers });
