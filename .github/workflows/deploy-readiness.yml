@@ -48,5 +48,6 @@ jobs:
             -H 'Origin: https://life-os-iphone-preview.vercel.app' \
             -H 'Access-Control-Request-Method: POST' \
             -H 'Access-Control-Request-Headers: content-type'
-          grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers
-          grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers
+          tr -d '\r' < /tmp/edge-headers > /tmp/edge-headers-normalized
+          grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers-normalized
+          grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers-normalized
