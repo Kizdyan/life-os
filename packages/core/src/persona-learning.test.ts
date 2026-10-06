@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { learnPersonaPreference, personaPlanForDate, personaPreferencesFromApprovals, personaPreferencesFromStyleMemory, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
+import { compareContentOnDeclaredGoal, type PublishedContentMetrics } from './media-analytics';
+import { learnPersonaPreference, personaPlanForDate, personaPreferencesFromApprovals, personaPreferencesFromContentResults, personaPreferencesFromStyleMemory, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
+
+function metrics(candidateId:string,profileVisits:number|null,measuredAt='2026-10-04T13:00:00Z'):PublishedContentMetrics{return{candidateId,externalId:`post-${candidateId}`,channel:'instagram',measuredAt,impressions:1000,views:800,reach:900,watchTimeSeconds:4000,averageWatchSeconds:5,completionRate:0.5,likes:90,comments:18,saves:45,shares:27,profileVisits,follows:9,inquiries:3};}
 
 describe('Persona learning mode',()=>{
  it('uses the weekly plan without asking what format is due',()=>{
@@ -49,5 +52,24 @@ describe('Persona learning mode',()=>{
    {key:'style:editing',value:'быстрые переходы',weight:0.2,evidenceCount:1,updatedAt:'2026-10-04T12:10:00Z'},
   ]));
   expect(memory.find(x=>x.value==='чистые склейки')?.weight).toBeLessThan(3);
+ });
+ it('feeds declared-goal content results back into ranking with weaker evidence than explicit approval',()=>{
+  const candidates=[{id:'a',title:'Репетиция',format:'reel',score:80},{id:'b',title:'Музыка',format:'carousel',score:81}];
+  const better=compareContentOnDeclaredGoal({goal:'profile_visits',baseline:metrics('baseline-a',20),candidate:metrics('a',30,'2026-10-04T13:00:00Z')});
+  const worse=compareContentOnDeclaredGoal({goal:'profile_visits',baseline:metrics('baseline-b',40),candidate:metrics('b',20,'2026-10-04T13:05:00Z')});
+  const unknown=compareContentOnDeclaredGoal({goal:'profile_visits',baseline:metrics('baseline-c',0),candidate:metrics('a',10,'2026-10-04T13:10:00Z')});
+  const memory=personaPreferencesFromContentResults(candidates,[
+   {candidateId:'a',measuredAt:'2026-10-04T13:00:00Z',relativeChange:better.relativeChange},
+   {candidateId:'b',measuredAt:'2026-10-04T13:05:00Z',relativeChange:worse.relativeChange},
+   {candidateId:'a',measuredAt:'2026-10-04T13:10:00Z',relativeChange:unknown.relativeChange},
+  ]);
+  expect(memory).toEqual(expect.arrayContaining([
+   {key:'topic',value:'a',weight:1,evidenceCount:1,updatedAt:'2026-10-04T13:00:00Z'},
+   {key:'format',value:'reel',weight:1,evidenceCount:1,updatedAt:'2026-10-04T13:00:00Z'},
+   {key:'topic',value:'b',weight:-1,evidenceCount:1,updatedAt:'2026-10-04T13:05:00Z'},
+   {key:'format',value:'carousel',weight:-1,evidenceCount:1,updatedAt:'2026-10-04T13:05:00Z'},
+  ]));
+  expect(memory.find(x=>x.key==='topic'&&x.value==='a')?.weight).toBeLessThan(3);
+  expect(rankPersonaCandidates(candidates,memory).map(x=>x.id)).toEqual(['a','b']);
  });
 });
