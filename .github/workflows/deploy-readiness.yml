@@ -34,7 +34,18 @@ jobs:
       - run: npm install
       - run: npm run api:typecheck
       - run: npm run api:smoke
-      - run: npm run web:build
+      - name: Build production static frontend
+        env:
+          VITE_LIFE_OS_REMOTE_ENABLED: "true"
+          VITE_LIFE_OS_EDGE_RUNTIME_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime
+        run: npm run web:build
+      - name: Verify production bundle is Edge-only
+        run: |
+          grep -R -q 'zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime' dist/assets
+          if grep -R -E -q '/api/(persona|runtime/(sync|session))' dist/assets; then
+            echo 'Forbidden Vercel runtime route found in production bundle'
+            exit 1
+          fi
       - name: Verify deploy artifact
         run: test -f dist/index.html
       - name: Verify Supabase Edge recovery path
