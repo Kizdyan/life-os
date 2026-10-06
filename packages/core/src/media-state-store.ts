@@ -5,7 +5,7 @@ import type { MediaProjectStore } from "./media-projects";
 import type { StyleMemoryStore } from "./style-memory";
 import type { AudiencePerformanceSignal, AudiencePerformanceStore } from "./media-analytics";
 import type { MediaCandidateRecord, MediaCandidateStore } from "./media-candidate-store";
-import type { PersonaApprovalRecord, PersonaLearningSignal, PersonaMemoryRule, PersonaMetricSnapshot, PersonaPublicationJob } from "./persona-state";
+import type { PersonaApprovalRecord, PersonaLearningSignal, PersonaMemoryRule, PersonaMetricSnapshot, PersonaProductionIdea, PersonaPublicationJob } from "./persona-state";
 
 export interface KeyValueStore { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; }
 
@@ -20,6 +20,7 @@ export interface MediaStateSnapshot {
   personaMetricSnapshots: PersonaMetricSnapshot[];
   personaLearningSignals: PersonaLearningSignal[];
   personaMemoryRulesById: Record<string, PersonaMemoryRule>;
+  personaProductionIdeasById: Record<string, PersonaProductionIdea>;
   updatedAt: string;
 }
 export interface MediaStateStoreOptions { kv: KeyValueStore; key?: string; now: () => string; }
@@ -52,11 +53,14 @@ export class MediaStateStore implements MediaAssetStore, MediaJobStore, MediaPro
   async appendPersonaLearningSignal(value: PersonaLearningSignal){await this.update(s=>{s.personaLearningSignals.push(clone(value));});}
   async savePersonaMemoryRule(value: PersonaMemoryRule){const id=value.id.trim(),rule=value.rule.trim();if(!id)throw new Error("Persona memory rule id is required");if(!rule)throw new Error("Persona memory rule is required");const normalized={...value,id,rule};await this.update(s=>{const current=s.personaMemoryRulesById[id];if(current?.source==="explicit"&&normalized.source==="inferred")return;s.personaMemoryRulesById[id]=clone(normalized);});}
   async listPersonaMemoryRules(){return Object.values((await this.read()).personaMemoryRulesById).map(clone).sort((a,b)=>a.id.localeCompare(b.id));}
+  async savePersonaProductionIdea(value: PersonaProductionIdea){const id=value.id.trim();if(!id)throw new Error("Persona production idea id is required");await this.update(s=>{s.personaProductionIdeasById[id]=clone({...value,id});});}
+  async getPersonaProductionIdea(id:string){const value=(await this.read()).personaProductionIdeasById[id];return value?clone(value):null;}
+  async listPersonaProductionIdeas(){return Object.values((await this.read()).personaProductionIdeasById).map(clone).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));}
   async snapshot(){return this.read();}
-  private async read():Promise<MediaStateSnapshot>{const raw=await this.options.kv.get(this.key);if(!raw)return emptyState(this.options.now());const p=JSON.parse(raw) as Partial<MediaStateSnapshot>;if(p.schemaVersion!==1)throw new Error("Unsupported Media Brain state schema");return {schemaVersion:1,revision:finiteInteger(p.revision,0),assetsByIngestKey:p.assetsByIngestKey??{},jobsById:p.jobsById??{},projectsByKey:p.projectsByKey??{},candidatesById:p.candidatesById??{},latestCandidateIdByProject:p.latestCandidateIdByProject??{},styleObservations:p.styleObservations??[],audienceSignals:p.audienceSignals??[],personaApprovalsByCandidate:p.personaApprovalsByCandidate??{},personaPublicationJobsById:p.personaPublicationJobsById??{},personaMetricSnapshots:p.personaMetricSnapshots??[],personaLearningSignals:p.personaLearningSignals??[],personaMemoryRulesById:p.personaMemoryRulesById??{},updatedAt:typeof p.updatedAt==="string"?p.updatedAt:this.options.now()};}
+  private async read():Promise<MediaStateSnapshot>{const raw=await this.options.kv.get(this.key);if(!raw)return emptyState(this.options.now());const p=JSON.parse(raw) as Partial<MediaStateSnapshot>;if(p.schemaVersion!==1)throw new Error("Unsupported Media Brain state schema");return {schemaVersion:1,revision:finiteInteger(p.revision,0),assetsByIngestKey:p.assetsByIngestKey??{},jobsById:p.jobsById??{},projectsByKey:p.projectsByKey??{},candidatesById:p.candidatesById??{},latestCandidateIdByProject:p.latestCandidateIdByProject??{},styleObservations:p.styleObservations??[],audienceSignals:p.audienceSignals??[],personaApprovalsByCandidate:p.personaApprovalsByCandidate??{},personaPublicationJobsById:p.personaPublicationJobsById??{},personaMetricSnapshots:p.personaMetricSnapshots??[],personaLearningSignals:p.personaLearningSignals??[],personaMemoryRulesById:p.personaMemoryRulesById??{},personaProductionIdeasById:p.personaProductionIdeasById??{},updatedAt:typeof p.updatedAt==="string"?p.updatedAt:this.options.now()};}
   private async update(m:(s:MediaStateSnapshot)=>void){const op=this.queue.catch(()=>undefined).then(async()=>{const s=await this.read();m(s);s.revision+=1;s.updatedAt=this.options.now();await this.options.kv.set(this.key,JSON.stringify(s));});this.queue=op.catch(()=>undefined);await op;}
 }
-function emptyState(now:string):MediaStateSnapshot{return {schemaVersion:1,revision:0,assetsByIngestKey:{},jobsById:{},projectsByKey:{},candidatesById:{},latestCandidateIdByProject:{},styleObservations:[],audienceSignals:[],personaApprovalsByCandidate:{},personaPublicationJobsById:{},personaMetricSnapshots:[],personaLearningSignals:[],personaMemoryRulesById:{},updatedAt:now};}
+function emptyState(now:string):MediaStateSnapshot{return {schemaVersion:1,revision:0,assetsByIngestKey:{},jobsById:{},projectsByKey:{},candidatesById:{},latestCandidateIdByProject:{},styleObservations:[],audienceSignals:[],personaApprovalsByCandidate:{},personaPublicationJobsById:{},personaMetricSnapshots:[],personaLearningSignals:[],personaMemoryRulesById:{},personaProductionIdeasById:{},updatedAt:now};}
 function isMediaJob(v:MediaAsset|MediaJob|MediaProject):v is MediaJob{return "type" in v&&"maxAttempts" in v&&"dependsOnJobId" in v;}
 function isMediaProject(v:MediaAsset|MediaJob|MediaProject):v is MediaProject{return "assetIds" in v&&"channelTargets" in v;}
 function isAudiencePerformanceSignal(v:StyleMemoryObservation|AudiencePerformanceSignal):v is AudiencePerformanceSignal{return "rates" in v&&"raw" in v;}
