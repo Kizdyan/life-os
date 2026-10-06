@@ -41,6 +41,7 @@ describe("layoutCaptionTranscript", () => {
     for (const segment of result.segments) {
       const lines = segment.text.split("\n");
       expect(lines.length).toBeLessThanOrEqual(2);
+      expect(segment.endMs - segment.startMs).toBeLessThanOrEqual(3000);
       for (const line of lines) {
         await expect(variableWidthMeasurer.measureWidthPx(line)).resolves.toBeLessThanOrEqual(360);
       }
@@ -65,6 +66,31 @@ describe("layoutCaptionTranscript", () => {
     });
 
     expect(result.segments.map((segment) => segment.text)).toEqual(["ШШ\niiiiiiiiii"]);
+  });
+
+  it("keeps every cue within the configured maximum duration", async () => {
+    const transcript: Transcript = {
+      language: "ru",
+      provider: "fixture",
+      confidence: 1,
+      limitations: [],
+      segments: [
+        {
+          startMs: 0,
+          endMs: 9000,
+          text: "длинноеслово длинноеслово коротко а б в г д е ж з",
+          confidence: 1,
+        },
+      ],
+    };
+
+    const result = await layoutCaptionTranscript(transcript, variableWidthMeasurer, {
+      safeWidthPx: 1000,
+      maxCueDurationMs: 3000,
+      maxWordsPerCue: 4,
+    });
+
+    expect(result.segments.every((segment) => segment.endMs - segment.startMs <= 3000)).toBe(true);
   });
 });
 

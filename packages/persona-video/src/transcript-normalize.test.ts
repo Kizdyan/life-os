@@ -64,4 +64,24 @@ describe("normalizeTranscriptForCaptions", () => {
     });
     expect(normalized.segments[0].corrections).not.toContain("WORD_REPLACEMENT");
   });
+
+  it("does not invent sentence boundaries between consecutive Whisper chunks", () => {
+    const raw: Transcript = {
+      language: "ru",
+      provider: "whisper-cpp-local",
+      confidence: 0.9,
+      limitations: [],
+      segments: [
+        { startMs: 0, endMs: 1000, text: "первая часть если", confidence: 0.9 },
+        { startMs: 1000, endMs: 2000, text: "что это продолжение", confidence: 0.9 },
+      ],
+    };
+
+    const normalized = normalizeTranscriptForCaptions(raw);
+
+    expect(normalized.segments.map((segment) => segment.text)).toEqual([
+      "Первая часть если",
+      "что это продолжение.",
+    ]);
+  });
 });

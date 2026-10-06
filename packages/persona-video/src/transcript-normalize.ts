@@ -29,14 +29,16 @@ export function normalizeTranscriptForCaptions(
   transcript: Transcript,
   reviewConfidenceThreshold = 0.8,
 ): NormalizedTranscript {
-  const segments = transcript.segments.map((segment) => {
+  const segments = transcript.segments.map((segment, index) => {
     const corrections: TranscriptCorrection[] = [];
     let text = segment.text.replace(/\s+/g, " ").trim();
     if (text !== segment.text) corrections.push("WHITESPACE");
 
-    const capitalized = text.replace(/(^|[.!?]\s+)([a-zа-яё])/giu, (_match, prefix, letter) =>
-      `${prefix}${String(letter).toLocaleUpperCase("ru-RU")}`,
-    );
+    const previousText = transcript.segments[index - 1]?.text.trim() ?? "";
+    const beginsSentence = index === 0 || /[.!?…]$/u.test(previousText);
+    const capitalized = beginsSentence
+      ? text.replace(/^([a-zа-яё])/iu, (letter) => letter.toLocaleUpperCase("ru-RU"))
+      : text;
     if (capitalized !== text) corrections.push("CAPITALIZATION");
     text = capitalized;
 
@@ -46,7 +48,7 @@ export function normalizeTranscriptForCaptions(
     if (brandCased !== text) corrections.push("BRAND_CASING");
     text = brandCased;
 
-    if (!/[.!?…]$/u.test(text)) {
+    if (index === transcript.segments.length - 1 && !/[.!?…]$/u.test(text)) {
       text += ".";
       corrections.push("TERMINAL_PUNCTUATION");
     }

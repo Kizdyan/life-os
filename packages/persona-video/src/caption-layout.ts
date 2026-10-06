@@ -83,15 +83,11 @@ export async function layoutCaptionTranscript(
       cursor += cueWords.length;
     }
 
-    const weights = cues.map((lines) => Math.max(1, lines.join(" ").replace(/\s/gu, "").length));
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-    let elapsedWeight = 0;
     cues.forEach((lines, index) => {
-      const startMs = Math.round(source.startMs + (durationMs * elapsedWeight) / totalWeight);
-      elapsedWeight += weights[index];
+      const startMs = Math.round(source.startMs + (durationMs * index) / cues.length);
       const endMs = index === cues.length - 1
         ? source.endMs
-        : Math.round(source.startMs + (durationMs * elapsedWeight) / totalWeight);
+        : Math.round(source.startMs + (durationMs * (index + 1)) / cues.length);
       segments.push({
         startMs,
         endMs,
