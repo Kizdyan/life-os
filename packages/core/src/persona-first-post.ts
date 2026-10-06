@@ -1,5 +1,10 @@
 import type { PersonaProductionIdea } from './persona-state';
 
+export interface PersonaProductionIdeaStore {
+  getPersonaProductionIdea(id: string): Promise<PersonaProductionIdea | null>;
+  savePersonaProductionIdea(value: PersonaProductionIdea): Promise<void>;
+}
+
 export const FIRST_REAL_PERSONA_POST: PersonaProductionIdea = {
   id: 'persona-first-real-reel-001',
   title: 'Почему я больше не хочу показывать только результат',
@@ -46,3 +51,10 @@ export const FIRST_REAL_PERSONA_POST: PersonaProductionIdea = {
   createdAt: '2026-10-06T18:30:00Z',
   updatedAt: '2026-10-06T18:30:00Z',
 };
+
+export async function ensureFirstRealPersonaPost(store: PersonaProductionIdeaStore): Promise<PersonaProductionIdea> {
+  const existing = await store.getPersonaProductionIdea(FIRST_REAL_PERSONA_POST.id);
+  if (existing) return existing;
+  await store.savePersonaProductionIdea(FIRST_REAL_PERSONA_POST);
+  return FIRST_REAL_PERSONA_POST;
+}
