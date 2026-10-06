@@ -43,7 +43,7 @@ export const INSTAGRAM_CAPTION_PRESET: CaptionVisualPreset = {
   safeWidthPx: 864,
   marginLeftPx: 100,
   marginRightPx: 116,
-  marginBottomPx: 520,
+  marginBottomPx: 360,
 };
 
 export async function layoutCaptionTranscript(

@@ -111,7 +111,7 @@ describe("captionsToAss", () => {
     expect(ass).toContain("PlayResX: 1080");
     expect(ass).toContain("PlayResY: 1920");
     expect(ass).toContain("Style: Default,Arial,64");
-    expect(ass).toContain(",100,116,520,1");
+    expect(ass).toContain(",100,116,360,1");
     expect(ass).toContain("Первая строка\\NВторая строка");
   });
 });
