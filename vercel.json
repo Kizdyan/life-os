@@ -8,9 +8,9 @@
     "LIFE_OS_EDGE_RUNTIME_URL": "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime"
   },
   "rewrites": [
-    { "source": "/api/media/transcribe", "destination": "/api/persona-v3" },
-    { "source": "/api/media/status", "destination": "/api/persona-v3" },
-    { "source": "/api/persona", "destination": "/api/persona-v3" },
+    { "source": "/api/media/transcribe", "destination": "/api/media/persona" },
+    { "source": "/api/media/status", "destination": "/api/media/persona" },
+    { "source": "/api/persona", "destination": "/api/media/persona" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
