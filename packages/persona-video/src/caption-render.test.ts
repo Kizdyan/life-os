@@ -22,6 +22,13 @@ describe("buildSubtitlesFilter", () => {
     expect(filter).toContain("Outline=3");
     expect(filter).toContain("Shadow=0");
   });
+
+  it("preserves the exact pixel-safe style embedded in an ASS subtitle file", () => {
+    const filter = buildSubtitlesFilter("captions.ass", {}, true);
+
+    expect(filter).toBe("subtitles=filename='captions.ass'");
+    expect(filter).not.toContain("force_style");
+  });
 });
 
 describe("renderCaptionedVideo", () => {

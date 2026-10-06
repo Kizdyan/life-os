@@ -6,6 +6,14 @@ import {
   FfmpegLoudnessNormalizer,
   type AudioNormalizationProvider,
 } from "./audio";
+import {
+  captionsToAss,
+  DEFAULT_CAPTION_PRESET,
+  INSTAGRAM_CAPTION_PRESET,
+  layoutCaptionTranscript,
+  type CaptionVisualPreset,
+} from "./caption-layout";
+import { FfmpegCaptionTextMeasurer } from "./caption-measure";
 import { renderCaptionedVideo, type CaptionRenderStyle } from "./caption-render";
 import { captionsToSrt, retimeTranscriptToEdl } from "./captions";
 import type {
@@ -17,7 +25,7 @@ import type {
 } from "./contracts";
 import { VideoPipelineError } from "./contracts";
 import { buildEditDecisionList, type EdlPolicy } from "./edl";
-import { renderPlatformVariants } from "./exports";
+import { DEFAULT_EXPORT_PRESETS, renderPlatformVariants } from "./exports";
 import { hashFileSha256 } from "./file-hash";
 import { probeVideo } from "./probe";
 import { NodeProcessRunner, resolveMediaTools } from "./process-adapter";
@@ -37,6 +45,10 @@ import {
   type TranscriptProviderCandidate,
 } from "./transcription";
 import { extractTranscriptionAudio } from "./transcription-audio";
+import {
+  normalizeTranscriptForCaptions,
+  normalizedTranscriptToCanonical,
+} from "./transcript-normalize";
 
 export interface VideoProcessingRequest {
   inputPath: string;
@@ -46,6 +58,9 @@ export interface VideoProcessingRequest {
   transcriptRequired?: boolean;
   audioNormalizationProvider?: AudioNormalizationProvider;
   captionStyle?: Partial<CaptionRenderStyle>;
+  captionPreset?: Partial<CaptionVisualPreset>;
+  instagramCaptionPreset?: Partial<CaptionVisualPreset>;
+  captionFontPath?: string;
   reframeInstruction?: ReframeInstruction;
   exportPresets?: ExportPreset[];
   ffmpegPath?: string;
@@ -153,6 +168,15 @@ export async function processVideo(
       );
     }
     await writeJson(join(runPath, "transcript.json"), transcriptResolution);
+    const normalizedTranscript = transcriptResolution.transcript
+      ? normalizeTranscriptForCaptions(transcriptResolution.transcript)
+      : null;
+    const normalizedTranscriptPath = normalizedTranscript
+      ? join(runPath, "normalized-transcript.json")
+      : null;
+    if (normalizedTranscriptPath && normalizedTranscript) {
+      await writeJson(normalizedTranscriptPath, normalizedTranscript);
+    }
     const captionsPath = join(runPath, "captions.srt");
 
     progress("SEGMENTING");
@@ -178,10 +202,46 @@ export async function processVideo(
     );
     await writeJson(join(runPath, "segments.json"), segments);
     await writeJson(join(runPath, "edit-decision.json"), editDecisionList);
-    const outputTranscript = transcriptResolution.transcript
-      ? retimeTranscriptToEdl(transcriptResolution.transcript, editDecisionList)
+    const normalizedCanonical = normalizedTranscript
+      ? normalizedTranscriptToCanonical(normalizedTranscript)
       : null;
+    const retimedTranscript = normalizedCanonical
+      ? retimeTranscriptToEdl(normalizedCanonical, editDecisionList)
+      : null;
+    const captionPreset = resolveCaptionPreset(request.captionPreset, request.captionStyle);
+    const instagramCaptionPreset = {
+      ...INSTAGRAM_CAPTION_PRESET,
+      ...request.instagramCaptionPreset,
+    };
+    const fontFilePath = request.captionFontPath ?? defaultCaptionFontPath();
+    const textMeasurer = retimedTranscript
+      ? new FfmpegCaptionTextMeasurer({
+          ffmpegPath: tools.ffmpegPath,
+          runner,
+          workDirectory: runPath,
+          fontFilePath,
+          fontSizePx: captionPreset.fontSizePx,
+        })
+      : null;
+    const outputTranscript = retimedTranscript && textMeasurer
+      ? await layoutCaptionTranscript(retimedTranscript, textMeasurer, captionPreset)
+      : null;
+    const instagramTranscript = retimedTranscript && textMeasurer
+      ? await layoutCaptionTranscript(retimedTranscript, textMeasurer, instagramCaptionPreset)
+      : null;
+    const captionsAssPath = join(runPath, "captions.ass");
+    const instagramCaptionsAssPath = join(runPath, "instagram-captions.ass");
     await writeFile(captionsPath, outputTranscript ? captionsToSrt(outputTranscript) : "", "utf8");
+    if (outputTranscript) {
+      await writeFile(captionsAssPath, captionsToAss(outputTranscript, captionPreset), "utf8");
+    }
+    if (instagramTranscript) {
+      await writeFile(
+        instagramCaptionsAssPath,
+        captionsToAss(instagramTranscript, instagramCaptionPreset),
+        "utf8",
+      );
+    }
 
     progress("EDITING");
     const roughCut = await renderRoughCut({
@@ -233,12 +293,12 @@ export async function processVideo(
       v1Enabled && outputTranscript && outputTranscript.segments.length > 0
         ? await renderCaptionedVideo({
             input: verticalMaster,
-            srtPath: captionsPath,
+            srtPath: captionsAssPath,
             outputPath: join(runPath, "captioned-vertical.mp4"),
             ffmpegPath: tools.ffmpegPath,
             ffprobePath: tools.ffprobePath,
             runner,
-            style: request.captionStyle,
+            embeddedStyle: true,
           })
         : null;
     if (request.transcriptRequired && !captionedMaster) {
@@ -248,14 +308,50 @@ export async function processVideo(
     const platformOutputSource = captionedMaster ? "captioned-vertical" : "vertical-master";
 
     progress("EXPORTING");
-    const platformOutputs = await renderPlatformVariants({
+    const exportPresets = request.exportPresets ?? DEFAULT_EXPORT_PRESETS;
+    const instagramPreset = captionedMaster
+      ? exportPresets.find((preset) => preset.id === "instagram-reels")
+      : undefined;
+    const regularPresets = instagramPreset
+      ? exportPresets.filter((preset) => preset !== instagramPreset)
+      : exportPresets;
+    const regularOutputs = await renderPlatformVariants({
       master: platformMaster,
       outputDirectory: runPath,
-      presets: request.exportPresets,
+      presets: regularPresets,
       ffmpegPath: tools.ffmpegPath,
       ffprobePath: tools.ffprobePath,
       runner,
     });
+    const instagramOutput = instagramPreset && instagramTranscript
+      ? {
+          ...(await renderCaptionedVideo({
+            input: verticalMaster,
+            srtPath: instagramCaptionsAssPath,
+            outputPath: join(runPath, instagramPreset.fileName),
+            ffmpegPath: tools.ffmpegPath,
+            ffprobePath: tools.ffprobePath,
+            runner,
+            embeddedStyle: true,
+          })),
+          presetId: instagramPreset.id,
+        }
+      : null;
+    const outputsByPreset = new Map(
+      [...regularOutputs, ...(instagramOutput ? [instagramOutput] : [])]
+        .map((output) => [output.presetId, output]),
+    );
+    const platformOutputs = exportPresets
+      .map((preset) => outputsByPreset.get(preset.id))
+      .filter((output): output is NonNullable<typeof output> => output !== undefined);
+    const platformOutputSources = Object.fromEntries(
+      platformOutputs.map((output) => [
+        output.presetId,
+        output.presetId === "instagram-reels" && instagramOutput
+          ? "instagram-safe-caption-render"
+          : platformOutputSource,
+      ]),
+    ) as ProcessedVideoResult["platformOutputSources"];
 
     progress("VERIFYING");
     const warnings = [
@@ -274,6 +370,8 @@ export async function processVideo(
       segments,
       editDecisionList,
       transcript: transcriptResolution.transcript,
+      normalizedTranscript,
+      normalizedTranscriptPath,
       transcriptionAudio,
       transcriptProviderUsage: transcriptResolution.providerUsage,
       transcriptDiagnosticArtifacts: transcriptResolution.diagnosticArtifacts,
@@ -289,7 +387,17 @@ export async function processVideo(
       verticalMaster,
       cleanMaster: verticalMaster,
       captionedMaster,
+      captionLayout: outputTranscript
+        ? {
+            maxLines: captionPreset.maxLines,
+            safeWidthPx: captionPreset.safeWidthPx,
+            frameWidthPx: captionPreset.frameWidthPx,
+            measuredWith: "FFMPEG_DRAWTEXT",
+            fontFilePath,
+          }
+        : null,
       platformOutputSource,
+      platformOutputSources,
       platformOutputs,
       reportPath,
       warnings,
@@ -382,4 +490,24 @@ function isFilesystemError(error: unknown): error is NodeJS.ErrnoException {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function resolveCaptionPreset(
+  preset: Partial<CaptionVisualPreset> | undefined,
+  legacyStyle: Partial<CaptionRenderStyle> | undefined,
+): CaptionVisualPreset {
+  return {
+    ...DEFAULT_CAPTION_PRESET,
+    ...preset,
+    ...(legacyStyle?.fontName ? { fontName: legacyStyle.fontName } : {}),
+    ...(legacyStyle?.fontSize ? { fontSizePx: legacyStyle.fontSize } : {}),
+    ...(legacyStyle?.marginV ? { marginBottomPx: legacyStyle.marginV } : {}),
+  };
+}
+
+function defaultCaptionFontPath(): string {
+  return process.env.CAPTION_FONT_PATH ??
+    (process.platform === "win32"
+      ? "C:\\Windows\\Fonts\\arial.ttf"
+      : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
 }

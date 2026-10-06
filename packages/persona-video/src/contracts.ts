@@ -1,5 +1,6 @@
 import type { AudioNormalizationResult } from "./audio";
 import type { ProviderUsageReport } from "./transcription";
+import type { NormalizedTranscript } from "./transcript-normalize";
 
 export type PipelineStage =
   | "PROBING"
@@ -241,6 +242,8 @@ export interface ProcessedVideoResult {
   segments: VideoSegment[];
   editDecisionList: EditDecisionList;
   transcript: Transcript | null;
+  normalizedTranscript: NormalizedTranscript | null;
+  normalizedTranscriptPath: string | null;
   transcriptionAudio: VerifiedAudioArtifact | null;
   transcriptProviderUsage: ProviderUsageReport;
   transcriptDiagnosticArtifacts: string[];
@@ -253,7 +256,15 @@ export interface ProcessedVideoResult {
   verticalMaster: VerifiedMediaOutput;
   cleanMaster: VerifiedMediaOutput;
   captionedMaster: VerifiedMediaOutput | null;
+  captionLayout: {
+    maxLines: number;
+    safeWidthPx: number;
+    frameWidthPx: number;
+    measuredWith: "FFMPEG_DRAWTEXT";
+    fontFilePath: string;
+  } | null;
   platformOutputSource: "vertical-master" | "captioned-vertical";
+  platformOutputSources: Record<string, "vertical-master" | "captioned-vertical" | "instagram-safe-caption-render">;
   platformOutputs: PlatformOutput[];
   reportPath: string;
   warnings: string[];

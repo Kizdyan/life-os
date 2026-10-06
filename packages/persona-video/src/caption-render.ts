@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, extname } from "node:path";
 import type { ProcessRunner, VerifiedMediaOutput } from "./contracts";
 import { VideoPipelineError } from "./contracts";
 import { renderAtomically } from "./render-utils";
@@ -20,7 +20,9 @@ const DEFAULT_STYLE: CaptionRenderStyle = {
 export function buildSubtitlesFilter(
   srtPath: string,
   style: Partial<CaptionRenderStyle> = {},
+  embeddedStyle = false,
 ): string {
+  if (embeddedStyle) return `subtitles=filename='${escapeFilterPath(srtPath)}'`;
   const resolved = { ...DEFAULT_STYLE, ...style };
   if (!Number.isFinite(resolved.fontSize) || resolved.fontSize <= 0) {
     throw new VideoPipelineError("UNSUPPORTED_INPUT", "Caption font size must be positive");
@@ -51,6 +53,7 @@ export async function renderCaptionedVideo(input: {
   ffprobePath: string;
   runner: ProcessRunner;
   style?: Partial<CaptionRenderStyle>;
+  embeddedStyle?: boolean;
 }): Promise<VerifiedMediaOutput> {
   let srt: string;
   try {
@@ -68,11 +71,12 @@ export async function renderCaptionedVideo(input: {
   }
 
   const outputDirectory = dirname(input.outputPath);
-  const stagedSrtName = `.caption-render-${randomUUID()}.srt`;
+  const subtitleExtension = extname(input.srtPath) || ".srt";
+  const stagedSrtName = `.caption-render-${randomUUID()}${subtitleExtension}`;
   const stagedSrtPath = `${outputDirectory}/${stagedSrtName}`;
   await writeFile(stagedSrtPath, srt, "utf8");
   try {
-    const filter = buildSubtitlesFilter(stagedSrtName, input.style);
+    const filter = buildSubtitlesFilter(stagedSrtName, input.style, input.embeddedStyle);
     return await renderAtomically({
       outputPath: input.outputPath,
       ffprobePath: input.ffprobePath,
