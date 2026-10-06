@@ -1,11 +1,11 @@
-import type { MediaAsset, MediaProject, StyleMemoryObservation } from "./media-brain";
-import type { MediaAssetStore } from "./media-ingestion";
-import type { MediaJob, MediaJobStore } from "./media-jobs";
-import type { MediaProjectStore } from "./media-projects";
-import type { StyleMemoryStore } from "./style-memory";
-import type { AudiencePerformanceSignal, AudiencePerformanceStore } from "./media-analytics";
-import type { MediaCandidateRecord, MediaCandidateStore } from "./media-candidate-store";
-import type { PersonaApprovalRecord, PersonaLearningSignal, PersonaMetricSnapshot, PersonaPublicationJob } from "./persona-state";
+import type { MediaAsset, MediaProject, StyleMemoryObservation } from "./media-brain.js";
+import type { MediaAssetStore } from "./media-ingestion.js";
+import type { MediaJob, MediaJobStore } from "./media-jobs.js";
+import type { MediaProjectStore } from "./media-projects.js";
+import type { StyleMemoryStore } from "./style-memory.js";
+import type { AudiencePerformanceSignal, AudiencePerformanceStore } from "./media-analytics.js";
+import type { MediaCandidateRecord, MediaCandidateStore } from "./media-candidate-store.js";
+import type { PersonaApprovalRecord, PersonaLearningSignal, PersonaMetricSnapshot, PersonaPublicationJob } from "./persona-state.js";
 
 export interface KeyValueStore { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; }
 
