@@ -201,6 +201,14 @@ export interface VerifiedMediaOutput {
   metadata: VideoMetadata;
 }
 
+export interface VerifiedAudioArtifact {
+  path: string;
+  durationMs: number;
+  codec: string;
+  sampleRateHz: number;
+  channels: number;
+}
+
 export interface PlatformOutput extends VerifiedMediaOutput {
   presetId: string;
 }

@@ -40,6 +40,7 @@ export interface TranscriptProviderInput {
 export interface TranscriptProviderResult {
   transcript: Transcript;
   diagnosticArtifacts: string[];
+  providerDetails?: Record<string, string | number | boolean | null>;
 }
 
 export interface TranscriptProvider {
@@ -59,6 +60,7 @@ export type TranscriptResolution =
       transcript: Transcript;
       warning: string | null;
       diagnosticArtifacts: string[];
+      providerDetails?: Record<string, string | number | boolean | null>;
       providerUsage: ProviderUsageReport;
     }
   | {
@@ -100,7 +102,7 @@ export class TranscriptProviderChain {
           provider: provider.descriptor.id,
         });
         const fallbackReason = summarizeFallback(attempts);
-        return {
+        const resolution: Extract<TranscriptResolution, { status: "available" }> = {
           status: "available",
           transcript,
           warning: fallbackReason,
@@ -110,6 +112,10 @@ export class TranscriptProviderChain {
             attempt(provider, "USED", null, null),
           ], fallbackReason),
         };
+        if (result.providerDetails) {
+          resolution.providerDetails = { ...result.providerDetails };
+        }
+        return resolution;
       } catch (error) {
         attempts.push(attempt(provider, "FAILED", "PROVIDER_ERROR", errorMessage(error)));
       }
