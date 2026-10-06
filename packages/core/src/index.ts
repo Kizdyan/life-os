@@ -89,3 +89,4 @@ export * from './persona-state';
 export * from './persona-approval';
 export * from './persona-publication';
 export * from './persona-shooting';
+export * from './persona-learning';
