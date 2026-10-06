@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/web/**"
       - "api/**"
+      - "supabase/functions/life-os-runtime/**"
       - "packages/core/src/yandex-oauth.ts"
       - "scripts/api-smoke.mjs"
       - "tsconfig.json"
@@ -36,3 +37,16 @@ jobs:
       - run: npm run web:build
       - name: Verify deploy artifact
         run: test -f apps/web/dist/index.html
+      - name: Verify Supabase Edge recovery path
+        if: github.head_ref == 'recovery/iphone-static-supabase'
+        env:
+          EDGE_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime
+        run: |
+          health="$(curl --fail --silent --show-error "$EDGE_URL?health=1")"
+          node -e 'const h=JSON.parse(process.argv[1]); if(h.configured!==true||h.databaseReachable!==true) process.exit(1)' "$health"
+          curl --fail --silent --show-error -D /tmp/edge-headers -o /dev/null -X OPTIONS "$EDGE_URL" \
+            -H 'Origin: https://life-os-iphone-preview.vercel.app' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type'
+          grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers
+          grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers
