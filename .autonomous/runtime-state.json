@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "issue": 86,
+  "branch": "recovery/iphone-static-supabase",
+  "phase": 2,
+  "status": "RUNNING",
+  "checkpoint": "PLAN",
+  "attempt": 0,
+  "lastProgressAt": "2026-10-06T23:03:28.534Z",
+  "humanAcceptance": {
+    "phase2": "PENDING"
+  },
+  "queue": [
+    "Phase 2 — Life OS Core Recovery",
+    "Phase 3 — Execution Engine",
+    "Phase 4 — Erika Agent",
+    "Phase 5 — Calendar/Scheduling intelligence",
+    "Phase 6 — Life Analytics Engine",
+    "Phase 7 — Persona recovery",
+    "Phase 8 — Media Engine",
+    "Phase 9 — Content/Distribution automation",
+    "Phase 10 — iPhone/offline/reliability hardening",
+    "Phase 11 — full real-device E2E"
+  ]
+}
