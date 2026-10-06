@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PERSONAL_HIGH_AUTONOMY_MEDIA } from "./media-brain";
 import { buildCapCutWorkPackage } from "./capcut-work-package";
-import { prepareContentForReview,publishReviewedContent,type ContentCandidate } from "./media-pipeline";
+import { prepareContentForReview,publishReviewedContent,type ContentCandidate,type MediaObserver } from "./media-pipeline";
 
 const baseCandidate:ContentCandidate={id:"candidate-1",projectId:"project-1",assetIds:["asset-1"],title:"Черновик",caption:null,createdAt:"2026-09-28T20:00:00.000Z",workPackage:buildCapCutWorkPackage({projectId:"project-1",channel:"instagram",aspectRatio:"9:16",targetDurationMs:25000,hook:"Как проходит репетиция изнутри",clips:[{assetId:"asset-1",sourceStartMs:0,sourceEndMs:3000,order:1,reason:"hook"}],captions:[],overlays:[],audio:[],coverBrief:null,diveMRevisionNotes:[],styleMemoryNotes:[]})};
-function observer(verifyDraft:(candidate:ContentCandidate)=>Promise<{verified:boolean;notes:string[]}>,verifyPublished=async()=>({verified:true,notes:[]})){return{verifyDraft,verifyPublished}}
+function observer(verifyDraft:MediaObserver["verifyDraft"],verifyPublished:MediaObserver["verifyPublished"]=async()=>({verified:true,notes:[]})):MediaObserver{return{verifyDraft,verifyPublished}}
 function common(){return{capabilities:PERSONAL_HIGH_AUTONOMY_MEDIA,profileId:"personal",projectId:"project-1",assetIds:["asset-1"],channel:"instagram" as const,goal:"publish a strong post",currentFocus:["acting"],styleMemoryNotes:[],strategy:{assessContent:async()=>({fit:"strong" as const,notes:[],weakTransition:null,revisionSuggestions:[],confidence:1,evidenceState:"sufficient" as const})}}}
 
 describe("personal media pipeline",()=>{
