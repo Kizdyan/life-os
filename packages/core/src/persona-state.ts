@@ -1,3 +1,5 @@
+import type { PersonaShootingBrief } from "./persona-shooting";
+
 export type PersonaPlatform = "instagram" | "vk" | "youtube";
 export type PersonaApprovalDecision = "approved" | "rework" | "deferred" | "rejected";
 
@@ -71,5 +73,21 @@ export interface PersonaMemoryRule {
   id: string;
   rule: string;
   source: PersonaMemoryRuleSource;
+  updatedAt: string;
+}
+
+export type PersonaProductionIdeaStatus = "ready_to_shoot" | "shot" | "processing" | "ready_for_review" | "published";
+
+export interface PersonaProductionIdea {
+  id: string;
+  title: string;
+  angle: string;
+  format: "reel" | "short" | "story";
+  goal: string;
+  hook: string;
+  script: string;
+  status: PersonaProductionIdeaStatus;
+  shootingBrief: PersonaShootingBrief;
+  createdAt: string;
   updatedAt: string;
 }
