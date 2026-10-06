@@ -56,10 +56,10 @@ try {
   assert.equal(typeof body.personaAI, 'boolean', 'persona AI status');
 
   for (const [payload,status,error] of [
-    [{action:'not-real'},400,'unknown_action'],
-    [{action:'generate'},400,'idea_required'],
-    [{action:'revise',feedback:'сделай лучше'},400,'draft_and_feedback_required'],
-    [{action:'prepublish'},400,'draft_required'],
+    [{action:'not-real'},400,'Неизвестное действие'],
+    [{action:'generate'},400,'Сначала выбери идею'],
+    [{action:'revise',feedback:'сделай лучше'},400,'Нужны материал и правка'],
+    [{action:'prepublish'},400,'Нужен готовый материал'],
   ]) {
     response = await persona.fetch(new Request('https://life.example.com/api/persona',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}));
     assert.equal(response.status,status,`persona ${payload.action} status`);
