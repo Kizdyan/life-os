@@ -1,50 +1,46 @@
 name: autonomous-runtime
-
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/autonomous-runtime.yml"
-      - "scripts/autonomous-runtime.mjs"
-      - ".autonomous/**"
+  schedule:
+    - cron: '*/5 * * * *'
   push:
     branches: [recovery/iphone-static-supabase]
     paths:
-      - ".github/workflows/autonomous-runtime.yml"
-      - "scripts/autonomous-runtime.mjs"
-      - ".autonomous/**"
-
-permissions:
-  contents: read
-  issues: write
-  actions: write
-
-concurrency:
-  group: life-os-autonomous-runtime
-  cancel-in-progress: false
-
+      - 'scripts/autonomous-runtime.mjs'
+      - '.autonomous/**'
+      - '.github/workflows/autonomous-runtime.yml'
 jobs:
-  supervisor:
+  watchdog:
+    concurrency:
+      group: life-os-autonomous-runtime
+      cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: recovery/iphone-static-supabase
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - name: Supervisor/watchdog
+          node-version: 22
+      - run: npm install
+      - name: PLAN IMPLEMENT TEST PRODUCT-QA CRITIQUE
+        run: node scripts/autonomous-runtime.mjs
+      - name: Persist supervisor state
+        if: always()
+        run: |
+          git config user.name life-os-watchdog
+          git config user.email actions@users.noreply.github.com
+          git add .autonomous/runtime-state.json
+          git diff --cached --quiet || git commit -m "chore(runtime): persist autonomous watchdog state"
+          git push origin HEAD:recovery/iphone-static-supabase
+      - name: Durable run log
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          AUTONOMOUS_BRANCH: recovery/iphone-static-supabase
-          MASTER_ISSUE: "86"
-        run: node scripts/autonomous-runtime.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: autonomous-runtime-state
-          path: .autonomous/state.json
-          retention-days: 14
+        run: |
+          status="PASS"; [ "${{ job.status }}" = "success" ] || status="FAIL"
+          gh issue comment 86 --body "AUTONOMOUS_RUNTIME $status | run ${{ github.run_id }} | branch recovery/iphone-static-supabase | physical Phase 2 acceptance remains PENDING/HUMAN_ACCEPTANCE and does not block independent queue."
