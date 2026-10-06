@@ -17,7 +17,7 @@ on:
       - ".autonomous/**"
 
 permissions:
-  contents: write
+  contents: read
   issues: write
   actions: write
 
