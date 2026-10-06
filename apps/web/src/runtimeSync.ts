@@ -195,25 +195,6 @@ export async function syncLocalReplica(
   return { storeRevision: response.storeRevision, conflicts };
 }
 
-export class HttpRemoteLifeOsGateway implements RemoteLifeOsGateway {
-  constructor(private readonly baseUrl = '', private readonly fetchImpl: typeof fetch = fetch) {}
-
-  async sync(input: { mutations: RuntimeSyncMutation[]; sinceRevision: number }): Promise<RuntimeSyncResponse> {
-    const base = this.baseUrl.trim().replace(/\/+$/, '');
-    const endpoint = base ? `${base}/api/runtime/sync` : '/api/runtime/sync';
-
-    const response = await this.fetchImpl(endpoint, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-
-    if (!response.ok) throw new Error(`Life OS sync failed: ${response.status}`);
-    return response.json() as Promise<RuntimeSyncResponse>;
-  }
-}
-
 function recordKey(record: RuntimeSyncRecord): string {
   return `${record.userId}\u0000${record.id}`;
 }
