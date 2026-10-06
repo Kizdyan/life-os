@@ -39,6 +39,8 @@ jobs:
       - run: npm install
       - name: PLAN TEST PRODUCT-QA CRITIQUE RECOVERY
         run: node scripts/autonomous-runtime.mjs
+      - name: Verify durable state merge
+        run: node scripts/merge-runtime-state.test.mjs
       - name: Simulate stale and offline recovery
         run: |
           cp .autonomous/runtime-state.json /tmp/adr-state.json
