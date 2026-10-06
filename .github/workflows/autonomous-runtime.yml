@@ -3,15 +3,10 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-  issues:
-    types: [opened, edited, labeled, unlabeled, closed, reopened]
-  issue_comment:
-    types: [created]
   push:
     branches: [recovery/iphone-static-supabase]
     paths:
       - 'scripts/autonomous-runtime.mjs'
-      - '.autonomous/**'
       - '.github/workflows/autonomous-runtime.yml'
 jobs:
   watchdog:
@@ -19,10 +14,13 @@ jobs:
       group: life-os-autonomous-runtime
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
       issues: write
-      actions: write
+      actions: read
+    env:
+      ADR_STATE_COMMENT_ID: '6027163561'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,24 +28,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Restore durable supervisor state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .autonomous
+          gh api repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --jq .body |
+            sed -n '/^\x60\x60\x60json$/,/^\x60\x60\x60$/p' | sed '1d;$d' > .autonomous/runtime-state.json
+          node -e "JSON.parse(require('fs').readFileSync('.autonomous/runtime-state.json','utf8'))"
       - run: npm install
-      - name: Planner queue checkpoint
-        run: |
-          echo 'Planner reads MASTER matrix and persistent runtime state; HUMAN_ACCEPTANCE never blocks independent queue.'
-      - name: PLAN IMPLEMENT TEST PRODUCT-QA CRITIQUE
+      - name: PLAN TEST PRODUCT-QA CRITIQUE RECOVERY
         run: node scripts/autonomous-runtime.mjs
-      - name: Persist supervisor state
-        if: always()
-        run: |
-          git config user.name life-os-watchdog
-          git config user.email actions@users.noreply.github.com
-          git add .autonomous/runtime-state.json
-          git diff --cached --quiet || git commit -m "chore(runtime): persist autonomous watchdog state"
-          git push origin HEAD:recovery/iphone-static-supabase
-      - name: Durable run log
+      - name: Persist canonical supervisor state
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          status="PASS"; [ "${{ job.status }}" = "success" ] || status="FAIL"
-          gh issue comment 86 --body "AUTONOMOUS_RUNTIME $status | run ${{ github.run_id }} | branch recovery/iphone-static-supabase | physical Phase 2 acceptance remains PENDING/HUMAN_ACCEPTANCE and does not block independent queue."
+          node -e "const fs=require('fs');const p='.autonomous/runtime-state.json';let s={};try{s=JSON.parse(fs.readFileSync(p))}catch{};s.lastRun={id:'${{ github.run_id }}',result:'${{ job.status }}',at:new Date().toISOString()};fs.writeFileSync(p,JSON.stringify(s,null,2))"
+          BODY=$(printf '<!-- ADR_RUNTIME_STATE -->\n```json\n%s\n```\nCanonical durable supervisor state mirror. Updated in-place by autonomous-runtime; do not use as a discussion thread.' "$(cat .autonomous/runtime-state.json)")
+          jq -n --arg body "$BODY" '{body:$body}' > /tmp/body.json
+          gh api --method PATCH repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --input /tmp/body.json
