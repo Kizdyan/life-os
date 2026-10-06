@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { access, rename, rm } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import type { ProcessRunner, VerifiedMediaOutput } from "./contracts";
 import { VideoPipelineError } from "./contracts";
 import { probeVideo } from "./probe";
@@ -17,10 +17,9 @@ export async function renderAtomically(input: {
     });
   }
   const extension = extname(input.outputPath) || ".mp4";
-  const stem = basename(input.outputPath, extname(input.outputPath));
   const temporaryPath = join(
     dirname(input.outputPath),
-    `.${stem}.partial-${randomUUID()}${extension}`,
+    `.pv-${randomUUID().slice(0, 8)}${extension}`,
   );
   try {
     await input.render(temporaryPath);
