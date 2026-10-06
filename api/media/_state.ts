@@ -1,4 +1,5 @@
 import { MediaStateStore } from '../../packages/core/src/media-state-store.js';
+import { ensureFirstRealPersonaPost } from '../../packages/core/src/persona-first-post.js';
 import { YandexDiskKeyValueStore } from '../../packages/core/src/yandex-kv-store.js';
 import { DEFAULT_YANDEX_DISK_CONFIG } from '../../packages/core/src/yandex-disk.js';
 import { resolveMediaStateToken } from './_state-token.js';
@@ -16,8 +17,10 @@ export async function createMediaStateStore(
     fetchImpl: options.fetchImpl,
   });
 
-  return new MediaStateStore({
+  const store = new MediaStateStore({
     kv,
     now: options.now ?? (() => new Date().toISOString()),
   });
+  await ensureFirstRealPersonaPost(store);
+  return store;
 }
