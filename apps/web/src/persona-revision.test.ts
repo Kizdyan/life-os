@@ -1,3 +1,24 @@
-import{beforeEach,describe,expect,it}from'vitest';import{revisePersonaCarousel,readPersonaStyleMemory}from'./persona-revision';import{buildPersonaCarousel}from'./persona-content';
-const data=new Map<string,string>();const storage:Storage={get length(){return data.size},clear(){data.clear()},getItem(k){return data.get(k)??null},key(i){return Array.from(data.keys())[i]??null},removeItem(k){data.delete(k)},setItem(k,v){data.set(k,String(v))}};Object.defineProperty(globalThis,'localStorage',{value:storage,configurable:true});
-describe('Persona correction loop',()=>{beforeEach(()=>localStorage.clear());it('changes the draft from natural-language feedback and learns the rule',()=>{const before=buildPersonaCarousel('actor');const after=revisePersonaCarousel(before,'Сделай текста меньше и заголовки короче');expect(after.slides[0].body.length).toBeLessThan(before.slides[0].body.length);expect(after.slides[0].title.length).toBeLessThanOrEqual(before.slides[0].title.length);expect(readPersonaStyleMemory().some(x=>x.key==='text_density')).toBe(true)});it('reuses learned style on later corrections',()=>{const draft=buildPersonaCarousel('musical');revisePersonaCarousel(draft,'Сделай текста меньше');const after=revisePersonaCarousel(draft,'Исправь карусель');expect(after.slides.every(x=>x.body.length<=110)).toBe(true)})});
+import { describe, expect, it } from 'vitest';
+import { revisePersonaCarousel, readPersonaStyleMemory } from './persona-revision';
+import { buildPersonaCarousel } from './persona-content';
+
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem() { throw new Error('Persona style memory must not read browser storage'); },
+    setItem() { throw new Error('Persona style memory must not write browser storage'); },
+  },
+});
+
+describe('Persona correction loop', () => {
+  it('applies the current natural-language correction without browser persistence', () => {
+    const before = buildPersonaCarousel('actor');
+    const after = revisePersonaCarousel(before, 'Сделай текста меньше и заголовки короче');
+    expect(after.slides[0].body.length).toBeLessThan(before.slides[0].body.length);
+    expect(after.slides[0].title.length).toBeLessThanOrEqual(before.slides[0].title.length);
+  });
+
+  it('has no legacy browser-backed style memory source', () => {
+    expect(readPersonaStyleMemory()).toEqual([]);
+  });
+});
