@@ -37,6 +37,7 @@ jobs:
         env:
           VITE_LIFE_OS_REMOTE_ENABLED: "true"
           VITE_LIFE_OS_EDGE_RUNTIME_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime
+          LIFE_OS_BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run web:build
       - name: Verify production bundle is Edge-only
         run: |
@@ -49,18 +50,19 @@ jobs:
         run: |
           test -f dist/index.html
           grep -q 'life-os-build' dist/index.html
-          grep -q "$GITHUB_SHA" dist/index.html
+          grep -q "${{ github.event.pull_request.head.sha || github.sha }}" dist/index.html
       - name: Verify live Render PWA
         if: github.head_ref == 'recovery/iphone-static-supabase'
         env:
           PROD_URL: https://life-os-production-rlel.onrender.com
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           matched=0
           for i in {1..30}; do
-            if curl --fail --silent --show-error "$PROD_URL/?build_probe=$GITHUB_SHA" -o /tmp/index.html && grep -q "$GITHUB_SHA" /tmp/index.html; then matched=1; break; fi
+            if curl --fail --silent --show-error "$PROD_URL/?build_probe=$EXPECTED_SHA" -o /tmp/index.html && grep -q "$EXPECTED_SHA" /tmp/index.html; then matched=1; break; fi
             sleep 5
           done
-          if [ "$matched" != "1" ]; then echo "Production is not serving commit $GITHUB_SHA"; exit 1; fi
+          if [ "$matched" != "1" ]; then echo "Production is not serving commit $EXPECTED_SHA"; exit 1; fi
           grep -q 'manifest.webmanifest' /tmp/index.html
           curl --fail --silent --show-error "$PROD_URL/manifest.webmanifest" -o /tmp/manifest.json
           node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("/tmp/manifest.json","utf8")); if(m.start_url!=="/"||m.display!=="standalone") process.exit(1)'
