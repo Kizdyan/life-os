@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { learnPersonaPreference, personaPlanForDate, personaPreferencesFromApprovals, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
+import { learnPersonaPreference, personaPlanForDate, personaPreferencesFromApprovals, personaPreferencesFromStyleMemory, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
 
 describe('Persona learning mode',()=>{
  it('uses the weekly plan without asking what format is due',()=>{
@@ -37,5 +37,17 @@ describe('Persona learning mode',()=>{
    expect.objectContaining({key:'format',value:'carousel',weight:-2,evidenceCount:1}),
   ]));
   expect(memory.find(x=>x.key==='topic'&&x.value==='a')?.evidenceCount).toBe(1);
+ });
+ it('derives reusable correction preferences from canonical Style Memory without over-weighting one correction',()=>{
+  const memory=personaPreferencesFromStyleMemory([
+   {assetId:'a',dimension:'editing',value:'чистые склейки',signal:'specific_feedback',weight:0.82,createdAt:'2026-10-04T12:00:00Z'},
+   {assetId:'b',dimension:'editing',value:'чистые склейки',signal:'specific_feedback',weight:0.82,createdAt:'2026-10-04T12:05:00Z'},
+   {assetId:'c',dimension:'editing',value:'быстрые переходы',signal:'inferred',weight:0.2,createdAt:'2026-10-04T12:10:00Z'},
+  ]);
+  expect(memory).toEqual(expect.arrayContaining([
+   {key:'style:editing',value:'чистые склейки',weight:1.64,evidenceCount:2,updatedAt:'2026-10-04T12:05:00Z'},
+   {key:'style:editing',value:'быстрые переходы',weight:0.2,evidenceCount:1,updatedAt:'2026-10-04T12:10:00Z'},
+  ]));
+  expect(memory.find(x=>x.value==='чистые склейки')?.weight).toBeLessThan(3);
  });
 });
