@@ -156,6 +156,20 @@ export interface AudioAnalysis {
   clippingRisk: boolean;
 }
 
+export interface LoudnessMeasurement {
+  inputIntegratedLoudnessLufs: number;
+  inputTruePeakDb: number;
+  inputLoudnessRangeLu: number;
+  inputThresholdLufs: number;
+  targetOffsetDb: number;
+}
+
+export interface AudioNormalizationTarget {
+  integratedLoudnessLufs: number;
+  truePeakDb: number;
+  loudnessRangeLu: number;
+}
+
 export type ReframeInstruction =
   | { mode: "CENTER" }
   | { mode: "MANUAL_REGION"; x: number; y: number; width: number; height: number }
