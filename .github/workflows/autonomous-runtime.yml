@@ -39,6 +39,15 @@ jobs:
       - run: npm install
       - name: PLAN TEST PRODUCT-QA CRITIQUE RECOVERY
         run: node scripts/autonomous-runtime.mjs
+      - name: Simulate stale and offline recovery
+        run: |
+          cp .autonomous/runtime-state.json /tmp/adr-state.json
+          node -e "const fs=require('fs'),p='/tmp/adr-state.json',s=JSON.parse(fs.readFileSync(p));s.heartbeat=new Date(Date.now()-16*60*1000).toISOString();fs.writeFileSync(p,JSON.stringify(s))"
+          ADR_STATE=/tmp/adr-state.json ADR_SIMULATION=1 node scripts/autonomous-runtime.mjs
+          grep -q STALLED_RECOVERY /tmp/adr-state.json
+          node -e "const fs=require('fs'),p='/tmp/adr-state.json',s=JSON.parse(fs.readFileSync(p));s.heartbeat=new Date(Date.now()-31*60*1000).toISOString();fs.writeFileSync(p,JSON.stringify(s))"
+          ADR_STATE=/tmp/adr-state.json ADR_SIMULATION=1 node scripts/autonomous-runtime.mjs
+          grep -q OFFLINE_RECOVERY /tmp/adr-state.json
       - name: Persist canonical supervisor state
         if: always()
         env:
