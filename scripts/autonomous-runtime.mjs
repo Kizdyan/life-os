@@ -11,5 +11,5 @@ s.lastWatchdogAt=now;s.lastProgressAt=now;s.checkpoint='TEST';save();
 const ok=run('npm',['test'])&&run('npm',['run','typecheck'])&&run('npm',['run','api:typecheck'])&&run('npm',['run','web:build']);
 s.lastAutomatedQA={at:now,ok};s.checkpoint=ok?'PRODUCT_QA':'FIX';s.status=ok?'RUNNING':'QA_FAILED';save();
 if(!ok)process.exit(1);
-s.checkpoint='CRITIQUE';s.critic={at:now,rule:'No CI-only acceptance; physical iPhone Phase 2 remains non-blocking HUMAN_ACCEPTANCE.'};save();
+s.checkpoint='CRITIQUE';s.critic={at:now,rule:'No CI-only acceptance; physical iPhone Phase 2 remains non-blocking HUMAN_ACCEPTANCE.'};s.roles={planner:'ACTIVE',developer:process.env.AUTONOMOUS_CODER_TOKEN?'ACTIVE':'NEEDS_EXTERNAL_CODER',qa:'ACTIVE',critic:'ACTIVE',release:'ACTIVE',watchdog:'ACTIVE'};s.nextIndependentTask=s.queue[Math.max(0,(s.phase||2)-2)]||s.queue[0];save();
 console.log(JSON.stringify(s,null,2));
