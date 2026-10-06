@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/web/**"
       - "api/**"
+      - "supabase/functions/life-os-runtime/**"
       - "packages/core/src/yandex-oauth.ts"
       - "scripts/api-smoke.mjs"
       - "tsconfig.json"
@@ -32,7 +33,62 @@ jobs:
           node-version: "24"
       - run: npm install
       - run: npm run api:typecheck
-      - run: npm run api:smoke
-      - run: npm run web:build
-      - name: Verify deploy artifact
-        run: test -f apps/web/dist/index.html
+      - name: Build production static frontend
+        env:
+          VITE_LIFE_OS_REMOTE_ENABLED: "true"
+          VITE_LIFE_OS_EDGE_RUNTIME_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime
+          LIFE_OS_BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run web:build
+      - name: Verify production bundle is Edge-only
+        run: |
+          grep -R -q 'zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime' dist/assets
+          if grep -R -E -q '/api/(persona|runtime/(sync|session))' dist/assets; then
+            echo 'Forbidden Vercel runtime route found in production bundle'
+            exit 1
+          fi
+      - name: Verify deploy artifact identity
+        run: |
+          test -f dist/index.html
+          grep -q 'life-os-build' dist/index.html
+          grep -q "${{ github.event.pull_request.head.sha || github.sha }}" dist/index.html
+      - name: Verify live Render PWA
+        if: github.head_ref == 'recovery/iphone-static-supabase'
+        env:
+          PROD_URL: https://life-os-production-rlel.onrender.com
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          matched=0
+          for i in {1..30}; do
+            if curl --fail --silent --show-error "$PROD_URL/?build_probe=$EXPECTED_SHA" -o /tmp/index.html && grep -q "$EXPECTED_SHA" /tmp/index.html; then matched=1; break; fi
+            sleep 5
+          done
+          if [ "$matched" != "1" ]; then echo "Production is not serving commit $EXPECTED_SHA"; exit 1; fi
+          grep -q 'manifest.webmanifest' /tmp/index.html
+          curl --fail --silent --show-error "$PROD_URL/manifest.webmanifest" -o /tmp/manifest.json
+          node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("/tmp/manifest.json","utf8")); if(m.start_url!=="/"||m.display!=="standalone") process.exit(1)'
+          curl --fail --silent --show-error "$PROD_URL/sw.js" -o /tmp/sw.js
+          grep -q 'life-os-shell' /tmp/sw.js
+          asset="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/index.html | head -1)"
+          test -n "$asset"
+          curl --fail --silent --show-error "$PROD_URL$asset" -o /tmp/app.js
+          grep -q 'zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime' /tmp/app.js
+          if grep -E -q '/api/(persona|runtime/(sync|session))' /tmp/app.js; then
+            echo 'Forbidden Vercel runtime route found in live production bundle'
+            exit 1
+          fi
+          curl --fail --silent --show-error "$PROD_URL/?pwa_reload_probe=1" -o /tmp/reload.html
+          grep -q 'manifest.webmanifest' /tmp/reload.html
+      - name: Verify Supabase Edge recovery path
+        if: github.head_ref == 'recovery/iphone-static-supabase'
+        env:
+          EDGE_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime
+        run: |
+          health="$(curl --fail --silent --show-error "$EDGE_URL?health=1")"
+          node -e 'const h=JSON.parse(process.argv[1]); if(h.configured!==true||h.databaseReachable!==true) process.exit(1)' "$health"
+          curl --fail --silent --show-error -D /tmp/edge-headers -o /dev/null -X OPTIONS "$EDGE_URL" \
+            -H 'Origin: https://life-os-iphone-preview.vercel.app' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type'
+          tr -d '\r' < /tmp/edge-headers > /tmp/edge-headers-normalized
+          grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers-normalized
+          grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers-normalized

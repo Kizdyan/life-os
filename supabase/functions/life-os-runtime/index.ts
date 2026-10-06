@@ -3,6 +3,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const OWNER_ID = 'b48182e1-0802-4741-89a1-bba6341cb8c8';
 const OWNER_PASSCODE_SHA256 = '7b9f92d5fff6262ad5ccecfd3c5e7e3eb2cf7cdc4af06804d27f90bf3defcafb';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -18,13 +23,16 @@ type MutationInput = {
 };
 
 Deno.serve(async (request: Request) => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (request.method === 'GET') {
     const url = new URL(request.url);
     return url.searchParams.get('health') === '1'
       ? health()
-      : json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
+      : json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET, OPTIONS' });
   }
-  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET' });
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST, GET, OPTIONS' });
 
   let body: Record<string, unknown>;
   try {
@@ -38,6 +46,7 @@ Deno.serve(async (request: Request) => {
     case 'status': return status(body.token);
     case 'health': return health();
     case 'sync': return sync(body.token, body.mutations, body.sinceRevision);
+    case 'persona': return persona(body.token, body.payload);
     default: return json({ error: 'unsupported_operation' }, 400);
   }
 });
@@ -242,8 +251,109 @@ function fromBase64Url(value: string): Uint8Array {
   return output;
 }
 
+async function persona(rawToken: unknown, rawPayload: unknown): Promise<Response> {
+  const session = await verifySession(rawToken);
+  if (!session) return json({ error: 'authentication_required' }, 401);
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) return json({ error: 'invalid_persona_payload' }, 400);
+  const payload = rawPayload as Record<string, unknown>;
+  const action = String(payload.action ?? 'plan');
+  if (!['plan', 'shooting', 'generate', 'revise', 'prepublish'].includes(action)) return json({ error: 'unknown_persona_action' }, 400);
+  if (action === 'plan') {
+    try {
+      const result = await personaAI('Ты контент-стратег актёра, музыканта и автора. Дай 16–24 разные идеи без повторов истории. Верни только JSON {"ideas":[{"id","title","angle","format","score","reason"}]}.', payload);
+      if (Array.isArray((result as any)?.ideas) && (result as any).ideas.length >= 10) return json({ ideas: (result as any).ideas.slice(0, 24) });
+    } catch (error) {
+      console.error('persona plan AI failed', error instanceof Error ? error.message : 'unknown');
+    }
+    return json({ ideas: localPersonaIdeas(Array.isArray(payload.history) ? payload.history : []) });
+  }
+  try {
+    if (action === 'shooting') {
+      const idea = payload.idea as Record<string, unknown> | undefined;
+      if (!idea || typeof idea.title !== 'string' || !idea.title.trim()) return json({ error: 'Сначала выбери идею' }, 400);
+      const brief = await personaAI([
+        'Ты режиссёр съёмки Persona. Задание должно позволять одному человеку открыть его на iPhone и снять материал без дополнительных вопросов.',
+        'Для каждого кадра укажи id,purpose,shotSize,angle,cameraPosition,cameraHeight,distance,composition,movement,durationSeconds,takes,action,dialogue,bRoll,bRollInstruction.',
+        'Отдельно укажи title,orientation,resolution,fps,audio,lighting,background,references.',
+        'Для Reels/Shorts/VK Clips по умолчанию vertical, 4k, 30fps. Не выдумывай доступную локацию, реквизит или людей.',
+        'Верни только JSON PersonaShootingBrief.'
+      ].join('\n'), { idea });
+      const issues = validateEdgeShootingBrief(brief);
+      return issues.length ? json({ error: 'Не удалось собрать полное съёмочное задание', issues }, 502) : json({ brief });
+    }
+    if (action === 'generate') {
+      const result = await personaAI('Ты автономная редакционная команда актёра, музыканта и автора. Не выдумывай биографические факты. Верни только JSON Draft: title, slides[{eyebrow,title,body}], caption, platformNotes{instagram,vk,youtube}, style, learnedRules, changeSummary.', payload);
+      return json(result);
+    }
+    if (action === 'revise') {
+      const result = await personaAI('Ты ведущий редактор Persona. Примени пользовательскую правку семантически, не выдумывай факты. Верни только JSON Draft: title, slides[{eyebrow,title,body}], caption, platformNotes{instagram,vk,youtube}, style, learnedRules, changeSummary.', payload);
+      return json(result);
+    }
+    const qa = await personaAI('Ты независимый QA Persona. Проверь хук, удержание, логику, естественность, факты, iPhone-читаемость и платформенную адаптацию. Верни только JSON {"pass":boolean,"score":number,"issues":[{"target","instruction"}]}; pass только при score>=85.', payload);
+    return json({ ready: Boolean((qa as any)?.pass) && Number((qa as any)?.score) >= 85, qa }, Boolean((qa as any)?.pass) && Number((qa as any)?.score) >= 85 ? 200 : 422);
+  } catch (error) {
+    console.error('persona AI failed', error instanceof Error ? error.message : 'unknown');
+    return json({ error: 'AI-редакция временно недоступна. Попробуй ещё раз позже.' }, 503);
+  }
+}
+
+async function personaAI(system: string, payload: unknown): Promise<unknown> {
+  const key = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+  if (!key) throw new Error('OPENAI_API_KEY is not configured in Supabase Edge');
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: (Deno.env.get('PERSONA_OPENAI_MODEL') ?? 'gpt-5.6-sol').trim(),
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(payload) }],
+    }),
+  });
+  if (!response.ok) throw new Error(`openai:${response.status}`);
+  const raw = await response.json() as any;
+  const text = String(raw?.choices?.[0]?.message?.content ?? '').trim().replace(/^\\x60\\x60\\x60(?:json)?/i, '').replace(/\\x60\\x60\\x60$/, '').trim();
+  if (!text) throw new Error('openai:empty');
+  return JSON.parse(text);
+}
+
+function validateEdgeShootingBrief(value: unknown): string[] {
+  const b = value as any, issues: string[] = [];
+  if (!b || typeof b !== 'object') return ['brief'];
+  for (const key of ['title','orientation','resolution','audio','lighting','background']) if (!String(b[key] ?? '').trim()) issues.push(key);
+  if (!Number.isFinite(Number(b.fps))) issues.push('fps');
+  if (!Array.isArray(b.shots) || !b.shots.length) return [...issues, 'shots'];
+  for (let i=0;i<b.shots.length;i++) {
+    const s=b.shots[i] ?? {};
+    for (const key of ['id','purpose','shotSize','angle','cameraPosition','cameraHeight','distance','composition','movement','action']) if (!String(s[key] ?? '').trim()) issues.push(`shots[${i}].${key}`);
+    if (!Number.isFinite(Number(s.durationSeconds)) || Number(s.durationSeconds) < 2) issues.push(`shots[${i}].durationSeconds`);
+    if (!Number.isInteger(Number(s.takes)) || Number(s.takes) < 1) issues.push(`shots[${i}].takes`);
+    if (s.bRoll === true && !String(s.bRollInstruction ?? '').trim()) issues.push(`shots[${i}].bRollInstruction`);
+  }
+  return issues;
+}
+
+function localPersonaIdeas(history: unknown[]): Array<Record<string, unknown>> {
+  const blocked = new Set(history.map((x:any)=>String(x?.title ?? '').toLocaleLowerCase('ru-RU')));
+  const seed = [
+    ['Что зритель не видит за минуту до спектакля','Закулисье через один конкретный момент','reel'],
+    ['Как четыре ноты превращаются в сцену','Музыкальное зерно → драматургия → оркестр','reel'],
+    ['Как рождается аранжировка','От фортепиано до готового звучания','reel'],
+    ['Один день между театром и музыкой','Соединить две профессии одной историей','reel'],
+    ['Фрагмент будущего мюзикла','Тизер проекта без спойлеров','short'],
+    ['Из заметки в готовую сцену','Показать реальный творческий процесс','reel'],
+    ['Что происходит после «стоп, снято»','Момент, который обычно вырезают','reel'],
+    ['Одна репетиция, которую стоило бы увидеть зрителю','Невидимая работа перед спектаклем','reel'],
+    ['Как одна фраза меняет весь номер','Драматургия через микродеталь','reel'],
+    ['Что остаётся после репетиции','Один честный кадр вместо отчёта','photo'],
+    ['Как понять, что сцена уже живая','Признаки, которые замечает актёр','reel'],
+    ['Почему процесс иногда интереснее результата','История через незавершённость','reel']
+  ];
+  return seed.filter(x=>!blocked.has(x[0].toLocaleLowerCase('ru-RU'))).map((x,i)=>({id:`edge-${i+1}`,title:x[0],angle:x[1],format:x[2],score:96-i,reason:'Баланс личного процесса, профессиональной глубины и интереса аудитории',status:'candidate'}));
+}
+
 function json(payload: unknown, status = 200, headersInit?: HeadersInit): Response {
   const headers = new Headers(headersInit);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
   headers.set('Content-Type', 'application/json');
   headers.set('Cache-Control', 'no-store');
   return new Response(JSON.stringify(payload), { status, headers });

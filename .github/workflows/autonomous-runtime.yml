@@ -1,0 +1,64 @@
+name: autonomous-runtime
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+  push:
+    branches: [recovery/iphone-static-supabase]
+    paths:
+      - 'scripts/autonomous-runtime.mjs'
+      - '.github/workflows/autonomous-runtime.yml'
+jobs:
+  watchdog:
+    concurrency:
+      group: life-os-autonomous-runtime
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    env:
+      ADR_STATE_COMMENT_ID: '6027163561'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/iphone-static-supabase
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Restore durable supervisor state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .autonomous
+          gh api repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --jq .body |
+            sed -n '/^\x60\x60\x60json$/,/^\x60\x60\x60$/p' | sed '1d;$d' > .autonomous/runtime-state.json
+          node -e "JSON.parse(require('fs').readFileSync('.autonomous/runtime-state.json','utf8'))"
+      - run: npm install
+      - name: PLAN TEST PRODUCT-QA CRITIQUE RECOVERY
+        run: node scripts/autonomous-runtime.mjs
+      - name: Verify durable state merge
+        run: node scripts/merge-runtime-state.check.mjs
+      - name: Simulate stale and offline recovery
+        run: |
+          cp .autonomous/runtime-state.json /tmp/adr-state.json
+          node -e "const fs=require('fs'),p='/tmp/adr-state.json',s=JSON.parse(fs.readFileSync(p));s.heartbeat=new Date(Date.now()-16*60*1000).toISOString();fs.writeFileSync(p,JSON.stringify(s))"
+          ADR_STATE=/tmp/adr-state.json ADR_SIMULATION=1 node scripts/autonomous-runtime.mjs
+          grep -q STALLED_RECOVERY /tmp/adr-state.json
+          node -e "const fs=require('fs'),p='/tmp/adr-state.json',s=JSON.parse(fs.readFileSync(p));s.heartbeat=new Date(Date.now()-31*60*1000).toISOString();fs.writeFileSync(p,JSON.stringify(s))"
+          ADR_STATE=/tmp/adr-state.json ADR_SIMULATION=1 node scripts/autonomous-runtime.mjs
+          grep -q OFFLINE_RECOVERY /tmp/adr-state.json
+      - name: Persist canonical supervisor state
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node -e "const fs=require('fs');const p='.autonomous/runtime-state.json';let s={};try{s=JSON.parse(fs.readFileSync(p))}catch{};s.lastRun={id:'${{ github.run_id }}',result:'${{ job.status }}',at:new Date().toISOString()};fs.writeFileSync(p,JSON.stringify(s,null,2))"
+          gh api repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --jq .body > /tmp/remote-state.md
+          node scripts/merge-runtime-state.mjs /tmp/remote-state.md .autonomous/runtime-state.json /tmp/merged-state.json
+          cp /tmp/merged-state.json .autonomous/runtime-state.json
+          BODY=$(printf '<!-- ADR_RUNTIME_STATE -->\n```json\n%s\n```\nCanonical durable supervisor state mirror. Updated in-place by autonomous-runtime; do not use as a discussion thread.' "$(cat .autonomous/runtime-state.json)")
+          jq -n --arg body "$BODY" '{body:$body}' > /tmp/body.json
+          gh api --method PATCH repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --input /tmp/body.json

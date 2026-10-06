@@ -1,56 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getRuntimeSessionStatus,
-  loginRuntimeSession,
-  logoutRuntimeSession,
-} from './runtimeSession';
+import { createRuntimeSessionClient } from './runtimeTransport';
+
+class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+  private readonly values = new Map<string, string>();
+  getItem(key: string) { return this.values.get(key) ?? null; }
+  setItem(key: string, value: string) { this.values.set(key, value); }
+  removeItem(key: string) { this.values.delete(key); }
+}
+
+const edgeUrl = 'https://example.supabase.co/functions/v1/life-os-runtime';
 
 describe('runtime session client', () => {
-  it('treats 503 as an unconfigured remote runtime', async () => {
-    const fetchImpl: typeof fetch = async () => new Response(
-      JSON.stringify({ configured: false, authenticated: false }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } },
-    );
-
-    await expect(getRuntimeSessionStatus(fetchImpl)).resolves.toEqual({
-      configured: false,
-      authenticated: false,
-    });
+  it('requires Supabase Edge instead of a Vercel session fallback', () => {
+    expect(() => createRuntimeSessionClient({ edgeUrl: '', apiUrl: 'https://api.example.test', storage: new MemoryStorage(), fetchImpl: fetch }))
+      .toThrow('Supabase Edge runtime URL is required in production');
   });
 
-  it('logs in without persisting the passcode client-side', async () => {
+  it('logs in through Edge and persists only the opaque session token', async () => {
     let requestBody = '';
+    const storage = new MemoryStorage();
     const fetchImpl: typeof fetch = async (_input, init) => {
       requestBody = String(init?.body ?? '');
-      return new Response(
-        JSON.stringify({ configured: true, authenticated: true }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ authenticated: true, token: 'opaque.token' }), { status: 200 });
     };
-
-    const result = await loginRuntimeSession('  secret  ', fetchImpl);
-
+    const result = await createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage, fetchImpl }).login('  secret  ');
     expect(result).toEqual({ configured: true, authenticated: true });
-    expect(JSON.parse(requestBody)).toEqual({ passcode: 'secret' });
+    expect(JSON.parse(requestBody)).toEqual({ op: 'login', passcode: 'secret' });
+    expect(storage.getItem('life-os:edge-session:v1')).toBe('opaque.token');
   });
 
-  it('surfaces invalid credentials in Russian', async () => {
-    const fetchImpl: typeof fetch = async () => new Response(
-      JSON.stringify({ error: 'invalid_credentials' }),
-      { status: 401, headers: { 'Content-Type': 'application/json' } },
-    );
-
-    await expect(loginRuntimeSession('wrong', fetchImpl)).rejects.toThrow('Неверный код доступа');
+  it('surfaces invalid Edge credentials in Russian', async () => {
+    const fetchImpl: typeof fetch = async () => new Response(JSON.stringify({ error: 'invalid_credentials' }), { status: 401 });
+    await expect(createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage: new MemoryStorage(), fetchImpl }).login('wrong'))
+      .rejects.toThrow('Неверный код доступа');
   });
 
-  it('logs out through the server cookie endpoint', async () => {
-    let method = '';
-    const fetchImpl: typeof fetch = async (_input, init) => {
-      method = String(init?.method);
-      return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
-    };
-
-    await logoutRuntimeSession(fetchImpl);
-    expect(method).toBe('DELETE');
+  it('logs out locally by clearing the opaque Edge token', async () => {
+    const storage = new MemoryStorage();
+    storage.setItem('life-os:edge-session:v1', 'opaque.token');
+    const fetchImpl: typeof fetch = async () => { throw new Error('logout must not call a server'); };
+    await createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage, fetchImpl }).logout();
+    expect(storage.getItem('life-os:edge-session:v1')).toBeNull();
   });
 });

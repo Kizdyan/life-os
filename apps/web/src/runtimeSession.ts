@@ -1,52 +1,38 @@
+import { createRuntimeSessionClient } from './runtimeTransport';
+
 export interface RuntimeSessionStatus {
   configured: boolean;
   authenticated: boolean;
 }
 
-export async function getRuntimeSessionStatus(fetchImpl: typeof fetch = fetch): Promise<RuntimeSessionStatus> {
-  const response = await fetchImpl('/api/runtime/session', {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
+const edgeUrl = import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '';
+const apiUrl = import.meta.env.VITE_LIFE_OS_API_URL ?? '';
 
-  if (response.status === 503) {
-    const payload = await response.json() as Partial<RuntimeSessionStatus>;
-    return {
-      configured: payload.configured === true,
-      authenticated: false,
-    };
+function sessionClient(fetchImpl: typeof fetch) {
+  if (typeof localStorage === 'undefined') {
+    if (edgeUrl.trim()) throw new Error('Browser storage is required for direct Edge runtime');
+    return createRuntimeSessionClient({ edgeUrl: '', apiUrl, storage: memorylessStorage, fetchImpl });
   }
-  if (!response.ok) throw new Error(`Runtime session status failed: ${response.status}`);
-  return response.json() as Promise<RuntimeSessionStatus>;
+  return createRuntimeSessionClient({ edgeUrl, apiUrl, storage: localStorage, fetchImpl });
+}
+
+const memorylessStorage = {
+  getItem: (_key: string) => null,
+  setItem: (_key: string, _value: string) => {},
+  removeItem: (_key: string) => {},
+};
+
+export async function getRuntimeSessionStatus(fetchImpl: typeof fetch = fetch): Promise<RuntimeSessionStatus> {
+  return sessionClient(fetchImpl).status();
 }
 
 export async function loginRuntimeSession(
   passcode: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<RuntimeSessionStatus> {
-  const value = passcode.trim();
-  if (!value) throw new Error('Введите код доступа');
-
-  const response = await fetchImpl('/api/runtime/session', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode: value }),
-  });
-
-  if (response.status === 401) throw new Error('Неверный код доступа');
-  if (response.status === 503) throw new Error('Серверная память ещё не настроена');
-  if (!response.ok) throw new Error(`Runtime login failed: ${response.status}`);
-  return response.json() as Promise<RuntimeSessionStatus>;
+  return sessionClient(fetchImpl).login(passcode);
 }
 
 export async function logoutRuntimeSession(fetchImpl: typeof fetch = fetch): Promise<void> {
-  const response = await fetchImpl('/api/runtime/session', {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!response.ok && response.status !== 503) {
-    throw new Error(`Runtime logout failed: ${response.status}`);
-  }
+  await sessionClient(fetchImpl).logout();
 }
