@@ -53,18 +53,16 @@ jobs:
         env:
           PROD_URL: https://life-os-production-rlel.onrender.com
         run: |
-          set -x
           for i in {1..12}; do
             if curl --fail --silent --show-error "$PROD_URL/" -o /tmp/index.html; then break; fi
             sleep 5
           done
-          cat /tmp/index.html
           grep -q 'manifest.webmanifest' /tmp/index.html
           curl --fail --silent --show-error "$PROD_URL/manifest.webmanifest" -o /tmp/manifest.json
           node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("/tmp/manifest.json","utf8")); if(m.start_url!=="/"||m.display!=="standalone") process.exit(1)'
           curl --fail --silent --show-error "$PROD_URL/sw.js" -o /tmp/sw.js
           grep -q 'life-os-shell' /tmp/sw.js
-          asset="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\\.js' /tmp/index.html | head -1)"
+          asset="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/index.html | head -1)"
           test -n "$asset"
           curl --fail --silent --show-error "$PROD_URL$asset" -o /tmp/app.js
           grep -q 'zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime' /tmp/app.js
