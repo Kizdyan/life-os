@@ -27,6 +27,23 @@ describe('Life Analytics Engine foundation',()=>{
     expect(result.dataQuality.correlationReady).toBe(false);
   });
 
+  it('emits a cautious association only after enough paired days',()=>{
+    const observations:LifeObservation[]=[];
+    for(let i=1;i<=8;i++){
+      const date=`2026-10-${String(i).padStart(2,'0')}`;
+      observations.push(o({id:`s${i}`,localDate:date,metric:'sleep_minutes',value:300+i*30}));
+      observations.push(o({id:`e${i}`,localDate:date,metric:'energy',value:2+i}));
+    }
+    const result=buildLifeAnalyticsSummary(observations,30);
+    expect(result.dataQuality.correlationReady).toBe(true);
+    expect(result.insights).toHaveLength(1);
+    expect(result.insights[0].kind).toBe('association');
+    expect(result.insights[0].sampleSize).toBe(8);
+    expect(result.insights[0].causal).toBe(false);
+    expect(result.insights[0].statement).toContain('сон');
+    expect(result.insights[0].statement).toContain('энерг');
+  });
+
   it('groups by supplied localDate rather than UTC date',()=>{
     const result=buildLifeAnalyticsSummary([
       o({id:'late',occurredAt:'2026-09-30T22:30:00Z',localDate:'2026-10-01',metric:'energy',value:5}),
