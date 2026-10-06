@@ -35,16 +35,11 @@ describe('runtime session client', () => {
       .rejects.toThrow('Неверный код доступа');
   });
 
-  it('logs out through Edge and clears the opaque token', async () => {
+  it('logs out locally by clearing the opaque Edge token', async () => {
     const storage = new MemoryStorage();
     storage.setItem('life-os:edge-session:v1', 'opaque.token');
-    let body: any = null;
-    const fetchImpl: typeof fetch = async (_input, init) => {
-      body = JSON.parse(String(init?.body ?? '{}'));
-      return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
-    };
+    const fetchImpl: typeof fetch = async () => { throw new Error('logout must not call a server'); };
     await createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage, fetchImpl }).logout();
-    expect(body).toEqual({ op: 'logout', token: 'opaque.token' });
     expect(storage.getItem('life-os:edge-session:v1')).toBeNull();
   });
 });
