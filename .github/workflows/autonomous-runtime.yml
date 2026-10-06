@@ -3,6 +3,10 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
+  issues:
+    types: [opened, edited, labeled, unlabeled, closed, reopened]
+  issue_comment:
+    types: [created]
   push:
     branches: [recovery/iphone-static-supabase]
     paths:
@@ -27,6 +31,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Planner queue checkpoint
+        run: |
+          echo 'Planner reads MASTER matrix and persistent runtime state; HUMAN_ACCEPTANCE never blocks independent queue.'
       - name: PLAN IMPLEMENT TEST PRODUCT-QA CRITIQUE
         run: node scripts/autonomous-runtime.mjs
       - name: Persist supervisor state
