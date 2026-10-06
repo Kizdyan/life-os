@@ -58,7 +58,7 @@ describe("buildObjectiveSegments", () => {
     ]);
   });
 
-  it("does not classify silence overlapping transcript speech as cuttable", () => {
+  it("protects only the transcript-overlapping portion of a detected silence", () => {
     const transcript: Transcript = {
       language: "ru",
       provider: "fixture",
@@ -73,14 +73,16 @@ describe("buildObjectiveSegments", () => {
       transcript,
     );
 
-    expect(result).toEqual([
-      {
-        sourceStartMs: 0,
-        sourceEndMs: 5000,
-        kind: "content",
-        signalSource: "OBJECTIVE",
-        confidence: 1,
-      },
+    expect(result.map(({ sourceStartMs, sourceEndMs, kind }) => ({
+      sourceStartMs,
+      sourceEndMs,
+      kind,
+    }))).toEqual([
+      { sourceStartMs: 0, sourceEndMs: 2000, kind: "content" },
+      { sourceStartMs: 2000, sourceEndMs: 2400, kind: "silence" },
+      { sourceStartMs: 2400, sourceEndMs: 2800, kind: "content" },
+      { sourceStartMs: 2800, sourceEndMs: 3000, kind: "silence" },
+      { sourceStartMs: 3000, sourceEndMs: 5000, kind: "content" },
     ]);
   });
 

@@ -94,11 +94,8 @@ export function buildObjectiveSegments(
     ...policy,
   };
   const transcriptSegments = transcript?.segments ?? [];
-  const protectedSilence = normalizeSilenceIntervals(silenceIntervals, durationMs).filter(
-    (silence) =>
-      !transcriptSegments.some(
-        (speech) => speech.startMs < silence.endMs && speech.endMs > silence.startMs,
-      ),
+  const protectedSilence = normalizeSilenceIntervals(silenceIntervals, durationMs).flatMap(
+    (silence) => subtractTranscriptSpeech(silence, transcriptSegments),
   );
   const segments: VideoSegment[] = [];
   let cursor = 0;
@@ -112,6 +109,31 @@ export function buildObjectiveSegments(
     segments.push(segment(0, durationMs, "content"));
   }
   return cleanupMicroContent(segments, transcriptSegments, resolvedPolicy);
+}
+
+function subtractTranscriptSpeech(
+  silence: TimeRange,
+  transcriptSegments: Transcript["segments"],
+): TimeRange[] {
+  const speechRanges = transcriptSegments
+    .map(({ startMs, endMs }) => ({
+      startMs: Math.max(silence.startMs, startMs),
+      endMs: Math.min(silence.endMs, endMs),
+    }))
+    .filter(({ startMs, endMs }) => endMs > startMs)
+    .sort((left, right) => left.startMs - right.startMs);
+  const cuttable: TimeRange[] = [];
+  let cursor = silence.startMs;
+  for (const speech of speechRanges) {
+    if (speech.startMs > cursor) {
+      cuttable.push({ startMs: cursor, endMs: speech.startMs });
+    }
+    cursor = Math.max(cursor, speech.endMs);
+  }
+  if (cursor < silence.endMs) {
+    cuttable.push({ startMs: cursor, endMs: silence.endMs });
+  }
+  return cuttable;
 }
 
 function cleanupMicroContent(
