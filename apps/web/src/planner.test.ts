@@ -20,4 +20,9 @@ describe('planCompound flexible placement',()=>{
     expect(result[0].start).toBeUndefined();
     expect(result[0].end).toBeUndefined();
   });
+
+  it('keeps a transition buffer after occupied time when planning policy requires it',()=>{
+    const result=planCompound('покататься на велосипеде 30 минут',[item('busy','10:00','11:00')],localTime(10),{transitionBufferMin:15});
+    expect(result[0]).toMatchObject({start:'11:15',end:'11:45',durationMin:30});
+  });
 });
