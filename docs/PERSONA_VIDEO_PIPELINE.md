@@ -13,6 +13,14 @@ Persona may create a `PersonaShootingResultVideoRequest` containing `ideaId`,
 identifiers outside the engine request. The caller must retain those identifiers and associate
 them with the returned `runId`, `runPath`, and `reportPath` in its own state.
 
+The Life OS integration boundary is `processPersonaShootingResult` in
+`packages/core/src/persona-video-bridge.ts`. It consumes a Persona idea reference, an already
+persisted and revisioned shooting brief, and a correlated `own_raw` Media Brain asset. The
+bridge maps those values to `VideoProcessingRequest`, invokes an injected processor, persists a
+technical `PersonaVideoProcessingRecord`, and returns a typed input for the existing
+`ContentFactory.createDraft` boundary. Shooting-brief persistence remains owned by Persona
+state. The bridge does not invoke the planner or make editorial selections.
+
 The input is immutable and hashed with a streaming SHA-256 reader. Each invocation creates a new timestamped run directory and never
 reuses output paths. A successful run contains normalized metadata, technical QA, transcript
 resolution, objective segments, an EDL, an SRT captions intermediate, audio analysis, a real
