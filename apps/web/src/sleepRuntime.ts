@@ -8,15 +8,16 @@ import {
   type SleepStorage,
 } from './sleepEnergy';
 import {
-  HttpRemoteLifeOsGateway,
   pendingMutations,
   queueMutation,
   syncLocalReplica,
   type RuntimeSyncMutation,
 } from './runtimeSync';
+import { createRuntimeGateway } from './runtimeTransport';
 
 const remoteEnabled = import.meta.env.VITE_LIFE_OS_REMOTE_ENABLED === 'true';
 const remoteApiUrl = import.meta.env.VITE_LIFE_OS_API_URL ?? '';
+const edgeUrl = import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '';
 
 function browserStorage(): Storage {
   if (typeof localStorage === 'undefined') throw new Error('Локальное хранилище недоступно');
@@ -60,7 +61,7 @@ export async function syncSleepRuntime(): Promise<void> {
   if (!remoteEnabled) return;
   const storage = browserStorage();
   queueUnsyncedSleepEntries(storage);
-  const gateway = new HttpRemoteLifeOsGateway(remoteApiUrl);
+  const gateway = createRuntimeGateway({ edgeUrl, apiUrl: remoteApiUrl, storage });
   await syncLocalReplica(storage, gateway, (records) => applyRemoteRuntimeRecords(storage, records));
   notifySyncState();
 }
