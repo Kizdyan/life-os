@@ -64,3 +64,12 @@ export interface PersonaLearningSignal {
   evidenceCount: number;
   createdAt: string;
 }
+
+export type PersonaMemoryRuleSource = "explicit" | "inferred";
+
+export interface PersonaMemoryRule {
+  id: string;
+  rule: string;
+  source: PersonaMemoryRuleSource;
+  updatedAt: string;
+}
