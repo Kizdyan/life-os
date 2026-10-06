@@ -1,0 +1,45 @@
+name: autonomous-runtime
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [recovery/iphone-static-supabase]
+    paths:
+      - ".github/workflows/autonomous-runtime.yml"
+      - "scripts/autonomous-runtime.mjs"
+      - ".autonomous/**"
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: life-os-autonomous-runtime
+  cancel-in-progress: false
+
+jobs:
+  supervisor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/iphone-static-supabase
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Supervisor/watchdog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          AUTONOMOUS_BRANCH: recovery/iphone-static-supabase
+          MASTER_ISSUE: "86"
+        run: node scripts/autonomous-runtime.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-runtime-state
+          path: .autonomous/state.json
+          retention-days: 14
