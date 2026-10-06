@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/autonomous-runtime.yml"
+      - "scripts/autonomous-runtime.mjs"
+      - ".autonomous/**"
   push:
     branches: [recovery/iphone-static-supabase]
     paths:
