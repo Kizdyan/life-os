@@ -20,6 +20,32 @@ Prove three improvements on the existing real user video:
 The engine remains a deterministic technical-processing layer. It is not a monolithic replacement
 for Descript, Runway, CapCut, or future creative tools.
 
+## Immutable local-first requirements
+
+These requirements govern every V1 implementation choice and may not be weakened by a task-level
+decision:
+
+- The critical path is `LOCAL-FIRST / ZERO-CREDIT`. It must work without paid APIs, credits,
+  monthly minutes, external usage quotas, or cloud authorization.
+- The complete required local path is input video -> FFmpeg/ffprobe -> Whisper.cpp local STT ->
+  canonical transcript -> EDL/trim -> FFmpeg loudness normalization -> captions -> clean master ->
+  captioned master -> platform outputs.
+- Descript, Runway, CapCut, and all future cloud providers are optional enhancements. Their absence,
+  error, authorization failure, or exhausted quota must not block the local path.
+- Provider selection is deterministic: an explicitly allowed and available external enhancement may
+  run first; otherwise processing falls back to the configured local provider. The required V1 STT
+  fallback is `WhisperCppTranscriptProvider`.
+- Canonical Persona data remains provider-neutral. Provider-native payloads are diagnostic run
+  artifacts only.
+- Every provider report records `providerUsed`, `fallbackOccurred`, `fallbackReason`,
+  `quotaDependency`, `localProcessing`, and `externalCostRequired`. A fully local run must report
+  `quotaDependency=false` and `externalCostRequired=false`.
+- Whisper.cpp executables and models are never committed. Paths are configurable, and local setup is
+  documented with a reproducible cache/bootstrap strategy.
+- V1 uses the same `IMG_6873.mp4` as V0, preserves the input hash, and preserves all V0 artifacts.
+- V1 does not implement Persona Creative Router, Descript, Runway, CapCut, face-aware tracking,
+  artistic take selection, publishing OAuth, or UI.
+
 ## Architectural boundary
 
 Persona Video Engine owns immutable-input technical processing, canonical provider-neutral media
