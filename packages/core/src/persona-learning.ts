@@ -1,3 +1,5 @@
+import type { PersonaApprovalRecord } from './persona-state';
+
 export type PersonaFormat='carousel'|'reel'|'story'|'long_video';
 export interface PersonaPreference{key:string;value:string;weight:number;evidenceCount:number;updatedAt:string}
 export interface PersonaFeedback{kind:'choice'|'correction'|'approval'|'rejection';key:string;value:string;accepted:boolean;at:string}
@@ -15,5 +17,6 @@ const weekly:Record<number,{format:PersonaFormat;goal:string}>={
 };
 export function personaPlanForDate(iso:string){const d=new Date(iso);const weekday=d.getDay();return{weekday,...weekly[weekday]};}
 export function learnPersonaPreference(memory:PersonaPreference[],feedback:PersonaFeedback):PersonaPreference[]{const delta=feedback.accepted?3:-2;const existing=memory.find(x=>x.key===feedback.key&&x.value===feedback.value);if(!existing)return[...memory,{key:feedback.key,value:feedback.value,weight:delta,evidenceCount:1,updatedAt:feedback.at}];return memory.map(x=>x===existing?{...x,weight:Math.max(-20,Math.min(20,x.weight+delta)),evidenceCount:x.evidenceCount+1,updatedAt:feedback.at}:x);}
+export function personaPreferencesFromApprovals(candidates:PersonaCandidate[],approvals:PersonaApprovalRecord[]):PersonaPreference[]{const byId=new Map(candidates.map(candidate=>[candidate.id,candidate]));let memory:PersonaPreference[]=[];for(const approval of approvals){if(approval.decision!=='approved'&&approval.decision!=='rejected')continue;const candidate=byId.get(approval.candidateId);if(!candidate)continue;const accepted=approval.decision==='approved';const kind=accepted?'approval':'rejection';memory=learnPersonaPreference(memory,{kind,key:'topic',value:candidate.id,accepted,at:approval.decidedAt});memory=learnPersonaPreference(memory,{kind,key:'format',value:candidate.format,accepted,at:approval.decidedAt});}return memory;}
 export function rankPersonaTopics(topics:PersonaTopic[],memory:PersonaPreference[]):PersonaTopic[]{return[...topics].sort((a,b)=>score(b)-score(a));function score(t:PersonaTopic){return t.baseScore+memory.filter(p=>(p.key==='pillar'&&p.value===t.pillar)||(p.key==='topic'&&p.value===t.id)).reduce((s,p)=>s+p.weight,0)}}
 export function rankPersonaCandidates<T extends PersonaCandidate>(candidates:T[],memory:PersonaPreference[]):T[]{return[...candidates].sort((a,b)=>score(b)-score(a));function score(candidate:T){return candidate.score+memory.filter(p=>(p.key==='topic'&&p.value===candidate.id)||(p.key==='format'&&p.value===candidate.format)).reduce((sum,p)=>sum+p.weight,0)}}
