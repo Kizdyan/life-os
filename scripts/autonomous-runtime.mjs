@@ -1,11 +1,15 @@
-import fs from 'node:fs';
-import {execFileSync} from 'node:child_process';
-const repo=process.env.GH_REPO,branch=process.env.AUTONOMOUS_BRANCH||'recovery/iphone-static-supabase',issue=process.env.MASTER_ISSUE||'86',statePath='.autonomous/state.json';
-const gh=(args)=>execFileSync('gh',args,{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
-const json=(args)=>JSON.parse(gh(args));
-const now=new Date().toISOString();let state={version:1,phase:'SUPERVISE',iteration:0,lastAccepted:null,currentTask:'Phase 2',humanRequired:null,history:[]};try{state={...state,...JSON.parse(fs.readFileSync(statePath,'utf8'))}}catch{}
-state.iteration=(state.iteration||0)+1;state.updatedAt=now;state.humanRequired=null;
-const runs=json(['run','list','--repo',repo,'--branch',branch,'--limit','20','--json','databaseId,name,status,conclusion,createdAt,updatedAt,headSha,url']);const relevant=runs.filter(r=>['core','deploy-readiness'].includes(r.name));const failed=relevant.filter(r=>r.status==='completed'&&['failure','cancelled','timed_out','action_required','startup_failure'].includes(r.conclusion));const stale=relevant.filter(r=>r.status!=='completed'&&Date.now()-Date.parse(r.updatedAt||r.createdAt)>900000);
-for(const r of [...failed,...stale]){try{if(r.status==='completed')gh(['run','rerun',String(r.databaseId),'--failed','--repo',repo]);else{gh(['run','cancel',String(r.databaseId),'--repo',repo]);gh(['run','rerun',String(r.databaseId),'--repo',repo])}state.history.push({at:now,event:'AUTO_RECOVERY',run:r.databaseId,name:r.name})}catch(e){state.history.push({at:now,event:'RECOVERY_ERROR',run:r.databaseId,error:String(e.stderr||e.message).slice(0,300)})}}
-const latest={};for(const name of ['core','deploy-readiness'])latest[name]=relevant.find(r=>r.name===name)||null;const healthy=Object.values(latest).every(r=>r&&r.status==='completed'&&r.conclusion==='success');state.phase=failed.length||stale.length?'RECOVER':healthy?'ACCEPT_NEXT':'WAIT_CI';if(healthy){state.lastAccepted=latest.core?.headSha||latest['deploy-readiness']?.headSha||state.lastAccepted;state.currentTask='Phase 2 — next bounded MASTER recovery block'}state.history=state.history.slice(-50);fs.mkdirSync('.autonomous',{recursive:true});fs.writeFileSync(statePath,JSON.stringify(state,null,2)+'\n');
-const marker='<!-- autonomous-runtime-status -->';const body=marker+'\n**Supervisor heartbeat:** '+now+'\n\n- iteration: '+state.iteration+'\n- state: **'+state.phase+'**\n- branch: `'+branch+'`\n- current: '+state.currentTask+'\n- auto-recovery actions: '+(failed.length+stale.length)+'\n- HUMAN_REQUIRED: '+(state.humanRequired||'none')+'\n';const comments=json(['api','repos/'+repo+'/issues/'+issue+'/comments','--paginate']);const old=comments.find(c=>String(c.body||'').includes(marker));if(old)gh(['api','--method','PATCH','repos/'+repo+'/issues/comments/'+old.id,'-f','body='+body]);else gh(['issue','comment',issue,'--repo',repo,'--body',body]);console.log(JSON.stringify({phase:state.phase,iteration:state.iteration,recovered:failed.length+stale.length,latest},null,2));
+import fs from'node:fs';import{execFileSync}from'node:child_process';
+const statePath=process.env.ADR_STATE||'.autonomous/runtime-state.json',matrix='docs/architecture/master-feature-recovery-2026-10-07.md',now=new Date().toISOString();
+const base={version:1,issue:86,branch:'recovery/iphone-static-supabase',phase:2,status:'RUNNING',checkpoint:'PLAN',attempt:0,lastProgressAt:now,humanAcceptance:{phase2:'PENDING'},queue:['Phase 2 — Life OS Core Recovery','Phase 3 — Execution Engine','Phase 4 — Erika Agent','Phase 5 — Calendar/Scheduling intelligence','Phase 6 — Life Analytics Engine','Phase 7 — Persona recovery','Phase 8 — Media Engine','Phase 9 — Content/Distribution automation','Phase 10 — iPhone/offline/reliability hardening','Phase 11 — full real-device E2E']};
+let s=base;try{s={...base,...JSON.parse(fs.readFileSync(statePath,'utf8'))}}catch{}
+const save=()=>{fs.mkdirSync('.autonomous',{recursive:true});fs.writeFileSync(statePath,JSON.stringify(s,null,2)+'\n')};
+const run=(cmd,args)=>{try{execFileSync(cmd,args,{stdio:'inherit'});return true}catch{return false}};
+const stale=Date.now()-Date.parse(s.lastProgressAt)>15*60e3;
+if(stale){s.status='RECOVERING';s.attempt=(s.attempt||0)+1;s.lastRecoveryAt=now}
+if(!fs.existsSync(matrix)){s.status='BLOCKED';s.blocker='MASTER_MATRIX_MISSING';save();process.exit(2)}
+s.lastWatchdogAt=now;s.lastProgressAt=now;s.checkpoint='TEST';save();
+const ok=run('npm',['test'])&&run('npm',['run','typecheck'])&&run('npm',['run','api:typecheck'])&&run('npm',['run','web:build']);
+s.lastAutomatedQA={at:now,ok};s.checkpoint=ok?'PRODUCT_QA':'FIX';s.status=ok?'RUNNING':'QA_FAILED';save();
+if(!ok)process.exit(1);
+s.checkpoint='CRITIQUE';s.critic={at:now,rule:'No CI-only acceptance; physical iPhone Phase 2 remains non-blocking HUMAN_ACCEPTANCE.'};save();
+console.log(JSON.stringify(s,null,2));
