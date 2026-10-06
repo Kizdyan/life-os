@@ -53,10 +53,12 @@ jobs:
         env:
           PROD_URL: https://life-os-production-rlel.onrender.com
         run: |
+          set -x
           for i in {1..12}; do
             if curl --fail --silent --show-error "$PROD_URL/" -o /tmp/index.html; then break; fi
             sleep 5
           done
+          cat /tmp/index.html
           grep -q 'manifest.webmanifest' /tmp/index.html
           curl --fail --silent --show-error "$PROD_URL/manifest.webmanifest" -o /tmp/manifest.json
           node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("/tmp/manifest.json","utf8")); if(m.start_url!=="/"||m.display!=="standalone") process.exit(1)'
