@@ -4,9 +4,9 @@
   "branch": "recovery/iphone-static-supabase",
   "phase": 2,
   "status": "RUNNING",
-  "checkpoint": "PLAN",
+  "checkpoint": "CRITIQUE",
   "attempt": 0,
-  "lastProgressAt": "2026-10-06T23:03:28.534Z",
+  "lastProgressAt": "2026-10-06T23:05:20.654Z",
   "humanAcceptance": {
     "phase2": "PENDING"
   },
@@ -21,5 +21,23 @@
     "Phase 9 — Content/Distribution automation",
     "Phase 10 — iPhone/offline/reliability hardening",
     "Phase 11 — full real-device E2E"
-  ]
+  ],
+  "lastWatchdogAt": "2026-10-06T23:05:20.654Z",
+  "lastAutomatedQA": {
+    "at": "2026-10-06T23:05:20.654Z",
+    "ok": true
+  },
+  "critic": {
+    "at": "2026-10-06T23:05:20.654Z",
+    "rule": "No CI-only acceptance; physical iPhone Phase 2 remains non-blocking HUMAN_ACCEPTANCE."
+  },
+  "roles": {
+    "planner": "ACTIVE",
+    "developer": "NEEDS_EXTERNAL_CODER",
+    "qa": "ACTIVE",
+    "critic": "ACTIVE",
+    "release": "ACTIVE",
+    "watchdog": "ACTIVE"
+  },
+  "nextIndependentTask": "Phase 2 — Life OS Core Recovery"
 }
