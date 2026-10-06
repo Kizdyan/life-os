@@ -152,6 +152,7 @@ describe("FfmpegLoudnessNormalizer", () => {
     expect(filter).toContain(`measured_TP=${result.firstPass.inputTruePeakDb}`);
     expect(filter).toContain(`measured_thresh=${result.firstPass.inputThresholdLufs}`);
     expect(filter).toContain(`offset=${result.firstPass.targetOffsetDb}`);
+    expect(filter).toContain("TP=-2");
     expect(filter).toContain("linear=true");
     expect(await sha256(fixture.path)).not.toBe(await sha256(outputPath));
   }, 30_000);

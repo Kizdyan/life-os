@@ -103,11 +103,15 @@ export class FfmpegLoudnessNormalizer implements AudioNormalizationProvider {
       truePeakDb: input.truePeakDb ?? -1.5,
       loudnessRangeLu: input.loudnessRangeLu ?? 11,
     };
+    const processingTarget: AudioNormalizationTarget = {
+      ...target,
+      truePeakDb: target.truePeakDb - 0.5,
+    };
     const firstPass = await measureLoudness({
       path: input.metadata.inputPath,
       ffmpegPath: input.ffmpegPath,
       runner: input.runner,
-      target,
+      target: processingTarget,
       phase: "first pass",
     });
     const before = analysisFromLoudness(firstPass);
@@ -135,7 +139,7 @@ export class FfmpegLoudnessNormalizer implements AudioNormalizationProvider {
               "-c:v",
               "copy",
               "-af",
-              secondPassFilter(target, firstPass),
+              secondPassFilter(processingTarget, firstPass),
               "-c:a",
               "aac",
               "-b:a",
