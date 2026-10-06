@@ -15,7 +15,11 @@ describe("processVideo", () => {
     const transcriptProvider = new DeterministicTranscriptProvider({
       language: "ru",
       provider: "fixture",
-      segments: [{ startMs: 100, endMs: 1500, text: "Проверка конвейера" }],
+      confidence: 1,
+      limitations: [],
+      segments: [
+        { startMs: 100, endMs: 1500, text: "Проверка конвейера", confidence: 1 },
+      ],
     });
 
     const first = await processVideo({

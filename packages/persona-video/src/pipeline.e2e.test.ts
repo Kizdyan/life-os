@@ -26,7 +26,16 @@ describe("persona video pipeline real E2E", () => {
       transcriptProvider: new DeterministicTranscriptProvider({
         language: "ru",
         provider: "e2e-fixture",
-        segments: [{ startMs: 1_200, endMs: 2_500, text: "Реальный проход конвейера" }],
+        confidence: 1,
+        limitations: [],
+        segments: [
+          {
+            startMs: 1_200,
+            endMs: 2_500,
+            text: "Реальный проход конвейера",
+            confidence: 1,
+          },
+        ],
       }),
     });
 

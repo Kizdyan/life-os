@@ -62,7 +62,9 @@ describe("buildObjectiveSegments", () => {
     const transcript: Transcript = {
       language: "ru",
       provider: "fixture",
-      segments: [{ startMs: 2400, endMs: 2800, text: "слово" }],
+      confidence: 1,
+      limitations: [],
+      segments: [{ startMs: 2400, endMs: 2800, text: "слово", confidence: 1 }],
     };
 
     const result = buildObjectiveSegments(

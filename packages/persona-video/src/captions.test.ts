@@ -1,20 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { VideoPipelineError, type EditDecisionList, type Transcript } from "./contracts";
+import {
+  VideoPipelineError,
+  type CapabilityProviderDescriptor,
+  type EditDecisionList,
+  type ProcessRunner,
+  type Transcript,
+} from "./contracts";
 import { captionsToSrt, retimeTranscriptToEdl, validateTranscript } from "./captions";
 import {
   DeterministicTranscriptProvider,
+  TranscriptProviderChain,
   resolveTranscript,
+  type ProviderAvailability,
   type TranscriptProvider,
+  type TranscriptProviderInput,
 } from "./transcription";
 
 describe("transcription contract", () => {
   it("accepts any provider implementing the provider-neutral interface", async () => {
     const provider: TranscriptProvider = {
-      id: "custom-provider",
+      descriptor: descriptor("custom-provider", "EXTERNAL", true, true),
+      availability: async () => ({ available: true }),
       transcribe: async () => ({
-        language: "ru",
-        provider: "custom-provider",
-        segments: [{ startMs: 100, endMs: 900, text: "Привет" }],
+        transcript: {
+          language: "ru",
+          provider: "provider-native-value-is-ignored",
+          confidence: 0.8,
+          limitations: [],
+          segments: [{ startMs: 100, endMs: 900, text: "Привет", confidence: 0.8 }],
+        },
+        diagnosticArtifacts: ["raw.json"],
       }),
     };
 
@@ -25,9 +40,28 @@ describe("transcription contract", () => {
       transcript: {
         language: "ru",
         provider: "custom-provider",
-        segments: [{ startMs: 100, endMs: 900, text: "Привет" }],
+        confidence: 0.8,
+        limitations: [],
+        segments: [{ startMs: 100, endMs: 900, text: "Привет", confidence: 0.8 }],
       },
       warning: null,
+      diagnosticArtifacts: ["raw.json"],
+      providerUsage: {
+        providerUsed: "custom-provider",
+        fallbackOccurred: false,
+        fallbackReason: null,
+        quotaDependency: true,
+        localProcessing: false,
+        externalCostRequired: true,
+        attempts: [
+          {
+            providerId: "custom-provider",
+            status: "USED",
+            code: null,
+            reason: null,
+          },
+        ],
+      },
     });
   });
 
@@ -36,6 +70,16 @@ describe("transcription contract", () => {
       status: "unavailable",
       transcript: null,
       warning: "No transcription provider configured",
+      diagnosticArtifacts: [],
+      providerUsage: {
+        providerUsed: null,
+        fallbackOccurred: false,
+        fallbackReason: "No transcription provider configured",
+        quotaDependency: false,
+        localProcessing: false,
+        externalCostRequired: false,
+        attempts: [],
+      },
     });
   });
 
@@ -43,12 +87,118 @@ describe("transcription contract", () => {
     const fixture: Transcript = {
       language: "ru",
       provider: "fixture",
-      segments: [{ startMs: 0, endMs: 500, text: "Раз" }],
+      confidence: null,
+      limitations: [],
+      segments: [{ startMs: 0, endMs: 500, text: "Раз", confidence: null }],
     };
     const provider = new DeterministicTranscriptProvider(fixture);
 
-    expect(await provider.transcribe("ignored.mp4")).toEqual(fixture);
-    expect((await provider.transcribe("ignored.mp4"))).not.toBe(fixture);
+    expect((await provider.transcribe(providerInput())).transcript).toEqual(fixture);
+    expect((await provider.transcribe(providerInput())).transcript).not.toBe(fixture);
+  });
+
+  it("uses a permitted available external provider without fallback", async () => {
+    const chain = new TranscriptProviderChain([
+      { provider: fakeProvider("external", "EXTERNAL"), allowed: true },
+      { provider: fakeProvider("local", "LOCAL"), allowed: true },
+    ]);
+
+    const result = await chain.resolve(providerInput());
+
+    expect(result.status).toBe("available");
+    expect(result.providerUsage).toEqual({
+      providerUsed: "external",
+      fallbackOccurred: false,
+      fallbackReason: null,
+      quotaDependency: true,
+      localProcessing: false,
+      externalCostRequired: true,
+      attempts: [{ providerId: "external", status: "USED", code: null, reason: null }],
+    });
+  });
+
+  it("falls back to local when an external provider is unavailable", async () => {
+    const chain = new TranscriptProviderChain([
+      {
+        provider: fakeProvider("external", "EXTERNAL", {
+          available: false,
+          code: "UNAVAILABLE",
+          reason: "service offline",
+        }),
+        allowed: true,
+      },
+      { provider: fakeProvider("local", "LOCAL"), allowed: true },
+    ]);
+
+    const result = await chain.resolve(providerInput());
+
+    expect(result.providerUsage.providerUsed).toBe("local");
+    expect(result.providerUsage.fallbackOccurred).toBe(true);
+    expect(result.providerUsage.fallbackReason).toContain("service offline");
+    expect(result.providerUsage).toMatchObject({
+      quotaDependency: false,
+      localProcessing: true,
+      externalCostRequired: false,
+    });
+  });
+
+  it("falls back to local when an external provider reports quota exhaustion", async () => {
+    const chain = new TranscriptProviderChain([
+      {
+        provider: fakeProvider("external", "EXTERNAL", {
+          available: false,
+          code: "QUOTA_EXHAUSTED",
+          reason: "monthly minutes exhausted",
+        }),
+        allowed: true,
+      },
+      { provider: fakeProvider("local", "LOCAL"), allowed: true },
+    ]);
+
+    const result = await chain.resolve(providerInput());
+
+    expect(result.providerUsage.providerUsed).toBe("local");
+    expect(result.providerUsage.fallbackOccurred).toBe(true);
+    expect(result.providerUsage.fallbackReason).toContain("QUOTA_EXHAUSTED");
+  });
+
+  it("falls back to local when an external provider throws", async () => {
+    const external = fakeProvider("external", "EXTERNAL");
+    external.transcribe = async () => {
+      throw new Error("remote failed");
+    };
+    const chain = new TranscriptProviderChain([
+      { provider: external, allowed: true },
+      { provider: fakeProvider("local", "LOCAL"), allowed: true },
+    ]);
+
+    const result = await chain.resolve(providerInput());
+
+    expect(result.providerUsage.providerUsed).toBe("local");
+    expect(result.providerUsage.fallbackOccurred).toBe(true);
+    expect(result.providerUsage.fallbackReason).toContain("remote failed");
+    expect(result.providerUsage.attempts[0]).toMatchObject({
+      providerId: "external",
+      status: "FAILED",
+      code: "PROVIDER_ERROR",
+    });
+  });
+
+  it("uses local directly when no external provider is configured", async () => {
+    const chain = new TranscriptProviderChain([
+      { provider: fakeProvider("local", "LOCAL"), allowed: true },
+    ]);
+
+    const result = await chain.resolve(providerInput());
+
+    expect(result.providerUsage).toMatchObject({
+      providerUsed: "local",
+      fallbackOccurred: false,
+      fallbackReason: null,
+      quotaDependency: false,
+      localProcessing: true,
+      externalCostRequired: false,
+    });
   });
 });
 
@@ -57,9 +207,11 @@ describe("captionsToSrt", () => {
     const transcript: Transcript = {
       language: "ru",
       provider: "fixture",
+      confidence: null,
+      limitations: [],
       segments: [
-        { startMs: 1_000, endMs: 1_500, text: "После вступления" },
-        { startMs: 2_000, endMs: 2_500, text: "После паузы" },
+        { startMs: 1_000, endMs: 1_500, text: "После вступления", confidence: null },
+        { startMs: 2_000, endMs: 2_500, text: "После паузы", confidence: null },
       ],
     };
     const edl: EditDecisionList = {
@@ -74,8 +226,8 @@ describe("captionsToSrt", () => {
     };
 
     expect(retimeTranscriptToEdl(transcript, edl).segments).toEqual([
-      { startMs: 400, endMs: 900, text: "После вступления" },
-      { startMs: 1_200, endMs: 1_700, text: "После паузы" },
+      { startMs: 400, endMs: 900, text: "После вступления", confidence: null },
+      { startMs: 1_200, endMs: 1_700, text: "После паузы", confidence: null },
     ]);
   });
 
@@ -83,9 +235,11 @@ describe("captionsToSrt", () => {
     const transcript: Transcript = {
       language: "ru",
       provider: "fixture",
+      confidence: null,
+      limitations: [],
       segments: [
-        { startMs: 61_001, endMs: 62_045, text: " Вторая\r\n строка " },
-        { startMs: 0, endMs: 999, text: "Первая" },
+        { startMs: 61_001, endMs: 62_045, text: " Вторая\r\n строка ", confidence: null },
+        { startMs: 0, endMs: 999, text: "Первая", confidence: null },
       ],
     };
 
@@ -99,9 +253,11 @@ describe("captionsToSrt", () => {
     const transcript: Transcript = {
       language: null,
       provider: "fixture",
+      confidence: null,
+      limitations: [],
       segments: [
-        { startMs: 0, endMs: 1000, text: "one" },
-        { startMs: 900, endMs: 800, text: "two" },
+        { startMs: 0, endMs: 1000, text: "one", confidence: null },
+        { startMs: 900, endMs: 800, text: "two", confidence: null },
       ],
     };
 
@@ -113,13 +269,90 @@ describe("captionsToSrt", () => {
       validateTranscript({
         ...transcript,
         segments: [
-          { startMs: 0, endMs: 1000, text: "one" },
-          { startMs: 900, endMs: 1200, text: "two" },
+          { startMs: 0, endMs: 1000, text: "one", confidence: null },
+          { startMs: 900, endMs: 1200, text: "two", confidence: null },
         ],
       }),
     ).toThrowError(expect.objectContaining({ code: "INVALID_TRANSCRIPT" }));
   });
+
+  it("normalizes provider-neutral confidence and drops provider-specific fields", () => {
+    const transcript = validateTranscript({
+      language: "ru",
+      provider: "local",
+      confidence: 0.9,
+      limitations: ["  noisy room  ", "", "no diarization"],
+      providerPayload: { tokens: [1, 2, 3] },
+      segments: [
+        {
+          startMs: 100.4,
+          endMs: 900.6,
+          text: " Привет ",
+          confidence: 0.7,
+          tokenProbabilities: [0.7],
+        },
+      ],
+    } as unknown as Transcript & Record<string, unknown>);
+
+    expect(transcript).toEqual({
+      language: "ru",
+      provider: "local",
+      confidence: 0.9,
+      limitations: ["noisy room", "no diarization"],
+      segments: [
+        { startMs: 100, endMs: 901, text: "Привет", confidence: 0.7 },
+      ],
+    });
+  });
 });
+
+function descriptor(
+  id: string,
+  execution: "LOCAL" | "EXTERNAL",
+  quotaDependency = execution === "EXTERNAL",
+  externalCostRequired = execution === "EXTERNAL",
+): CapabilityProviderDescriptor {
+  return {
+    id,
+    execution,
+    capabilities: ["TRANSCRIPTION", "CAPTION_TIMING"],
+    quotaDependency,
+    externalCostRequired,
+  };
+}
+
+function fakeProvider(
+  id: string,
+  execution: "LOCAL" | "EXTERNAL",
+  availability: ProviderAvailability = { available: true },
+): TranscriptProvider {
+  return {
+    descriptor: descriptor(id, execution),
+    availability: async () => availability,
+    transcribe: async () => ({
+      transcript: {
+        language: "ru",
+        provider: id,
+        confidence: 0.85,
+        limitations: [],
+        segments: [{ startMs: 0, endMs: 500, text: "Раз", confidence: 0.85 }],
+      },
+      diagnosticArtifacts: [],
+    }),
+  };
+}
+
+function providerInput(): TranscriptProviderInput {
+  const runner: ProcessRunner = {
+    run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+  };
+  return {
+    audioPath: "clip.wav",
+    language: "ru",
+    artifactDirectory: ".",
+    runner,
+  };
+}
 
 function decision(
   sourceStartMs: number,

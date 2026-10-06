@@ -49,6 +49,22 @@ export interface ProcessRunner {
   run(command: string, args: string[], options?: ProcessRunOptions): Promise<ProcessResult>;
 }
 
+export type ProviderExecution = "LOCAL" | "EXTERNAL";
+
+export type MediaCapability =
+  | "TRANSCRIPTION"
+  | "CAPTION_TIMING"
+  | "LOUDNESS_NORMALIZATION"
+  | "AUDIO_ENHANCEMENT";
+
+export interface CapabilityProviderDescriptor {
+  id: string;
+  execution: ProviderExecution;
+  capabilities: readonly MediaCapability[];
+  quotaDependency: boolean;
+  externalCostRequired: boolean;
+}
+
 export interface MediaToolPaths {
   ffmpegPath: string;
   ffprobePath: string;
@@ -94,11 +110,14 @@ export interface TranscriptSegment {
   startMs: number;
   endMs: number;
   text: string;
+  confidence: number | null;
 }
 
 export interface Transcript {
   language: string | null;
   provider: string;
+  confidence: number | null;
+  limitations: string[];
   segments: TranscriptSegment[];
 }
 

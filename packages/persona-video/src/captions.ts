@@ -29,6 +29,10 @@ export function validateTranscript(transcript: Transcript): Transcript {
   return {
     language: transcript.language,
     provider: transcript.provider,
+    confidence: normalizeConfidence(transcript.confidence),
+    limitations: (transcript.limitations ?? [])
+      .map((limitation) => limitation.trim())
+      .filter(Boolean),
     segments: segments.map(normalizeSegment),
   };
 }
@@ -65,6 +69,7 @@ export function retimeTranscriptToEdl(
         startMs: outputCursorMs + sourceStartMs - keep.sourceStartMs,
         endMs: outputCursorMs + sourceEndMs - keep.sourceStartMs,
         text: segment.text,
+        confidence: segment.confidence,
       });
     }
     outputCursorMs += keep.sourceEndMs - keep.sourceStartMs;
@@ -73,6 +78,8 @@ export function retimeTranscriptToEdl(
   return {
     language: validated.language,
     provider: validated.provider,
+    confidence: validated.confidence,
+    limitations: [...validated.limitations],
     segments,
   };
 }
@@ -87,7 +94,18 @@ function normalizeSegment(segment: TranscriptSegment): TranscriptSegment {
       .map((line) => line.trim())
       .filter(Boolean)
       .join("\n"),
+    confidence: normalizeConfidence(segment.confidence),
   };
+}
+
+function normalizeConfidence(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new VideoPipelineError("INVALID_TRANSCRIPT", "Transcript confidence is invalid", {
+      confidence: value,
+    });
+  }
+  return value;
 }
 
 function formatSrtTime(milliseconds: number): string {
