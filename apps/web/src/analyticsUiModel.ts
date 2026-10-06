@@ -1,0 +1,6 @@
+export interface AnalyticsMobileInput{execution:{measuredScheduleItems:number;scheduleAdherenceRate:number|null;averageStartDelayMinutes:number|null};categoryMinutes:Record<string,number>;categoryShare:Record<string,number>}
+export interface AnalyticsMobileCategory{key:string;label:string;minutes:number;share:number}
+const LABELS:Record<string,string>={task:'Задачи',event:'События',theatre:'Театр',music:'Музыка',sport:'Спорт',social:'Соц. жизнь',work:'Работа',project:'Проекты',persona:'Медийность'};
+const label=(key:string)=>LABELS[key]??key.replace(/[_-]+/g,' ').replace(/^./,x=>x.toUpperCase());
+const delay=(v:number)=>`${v>0?'+':''}${Math.round(v)} мин`;
+export function buildAnalyticsMobileSummary(input:AnalyticsMobileInput){const e=input.execution;const schedule=e.measuredScheduleItems&&e.scheduleAdherenceRate!=null?{value:`${e.scheduleAdherenceRate}%`,detail:`${Math.round(e.measuredScheduleItems*e.scheduleAdherenceRate/100)} из ${e.measuredScheduleItems} стартов · среднее отклонение ${delay(e.averageStartDelayMinutes??0)}`}:{value:'—',detail:'Нет замеренных стартов'};const categories=Object.entries(input.categoryShare).filter(([,share])=>share>0).map(([key,share])=>({key,label:label(key),minutes:input.categoryMinutes[key]??0,share})).sort((a,b)=>b.share-a.share);return{schedule,categories}}
