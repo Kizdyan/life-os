@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { learnPersonaPreference, personaPlanForDate, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
+import { learnPersonaPreference, personaPlanForDate, personaPreferencesFromApprovals, rankPersonaCandidates, rankPersonaTopics } from './persona-learning';
 
 describe('Persona learning mode',()=>{
  it('uses the weekly plan without asking what format is due',()=>{
@@ -22,5 +22,20 @@ describe('Persona learning mode',()=>{
   const ranked=rankPersonaCandidates(candidates,memory);
   expect(ranked.map(x=>x.id)).toEqual(['a','b']);
   expect(candidates[0].score).toBe(80);
+ });
+ it('derives topic and format ranking signals from canonical approval records without storing another decision state',()=>{
+  const candidates=[{id:'a',title:'Репетиция',format:'reel',score:80},{id:'b',title:'Музыка',format:'carousel',score:82}];
+  const memory=personaPreferencesFromApprovals(candidates,[
+   {candidateId:'a',revision:1,decision:'approved',reason:null,decidedAt:'2026-10-04T12:00:00Z'},
+   {candidateId:'b',revision:1,decision:'rejected',reason:'не моя тема',decidedAt:'2026-10-04T12:05:00Z'},
+   {candidateId:'a',revision:2,decision:'rework',reason:'короче',decidedAt:'2026-10-04T12:10:00Z'},
+  ]);
+  expect(memory).toEqual(expect.arrayContaining([
+   expect.objectContaining({key:'topic',value:'a',weight:3,evidenceCount:1}),
+   expect.objectContaining({key:'format',value:'reel',weight:3,evidenceCount:1}),
+   expect.objectContaining({key:'topic',value:'b',weight:-2,evidenceCount:1}),
+   expect.objectContaining({key:'format',value:'carousel',weight:-2,evidenceCount:1}),
+  ]));
+  expect(memory.find(x=>x.key==='topic'&&x.value==='a')?.evidenceCount).toBe(1);
  });
 });
