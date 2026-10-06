@@ -302,14 +302,14 @@ async function personaAI(system: string, payload: unknown): Promise<unknown> {
   if (!key) throw new Error('OPENAI_API_KEY is not configured in Supabase Edge');
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: { Authorization: \`Bearer \${key}\`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: (Deno.env.get('PERSONA_OPENAI_MODEL') ?? 'gpt-5.6-sol').trim(),
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(payload) }],
     }),
   });
-  if (!response.ok) throw new Error(\`openai:\${response.status}\`);
+  if (!response.ok) throw new Error(`openai:${response.status}`);
   const raw = await response.json() as any;
   const text = String(raw?.choices?.[0]?.message?.content ?? '').trim().replace(/^\\x60\\x60\\x60(?:json)?/i, '').replace(/\\x60\\x60\\x60$/, '').trim();
   if (!text) throw new Error('openai:empty');
@@ -324,10 +324,10 @@ function validateEdgeShootingBrief(value: unknown): string[] {
   if (!Array.isArray(b.shots) || !b.shots.length) return [...issues, 'shots'];
   for (let i=0;i<b.shots.length;i++) {
     const s=b.shots[i] ?? {};
-    for (const key of ['id','purpose','shotSize','angle','cameraPosition','cameraHeight','distance','composition','movement','action']) if (!String(s[key] ?? '').trim()) issues.push(\`shots[\${i}].\${key}\`);
-    if (!Number.isFinite(Number(s.durationSeconds)) || Number(s.durationSeconds) < 2) issues.push(\`shots[\${i}].durationSeconds\`);
-    if (!Number.isInteger(Number(s.takes)) || Number(s.takes) < 1) issues.push(\`shots[\${i}].takes\`);
-    if (s.bRoll === true && !String(s.bRollInstruction ?? '').trim()) issues.push(\`shots[\${i}].bRollInstruction\`);
+    for (const key of ['id','purpose','shotSize','angle','cameraPosition','cameraHeight','distance','composition','movement','action']) if (!String(s[key] ?? '').trim()) issues.push(`shots[${i}].${key}`);
+    if (!Number.isFinite(Number(s.durationSeconds)) || Number(s.durationSeconds) < 2) issues.push(`shots[${i}].durationSeconds`);
+    if (!Number.isInteger(Number(s.takes)) || Number(s.takes) < 1) issues.push(`shots[${i}].takes`);
+    if (s.bRoll === true && !String(s.bRollInstruction ?? '').trim()) issues.push(`shots[${i}].bRollInstruction`);
   }
   return issues;
 }
@@ -348,7 +348,7 @@ function localPersonaIdeas(history: unknown[]): Array<Record<string, unknown>> {
     ['Как понять, что сцена уже живая','Признаки, которые замечает актёр','reel'],
     ['Почему процесс иногда интереснее результата','История через незавершённость','reel']
   ];
-  return seed.filter(x=>!blocked.has(x[0].toLocaleLowerCase('ru-RU'))).map((x,i)=>({id:\`edge-\${i+1}\`,title:x[0],angle:x[1],format:x[2],score:96-i,reason:'Баланс личного процесса, профессиональной глубины и интереса аудитории',status:'candidate'}));
+  return seed.filter(x=>!blocked.has(x[0].toLocaleLowerCase('ru-RU'))).map((x,i)=>({id:`edge-${i+1}`,title:x[0],angle:x[1],format:x[2],score:96-i,reason:'Баланс личного процесса, профессиональной глубины и интереса аудитории',status:'candidate'}));
 }
 
 function json(payload: unknown, status = 200, headersInit?: HeadersInit): Response {
