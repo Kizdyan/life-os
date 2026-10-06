@@ -1,10 +1,10 @@
-import type { KeyValueStore } from "./media-state-store";
+import type { KeyValueStore } from "./media-state-store.js";
 import {
   normalizeDiskPath,
   yandexAuthHeaders,
   yandexDownloadLinkUrl,
   yandexUploadLinkUrl,
-} from "./yandex-disk";
+} from "./yandex-disk.js";
 
 interface StateEnvelope {
   schemaVersion: 1;
