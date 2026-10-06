@@ -19,6 +19,7 @@ export * from './today-actions';
 export * from './automation';
 export * from './outbox';
 export * from './analytics';
+export * from './life-analytics';
 export * from './erika-intent';
 export * from './planner';
 export * from './daily-checkin';
