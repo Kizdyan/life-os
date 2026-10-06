@@ -36,7 +36,7 @@ jobs:
       - run: npm run api:smoke
       - run: npm run web:build
       - name: Verify deploy artifact
-        run: test -f apps/web/dist/index.html
+        run: test -f dist/index.html
       - name: Verify Supabase Edge recovery path
         if: github.head_ref == 'recovery/iphone-static-supabase'
         env:
