@@ -1,0 +1,5 @@
+import{describe,expect,it}from'vitest';import{planWithErikaContext}from'./erikaPlanning';import type{Item}from'./types';
+const item=(id:string,start:string,end:string):Item=>({id,title:id,kind:'event',status:'planned',planned_start:`2026-10-02T${start}:00+03:00`,planned_end:`2026-10-02T${end}:00+03:00`});
+const now=new Date(2026,9,2,10,0,0,0);
+const analytics=(measuredScheduleItems:number,scheduleAdherenceRate:number|null)=>({execution:{measuredScheduleItems,scheduleAdherenceRate}} as any);
+describe('Erika analytics-aware planning',()=>{it('adds transition buffer only from sufficient measured schedule evidence',()=>{const r=planWithErikaContext('велосипед 30 минут',[item('busy','10:00','11:00')],analytics(5,40),now);expect(r[0]).toMatchObject({start:'11:15',end:'11:45'})});it('does not adapt planning from sparse schedule evidence',()=>{const r=planWithErikaContext('велосипед 30 минут',[item('busy','10:00','11:00')],analytics(4,20),now);expect(r[0]).toMatchObject({start:'11:00',end:'11:30'})})});
