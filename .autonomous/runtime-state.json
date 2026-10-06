@@ -6,7 +6,7 @@
   "status": "RUNNING",
   "checkpoint": "CRITIQUE",
   "attempt": 0,
-  "lastProgressAt": "2026-10-06T23:07:34.829Z",
+  "lastProgressAt": "2026-10-06T23:10:48.017Z",
   "humanAcceptance": {
     "phase2": "PENDING"
   },
@@ -67,5 +67,42 @@
     "automatedQA": "PASS",
     "renderProduction": "LIVE",
     "phase2HumanAcceptance": "PENDING"
+  },
+  "developerTasks": [
+    {
+      "id": "ADR-MONITOR-001",
+      "title": "Autonomous Development Monitor — canonical durable status + mobile-first PWA page + Persona 3 shared status source",
+      "priority": 1,
+      "status": "QUEUED",
+      "owner": "Developer",
+      "blockedBy": "CODING_AGENT_CREDENTIAL",
+      "acceptance": [
+        "canonical durable state",
+        "RUNNING/IDLE/STALLED/HUMAN_REQUIRED/OFFLINE",
+        "heartbeat stale/offline derivation",
+        "roles/pipeline/commit/deploy/tests/queue/completed/errors/recovery/human action/event log",
+        "permanent iPhone PWA status URL",
+        "Persona 3 reads same source",
+        "regression tests"
+      ]
+    }
+  ],
+  "currentIndependentTask": "ADR monitor contract/state QA while Developer UI remains queued",
+  "monitor": {
+    "required": true,
+    "canonicalSource": ".autonomous/runtime-state.json",
+    "ui": "QUEUED_DEVELOPER",
+    "persona3SharedSource": "QUEUED_DEVELOPER",
+    "stalePolicy": {
+      "stalledAfterMinutes": 15,
+      "offlineAfterMinutes": 30
+    },
+    "requiredStatuses": [
+      "RUNNING",
+      "IDLE",
+      "STALLED",
+      "HUMAN_REQUIRED",
+      "OFFLINE"
+    ]
   }
 }
