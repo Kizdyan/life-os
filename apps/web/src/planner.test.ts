@@ -25,4 +25,11 @@ describe('planCompound flexible placement',()=>{
     const result=planCompound('покататься на велосипеде 30 минут',[item('busy','10:00','11:00')],localTime(10),{transitionBufferMin:15});
     expect(result[0]).toMatchObject({start:'11:15',end:'11:45',durationMin:30});
   });
+
+  it('can prioritize a matching untimed draft without changing the requested task set',()=>{
+    const result=planCompound('почта 30 минут, музыка 30 минут',[item('busy','10:00','11:00')],localTime(10),{priorityTerms:['музыка']});
+    expect(result.map(x=>x.title)).toEqual(['музыка','почта']);
+    expect(result[0]).toMatchObject({start:'11:00',end:'11:30'});
+    expect(result[1]).toMatchObject({start:'11:30',end:'12:00'});
+  });
 });
