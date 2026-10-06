@@ -45,7 +45,7 @@ describe('semantic Persona revisions', () => {
     expect(result.rules).toContain('Не перегружать первый экран');
   });
 
-  it('uses durable server memory and never reads or writes browser memory', async () => {
+  it('leaves durable memory entirely to the server runtime', async () => {
     vi.stubGlobal('localStorage', {
       getItem: () => { throw new Error('browser memory must not be read'); },
       setItem: () => { throw new Error('browser memory must not be written'); },
@@ -54,30 +54,23 @@ describe('semantic Persona revisions', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, init });
-      if (url === '/api/media/memory' && (!init || init.method !== 'POST')) {
-        return { ok: true, json: async () => ({ rules: ['Durable rule'], durable: true }) } as Response;
-      }
-      if (url === '/api/media/status') {
-        return { ok: true, json: async () => ({
-          title: 'Новый заголовок',
-          slides: [{ eyebrow: 'МУЗЫКА', title: 'Новая мысль', body: 'Новый текст' }],
-          caption: 'Новая подпись',
-          platformNotes: { instagram: 'IG', vk: 'VK', youtube: 'YT' },
-          learnedRules: ['Явная новая правка'],
-          changeSummary: 'Готово.',
-        }) } as Response;
-      }
-      if (url === '/api/media/memory' && init?.method === 'POST') {
-        return { ok: true, json: async () => ({ rules: ['Durable rule', 'Явная новая правка'], durable: true }) } as Response;
-      }
-      throw new Error(`unexpected fetch ${url}`);
+      if (url !== '/api/media/status') throw new Error(`unexpected fetch ${url}`);
+      return { ok: true, json: async () => ({
+        title: 'Новый заголовок',
+        slides: [{ eyebrow: 'МУЗЫКА', title: 'Новая мысль', body: 'Новый текст' }],
+        caption: 'Новая подпись',
+        platformNotes: { instagram: 'IG', vk: 'VK', youtube: 'YT' },
+        learnedRules: ['Явная новая правка'],
+        changeSummary: 'Готово.',
+      }) } as Response;
     }));
 
-    await reviseWithAI(draft, 'Сделай заголовки короче');
+    const result = await reviseWithAI(draft, 'Сделай заголовки короче');
 
-    const aiBody = JSON.parse(String(calls.find(call => call.url === '/api/media/status')?.init?.body));
-    expect(aiBody.memory).toEqual(['Durable rule']);
-    const memoryBody = JSON.parse(String(calls.find(call => call.url === '/api/media/memory' && call.init?.method === 'POST')?.init?.body));
-    expect(memoryBody).toEqual({ rules: ['Явная новая правка'], source: 'explicit' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('/api/media/status');
+    const aiBody = JSON.parse(String(calls[0]?.init?.body));
+    expect(aiBody).not.toHaveProperty('memory');
+    expect(result.rules).toEqual(['Явная новая правка']);
   });
 });
