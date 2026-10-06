@@ -33,11 +33,39 @@
   },
   "roles": {
     "planner": "ACTIVE",
-    "developer": "NEEDS_EXTERNAL_CODER",
+    "developer": "QUEUED_HUMAN_REQUIRED",
     "qa": "ACTIVE",
     "critic": "ACTIVE",
     "release": "ACTIVE",
     "watchdog": "ACTIVE"
   },
-  "nextIndependentTask": "Phase 2 — Life OS Core Recovery"
+  "nextIndependentTask": "Phase 2 — Life OS Core Recovery",
+  "humanRequired": {
+    "code": "CODING_AGENT_CREDENTIAL",
+    "status": "PENDING",
+    "blockingScope": "DEVELOPER_ONLY",
+    "reason": "User currently has iPhone only; credential setup deferred.",
+    "resumeWhen": "AUTONOMOUS_CODER_TOKEN becomes available"
+  },
+  "policy": {
+    "continueIndependentWork": true,
+    "physicalAcceptanceNonBlocking": true
+  },
+  "developerQueue": [
+    "Phase 2 — Life OS Core Recovery",
+    "Phase 3 — Execution Engine",
+    "Phase 4 — Erika Agent",
+    "Phase 5 — Calendar/Scheduling intelligence",
+    "Phase 6 — Life Analytics Engine",
+    "Phase 7 — Persona recovery",
+    "Phase 8 — Media Engine",
+    "Phase 9 — Content/Distribution automation",
+    "Phase 10 — iPhone/offline/reliability hardening",
+    "Phase 11 — full real-device E2E"
+  ],
+  "lastIndependentEvidence": {
+    "automatedQA": "PASS",
+    "renderProduction": "LIVE",
+    "phase2HumanAcceptance": "PENDING"
+  }
 }
