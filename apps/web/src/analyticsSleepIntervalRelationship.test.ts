@@ -1,0 +1,3 @@
+import{describe,expect,it}from'vitest';import{buildAnalyticsView}from'./analyticsView';
+const starts=['22:00','22:30','23:00','23:30','00:00','00:30','01:00'];
+describe('sleep interval relationships',()=>{it('unwraps sleep start across midnight before correlation',()=>{const sleep=starts.map((sleepStart,i)=>({date:`2026-10-${String(i+1).padStart(2,'0')}`,durationMinutes:420,energy:i+1,sleepQuality:null,wellbeing:null,sleepStart,wakeTime:'07:00'}));const r=buildAnalyticsView({items:[],sleep,checkins:[]});const insight=r.insights.find(x=>x.includes('время засыпания')&&x.includes('энергия'));expect(insight).toBeTruthy();expect(insight).toContain('одном направлении');expect(insight).toContain('корреляция, а не доказательство причинности')})});
