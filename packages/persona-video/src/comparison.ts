@@ -41,8 +41,8 @@ export async function writeV0V1Comparison(
       { v0InputSha256: v0.inputSha256, v1InputSha256: v1.inputSha256 },
     );
   }
-  const v0Duration = v0.roughCut.metadata.durationMs;
-  const v1Duration = v1.roughCut.metadata.durationMs;
+  const v0Duration = Math.round(v0.roughCut.metadata.durationMs);
+  const v1Duration = Math.round(v1.roughCut.metadata.durationMs);
   const comparison: V0V1Comparison = {
     inputSha256: v1.inputSha256,
     inputUnchanged: true,

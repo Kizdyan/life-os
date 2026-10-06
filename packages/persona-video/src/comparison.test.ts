@@ -12,7 +12,7 @@ describe("writeV0V1Comparison", () => {
 
     const comparison = await writeV0V1Comparison(
       resultFixture({ version: "v0", durationMs: 33_700, captioned: false, loudness: -29 }),
-      resultFixture({ version: "v1", durationMs: 32_191, captioned: true, loudness: -16 }),
+      resultFixture({ version: "v1", durationMs: 32_190.999999999996, captioned: true, loudness: -16 }),
       outputPath,
     );
 
