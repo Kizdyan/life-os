@@ -228,6 +228,19 @@ export interface VerifiedAudioArtifact {
   channels: number;
 }
 
+export interface CaptionLayoutReport {
+  maxLines: number;
+  safeWidthPx: number;
+  frameWidthPx: number;
+  measuredWith: "FFMPEG_DRAWTEXT";
+  fontFilePath: string;
+  auditPath: string;
+  cueCount: number;
+  maxLinesObserved: number;
+  maxLineWidthPx: number;
+  withinSafeWidth: boolean;
+}
+
 export interface PlatformOutput extends VerifiedMediaOutput {
   presetId: string;
 }
@@ -256,13 +269,8 @@ export interface ProcessedVideoResult {
   verticalMaster: VerifiedMediaOutput;
   cleanMaster: VerifiedMediaOutput;
   captionedMaster: VerifiedMediaOutput | null;
-  captionLayout: {
-    maxLines: number;
-    safeWidthPx: number;
-    frameWidthPx: number;
-    measuredWith: "FFMPEG_DRAWTEXT";
-    fontFilePath: string;
-  } | null;
+  captionLayout: CaptionLayoutReport | null;
+  instagramCaptionLayout: CaptionLayoutReport | null;
   platformOutputSource: "vertical-master" | "captioned-vertical";
   platformOutputSources: Record<string, "vertical-master" | "captioned-vertical" | "instagram-safe-caption-render">;
   platformOutputs: PlatformOutput[];

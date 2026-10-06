@@ -7,6 +7,7 @@ import {
   type AudioNormalizationProvider,
 } from "./audio";
 import {
+  auditCaptionLayout,
   captionsToAss,
   DEFAULT_CAPTION_PRESET,
   INSTAGRAM_CAPTION_PRESET,
@@ -229,8 +230,20 @@ export async function processVideo(
     const instagramTranscript = retimedTranscript && textMeasurer
       ? await layoutCaptionTranscript(retimedTranscript, textMeasurer, instagramCaptionPreset)
       : null;
+    const captionAudit = outputTranscript && textMeasurer
+      ? await auditCaptionLayout(outputTranscript, textMeasurer, captionPreset.safeWidthPx)
+      : null;
+    const instagramCaptionAudit = instagramTranscript && textMeasurer
+      ? await auditCaptionLayout(
+          instagramTranscript,
+          textMeasurer,
+          instagramCaptionPreset.safeWidthPx,
+        )
+      : null;
     const captionsAssPath = join(runPath, "captions.ass");
     const instagramCaptionsAssPath = join(runPath, "instagram-captions.ass");
+    const captionAuditPath = join(runPath, "caption-layout.json");
+    const instagramCaptionAuditPath = join(runPath, "instagram-caption-layout.json");
     await writeFile(captionsPath, outputTranscript ? captionsToSrt(outputTranscript) : "", "utf8");
     if (outputTranscript) {
       await writeFile(captionsAssPath, captionsToAss(outputTranscript, captionPreset), "utf8");
@@ -241,6 +254,10 @@ export async function processVideo(
         captionsToAss(instagramTranscript, instagramCaptionPreset),
         "utf8",
       );
+    }
+    if (captionAudit) await writeJson(captionAuditPath, captionAudit);
+    if (instagramCaptionAudit) {
+      await writeJson(instagramCaptionAuditPath, instagramCaptionAudit);
     }
 
     progress("EDITING");
@@ -394,6 +411,25 @@ export async function processVideo(
             frameWidthPx: captionPreset.frameWidthPx,
             measuredWith: "FFMPEG_DRAWTEXT",
             fontFilePath,
+            auditPath: captionAuditPath,
+            cueCount: captionAudit?.cueCount ?? 0,
+            maxLinesObserved: captionAudit?.maxLinesObserved ?? 0,
+            maxLineWidthPx: captionAudit?.maxLineWidthPx ?? 0,
+            withinSafeWidth: captionAudit?.withinSafeWidth ?? false,
+          }
+        : null,
+      instagramCaptionLayout: instagramTranscript
+        ? {
+            maxLines: instagramCaptionPreset.maxLines,
+            safeWidthPx: instagramCaptionPreset.safeWidthPx,
+            frameWidthPx: instagramCaptionPreset.frameWidthPx,
+            measuredWith: "FFMPEG_DRAWTEXT",
+            fontFilePath,
+            auditPath: instagramCaptionAuditPath,
+            cueCount: instagramCaptionAudit?.cueCount ?? 0,
+            maxLinesObserved: instagramCaptionAudit?.maxLinesObserved ?? 0,
+            maxLineWidthPx: instagramCaptionAudit?.maxLineWidthPx ?? 0,
+            withinSafeWidth: instagramCaptionAudit?.withinSafeWidth ?? false,
           }
         : null,
       platformOutputSource,

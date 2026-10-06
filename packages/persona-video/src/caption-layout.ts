@@ -99,6 +99,47 @@ export async function layoutCaptionTranscript(
   return { ...transcript, segments };
 }
 
+export interface CaptionLayoutAudit {
+  cueCount: number;
+  maxLinesObserved: number;
+  maxLineWidthPx: number;
+  safeWidthPx: number;
+  withinSafeWidth: boolean;
+  cues: Array<{
+    index: number;
+    startMs: number;
+    endMs: number;
+    lineWidthsPx: number[];
+  }>;
+}
+
+export async function auditCaptionLayout(
+  transcript: Transcript,
+  measurer: CaptionTextMeasurer,
+  safeWidthPx: number,
+): Promise<CaptionLayoutAudit> {
+  const cues = await Promise.all(
+    transcript.segments.map(async (segment, index) => ({
+      index,
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      lineWidthsPx: await Promise.all(
+        segment.text.split("\n").map((line) => measurer.measureWidthPx(line)),
+      ),
+    })),
+  );
+  const widths = cues.flatMap((cue) => cue.lineWidthsPx);
+  const maxLineWidthPx = widths.length > 0 ? Math.max(...widths) : 0;
+  return {
+    cueCount: cues.length,
+    maxLinesObserved: cues.reduce((maximum, cue) => Math.max(maximum, cue.lineWidthsPx.length), 0),
+    maxLineWidthPx,
+    safeWidthPx,
+    withinSafeWidth: maxLineWidthPx <= safeWidthPx,
+    cues,
+  };
+}
+
 async function wrapLines(
   words: string[],
   measurer: CaptionTextMeasurer,

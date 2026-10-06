@@ -78,6 +78,8 @@ describe("processVideo", () => {
       "captions.srt",
       "captions.ass",
       "instagram-captions.ass",
+      "caption-layout.json",
+      "instagram-caption-layout.json",
       "audio.json",
       "stt-input.wav",
       "rough-cut.mp4",
@@ -128,7 +130,15 @@ describe("processVideo", () => {
       maxLines: 2,
       safeWidthPx: 900,
       measuredWith: "FFMPEG_DRAWTEXT",
+      withinSafeWidth: true,
     });
+    expect(first.captionLayout?.maxLineWidthPx).toBeLessThanOrEqual(900);
+    expect(first.instagramCaptionLayout).toMatchObject({
+      maxLines: 2,
+      safeWidthPx: 864,
+      withinSafeWidth: true,
+    });
+    expect(first.instagramCaptionLayout?.maxLineWidthPx).toBeLessThanOrEqual(864);
     expect(first.platformOutputSources).toMatchObject({
       "instagram-reels": "instagram-safe-caption-render",
       "test-platform": "captioned-vertical",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Transcript } from "./contracts";
 import {
+  auditCaptionLayout,
   captionsToAss,
   INSTAGRAM_CAPTION_PRESET,
   layoutCaptionTranscript,
@@ -46,6 +47,12 @@ describe("layoutCaptionTranscript", () => {
         await expect(variableWidthMeasurer.measureWidthPx(line)).resolves.toBeLessThanOrEqual(360);
       }
     }
+    await expect(auditCaptionLayout(result, variableWidthMeasurer, 360)).resolves.toMatchObject({
+      cueCount: result.segments.length,
+      maxLinesObserved: 2,
+      withinSafeWidth: true,
+      safeWidthPx: 360,
+    });
   });
 
   it("uses measured glyph width instead of character count alone", async () => {
