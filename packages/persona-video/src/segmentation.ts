@@ -10,6 +10,10 @@ export interface SilenceDetectionPolicy {
   minimumSilenceMs: number;
 }
 
+export interface SegmentationPolicy {
+  minimumMeaningfulContentMs: number;
+}
+
 export async function detectSilence(input: {
   inputPath: string;
   durationMs: number;
@@ -83,7 +87,12 @@ export function buildObjectiveSegments(
   durationMs: number,
   silenceIntervals: TimeRange[],
   transcript: Transcript | null = null,
+  policy: Partial<SegmentationPolicy> = {},
 ): VideoSegment[] {
+  const resolvedPolicy: SegmentationPolicy = {
+    minimumMeaningfulContentMs: 200,
+    ...policy,
+  };
   const transcriptSegments = transcript?.segments ?? [];
   const protectedSilence = normalizeSilenceIntervals(silenceIntervals, durationMs).filter(
     (silence) =>
@@ -102,7 +111,53 @@ export function buildObjectiveSegments(
   if (segments.length === 0 && durationMs > 0) {
     segments.push(segment(0, durationMs, "content"));
   }
-  return segments;
+  return cleanupMicroContent(segments, transcriptSegments, resolvedPolicy);
+}
+
+function cleanupMicroContent(
+  segments: VideoSegment[],
+  transcriptSegments: Transcript["segments"],
+  policy: SegmentationPolicy,
+): VideoSegment[] {
+  const classified = segments.map((current): VideoSegment => {
+    if (
+      current.kind !== "content" ||
+      current.sourceEndMs - current.sourceStartMs >= policy.minimumMeaningfulContentMs
+    ) {
+      return current;
+    }
+    const overlapsSpeech = transcriptSegments.some(
+      (speech) =>
+        speech.startMs < current.sourceEndMs && speech.endMs > current.sourceStartMs,
+    );
+    if (overlapsSpeech) {
+      return { ...current, objectiveReason: "transcript_protected_content" };
+    }
+    return {
+      ...current,
+      kind: "silence",
+      confidence: 0.98,
+      objectiveReason: "micro_content_cleanup",
+    };
+  });
+
+  const normalized: VideoSegment[] = [];
+  for (const current of classified) {
+    const previous = normalized.at(-1);
+    if (previous && previous.kind === current.kind && previous.sourceEndMs === current.sourceStartMs) {
+      previous.sourceEndMs = current.sourceEndMs;
+      previous.confidence = Math.min(previous.confidence, current.confidence);
+      if (
+        previous.objectiveReason === "micro_content_cleanup" ||
+        current.objectiveReason === "micro_content_cleanup"
+      ) {
+        previous.objectiveReason = "micro_content_cleanup";
+      }
+      continue;
+    }
+    normalized.push({ ...current });
+  }
+  return normalized;
 }
 
 function segment(

@@ -22,11 +22,13 @@ describe("buildEditDecisionList", () => {
       action,
       reason,
     }))).toEqual([
-      { sourceStartMs: 0, sourceEndMs: 600, action: "CUT", reason: "leading_silence" },
+      { sourceStartMs: 0, sourceEndMs: 450, action: "CUT", reason: "leading_silence" },
+      { sourceStartMs: 450, sourceEndMs: 600, action: "KEEP", reason: "leading_breathing_room" },
       { sourceStartMs: 600, sourceEndMs: 2300, action: "KEEP", reason: "content_or_natural_pause" },
       { sourceStartMs: 2300, sourceEndMs: 4000, action: "CUT", reason: "excess_internal_silence" },
       { sourceStartMs: 4000, sourceEndMs: 9000, action: "KEEP", reason: "content_or_natural_pause" },
-      { sourceStartMs: 9000, sourceEndMs: 10_000, action: "CUT", reason: "trailing_silence" },
+      { sourceStartMs: 9000, sourceEndMs: 9300, action: "KEEP", reason: "trailing_breathing_room" },
+      { sourceStartMs: 9300, sourceEndMs: 10_000, action: "CUT", reason: "trailing_silence" },
     ]);
     expect(result.decisions.every((decision) => decision.signalSource === "OBJECTIVE")).toBe(true);
   });
@@ -44,5 +46,40 @@ describe("buildEditDecisionList", () => {
       sourceEndMs: 3000,
       action: "KEEP",
     });
+  });
+
+  it("removes the V0 micro-tail without a standalone micro KEEP decision", () => {
+    const segments = buildObjectiveSegments(33_700, [
+      { startMs: 31_891, endMs: 33_684 },
+    ]);
+
+    const result = buildEditDecisionList(33_700, segments);
+
+    expect(result.decisions).toEqual([
+      expect.objectContaining({
+        sourceStartMs: 0,
+        sourceEndMs: 31_891,
+        action: "KEEP",
+      }),
+      expect.objectContaining({
+        sourceStartMs: 31_891,
+        sourceEndMs: 32_191,
+        action: "KEEP",
+        reason: "trailing_breathing_room",
+      }),
+      expect.objectContaining({
+        sourceStartMs: 32_191,
+        sourceEndMs: 33_700,
+        action: "CUT",
+        reason: "micro_content_cleanup",
+      }),
+    ]);
+    expect(
+      result.decisions.some(
+        (decision) =>
+          decision.action === "KEEP" &&
+          decision.sourceEndMs - decision.sourceStartMs < 200,
+      ),
+    ).toBe(false);
   });
 });

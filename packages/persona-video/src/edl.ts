@@ -8,11 +8,15 @@ import type {
 export interface EdlPolicy {
   maxInternalSilenceMs: number;
   preservedPauseMs: number;
+  leadingBreathingRoomMs: number;
+  trailingBreathingRoomMs: number;
 }
 
 const DEFAULT_POLICY: EdlPolicy = {
   maxInternalSilenceMs: 1200,
   preservedPauseMs: 300,
+  leadingBreathingRoomMs: 150,
+  trailingBreathingRoomMs: 300,
 };
 
 export function buildEditDecisionList(
@@ -30,11 +34,12 @@ export function buildEditDecisionList(
     }
     const leading = segment.sourceStartMs === 0;
     const trailing = segment.sourceEndMs === durationMs;
-    if (leading || trailing) {
-      pushDecision(
-        decisions,
-        decision(segment, "CUT", leading ? "leading_silence" : "trailing_silence"),
-      );
+    if (leading) {
+      appendLeadingSilence(decisions, segment, resolvedPolicy.leadingBreathingRoomMs);
+      continue;
+    }
+    if (trailing) {
+      appendTrailingSilence(decisions, segment, resolvedPolicy.trailingBreathingRoomMs);
       continue;
     }
     const duration = segment.sourceEndMs - segment.sourceStartMs;
@@ -69,6 +74,60 @@ export function buildEditDecisionList(
   }
 
   return { version: 1, inputDurationMs: durationMs, decisions };
+}
+
+function appendLeadingSilence(
+  decisions: EditDecision[],
+  segment: VideoSegment,
+  breathingRoomMs: number,
+): void {
+  const keepStart = Math.max(segment.sourceStartMs, segment.sourceEndMs - breathingRoomMs);
+  if (keepStart > segment.sourceStartMs) {
+    pushDecision(
+      decisions,
+      decision({ ...segment, sourceEndMs: keepStart }, "CUT", edgeCutReason(segment, "leading_silence")),
+    );
+  }
+  if (keepStart < segment.sourceEndMs) {
+    pushDecision(
+      decisions,
+      decision(
+        { ...segment, sourceStartMs: keepStart },
+        "KEEP",
+        "leading_breathing_room",
+      ),
+    );
+  }
+}
+
+function appendTrailingSilence(
+  decisions: EditDecision[],
+  segment: VideoSegment,
+  breathingRoomMs: number,
+): void {
+  const keepEnd = Math.min(segment.sourceEndMs, segment.sourceStartMs + breathingRoomMs);
+  if (keepEnd > segment.sourceStartMs) {
+    pushDecision(
+      decisions,
+      decision({ ...segment, sourceEndMs: keepEnd }, "KEEP", "trailing_breathing_room"),
+    );
+  }
+  if (keepEnd < segment.sourceEndMs) {
+    pushDecision(
+      decisions,
+      decision(
+        { ...segment, sourceStartMs: keepEnd },
+        "CUT",
+        edgeCutReason(segment, "trailing_silence"),
+      ),
+    );
+  }
+}
+
+function edgeCutReason(segment: VideoSegment, fallback: string): string {
+  return segment.objectiveReason === "micro_content_cleanup"
+    ? "micro_content_cleanup"
+    : fallback;
 }
 
 function decision(

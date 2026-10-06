@@ -127,6 +127,7 @@ export interface VideoSegment {
   kind: "content" | "silence";
   signalSource: SegmentSignalSource;
   confidence: number;
+  objectiveReason?: "micro_content_cleanup" | "transcript_protected_content";
 }
 
 export type EditAction = "KEEP" | "CUT" | "OPTIONAL";

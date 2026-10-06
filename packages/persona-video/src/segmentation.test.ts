@@ -83,4 +83,53 @@ describe("buildObjectiveSegments", () => {
       },
     ]);
   });
+
+  it("reclassifies the V0-shaped 16 ms tail as technical micro-content", () => {
+    const result = buildObjectiveSegments(33_700, [
+      { startMs: 31_891, endMs: 33_684 },
+    ]);
+
+    expect(result).toEqual([
+      {
+        sourceStartMs: 0,
+        sourceEndMs: 31_891,
+        kind: "content",
+        signalSource: "OBJECTIVE",
+        confidence: 1,
+      },
+      {
+        sourceStartMs: 31_891,
+        sourceEndMs: 33_700,
+        kind: "silence",
+        signalSource: "OBJECTIVE",
+        confidence: 0.98,
+        objectiveReason: "micro_content_cleanup",
+      },
+    ]);
+  });
+
+  it("protects a micro content range when canonical transcript speech overlaps it", () => {
+    const transcript: Transcript = {
+      language: "ru",
+      provider: "fixture",
+      confidence: 0.9,
+      limitations: [],
+      segments: [
+        { startMs: 33_684, endMs: 33_700, text: "слово", confidence: 0.9 },
+      ],
+    };
+
+    const result = buildObjectiveSegments(
+      33_700,
+      [{ startMs: 31_891, endMs: 33_684 }],
+      transcript,
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      sourceStartMs: 33_684,
+      sourceEndMs: 33_700,
+      kind: "content",
+      objectiveReason: "transcript_protected_content",
+    });
+  });
 });
