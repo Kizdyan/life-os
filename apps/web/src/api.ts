@@ -4,6 +4,12 @@ import {
   applyLocalPlan,
   applyRemoteRuntimeRecords,
   readAllLocalItems,
+  readLocalRange,
+  readLocalProjects,
+  readLocalGoals,
+  upsertLocalItem,
+  upsertLocalProject,
+  upsertLocalGoal,
   readLocalItemsByIds,
   readLocalToday,
   startLocalItem,
@@ -54,6 +60,7 @@ function payload(i: Item) {
     actual_end: i.actual_end ?? null,
     deep_work: i.deep_work === true,
     carry_forward: i.carry_forward === true,
+    priority: i.priority ?? 'normal', project_id:i.project_id??null, goal_id:i.goal_id??null, notes:i.notes??null,
   };
 }
 
@@ -195,3 +202,13 @@ export async function resolveSyncConflicts(r: RuntimeConflictResolution) {
   }
   return n;
 }
+
+export async function range(from:string,to:string){if(remote){try{await sync()}catch{}}return readLocalRange(storage(),from,to)}
+export async function allItems(){if(remote){try{await sync()}catch{}}return readAllLocalItems(storage())}
+export async function saveItem(i:Item){if(backendMode==='legacy-supabase')throw Error('Обнови runtime');const old=readAllLocalItems(storage()).find(x=>x.id===i.id);const n=upsertLocalItem(storage(),i);if(remote){queue(n,crypto.randomUUID(),old?.version??null);try{await sync()}catch{}}return n}
+export async function createItem(input:Partial<Item>&Pick<Item,'title'>){const now=new Date(),start=input.planned_start??null,end=input.planned_end??null;return saveItem({id:crypto.randomUUID(),title:input.title.trim(),kind:input.kind??'task',status:input.status??'planned',planned_start:start,planned_end:end,actual_start:null,actual_end:null,deep_work:input.deep_work===true,carry_forward:input.carry_forward===true,priority:input.priority??'normal',project_id:input.project_id??null,goal_id:input.goal_id??null,notes:input.notes??null})}
+function queueDomain(kind:'project'|'goal',id:string,payload:Record<string,unknown>,version:number|null){queueMutation(storage(),{mutationId:crypto.randomUUID(),userId:'self',recordId:id,kind,expectedVersion:version,payload,deleted:false,clientUpdatedAt:new Date().toISOString()})}
+export async function projects(){if(remote){try{await sync()}catch{}}return readLocalProjects(storage())}
+export async function goals(){if(remote){try{await sync()}catch{}}return readLocalGoals(storage())}
+export async function saveProject(p:import('./types').LifeProject){const old=readLocalProjects(storage()).find(x=>x.id===p.id);upsertLocalProject(storage(),p);if(remote){queueDomain('project',p.id,{title:p.title,status:p.status,goal_id:p.goal_id??null},old?.version??null);try{await sync()}catch{}}return p}
+export async function saveGoal(g:import('./types').LifeGoal){const old=readLocalGoals(storage()).find(x=>x.id===g.id);upsertLocalGoal(storage(),g);if(remote){queueDomain('goal',g.id,{title:g.title,status:g.status},old?.version??null);try{await sync()}catch{}}return g}
