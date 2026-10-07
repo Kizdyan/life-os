@@ -3,6 +3,7 @@ import { setOutcomeAction } from './commands';
 import type { AutonomyEngine } from './engine';
 import type { AuditEntry } from './actions';
 import type { LifeItem } from './life-item';
+import type { ErikaLifeContext } from './erika-life-context';
 import { buildErikaProductivityReply, isProductivityFocusQuestion } from './erika-productivity';
 
 export interface ErikaItemMatch { id:string; title:string; plannedDate:string; }
@@ -13,6 +14,7 @@ export interface ErikaContext {
   now?():string;
   listItems?():Promise<LifeItem[]>;
   consecutiveMissesByItem?():Promise<Record<string,number>>;
+  lifeContext?():Promise<ErikaLifeContext>;
 }
 
 export interface ErikaExecution {
@@ -30,12 +32,14 @@ export class ErikaRuntime {
       const consecutiveMissesByItem=this.context.consecutiveMissesByItem
         ? await this.context.consecutiveMissesByItem()
         : {};
+      const lifeContext=this.context.lifeContext?await this.context.lifeContext():undefined;
       return {
         understood:true,
         message:buildErikaProductivityReply({
           items,
           now:this.context.now?.() ?? new Date().toISOString(),
           consecutiveMissesByItem,
+          lifeContext,
         }),
       };
     }
