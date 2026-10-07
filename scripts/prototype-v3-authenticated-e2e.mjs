@@ -10,9 +10,18 @@ async function post(body) {
   return {status:r.status,data};
 }
 try {
-  const html = await (await fetch(frontend+'/?e2e='+Date.now(),{signal:AbortSignal.timeout(30000)})).text();
-  assert(html.includes('life-os-build'),'frontend build identity missing');
-  const asset = html.match(/src="([^"]+\/assets\/index-[^"]+\.js)"/)?.[1];
+  const expectedHead = process.env.GITHUB_SHA || '';
+  let html = '';
+  for (let attempt = 0; attempt < 18; attempt++) {
+    const response = await fetch(frontend+'/?e2e='+Date.now(),{signal:AbortSignal.timeout(30000),cache:'no-store'});
+    assert(response.ok,'frontend unavailable HTTP '+response.status);
+    html = await response.text();
+    if (html.includes('life-os-build') && (!expectedHead || html.includes(expectedHead))) break;
+    if (attempt===17) throw Error('frontend exact-head deploy not live');
+    await new Promise(resolve=>setTimeout(resolve,10000));
+  }
+  console.log('PASS frontend exact-head build identity');
+  const asset = html.match(/src=["']([^"']*\/assets\/index-[^"']+\.js)["']/)?.[1];
   assert(asset,'frontend JS asset missing');
   const js = await (await fetch(new URL(asset,frontend))).text();
   assert(js.includes('life-os-runtime-prototype-v3'),'live frontend does not target v3');
