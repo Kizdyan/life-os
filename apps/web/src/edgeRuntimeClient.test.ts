@@ -57,6 +57,27 @@ describe('direct Supabase Edge runtime client', () => {
     ]);
   });
 
+  it('binds the default browser fetch so WebKit does not reject an unbound Window.fetch', async () => {
+    const storage = new MemoryStorage();
+    const originalFetch = globalThis.fetch;
+    let thisValue: unknown;
+    globalThis.fetch = function (this: unknown) {
+      thisValue = this;
+      return Promise.resolve(new Response(JSON.stringify({ authenticated: true, token: 'opaque.token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    } as typeof fetch;
+
+    try {
+      const client = new EdgeRuntimeClient(endpoint, storage);
+      await client.login('secret');
+      expect(thisValue).toBe(globalThis);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('logs out locally because the Edge token is client-held', async () => {
     const storage = new MemoryStorage();
     storage.setItem(EDGE_RUNTIME_TOKEN_KEY, 'opaque.token');
