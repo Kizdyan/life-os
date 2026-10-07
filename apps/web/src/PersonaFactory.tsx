@@ -13,6 +13,7 @@ import { readLocalToday } from './localRuntime';
 import { normalizePersonaRecommendationPayload } from './persona-opportunity';
 import './persona-factory-v2.css';
 import { personaEdgeRequest } from './edgeRuntimeClient';
+import { getRuntimeSessionStatus, loginRuntimeSession, type RuntimeSessionStatus } from './runtimeSession';
 
 const HISTORY = 'lifeos:persona:idea-history:v2';
 
@@ -93,11 +94,31 @@ export default function PersonaFactory() {
   const [showBank, setShowBank] = useState(false);
   const [analysisState, setAnalysisState] = useState<'loading' | 'ready' | 'degraded'>('loading');
   const [analysisSummary, setAnalysisSummary] = useState('');
+  const [authStatus, setAuthStatus] = useState<RuntimeSessionStatus | null>(null);
+  const [passcode, setPasscode] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void getRuntimeSessionStatus()
+      .then((status) => {
+        if (!cancelled) setAuthStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAuthStatus({ configured: true, authenticated: false });
+          setAuthError('Не удалось проверить подключение к Persona runtime.');
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => localStorage.setItem(HISTORY, JSON.stringify(history)), [history]);
   useEffect(() => writePersonaIdeas(localStorage, ideas), [ideas]);
 
   useEffect(() => {
+    if (!authStatus?.authenticated) return;
     let cancelled = false;
     setAnalysisState('loading');
     setAnalysisSummary('Persona анализирует сегодняшний контекст, свежие сигналы рынка и сама критикует варианты…');
@@ -128,7 +149,7 @@ export default function PersonaFactory() {
     return () => {
       cancelled = true;
     };
-  }, [history]);
+  }, [history, authStatus?.authenticated]);
 
   const deferred = useMemo(() => new Set(history.map((item) => item.title.toLowerCase())), [history]);
   const visible = ideas.filter((item) => !deferred.has(item.title.toLowerCase()));
@@ -145,6 +166,57 @@ export default function PersonaFactory() {
 
   function saveResult(idea: Idea, result: { completedAt: string; shotIds: string[] }) {
     setIdeas((current) => completePersonaShooting(current, idea.id, result));
+  }
+
+  async function connectPersona() {
+    if (authBusy || !passcode.trim()) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const next = await loginRuntimeSession(passcode);
+      setAuthStatus(next);
+      setPasscode('');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Не удалось подключить Persona runtime.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  if (!authStatus) {
+    return <section className="personaFactoryV2"><div className="status">Проверяю подключение Persona…</div></section>;
+  }
+
+  if (!authStatus.configured) {
+    return <section className="personaFactoryV2"><div className="status">Persona runtime пока не настроен. Рекомендации не выдаются без рабочего backend.</div></section>;
+  }
+
+  if (!authStatus.authenticated) {
+    return (
+      <section className="personaFactoryV2">
+        <header className="pfHead">
+          <div>
+            <small>PERSONA · SHOOT NOW</small>
+            <h2>Подключить Persona</h2>
+            <p>Для рыночной аналитики, внутренней критики и съёмочного задания нужен защищённый runtime-сеанс.</p>
+          </div>
+        </header>
+        <div className="captureCard">
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={passcode}
+            onChange={(event) => setPasscode(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') void connectPersona(); }}
+            placeholder="Код доступа"
+          />
+          <button className="primary" disabled={authBusy || !passcode.trim()} onClick={() => void connectPersona()}>
+            {authBusy ? 'Подключаю…' : 'Подключить и проанализировать'}
+          </button>
+          {authError && <div className="status">{authError}</div>}
+        </div>
+      </section>
+    );
   }
 
   if (chosen) {
