@@ -15,7 +15,7 @@ export class EdgeRuntimeClient {
   constructor(
     endpoint: string,
     private readonly storage: TokenStorage,
-    private readonly fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
   ) {
     this.endpoint = endpoint.trim().replace(/\/+$/, '');
     if (!this.endpoint) throw new Error('Life OS Edge runtime URL is required');
