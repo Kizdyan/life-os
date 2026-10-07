@@ -335,7 +335,7 @@ async function personaRecommend(payload: Record<string, unknown>): Promise<Recor
     'Пользователь — работающий актёр/музыкант/автор. Пока нельзя строить идею на неподтверждённой экспертности в мюзиклах. Предпочитай личное наблюдение из профессии, если оно сильнее.',
     'Учитывай прошлые rejected/later/used идеи и не повторяй отвергнутые концепции или манифесты типа «начинаю путь / посмотрим, куда приведёт».',
     'Учитывай реальный календарный контекст, доступное время и то, что человек может оказаться без оператора.',
-    'Каждый кандидат должен быть выполним за 5–15 минут, иметь сильный hook первых 1–2 секунд, короткий script 15–30 секунд, soloPlan и helperPlan.',
+    'Каждый кандидат должен быть выполним за 5–15 минут, иметь сильный hook первых 1–2 секунд, короткий script 15–30 секунд, обязательно estimatedDurationSeconds от 15 до 30, soloPlan и helperPlan.',
     'В marketEvidence дай только реальные источники/наблюдения, которые ты действительно нашёл. Если evidence слабое — так и напиши и понизь confidence.',
     'Верни ТОЛЬКО JSON {"candidates":[{"id","title","angle","format","score","confidence","reason","hook","script","estimatedMinutes","estimatedDurationSeconds","whyNow":[],"resources":[],"soloPlan","helperPlan","marketEvidence":[{"source","finding","url","asOf"}]}],"evidenceSummary":"..."}'
   ].join('\n'), payload);
