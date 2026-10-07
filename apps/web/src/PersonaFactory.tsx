@@ -55,6 +55,7 @@ function localIdeas(history: { title: string; status: string }[]): Idea[] {
       reason: 'Резервная идея без свежей рыночной проверки.',
       whyNow: ['Свежая рыночная аналитика временно недоступна'],
       estimatedMinutes: 8,
+      estimatedDurationSeconds: 22,
       soloPlan: 'Один разговорный дубль + два коротких B-roll.',
       status: 'candidate',
     }));
@@ -174,7 +175,7 @@ export default function PersonaFactory() {
     );
   }
 
-  const top = visible[0];
+  const top = analysisState === 'ready' ? visible[0] : undefined;
   return (
     <section className="personaFactoryV2">
       <header className="pfHead">
@@ -222,7 +223,7 @@ export default function PersonaFactory() {
         <div className="status">Сейчас нет идеи, которая проходит минимальный quality bar. Система не будет предлагать слабый материал ради регулярности.</div>
       )}
 
-      {showBank && visible.slice(1, 2).map((idea) => (
+      {analysisState === 'ready' && showBank && visible.slice(1, 2).map((idea) => (
         <div className="ideaBank" key={idea.id}>
           <article className="ideaRow">
             <button className="ideaSelect" onClick={() => setChosenId(idea.id)}>
