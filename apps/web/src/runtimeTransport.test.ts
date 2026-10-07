@@ -46,4 +46,26 @@ describe('runtime transport selection', () => {
       { op: 'status', token: 'opaque.token' },
     ]);
   });
+  it('preserves the browser fetch receiver when no fetch implementation is injected', async () => {
+    const storage = new MemoryStorage();
+    const originalFetch = globalThis.fetch;
+    let thisValue: unknown;
+    globalThis.fetch = function (this: unknown, _input: RequestInfo | URL, init?: RequestInit) {
+      thisValue = this;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.op === 'login') {
+        return Promise.resolve(new Response(JSON.stringify({ authenticated: true, token: 'opaque.token' }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ authenticated: true }), { status: 200 }));
+    } as typeof fetch;
+
+    try {
+      const session = createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage });
+      await session.login('secret');
+      expect(thisValue).toBe(globalThis);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
 });
