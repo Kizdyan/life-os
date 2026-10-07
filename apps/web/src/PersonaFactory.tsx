@@ -10,6 +10,7 @@ import {
   type PersonaIdeaFormat,
 } from './personaIdeaState';
 import { readLocalToday } from './localRuntime';
+import { normalizePersonaRecommendationPayload } from './persona-opportunity';
 import './persona-factory-v2.css';
 import { personaEdgeRequest } from './edgeRuntimeClient';
 
@@ -109,12 +110,11 @@ export default function PersonaFactory() {
     })
       .then((data) => {
         if (cancelled) return;
-        const recommendation = data?.recommendation as Idea | undefined;
-        const alternatives = Array.isArray(data?.alternatives) ? data.alternatives as Idea[] : [];
-        if (!recommendation?.id || !recommendation?.title) throw new Error('invalid_recommendation');
-        const planned = [recommendation, ...alternatives].slice(0, 2);
+        const normalized = normalizePersonaRecommendationPayload(data);
+        if (!normalized.recommendation) throw new Error('quality_bar_not_met');
+        const planned = [normalized.recommendation, ...normalized.alternatives];
         setIdeas((current) => mergePersonaIdeas(planned, current));
-        setAnalysisSummary(String(data?.analysisSummary || 'Рекомендация прошла внутреннюю критику.'));
+        setAnalysisSummary(normalized.analysisSummary || 'Рекомендация прошла внутреннюю критику.');
         setAnalysisState('ready');
       })
       .catch(() => {
