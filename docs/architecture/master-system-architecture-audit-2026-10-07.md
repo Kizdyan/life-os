@@ -11,7 +11,9 @@ The target concept is directionally correct, but its names currently mix three d
 2. interaction and orchestration roles (`Erika`, product orchestrator, development supervisor);
 3. shared infrastructure (`runtime store`, event log, memory, media storage, analytics projections).
 
-The system should be built as a **modular monolith with durable jobs and capability workers** for now. Each bounded context owns its contracts and decisions, while all contexts use one canonical identity, record, event, audit, and artifact-reference layer. FFmpeg/Whisper workers, provider adapters, schedulers, and analytics importers may run as separate processes without becoming separate sources of truth.
+The system should be built as a **modular monolith with durable jobs and capability workers** for now. Each bounded context owns its contracts and decisions, while all contexts use one canonical identity, record, event, audit, decision, and artifact-reference layer. FFmpeg/Whisper workers, provider adapters, schedulers, and analytics importers may run as separate processes without becoming separate sources of truth.
+
+Significant autonomous decisions pass through a shared **Decision Court / Deliberation Engine** inside the Product Orchestrator. The Court independently develops the strongest case for and against a proposal, audits evidence, collects blind specialist verdicts, and records a reasoned judgment before execution. Risk gating keeps ordinary reversible work outside the full Court. The Court is infrastructure, not a product, chat, or Persona subsystem.
 
 The most important correction is this:
 
@@ -113,6 +115,7 @@ The remote repository also contains dozens of temporary `test/persona-domain-*` 
 User
   -> Erika (single conversational chief-of-staff interface)
   -> Product Orchestrator (intent graph, policy, jobs, checkpoints)
+       -> Decision Gate / Decision Court for significant choices
   -> domain tools and specialist workers
        -> Life OS
        -> Persona
@@ -161,8 +164,12 @@ The Product Orchestrator owns execution coordination:
 - routing to capabilities/providers;
 - Observer assignments and evidence requirements;
 - terminal state and scoped `HUMAN_REQUIRED`.
+- decision risk/importance gating and Decision Court lifecycle;
+- binding a judged decision to its executed action and measured outcome.
 
 It does not make domain decisions that belong to Life OS, Persona, or DiveM. It calls their typed tools.
+
+The Court is part of this orchestration layer. Erika may explain its final verdict, but Erika is not the Court. Persona and DiveM may supply proposals and specialist perspectives, but neither owns the shared deliberation mechanism.
 
 ### 4.4 Persona
 
@@ -205,6 +212,7 @@ Shared Brain is infrastructure and a logical knowledge layer, not another user-f
 
 - canonical entity identifiers and typed, versioned records in Supabase;
 - append-only domain events/audit evidence and an outbox;
+- append-only decision cases, proposal revisions, evidence classifications, verdicts, execution links, and outcome evaluations;
 - an asset registry containing hashes, provenance, rights/consent, object references, and derivatives;
 - a memory ledger with provenance/confidence/supersession/deletion;
 - normalized observations and outcome events;
@@ -255,7 +263,72 @@ interface DomainEvent<T> {
 
 The correlation ID must survive the entire media loop: life observation/opportunity → idea → brief → shooting → asset → processing → candidate → approval → publication → metrics → learning.
 
-### 5.3 Canonical media lifecycle
+### 5.3 Decision contracts
+
+Decision data is provider-neutral and separate from provider prompts/responses:
+
+```ts
+type DecisionMode = "DIRECT" | "LIGHTWEIGHT_CRITIQUE" | "FULL_COURT" | "HUMAN_REQUIRED";
+type DecisionVerdict = "APPROVE" | "REVISE" | "REJECT" | "HUMAN_REQUIRED";
+type EvidenceClass = "VERIFIED" | "INFERRED" | "ASSUMPTION" | "ESTIMATE" | "OPINION" | "UNAVAILABLE";
+
+interface DecisionCase {
+  id: string;
+  correlationId: string;
+  ownerContext: "life" | "persona" | "divem_personal" | "orchestrator" | "development";
+  decisionType: string;
+  mode: DecisionMode;
+  status: "OPEN" | "REVISING" | "DECIDED" | "EXECUTED" | "EVALUATED";
+  currentRevision: number;
+  retryLimit: number;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+interface ProposalRevision {
+  decisionId: string;
+  revision: number;
+  proposal: Record<string, unknown>;
+  contextRefs: string[];
+  submittedBy: string;
+  submittedAt: string;
+}
+
+interface EvidenceFinding {
+  claimId: string;
+  claim: string;
+  classification: EvidenceClass;
+  evidenceRefs: string[];
+  confidence: number | null;
+  limitations: string[];
+}
+
+interface JurorVerdict {
+  jurorRole: string;
+  verdict: "APPROVE" | "REVISE" | "REJECT";
+  confidence: number;
+  rationale: string;
+  criticalRisks: string[];
+  requiredChanges: string[];
+  submittedIndependently: true;
+}
+
+interface JudgeDecision {
+  decisionId: string;
+  revision: number;
+  verdict: DecisionVerdict;
+  confidence: number;
+  rationale: string;
+  dissent: string[];
+  requiredChanges: string[];
+  humanAction: string | null;
+  historicalOutcomeRefs: string[];
+}
+```
+
+Provider-native traces may be retained as restricted diagnostics, but canonical decision history stores roles, evidence, verdicts, and provenance rather than model-specific payload structures.
+
+### 5.4 Canonical media lifecycle
 
 The minimum canonical chain is:
 
@@ -311,7 +384,163 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 
 `HUMAN_REQUIRED` must be scoped to one job/dependency. Unrelated jobs continue.
 
-## 7. Ownership map
+## 7. Decision Court / Deliberation Engine
+
+### 7.1 Purpose and boundary
+
+Decision Court improves important autonomous decisions before execution while reducing unnecessary user coordination. It is a shared Product Orchestrator capability used by Life OS, Persona, and DiveM Personal. The Autonomous Development Runtime may reuse the same contracts and evaluation library, but it persists its own development cases and never shares its execution queue with the product system.
+
+The Court is read-only with respect to domain state during deliberation. It may produce a judgment and an authorization token. Only the Product Orchestrator can dispatch the judged proposal to a domain tool, and only that domain tool can mutate its canonical records.
+
+### 7.2 Full pipeline
+
+```text
+Proposal
+  -> Advocate
+  -> Challenger
+  -> Evidence Auditor
+  -> Independent Specialist Jury
+  -> Judge
+  -> APPROVE / REVISE / REJECT / HUMAN_REQUIRED
+  -> Execution
+  -> Outcome Measurement
+  -> Calibration / Learning
+```
+
+- **Advocate** constructs the strongest truthful case for the proposal: upside, opportunities, why it may work, and why alternatives may be weaker. It may not relabel assumptions as facts.
+- **Challenger** constructs the strongest case against it: weak premises, hidden costs, opportunity cost, failure modes, risks, and alternatives.
+- **Evidence Auditor** independently classifies every material claim as verified, inferred, assumption, estimate, opinion, or unavailable. Unsupported agreement between agents is not evidence.
+- **Specialist jurors** assess the proposal independently before seeing other votes. Each returns verdict, confidence, rationale, critical risks, and required changes.
+- **Judge** weighs the proposal, arguments, evidence audit, independent verdicts, dissent, and relevant historical outcomes. It is not bound by majority vote.
+
+The default specialist registry is decision-specific:
+
+| Decision family | Candidate perspectives |
+|---|---|
+| Persona concept/publication | marketing, audience, personal brand, creative, script, directing, production, distribution, analytics, resources, risk |
+| Life planning/strategy | planning, wellbeing, goals, resources, opportunity cost, risk |
+| DiveM Personal strategy | positioning, opportunity, execution, resources, risk, evidence |
+| Software architecture/release | architecture, product, QA, reliability, security, data integrity, UX, maintainability, cost/complexity |
+
+The Orchestrator selects the smallest sufficient subset. Full Persona Court normally uses three to five materially distinct perspectives, not every role in the registry.
+
+### 7.3 Risk and importance gating
+
+The gate evaluates reversibility, blast radius, uncertainty, cost, data impact, public/external impact, strategic importance, confidence, and novelty. Hard constraints override any numeric score.
+
+| Level | Mode | Use |
+|---|---|---|
+| 0 | `DIRECT` | cheap, local, reversible, well-understood actions with no material external effect |
+| 1 | `LIGHTWEIGHT_CRITIQUE` | bounded decisions where one independent critic or advocate/challenger pair materially reduces error |
+| 2 | `FULL_COURT` | strategic, architectural, public-content, cross-domain, novel, expensive, or high-uncertainty decisions |
+| 3 | `HUMAN_REQUIRED` | prohibited autonomous decisions: legal/financial commitment, credentials/2FA, destructive data, irreversible public risk, unavailable subjective fact, or policy-required consent |
+
+The gate uses both factor scores and hard rules:
+
+- any prohibited/credential/destructive/legal condition selects Level 3;
+- material public impact, cross-domain strategy, high novelty, or high uncertainty selects at least Level 2;
+- one bounded but meaningful risk selects at least Level 1;
+- only fully reversible, low-cost, known operations qualify for Level 0.
+
+Examples where full Court is not needed:
+
+- resizing, transcoding, caption rendering, checksum calculation, metadata extraction;
+- deterministic sync retry, idempotent export, safe cache rebuild;
+- ordinary task CRUD explicitly requested by the user;
+- applying an already approved bounded plan;
+- collecting metrics or running tests;
+- correcting a proposal exactly as required by a prior judgment.
+
+Examples for full Court:
+
+- selecting the main content concept or public narrative;
+- approving a strategically important publication candidate;
+- changing Persona positioning or content strategy;
+- materially changing a user's weekly plan based on uncertain recommendations;
+- making a high-impact architecture/release decision in #86.
+
+### 7.4 Bounded revision loop
+
+`REVISE` returns typed required changes to the proposal owner. The owner creates the next `ProposalRevision`; the Court reruns only the roles affected by the change plus the Evidence Auditor and Judge. It does not ask the user automatically.
+
+The default v0 limit is two revision cycles. A case then ends in `APPROVE`, `REJECT`, or scoped `HUMAN_REQUIRED`. A third autonomous rewrite requires a decision-type policy override supported by evidence. Time, token, provider-call, and wall-clock budgets are recorded with the case.
+
+### 7.5 Tool/API boundary
+
+The minimum provider-neutral Court surface is:
+
+```ts
+interface DecisionCourt {
+  classify(input: DecisionGateInput): Promise<DecisionGateResult>;
+  open(input: OpenDecisionInput): Promise<DecisionCase>;
+  submitProposal(input: ProposalRevisionInput): Promise<ProposalRevision>;
+  buildAdvocateCase(decisionId: string, revision: number): Promise<ArgumentRecord>;
+  buildChallengerCase(decisionId: string, revision: number): Promise<ArgumentRecord>;
+  auditEvidence(decisionId: string, revision: number): Promise<EvidenceAudit>;
+  collectJury(decisionId: string, revision: number, roles: string[]): Promise<JurorVerdict[]>;
+  judge(decisionId: string, revision: number): Promise<JudgeDecision>;
+  authorizeExecution(decisionId: string, revision: number): Promise<ExecutionAuthorization>;
+  recordExecution(input: DecisionExecutionLink): Promise<void>;
+  recordOutcome(input: DecisionOutcomeEvaluation): Promise<void>;
+}
+```
+
+`authorizeExecution` succeeds only for the exact approved proposal revision and expires after a bounded time. Domain tools receive `decisionId`, `revision`, `correlationId`, and authorization evidence. They still apply their own policy, validation, idempotency, and permission checks.
+
+### 7.6 Audit, undo, and provenance
+
+Decision history is append-only. It records proposal/context references, both arguments, claim classifications, juror identity by role/provider class, individual blind verdicts, confidence, dissent, judgment, revisions, execution link, actual outcome, and later evaluation.
+
+The Court does not implement domain undo. The executed domain action records the decision reference in the existing audit/action group, and the owning domain supplies compensation where the action is reversible. Undo never erases decision history; it appends an execution reversal outcome.
+
+Sensitive evidence is stored by reference and checked through the originating domain's access policy. Jurors receive only the minimum authorized projection. DiveM Classic never receives owner-only Life OS or DiveM Personal evidence.
+
+### 7.7 Outcome calibration
+
+Calibration compares predicted risks and expected outcomes with actual results. It may estimate which perspectives are well-calibrated, systematically optimistic/pessimistic, or useful for a given decision family.
+
+Calibration rules:
+
+- require a minimum sample before changing any weight;
+- cap all learned weight changes;
+- keep safety/policy constraints immutable to calibration;
+- keep user taste separate from public performance;
+- retain dissent rather than training only on the winning verdict;
+- allow abstention when evidence is insufficient;
+- make weights advisory to the Judge, never automatic authorization.
+
+Useful quality metrics are decision regret, human override rate, revision yield, calibration error, outcome lift over lightweight critique, latency, and compute/provider cost. Agent count is not a quality metric.
+
+### 7.8 Adversarial review: avoiding multi-agent theatre
+
+Decision Court becomes expensive theatre when:
+
+- it runs for low-stakes deterministic work;
+- Advocate, Challenger, jurors, and Judge use the same evidence and near-identical prompts;
+- agents reward agreement or rhetorical volume rather than verified claims;
+- the Judge counts votes without evaluating evidence or dissent;
+- no actual outcome is linked back to the decision;
+- the system adds jurors after an unwanted verdict until it gets a preferred answer;
+- provider diversity is purchased without evidence that it changes error modes;
+- deliberation costs more than the downside it can prevent;
+- users still have to resolve internal disagreements that the Court should settle.
+
+Controls:
+
+1. Gate aggressively; target most operations at Level 0 or 1.
+2. Use the smallest distinct jury and run jurors independently in parallel.
+3. Freeze proposal/context/evidence inputs for a revision so roles debate the same case.
+4. Require claim-level evidence classification before judgment.
+5. Enforce retry, latency, token, and external-cost budgets.
+6. Prevent juror shopping and post-verdict panel expansion.
+7. Compare full Court outcomes against lightweight critique by decision family.
+8. Downgrade or disable full Court where measured quality lift is absent.
+9. Keep deterministic QA and policy checks outside generative deliberation.
+10. Escalate only the unresolved user decision, not the internal transcript.
+
+The Court earns its complexity only when measured outcomes show fewer bad autonomous actions, fewer user interruptions, or better strategic results.
+
+## 8. Ownership map
 
 | Feature | Canonical owner | Canonical data source | Agents/services | Filters / QA | Output | Feedback destination | Human involvement |
 |---|---|---|---|---|---|---|---|
@@ -321,6 +550,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 | Conversation | Erika | transcript + referenced canonical context | STT, reasoning, response | intent coverage, policy | explanation/action proposal | memory ledger and audit | speak/type; choose when asked |
 | Long-term memory | Shared Brain, schema owned by source domain | memory ledger | extraction, reconciliation | provenance/confidence/supersession | memory projection | Erika/domain tools | correct/delete facts |
 | Action graph | Product Orchestrator | durable job/checkpoint records | router, workers, Observer | policy, retry, stale detection | verified terminal state | audit/events | only scoped gates |
+| Significant decision | Product Orchestrator / Decision Court | decision case + evidence/outcome ledger | Advocate, Challenger, Evidence Auditor, selected jurors, Judge | independent evidence audit, dissent, bounded revision | approved/rejected/revised proposal with authorization evidence | execution outcome and calibration | final subjective/prohibited choice only |
 | Development automation | DevelopmentSupervisor (#86) | issue/runtime-state and CI | planner/dev/QA/critic/release/watchdog | CI, product QA, production QA | release evidence | development backlog | credentials/production approvals |
 | Content opportunity | Persona | opportunity record with Life references | researcher/strategist | relevance, privacy, workload | ranked opportunity | Persona learning | optional reject/change |
 | Idea and brief | Persona | Persona idea + revisioned brief | strategist, editorial planner, Shooting Director | facts, novelty, shootability | shoot-ready brief | Persona lifecycle | `Take / Change / Reject` |
@@ -333,7 +563,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 | Life analytics | Life OS | normalized life observations | aggregate/insight workers | sample size, non-causal language | trends/insights | Erika and goal planning | correct bad data |
 | DiveM Classic | DiveM Classic | separate tenant data | commercial strategy services | tenant isolation | customer assessment | customer-owned store | customer policy |
 
-## 8. What is wrong in the current concept
+## 9. What is wrong in the current concept
 
 1. **“Shared Brain” risks becoming a new super-product.** It should be a canonical ledger and projection layer, with domain ownership retained.
 2. **Erika is described as both UI and brain/data owner.** Erika should orchestrate and explain; durable facts remain in domain stores.
@@ -344,7 +574,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 7. **The current browser still owns Persona lifecycle state.** This contradicts the intended durable shared brain.
 8. **Goals and memory have duplicate models.** This will make Erika's advice inconsistent even when each individual module passes tests.
 
-## 9. What to preserve, combine, stop, and add
+## 10. What to preserve, combine, stop, and add
 
 ### Preserve
 
@@ -382,6 +612,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 ### Missing and required
 
 - an ownership registry/ADR for every canonical entity and event;
+- provider-neutral Decision Court records, gating, authorization, and outcome links;
 - a stable cross-domain correlation/causation ID;
 - durable product jobs with dependencies, retries, dead-letter/rework, and scoped human gates;
 - canonical asset metadata including rights/consent and derivative lineage;
@@ -392,7 +623,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 - one real end-to-end Persona production flow in the PWA;
 - branch/PR lifecycle policy that leaves one current integration trunk.
 
-## 10. Branch and PR disposition
+## 11. Branch and PR disposition
 
 | Ref | Recommendation | Reason |
 |---|---|---|
@@ -406,7 +637,7 @@ Each failed filter returns a typed rework request to the preceding owner. The us
 
 Do not merge any of these to `main` as part of this audit.
 
-## 11. Migration strategy
+## 12. Migration strategy
 
 ### Option A — keep adding to current screens
 
@@ -440,6 +671,16 @@ Acceptance: one documented integration branch; no lost unique commit; no `main` 
 
 Acceptance: every persisted object in the target publish flow has one owner and one durable record.
 
+#### Slice 1B — Decision Court v0 foundation
+
+1. Add provider-neutral decision/gating contracts and one durable `decision_case` record family.
+2. Implement hard Level 3 rules and deterministic Level 0–2 classification.
+3. Add role adapter interfaces, a static specialist registry, and a Judge boundary.
+4. Enforce blind juror submissions, evidence classifications, two revision cycles, and execution authorization tied to an exact proposal revision.
+5. Link the decision to the existing audit/action group; do not add a new Court UI.
+
+Acceptance: one significant test proposal completes full Court, one ordinary technical action bypasses it, and no verdict can mutate domain state directly.
+
 #### Slice 2 — move Persona lifecycle out of browser ownership
 
 1. Make the Persona screen a replica/client of canonical Persona records.
@@ -461,9 +702,11 @@ Acceptance: canonical shooting result → V1.1 run → verified platform artifac
 #### Slice 4 — one review and publish handoff
 
 1. Create one candidate revision from the processed artifacts.
-2. Run technical, factual, brand, rights, and platform filters.
-3. Present only `Take / Change / Reject` plus evidence.
-4. For the first publication, allow assisted/manual platform upload and record URL/ID/time in the publication ledger.
+2. Run deterministic technical, factual, brand, rights, and platform filters.
+3. Run a bounded Level 2 Court for the significant public-content decision; use a small Persona jury and reuse the factual evidence audit.
+4. Let the system resolve `REVISE` autonomously within the retry budget.
+5. Present only `Take / Change / Reject` plus the Judge's short explanation.
+6. For the first publication, allow assisted/manual platform upload and record URL/ID/time in the publication ledger.
 
 Acceptance: one real item is published and traceable to its exact input, brief, processing run, candidate revision, and approval.
 
@@ -472,7 +715,8 @@ Acceptance: one real item is published and traceable to its exact input, brief, 
 1. Import or manually record first platform snapshots.
 2. Link metrics to the publication/candidate revision.
 3. Store taste and performance as separate evidence.
-4. Produce the next recommendation with explicit evidence and confidence.
+4. Link actual results to the originating decision case.
+5. Produce the next recommendation with explicit evidence and confidence.
 
 Acceptance: publication → metrics → learning observation → next ranked idea.
 
@@ -493,18 +737,20 @@ Acceptance: a natural request creates or advances the same canonical records as 
 
 Acceptance: no private owner data is reachable from the Classic tenant or generic service path.
 
-## 12. Prioritized backlog
+## 13. Prioritized backlog
 
 ### P0 — first real publication loop
 
 1. `ARCH-OWNERSHIP-001`: canonical ownership/event/correlation ADR.
 2. `BRANCH-TRUNK-001`: choose PR #85 recovery head as sole integration base; disposition stale PRs/branches.
-3. `PERSONA-CANONICAL-001`: consolidate idea/brief/result state and migrate browser state safely.
-4. `PERSONA-SHOOT-001`: fix production shooting-brief E2E against canonical state.
-5. `VIDEO-INTEGRATE-001`: transplant V1.1 package and bridge onto recovery head.
-6. `PERSONA-REVIEW-001`: one candidate, independent QA, `Take / Change / Reject`.
-7. `PUBLISH-LEDGER-001`: assisted/manual first publish with verified URL/ID and immutable lineage.
-8. `METRICS-FIRST-001`: first real metric snapshot and learning observation.
+3. `COURT-CONTRACT-001`: Decision Court records, Level 0–3 gate, exact-revision authorization, and bounded revision contract.
+4. `PERSONA-CANONICAL-001`: consolidate idea/brief/result state and migrate browser state safely.
+5. `PERSONA-SHOOT-001`: fix production shooting-brief E2E against canonical state.
+6. `VIDEO-INTEGRATE-001`: transplant V1.1 package and bridge onto recovery head.
+7. `COURT-PERSONA-V0-001`: small evidence-audited Court for idea/prepublish decisions; bypass technical exports.
+8. `PERSONA-REVIEW-001`: one candidate, independent QA, `Take / Change / Reject`.
+9. `PUBLISH-LEDGER-001`: assisted/manual first publish with verified URL/ID and immutable lineage.
+10. `METRICS-FIRST-001`: first real metric snapshot, decision outcome, and learning observation.
 
 ### P1 — reliability and user trust
 
@@ -513,6 +759,7 @@ Acceptance: no private owner data is reachable from the Classic tenant or generi
 3. Add artifact rights/consent metadata and publication safety checks.
 4. Add durable Product Orchestrator jobs and scoped human gates.
 5. Consolidate memory and analytics projections.
+6. Measure Court quality/latency/cost against lightweight critique before expanding its use.
 
 ### P2 — Life OS and Erika completion
 
@@ -529,7 +776,64 @@ Acceptance: no private owner data is reachable from the Classic tenant or generi
 4. face-aware tracking and artistic selection;
 5. DiveM Personal automation, then separately scoped DiveM Classic.
 
-## 13. Shortest path to first real publication
+### 13.1 Reality inventory classification
+
+| Class | Existing reality and action |
+|---|---|
+| `REUSE` | runtime records/mutations, offline outbox, conflict handling, policy, Observer, audit/undo, MediaStateStore, Media Supervisor, immutable ingest, Style/Format Memory evidence, Content Factory, Persona publication contracts, issue #86 role/state-machine patterns, V1.1 Video Engine |
+| `RESTORE` | production Persona shooting brief, canonical Persona queue/review, Life Core product surfaces, full Erika intent coverage, mobile/offline acceptance paths identified in recovery matrix |
+| `CONNECT` | Persona lifecycle to canonical runtime; shooting result to MediaAsset; recovery head to V1.1 package; candidate approval to publication ledger; publication to metrics; Judge authorization to domain audit/action group |
+| `BUILD` | canonical entity/event ownership, Product Orchestrator jobs, Decision Court v0, decision/outcome ledger, asset rights lineage, first assisted publish record, metrics attribution, Erika tool registry, DiveM Personal access boundary |
+| `DELETE/DEFER` | dead overlapping Persona screens after reachability proof; temporary TDD branches/PRs after containment; Creative Router, dynamic juror selection, provider diversity, automatic OAuth publishing, face-aware/artistic editing, advanced Court calibration, DiveM Classic integration |
+
+Issue #86 remains the source of truth for software-development automation. Its security, data-corruption, PWA update, mobile E2E, and truthful production-verification findings remain valid prerequisites for trusted production work. Its queue is not copied into Product Orchestrator state.
+
+### 13.2 Delivery focus
+
+#### A. Shortest path to the first real Persona publication
+
+Use one canonical idea/brief/result/asset, the accepted V1.1 processor, deterministic QA, one small Level 2 Court at the public-content decision, a single `Take / Change / Reject` gate, assisted manual upload, publication ledger, and a first metric snapshot. Complete Life OS recovery and OAuth publishing are not prerequisites.
+
+#### B. Minimum changes for Decision Court v0
+
+1. Add `DecisionCase`, proposal revision, evidence audit, juror verdict, Judge decision, execution link, and outcome evaluation contracts.
+2. Persist them through the existing versioned runtime/audit substrate.
+3. Implement hard Level 3 rules and deterministic Level 0/1/2 gating.
+4. Add provider-neutral role adapters and a static registry for Persona and software decisions.
+5. Run Advocate and Challenger from the same frozen proposal/context.
+6. Require Evidence Auditor classification before judging.
+7. Collect three independent jurors for the first Persona case.
+8. Allow at most two autonomous revisions.
+9. Issue an exact-revision execution authorization and link it to the domain action group.
+10. Record actual publication outcome and basic cost/latency metrics.
+
+Court v0 needs no new user-facing screen, dynamic weighting, multi-provider routing, or general self-modifying agent framework.
+
+#### C. Court capabilities deferred until real outcomes exist
+
+- learned juror reliability weights;
+- model/provider diversity policies;
+- automatic jury composition beyond a static decision registry;
+- causal claims about which juror caused better results;
+- cross-user or DiveM Classic calibration;
+- automatic modification of thresholds or safety constraints;
+- full Court transcripts in the normal user experience;
+- full Court for ordinary Life OS scheduling and technical media operations.
+
+### 13.3 Next ten implementation steps
+
+1. Make the reviewed recovery head the single non-`main` integration base and record donor refs; do not merge divergent branches wholesale.
+2. Close the issue #86 security/data-integrity blockers required for trusted production state, while keeping scheduler/credential blockers scoped.
+3. Commit the canonical ownership, entity, event, correlation, asset, publication, and decision contracts.
+4. Implement Decision Court v0 persistence and Level 0–3 gate on the existing runtime/audit substrate.
+5. Consolidate Persona idea, brief, shooting result, and history into canonical records with an idempotent browser-state migration.
+6. Repair the real production shooting-brief flow and persist a valid revisioned brief.
+7. Transplant the isolated V1.1 Video Engine package/tests and connect it through the canonical MediaAsset/ProcessingRun bridge.
+8. Add deterministic prepublish filters plus the small Persona Court with bounded autonomous `REVISE`.
+9. Present one final `Take / Change / Reject` decision and record an assisted real publication with Observer evidence.
+10. Capture the first metric snapshots, evaluate the originating Court decision, and decide from measured lift whether Court use should expand.
+
+## 14. Shortest path to first real publication
 
 The first publication does not need complete Life OS, OAuth publishing, a Creative Router, face tracking, or artistic AI editing.
 
@@ -537,12 +841,14 @@ Use this path:
 
 ```text
 persist one Persona idea
+  -> run a small evidence-audited Court for the significant concept
   -> produce and persist a valid shooting brief
   -> attach the existing real iPhone video as immutable MediaAsset
   -> run Persona Video V1.1 locally
   -> persist verified clean/captioned/Instagram artifact refs
   -> create one candidate revision
-  -> run independent QA
+  -> run deterministic QA and the bounded prepublish Court
+  -> resolve REVISE autonomously within budget
   -> user chooses Take / Change / Reject
   -> user performs final Instagram upload if OAuth is absent
   -> record external URL/ID and publication timestamp
@@ -550,15 +856,15 @@ persist one Persona idea
   -> generate one evidence-backed learning observation
 ```
 
-This is the shortest honest route from real life to published media and measurable learning. It reuses the accepted real-video engine and keeps the only unavoidable manual step at the external account boundary.
+This is the shortest honest route from real life to published media and measurable learning. It reuses the accepted real-video engine, spends Court cost only on the concept/publication decisions, and keeps the only unavoidable manual step at the external account boundary.
 
-## 14. Final answers
+## 15. Final answers
 
-1. **Wrong now:** duplicated goals, Persona state, memory, analytics, and orchestration; browser-owned production lifecycle; product and development supervisors conflated; too many module-shaped UI surfaces.
-2. **Preserve:** runtime/offline/audit/undo substrate, Supabase Edge + Render, provider-neutral adapters, Media Brain provenance/jobs, Persona publication contracts, V1.1 video engine, issue #86 verification discipline.
+1. **Wrong now:** duplicated goals, Persona state, memory, analytics, and orchestration; browser-owned production lifecycle; product and development supervisors conflated; significant autonomous choices have no shared evidence-audited decision record; too many module-shaped UI surfaces.
+2. **Preserve:** runtime/offline/audit/undo substrate, Supabase Edge + Render, provider-neutral adapters, Media Brain provenance/jobs, Persona publication contracts, V1.1 video engine, issue #86 verification discipline, and reusable role/state-machine patterns for bounded deliberation.
 3. **Combine:** Media Brain + Content Factory + Video Engine + distribution under Persona; all life goals under Life OS; memory and observations in one canonical ledger with domain projections.
 4. **Delete/do not build:** separate Shared Brain app, separate Erika store, new duplicate schemas/screens, Vercel runtime, undocumented CapCut coupling, Creative Router and heavy provider integrations before first publication; archive temporary branches after containment proof.
-5. **Missing:** canonical ownership/event/correlation contracts, durable product jobs, canonical asset/publication lineage, metrics attribution, Erika tool registry/memory, DiveM privacy/tenant boundary, one real publish E2E.
-6. **Final ownership:** Life OS owns life facts; Erika owns conversation; Product Orchestrator owns execution coordination; Persona owns media lifecycle/distribution; DiveM Personal owns private assessments; DiveM Classic is separately tenanted; Shared Brain provides canonical records/events/memory/observations without becoming a product.
-7. **Optimal order:** establish one integration line → canonical ownership → durable Persona state → shooting fix → transplant V1.1 → review/publish ledger → metrics/learning → reliability → Erika/Life completion → optional providers and DiveM expansion.
-8. **Shortest publication path:** canonical idea/brief/result/asset → existing local V1.1 processing → one QA/review gate → assisted manual upload → publication record → metrics snapshot → learning.
+5. **Missing:** canonical ownership/event/correlation contracts, durable product jobs, Decision Court records and exact-revision authorization, canonical asset/publication lineage, outcome-linked calibration, metrics attribution, Erika tool registry/memory, DiveM privacy/tenant boundary, and one real publish E2E.
+6. **Final ownership:** Life OS owns life facts; Erika owns conversation; Product Orchestrator owns execution coordination and Decision Court gating; Persona owns media lifecycle/distribution; DiveM Personal owns private assessments; DiveM Classic is separately tenanted; Shared Brain provides the canonical decision/entity/event/memory/observation ledger and projections without becoming a product.
+7. **Optimal order:** establish one integration line → canonical ownership and decision contracts → Court v0 persistence/gating → durable Persona state → shooting fix → transplant V1.1 → bounded prepublish Court and publication ledger → metrics/outcome calibration → reliability → Erika/Life completion → optional providers and DiveM expansion.
+8. **Shortest publication path:** canonical idea/brief/result/asset → existing local V1.1 processing → deterministic QA plus a small Level 2 Court only for the significant public-content choice → bounded autonomous revision → `Take / Change / Reject` → assisted manual upload → publication record → metrics snapshot → outcome-linked learning.
