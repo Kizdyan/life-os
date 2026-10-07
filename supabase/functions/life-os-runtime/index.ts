@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const OWNER_ID = 'b48182e1-0802-4741-89a1-bba6341cb8c8';
-const OWNER_PASSCODE_SHA256 = '7b9f92d5fff6262ad5ccecfd3c5e7e3eb2cf7cdc4af06804d27f90bf3defcafb';
+const OWNER_PASSCODE_SHA256 = 'cb8176ea295ab2bc544c5a7d1348ab9a67ebc7013c64baf6adb4575e74b85e0b';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
