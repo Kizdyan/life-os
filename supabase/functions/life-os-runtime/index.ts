@@ -337,7 +337,7 @@ async function personaRecommend(payload: Record<string, unknown>): Promise<Recor
     'Учитывай реальный календарный контекст, доступное время и то, что человек может оказаться без оператора.',
     'Каждый кандидат должен быть выполним за 5–15 минут, иметь сильный hook первых 1–2 секунд, короткий script 15–30 секунд, soloPlan и helperPlan.',
     'В marketEvidence дай только реальные источники/наблюдения, которые ты действительно нашёл. Если evidence слабое — так и напиши и понизь confidence.',
-    'Верни ТОЛЬКО JSON {"candidates":[{"id","title","angle","format","score","confidence","reason","hook","script","estimatedMinutes","whyNow":[],"resources":[],"soloPlan","helperPlan","marketEvidence":[{"source","finding","url","asOf"}]}],"evidenceSummary":"..."}'
+    'Верни ТОЛЬКО JSON {"candidates":[{"id","title","angle","format","score","confidence","reason","hook","script","estimatedMinutes","estimatedDurationSeconds","whyNow":[],"resources":[],"soloPlan","helperPlan","marketEvidence":[{"source","finding","url","asOf"}]}],"evidenceSummary":"..."}'
   ].join('\n'), payload);
 
   const candidates = Array.isArray((research as any)?.candidates) ? (research as any).candidates.slice(0, 3) : [];
@@ -390,7 +390,7 @@ async function personaRecommend(payload: Record<string, unknown>): Promise<Recor
 
 function openAIModelCandidates(): string[] {
   const configured = (Deno.env.get('PERSONA_OPENAI_MODEL') ?? '').trim();
-  return [...new Set([configured, 'gpt-5.6-terra'].filter(Boolean))];
+  return [...new Set([configured, 'gpt-5.6-sol'].filter(Boolean))];
 }
 
 function parseJSONText(text: string): unknown {
