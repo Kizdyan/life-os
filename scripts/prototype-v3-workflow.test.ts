@@ -6,6 +6,7 @@ const workflow = readFileSync('.github/workflows/deploy-readiness.yml', 'utf8');
 describe('prototype v3 authenticated E2E workflow', () => {
   it('runs on pushes to the exact prototype branch', () => {
     expect(workflow).toContain('prototype/persona-quality-loop-v0');
+    expect(workflow).toContain('supabase/functions/life-os-runtime-prototype-v3/**');
   });
 
   it('passes only the repository secret to the existing executor', () => {
