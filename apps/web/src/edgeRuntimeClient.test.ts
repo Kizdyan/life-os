@@ -57,7 +57,7 @@ describe('direct Supabase Edge runtime client', () => {
     ]);
   });
 
-  it('binds the default browser fetch so WebKit does not reject an unbound Window.fetch', async () => {
+  it('calls the default browser fetch through its Window receiver for WebKit', async () => {
     const storage = new MemoryStorage();
     const originalFetch = globalThis.fetch;
     let thisValue: unknown;
