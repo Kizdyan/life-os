@@ -97,6 +97,7 @@ jobs:
           grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers-normalized
           grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers-normalized
 
+  # Rerun authenticated HTTP E2E after repository-secret provisioning.
   prototype-v3-authenticated-e2e:
     if: github.ref_name == 'prototype/persona-quality-loop-v0'
     runs-on: ubuntu-latest
