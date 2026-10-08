@@ -6,6 +6,19 @@ const config = (values: Record<string, string>) =>
   (key: string) => values[key];
 
 describe('Persona V3 AI cost guard and provider resilience (offline fixtures only)', () => {
+  it('defaults to ZERO paid calls on the existing configuration', async () => {
+    const policy = budgetPolicy(config({}), 6000);
+    expect(policy.callsPerDay).toBe(0);
+    expect(policy.mode).toBe('ECONOMY');
+    let reserved = 0;
+    const result = await reserveBudget(policy, async () => {
+      reserved++;
+      return { allowed: true, mode: 'AI' };
+    });
+    expect(result.allowed).toBe(false);
+    expect(reserved).toBe(0);
+  });
+
   it('blocks zero-credits mode before any paid call', async () => {
     const policy = budgetPolicy(config({ PERSONA_V3_AI_CALLS_PER_DAY: '0' }), 5000);
     const reserve = async () => { throw new Error('must not contact quota backend'); };
@@ -33,7 +46,7 @@ describe('Persona V3 AI cost guard and provider resilience (offline fixtures onl
   });
 
   it('fails closed if the cost ledger is down', async () => {
-    const policy = budgetPolicy(config({}), 1000);
+    const policy = budgetPolicy(config({ PERSONA_V3_AI_CALLS_PER_DAY: '1' }), 1000);
     const result = await reserveBudget(policy, async () => { throw new Error('DB unavailable'); });
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe('budget_store_unavailable');
