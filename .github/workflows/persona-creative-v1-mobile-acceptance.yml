@@ -32,6 +32,7 @@ jobs:
       - name: Build isolated prototype frontend with exact HEAD
         env:
           VITE_LIFE_OS_REMOTE_ENABLED: "true"
+          VITE_PERSONA_CREATIVE_QA_NAMESPACE: "CI_V1"
           VITE_LIFE_OS_EDGE_RUNTIME_URL: "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-creative-v1"
           LIFE_OS_BUILD_SHA: ${{ github.sha }}
         run: npm run web:build
