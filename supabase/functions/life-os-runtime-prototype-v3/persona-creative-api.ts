@@ -50,7 +50,7 @@ async function ensureShortlist():Promise<CreativeItem[]> {
       judge:"APPROVE: 83/100; источники описывают формат, не живой тренд"
     };
     return {id,projectId:CREATIVE_PROJECT,contentItemId:"content:"+id,
-      currentVersion:1,revisions:[revision],pending:null,session:null,
+      currentVersion:1,revisions:[revision],pending:null,session:null,pastSessions:[],
       status:"IDEA_APPROVED" as const,index};
   }));
   await mutateServerBrain(snapshot=>{
@@ -138,6 +138,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
       item.currentVersion=newRevision.version;
       item.pending=null;
       // Prior session/assets remain in immutable prior lineage; cannot inherit approval.
+      if(item.session)item.pastSessions=[...(item.pastSessions||[]),item.session].slice(-20);
       item.session=null;
       item.status="IDEA_APPROVED";
       signed=newRevision;
