@@ -3,6 +3,7 @@ import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality
 import { buildDeterministicShootingBrief, isActionableApproval, pickApprovedBrain, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
 import { budgetPolicy, reserveBudget } from "./persona-cost.ts";
 import { runProviderRouter } from "./persona-provider.ts";
+import { signFreeEditorialStarter } from "./persona-free-editorial.ts";
 import { persistApprovedEntry, persistShootingBrief, readServerBrain, readServerBudget, reserveServerAiCall } from "./persona-store.ts";
 
 const AUTH_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v2";
@@ -129,6 +130,39 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
         origin: "server_signed_approval",
       },
     };
+  }
+
+  // Authenticated FREE_ONLY bootstrap is only allowed for a genuinely empty durable
+  // Shared Brain. This is a fixed, editorially checked platform-format example,
+  // NOT AI research or a claim of a current trend. It expires without renewal.
+  // Existing stale/unverified entries are never silently promoted or replaced.
+  if (combined.length === 0 && payload.allowPaidAi !== true) {
+    try {
+      const starter = await signFreeEditorialStarter(signingSecret, payload.history);
+      if (starter) {
+        await persistApprovedEntry(starter, {
+          review: "editorial_free_only",
+          provenance: "HUMAN_EDITORIAL_CURATED_2026-10-08",
+          paidAiCalls: 0,
+        });
+        return {
+          ready: true, recommendation: starter.idea, alternatives: [],
+          approvalProof: starter.approvalProof,
+          approvedAt: starter.approvedAt,
+          evidenceCheckedAt: starter.evidenceCheckedAt,
+          degraded: false,
+          analysisSummary: "Бесплатная редакционно проверенная идея. Источники подтверждают формат, но не свежий тренд или прогноз охватов.",
+          intelligence: {
+            mode: "CACHED", costMode: "FREE_ONLY", freshness: "cached",
+            providerRequired: false, origin: "server_signed_editorial_free_only",
+          },
+        };
+      }
+    } catch (error) {
+      console.warn("persona free editorial bootstrap unavailable",
+        error instanceof Error ? error.message : "unknown");
+      // Durable storage failure must never create actionable browser-only approval.
+    }
   }
 
   // Require BOTH operator permission and a fresh affirmative caller request.
