@@ -28,7 +28,8 @@ export type CreativeSession = {
 export type CreativeItem = {
   id: string; projectId: string; contentItemId: string; currentVersion: number;
   revisions: CreativeRevision[]; pending: CreativeProposal | null;
-  session: CreativeSession | null; status: "IDEA_APPROVED" | "EDIT_REVIEW" | "SHOOTING" | "MEDIA_RECEIVED";
+  session: CreativeSession | null; pastSessions: CreativeSession[];
+  status: "IDEA_APPROVED" | "EDIT_REVIEW" | "SHOOTING" | "MEDIA_RECEIVED";
 };
 export const CREATIVE_PROJECT = "persona:owner:project:v1";
 export const CREATIVE_ITEM_PREFIX = "persona:creative:";
