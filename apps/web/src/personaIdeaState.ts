@@ -13,6 +13,38 @@ export function attachShootingBrief(ideas:PersonaIdea[],ideaId:string,brief:Pers
 export function completePersonaShooting(ideas:PersonaIdea[],ideaId:string,result:{completedAt:string;shotIds:string[]}):PersonaIdea[]{return ideas.map(idea=>idea.id===ideaId?{...idea,shootingResult:{status:'completed',completedAt:result.completedAt,shotIds:[...result.shotIds]}}:idea)}
 export function setPersonaIdeaStatus(ideas:PersonaIdea[],ideaId:string,status:PersonaIdeaStatus):PersonaIdea[]{return ideas.map(idea=>idea.id===ideaId?{...idea,status}:idea)}
 export function personaIdeaHistory(ideas:PersonaIdea[]):Array<{title:string;status:'later'|'rejected'|'used'}>{return ideas.flatMap(idea=>idea.status==='later'||idea.status==='rejected'||idea.status==='used'?[{title:idea.title,status:idea.status}]:[])}
-export function mergePersonaIdeas(planned:PersonaIdea[],persisted:PersonaIdea[]):PersonaIdea[]{const byId=new Map(persisted.map(x=>[x.id,x])),byTitle=new Map(persisted.map(x=>[x.title.toLowerCase(),x]));return planned.map(next=>{const previous=byId.get(next.id)??byTitle.get(next.title.toLowerCase());if(!previous)return next;return{...next,...(previous.status?{status:previous.status}:{}),...(previous.shootingBrief?{shootingBrief:previous.shootingBrief,shootingBriefUpdatedAt:previous.shootingBriefUpdatedAt}:{}),...(previous.shootingResult?{shootingResult:previous.shootingResult}:{})}})}
+function normalizedPersonaTitle(title: string): string {
+  return title.trim().toLocaleLowerCase('ru-RU');
+}
+function sameShootingContract(previous: PersonaIdea, next: PersonaIdea): boolean {
+  return normalizedPersonaTitle(previous.title) === normalizedPersonaTitle(next.title) &&
+    previous.format === next.format &&
+    previous.angle === next.angle &&
+    previous.hook === next.hook &&
+    previous.script === next.script &&
+    previous.soloPlan === next.soloPlan &&
+    previous.estimatedDurationSeconds === next.estimatedDurationSeconds;
+}
+export function mergePersonaIdeas(planned: PersonaIdea[], persisted: PersonaIdea[]): PersonaIdea[] {
+  const byId = new Map(persisted.map((idea) => [idea.id, idea]));
+  const byTitle = new Map(persisted.map((idea) => [normalizedPersonaTitle(idea.title), idea]));
+  return planned.map((next) => {
+    const sameId = byId.get(next.id);
+    // AI candidate IDs can be reused for completely different themes across runs.
+    const previous = sameId && normalizedPersonaTitle(sameId.title) === normalizedPersonaTitle(next.title)
+      ? sameId
+      : byTitle.get(normalizedPersonaTitle(next.title));
+    if (!previous) return next;
+    const compatibleBrief = sameShootingContract(previous, next);
+    return {
+      ...next,
+      ...(previous.status ? { status: previous.status } : {}),
+      ...(compatibleBrief && previous.shootingBrief
+        ? { shootingBrief: previous.shootingBrief, shootingBriefUpdatedAt: previous.shootingBriefUpdatedAt }
+        : {}),
+      ...(compatibleBrief && previous.shootingResult ? { shootingResult: previous.shootingResult } : {}),
+    };
+  });
+}
 export function readPersonaIdeas(storage:StorageLike,key=PERSONA_IDEAS_STORAGE):PersonaIdea[]{try{const parsed=JSON.parse(storage.getItem(key)||'[]');return Array.isArray(parsed)?parsed:[]}catch{return[]}}
 export function writePersonaIdeas(storage:StorageLike,ideas:PersonaIdea[],key=PERSONA_IDEAS_STORAGE):void{storage.setItem(key,JSON.stringify(ideas))}
