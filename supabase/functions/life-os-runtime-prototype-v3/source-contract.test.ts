@@ -9,6 +9,12 @@ describe('prototype v3 provider and secret isolation', () => {
     expect(source).toContain('Deno.env.get("PERSONA_PROTOTYPE_OPENAI_API_KEY")');
     expect(source).not.toMatch(/Deno\.env\.get\(["']OPENAI_API_KEY["']\)/);
   });
+  it('cannot spend AI credits automatically: both explicit caller permission and operator enablement are required', () => {
+    expect(source).toContain('payload.allowPaidAi !== true');
+    expect(source).toContain('Deno.env.get("PERSONA_V3_PAID_AI_ENABLED") !== "true"');
+    expect(source).toContain('return safeRecommendation("paid_ai_explicitly_disabled")');
+  });
+
   it('uses atomic budget reservations, provider cooldown and no raw error-body logs', () => {
     expect(source).toContain('reserveBudget(policy, reserveServerAiCall)');
     expect(source).toContain('quotaCooldownUntil');
