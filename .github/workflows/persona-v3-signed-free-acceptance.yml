@@ -13,12 +13,15 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Verify exact code base
         run: |
-          test "$(git rev-parse HEAD^)" = '7c26f178298999e7f11491378114c2f78a5fef56'
+          git merge-base --is-ancestor '7c26f178298999e7f11491378114c2f78a5fef56' HEAD
+          test "$(git diff --name-only '7c26f178298999e7f11491378114c2f78a5fef56' HEAD)" = '.github/workflows/persona-v3-signed-free-acceptance.yml'
       - name: Live HTTP signed FREE_ONLY acceptance and cleanup
         env:
           PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
