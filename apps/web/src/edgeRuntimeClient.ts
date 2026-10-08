@@ -117,5 +117,9 @@ export class EdgeRuntimeClient {
 export async function personaEdgeRequest(payload: Record<string, unknown>): Promise<any> {
   const endpoint = (import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '').trim();
   if (!endpoint) throw new Error('Persona Edge runtime URL is required');
-  return new EdgeRuntimeClient(endpoint, localStorage).persona(payload);
+  const ciNamespace = (import.meta.env.VITE_PERSONA_CREATIVE_QA_NAMESPACE ?? '').trim();
+  const request = ciNamespace === 'CI_V1' && typeof payload.action === 'string' &&
+    payload.action.startsWith('creative_')
+    ? { ...payload, qaNamespace: 'CI_V1' } : payload;
+  return new EdgeRuntimeClient(endpoint, localStorage).persona(request);
 }
