@@ -1,22 +1,28 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+const entry = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+const gates = readFileSync(new URL('./quality-gates.ts', import.meta.url), 'utf8');
 
-describe("prototype v3 fail-closed quality contract", () => {
-  it("requires market evidence and a quality score of at least 80", () => {
-    expect(source).toContain("score < 80");
-    expect(source).toContain("evidence.length === 0");
-    expect(source).toContain("deterministic_quality_gate_failed");
+describe('prototype v3 server-side quality-gate wiring', () => {
+  it('requires a server-approved candidate rather than trusting the Judge response', () => {
+    expect(entry).toContain('import { approvePersonaCandidate, validatePersonaShootingBrief }');
+    expect(entry).toContain('approvePersonaCandidate((judged as any).recommendation)');
+    expect(entry).toContain('if (!evaluated.approved || !evaluated.candidate)');
+    expect(entry).toContain('degraded: true');
   });
 
-  it("limits shoot time and final video duration", () => {
-    expect(source).toContain("shoot < 5 || shoot > 15");
-    expect(source).toContain("duration < 15 || duration > 30");
+  it('enforces score, evidence confidence, production time and duration in a tested module', () => {
+    expect(gates).toContain("bounded(verdict.score, 80, 100)");
+    expect(gates).toContain("bounded(candidate.estimatedMinutes, 5, 15)");
+    expect(gates).toContain("bounded(candidate.estimatedDurationSeconds, 15, 30)");
+    expect(gates).toContain('evidenceConfidenceCap(evidence.length)');
+    expect(entry).toContain('approvePersonaCandidate(idea)');
   });
 
-  it("requires a complete shooting brief", () => {
-    expect(source).toContain("validateBrief(brief)");
-    expect(source).toContain("invalid_shooting_brief:");
+  it('refuses invalid shooting briefs and does not emit partial instructions', () => {
+    expect(entry).toContain('validatePersonaShootingBrief(brief)');
+    expect(entry).toContain('invalid_shooting_brief:');
+    expect(entry).toContain('shooting_brief_quality_failed');
   });
 });
