@@ -126,6 +126,8 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
     };
   }
 
+  if (payload.allowPaidAi === false) return safeRecommendation("paid_disabled_by_caller");
+
   const policy = budgetPolicy((key) => Deno.env.get(key),
     JSON.stringify(payload.context ?? {}).length + 3000, true);
   if (policy.mode === "ECONOMY") return safeRecommendation("budget_disabled_or_exhausted");
