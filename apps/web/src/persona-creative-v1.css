@@ -5,6 +5,7 @@
 .creativeHead p{font-size:14px;line-height:1.48;color:#555;margin:0}
 .creativeShortlist{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 .creativeIdea,.creativeEditor,.creativeCapture{background:#fff;border:1px solid #ece9e4;padding:16px;border-radius:19px;display:grid;gap:10px;box-shadow:0 5px 15px #00000009}
+.creativeV1 article.creativeIdea{display:grid!important;grid-template-columns:minmax(0,1fr)!important;align-items:stretch!important;max-width:100%;overflow:hidden}.creativeV1 article.creativeIdea>*{min-width:0;max-width:100%}
 .creativeIdea.selected{border:2px solid #3c5140}
 .creativeIdea h3,.creativeEditor h3,.creativeCapture h3{font-size:20px;line-height:1.2;margin:0}
 .creativeIdea p,.creativeEditor p,.creativeCapture p{font-size:13px;line-height:1.5;margin:0;color:#555}
