@@ -344,7 +344,26 @@ export default function PersonaFactory() {
           </div>
         </div>
       ) : (
-        <div className="status">Нет новой подтверждённой идеи. AI-лимит не останавливает историю и сохранённые данные; непроверенные темы не становятся доступными для съёмки.</div>
+        <>
+          <div className="status">
+            Нет новой подтверждённой идеи. Можно просматривать резервные темы и историю,
+            но непроверенный материал нельзя отправить в съёмку.
+          </div>
+          {localIdeas(history).length > 0 && (
+            <div className="ideaBank" aria-label="Резервный банк идей без права съёмки">
+              <div className="bankTop"><b>Резервные темы — не утверждены</b></div>
+              {localIdeas(history).slice(0, 3).map((draft) => (
+                <div className="ideaRow" key={draft.id}>
+                  <div className="ideaSelect" style={{ gridColumn: '1 / -1' }}>
+                    <small>НЕ ПРОВЕРЕНО · БЕЗ КНОПКИ «БЕРЁМ»</small>
+                    <strong>{draft.title}</strong>
+                    <span>{draft.angle}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {visible.length > 1 && showBank && visible.slice(1, 2).map((idea) => (
