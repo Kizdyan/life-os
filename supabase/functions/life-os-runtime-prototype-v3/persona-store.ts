@@ -1,5 +1,6 @@
 import type { AiBudgetPolicy, BudgetStoreResult } from "./persona-cost.ts";
 import type { SealedApproval } from "./persona-brain.ts";
+import type { CreativeItem } from "./persona-creative-core.ts";
 
 // Only the authenticated prototype Edge Function calls this service-role adapter.
 // No browser is given a service-role key or permitted to read these tables.
@@ -51,6 +52,7 @@ export type BrainSnapshot = {
   marketEvidence: CachedArtifact<unknown>[];
   criticJudge: CachedArtifact<unknown>[];
   shootingBriefs: Array<{ ideaId: string; brief: Record<string, unknown>; savedAt: string }>;
+  creativeItems: CreativeItem[];
   updatedAt: string;
 };
 
@@ -65,7 +67,7 @@ function credentials() {
 }
 function emptySnapshot(): BrainSnapshot {
   return { schema: 1, entries: [], trends: [], marketEvidence: [],
-    criticJudge: [], shootingBriefs: [], updatedAt: new Date(0).toISOString() };
+    criticJudge: [], shootingBriefs: [], creativeItems: [], updatedAt: new Date(0).toISOString() };
 }
 
 export function parseBrainSnapshot(value: unknown, rowUpdatedAt?: string): BrainSnapshot {
@@ -83,6 +85,7 @@ export function parseBrainSnapshot(value: unknown, rowUpdatedAt?: string): Brain
     marketEvidence: normalizeArtifacts(snapshot.marketEvidence).slice(0, 40),
     criticJudge: normalizeArtifacts(snapshot.criticJudge).slice(0, 30),
     shootingBriefs: Array.isArray(snapshot.shootingBriefs) ? snapshot.shootingBriefs.slice(0, 30) : [],
+    creativeItems: Array.isArray(snapshot.creativeItems) ? snapshot.creativeItems.slice(0, 3) : [],
   };
 }
 
