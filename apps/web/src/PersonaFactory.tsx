@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import PersonaShooting from './PersonaShooting';
+import PersonaCreativeLoop from './PersonaCreativeLoop';
 import {
   attachShootingBrief,
   completePersonaShooting,
@@ -303,6 +304,7 @@ export default function PersonaFactory() {
   const top = visible[0];
   return (
     <section className="personaFactoryV2">
+      <PersonaCreativeLoop />
       <header className="pfHead">
         <div>
           <small>PERSONA · SHOOT NOW</small>
