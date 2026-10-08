@@ -22,7 +22,7 @@ export function artifactFreshness(savedAt: string, evidenceCheckedAt: string, no
     return "unverified";
   }
   if (evidence < now - EVIDENCE_TTL_MS) return "stale";
-  return saved >= now - FRESH_WINDOW_MS ? "fresh" : "cached";
+  return saved >= now - FRESH_WINDOW_MS && evidence >= now - FRESH_WINDOW_MS ? "fresh" : "cached";
 }
 
 export function normalizeArtifacts<T>(items: unknown, now = Date.now()): CachedArtifact<T>[] {
@@ -68,65 +68,97 @@ function emptySnapshot(): BrainSnapshot {
     criticJudge: [], shootingBriefs: [], updatedAt: new Date(0).toISOString() };
 }
 
+export function parseBrainSnapshot(value: unknown, rowUpdatedAt?: string): BrainSnapshot {
+  if (value === null || value === undefined) return emptySnapshot();
+  if (!value || typeof value !== "object" || (value as { schema?: unknown }).schema !== 1) {
+    throw new Error("prototype_cache_schema_unsupported");
+  }
+  const snapshot = value as Partial<BrainSnapshot>;
+  if (!Array.isArray(snapshot.entries)) throw new Error("prototype_cache_schema_unsupported");
+  return {
+    ...emptySnapshot(), ...snapshot, schema: 1,
+    updatedAt: rowUpdatedAt ?? (typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : ""),
+    entries: snapshot.entries.slice(0, 30),
+    trends: normalizeArtifacts<string>(snapshot.trends).slice(0, 30),
+    marketEvidence: normalizeArtifacts(snapshot.marketEvidence).slice(0, 40),
+    criticJudge: normalizeArtifacts(snapshot.criticJudge).slice(0, 30),
+    shootingBriefs: Array.isArray(snapshot.shootingBriefs) ? snapshot.shootingBriefs.slice(0, 30) : [],
+  };
+}
+
 export async function readServerBrain(): Promise<BrainSnapshot> {
   const { origin, headers } = credentials();
   const url = origin + "/rest/v1/persona_v3_brain?cache_key=eq." +
-    encodeURIComponent(BRAIN_KEY) + "&select=payload";
+    encodeURIComponent(BRAIN_KEY) + "&select=payload,updated_at";
   const response = await fetch(url, {
     headers, signal: AbortSignal.timeout(4_000),
   });
   if (!response.ok) throw new Error("prototype_cache_read:" + response.status);
-  const rows = await response.json() as Array<{ payload: BrainSnapshot }>;
-  const value = rows[0]?.payload;
-  if (!value || value.schema !== 1 || !Array.isArray(value.entries)) return emptySnapshot();
-  return {
-    ...emptySnapshot(), ...value,
-    entries: value.entries.slice(0, 30),
-    trends: normalizeArtifacts<string>(value.trends).slice(0, 30),
-    marketEvidence: normalizeArtifacts(value.marketEvidence).slice(0, 40),
-    criticJudge: normalizeArtifacts(value.criticJudge).slice(0, 30),
-    shootingBriefs: Array.isArray(value.shootingBriefs) ? value.shootingBriefs.slice(0, 30) : [],
-  };
+  const rows = await response.json() as Array<{ payload: unknown; updated_at?: string }>;
+  if (!rows.length) return emptySnapshot();
+  return parseBrainSnapshot(rows[0].payload, rows[0].updated_at);
 }
 
 export async function saveServerBrain(snapshot: BrainSnapshot): Promise<boolean> {
   const { origin, headers } = credentials();
-  const response = await fetch(origin + "/rest/v1/persona_v3_brain?on_conflict=cache_key", {
-    method: "POST",
-    headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+  const creating = snapshot.updatedAt === new Date(0).toISOString();
+  const nextUpdatedAt = new Date().toISOString();
+  const payload = { ...snapshot, schema: 1 as const, updatedAt: nextUpdatedAt };
+  const filter = creating ? "?on_conflict=cache_key" : "?cache_key=eq." + encodeURIComponent(BRAIN_KEY) +
+    "&updated_at=eq." + encodeURIComponent(snapshot.updatedAt);
+  const response = await fetch(origin + "/rest/v1/persona_v3_brain" + filter, {
+    method: creating ? "POST" : "PATCH",
+    headers: { ...headers, Prefer: creating
+      ? "resolution=ignore-duplicates,return=representation" : "return=representation" },
     signal: AbortSignal.timeout(4_000),
-    body: JSON.stringify({
-      cache_key: BRAIN_KEY,
-      updated_at: new Date().toISOString(),
-      payload: { ...snapshot, schema: 1, updatedAt: new Date().toISOString() },
-    }),
+    body: JSON.stringify({ cache_key: BRAIN_KEY, updated_at: nextUpdatedAt, payload }),
   });
   if (!response.ok) throw new Error("prototype_cache_write:" + response.status);
+  const rows = await response.json() as Array<{ payload?: unknown; updated_at?: string }>;
+  if (rows.length !== 1) throw new Error("prototype_cache_conflict");
+  Object.assign(snapshot, parseBrainSnapshot(rows[0].payload ?? payload, rows[0].updated_at ?? nextUpdatedAt));
   return true;
 }
 
+export async function mutateServerBrain(
+  mutate: (snapshot: BrainSnapshot) => BrainSnapshot,
+  read: () => Promise<BrainSnapshot> = readServerBrain,
+  save: (snapshot: BrainSnapshot) => Promise<unknown> = saveServerBrain,
+): Promise<BrainSnapshot> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const snapshot = mutate(await read());
+    try { await save(snapshot); return snapshot; }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== "prototype_cache_conflict" || attempt === 2) throw error;
+    }
+  }
+  throw new Error("prototype_cache_conflict");
+}
+
 export async function persistApprovedEntry(entry: SealedApproval, criticJudge: unknown = null): Promise<void> {
-  // Never overwrite durable cache with an empty snapshot after a transient read failure.
-  const snapshot = await readServerBrain();
-  snapshot.entries = [entry, ...snapshot.entries.filter(x => x.idea.id !== entry.idea.id)].slice(0, 30);
-  snapshot.marketEvidence = snapshot.entries.flatMap(x =>
-    Array.isArray(x.idea.marketEvidence) ? x.idea.marketEvidence.map(value =>
-      cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 40);
-  snapshot.trends = snapshot.entries.flatMap(x =>
-    Array.isArray(x.idea.whyNow) ? x.idea.whyNow.filter((y): y is string => typeof y === "string")
-      .map(value => cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 30);
-  snapshot.criticJudge = [cachedArtifact(criticJudge ?? entry.idea.qualityVerdict,
-    entry.approvedAt, entry.evidenceCheckedAt), ...snapshot.criticJudge].slice(0, 30);
-  await saveServerBrain(snapshot);
+  // CAS retry preserves concurrent approvals and shooting briefs.
+  await mutateServerBrain((snapshot) => {
+    snapshot.entries = [entry, ...snapshot.entries.filter(x => x.idea.id !== entry.idea.id)].slice(0, 30);
+    snapshot.marketEvidence = snapshot.entries.flatMap(x =>
+      Array.isArray(x.idea.marketEvidence) ? x.idea.marketEvidence.map(value =>
+        cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 40);
+    snapshot.trends = snapshot.entries.flatMap(x =>
+      Array.isArray(x.idea.whyNow) ? x.idea.whyNow.filter((y): y is string => typeof y === "string")
+        .map(value => cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 30);
+    snapshot.criticJudge = [cachedArtifact(criticJudge ?? entry.idea.qualityVerdict,
+      entry.approvedAt, entry.evidenceCheckedAt), ...snapshot.criticJudge].slice(0, 30);
+    return snapshot;
+  });
 }
 
 export async function persistShootingBrief(ideaId: string, brief: Record<string, unknown>): Promise<void> {
-  const snapshot = await readServerBrain();
-  snapshot.shootingBriefs = [
-    { ideaId, brief, savedAt: new Date().toISOString() },
-    ...snapshot.shootingBriefs.filter(x => x.ideaId !== ideaId),
-  ].slice(0, 30);
-  await saveServerBrain(snapshot);
+  await mutateServerBrain((snapshot) => {
+    snapshot.shootingBriefs = [
+      { ideaId, brief, savedAt: new Date().toISOString() },
+      ...snapshot.shootingBriefs.filter(x => x.ideaId !== ideaId),
+    ].slice(0, 30);
+    return snapshot;
+  });
 }
 
 export async function reserveServerAiCall(

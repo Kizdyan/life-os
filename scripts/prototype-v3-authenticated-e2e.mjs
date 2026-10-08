@@ -50,7 +50,8 @@ try {
     assert(shot.status===200 && shot.data.brief?.shots?.length>0,'free approved shooting failed HTTP '+shot.status);
     console.log('PASS cached APPROVED idea -> deterministic shooting without paid AI');
   } else {
-    assert(safe.data.degraded===true && safe.data.intelligence?.mode==='ECONOMY',
+    assert(safe.data.degraded===true && safe.data.intelligence?.mode==='ECONOMY' &&
+      safe.data.intelligence?.costMode==='FREE_ONLY',
       'unverified idea must not be actionable');
     console.log('PASS unactionable ECONOMY recommendation without paid AI');
   }
@@ -70,7 +71,7 @@ try {
     console.log('NOT_READY_FOR_PHYSICAL_ACCEPTANCE');
     process.exit(0);
   }
-  const recommendation=await post({op:'persona',token,payload:{action:'recommend',context:{profession:['actor','musician'],availableMinutes:15,solo:true},history:[],priorIdeas:[]}});
+  const recommendation=await post({op:'persona',token,payload:{action:'recommend',allowPaidAi:true,context:{profession:['actor','musician'],availableMinutes:15,solo:true},history:[],priorIdeas:[]}});
   assert(recommendation.status===200,'recommend failed HTTP '+recommendation.status+' '+String(recommendation.data.error||''));
   const rec=recommendation.data.recommendation;
   assert(rec && recommendation.data.degraded===false,'non-actionable/degraded recommendation');

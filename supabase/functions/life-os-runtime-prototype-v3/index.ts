@@ -75,7 +75,7 @@ async function authenticated(token: string): Promise<boolean> {
 
 const APPROVAL_SIGNING_SECRET = () => (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
-function safeRecommendation(reason: string, mode: string = "FREE_ONLY"): Record<string, unknown> {
+function safeRecommendation(reason: string, mode: string = "ECONOMY"): Record<string, unknown> {
   return {
     ready: false, recommendation: null, alternatives: [], degraded: true,
     analysisSummary: "Новые идеи не подтверждены. История, банк идей и съёмка утверждённого материала доступны без AI.",

@@ -36,6 +36,7 @@ describe('prototype v3 authenticated E2E workflow', () => {
     expect(workflow).toContain("github.event.inputs.paid_persona_smoke == 'true'");
     expect(workflow).toContain("github.ref_name == 'prototype/persona-quality-loop-v0'");
     expect(workflow).toContain('PROTOTYPE_PAID_E2E: "1"');
+    expect(executor).toContain("action:'recommend',allowPaidAi:true");
   });
 
 });
