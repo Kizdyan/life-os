@@ -10,7 +10,7 @@ import {
   type PersonaIdeaFormat,
 } from './personaIdeaState';
 import { readLocalToday } from './localRuntime';
-import { normalizePersonaRecommendationPayload } from './persona-opportunity';
+import { normalizePersonaRecommendationPayload, selectActionablePersonaIdeas } from './persona-opportunity';
 import './persona-factory-v2.css';
 import { personaEdgeRequest } from './edgeRuntimeClient';
 import { getRuntimeSessionStatus, loginRuntimeSession, type RuntimeSessionStatus } from './runtimeSession';
@@ -91,6 +91,7 @@ export default function PersonaFactory() {
   const [history, setHistory] = useState<{ title: string; status: string }[]>(() => read(HISTORY, []));
   const [ideas, setIdeas] = useState<Idea[]>(() => mergePersonaIdeas(localIdeas(history), readPersonaIdeas(localStorage)));
   const [chosenId, setChosenId] = useState<string | null>(null);
+  const [approvedRun, setApprovedRun] = useState<{ historyKey: string; ideas: Idea[] } | null>(null);
   const [showBank, setShowBank] = useState(false);
   const [analysisState, setAnalysisState] = useState<'loading' | 'ready' | 'degraded'>('loading');
   const [analysisSummary, setAnalysisSummary] = useState('');
@@ -118,6 +119,9 @@ export default function PersonaFactory() {
   useEffect(() => writePersonaIdeas(localStorage, ideas), [ideas]);
 
   useEffect(() => {
+    setApprovedRun(null);
+    setChosenId(null);
+    setShowBank(false);
     if (!authStatus?.authenticated) return;
     let cancelled = false;
     setAnalysisState('loading');
@@ -135,12 +139,16 @@ export default function PersonaFactory() {
         const normalized = normalizePersonaRecommendationPayload(data);
         if (!normalized.recommendation) throw new Error('quality_bar_not_met');
         const planned = [normalized.recommendation, ...normalized.alternatives];
+        setApprovedRun({ historyKey: JSON.stringify(history), ideas: planned });
         setIdeas((current) => mergePersonaIdeas(planned, current));
         setAnalysisSummary(normalized.analysisSummary || 'Рекомендация прошла внутреннюю критику.');
         setAnalysisState('ready');
       })
       .catch(() => {
         if (cancelled) return;
+        setApprovedRun(null);
+        setChosenId(null);
+        setShowBank(false);
         setIdeas((current) => mergePersonaIdeas(localIdeas(history), current));
         setAnalysisSummary('Свежую рыночную аналитику сейчас получить не удалось. Показываю резерв без ложной уверенности.');
         setAnalysisState('degraded');
@@ -151,9 +159,17 @@ export default function PersonaFactory() {
     };
   }, [history, authStatus?.authenticated]);
 
-  const deferred = useMemo(() => new Set(history.map((item) => item.title.toLowerCase())), [history]);
-  const visible = ideas.filter((item) => !deferred.has(item.title.toLowerCase()));
-  const chosen = chosenId ? ideas.find((item) => item.id === chosenId) ?? null : null;
+  // Persisted/fallback ideas are useful history, not an authorization to shoot.
+  // The history fingerprint prevents one frame of stale actions before a new effect runs.
+  const historyKey = JSON.stringify(history);
+  const visible = analysisState === 'ready' && authStatus?.authenticated &&
+    approvedRun?.historyKey === historyKey
+    ? selectActionablePersonaIdeas(approvedRun.ideas, history)
+    : [];
+  const chosenApproval = chosenId ? visible.find((item) => item.id === chosenId) : null;
+  const chosen = chosenApproval
+    ? ideas.find((item) => item.id === chosenApproval.id && item.title === chosenApproval.title) ?? chosenApproval
+    : null;
 
   function remember(idea: Idea, status: string) {
     setHistory((current) => [...current.filter((item) => item.title !== idea.title), { title: idea.title, status }]);
@@ -247,7 +263,7 @@ export default function PersonaFactory() {
     );
   }
 
-  const top = analysisState === 'ready' ? visible[0] : undefined;
+  const top = visible[0];
   return (
     <section className="personaFactoryV2">
       <header className="pfHead">
