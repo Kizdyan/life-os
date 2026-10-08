@@ -10,6 +10,9 @@ on:
       - "apps/web/src/persona-creative-v1.css"
       - "supabase/functions/life-os-runtime-prototype-v3/persona-creative-*.ts"
       - ".github/workflows/persona-creative-v1-mobile-acceptance.yml"
+concurrency:
+  group: persona-creative-v1-mobile-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
