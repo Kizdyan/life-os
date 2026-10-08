@@ -26,8 +26,8 @@ The old `recommend` called paid fresh web research, two critics and Judge on eac
 ## Provider-routing order
 1. Authenticated request, validate signed cached approval (server Shared Brain, then client mirror).
 2. **CACHED** with fresh (≤7 days) evidence → no AI; if old but signed approval ≤30 days → **STALE** continuation only, visibly distinct, never described as fresh market research.
-3. If no cache and `allowPaidAi:false` → return HTTP 200 **ECONOMY**, no actionable recommendation and zero provider requests.
-4. If budget allows, atomic reserve and single paid research/self-critique request using `PERSONA_V3_AI_PRIMARY_MODEL` (default `gpt-4.1-mini`).
+3. If no cache, return HTTP 200 **ECONOMY** unless operator has explicitly enabled paid AI, budget > 0, AND the caller sets `allowPaidAi:true`; no actionable recommendation and zero provider requests otherwise.
+4. Only after all opt-ins and budget checks pass, atomic reserve and single paid research/self-critique request using `PERSONA_V3_AI_PRIMARY_MODEL` (default `gpt-4.1-mini`).
 5. Timeout / suitable 4xx model mismatch / provider 5xx → budget-reserved cheaper model `PERSONA_V3_AI_CHEAP_MODEL` (default `gpt-4o-mini`). At most two attempts.
 6. HTTP 429/credit exhaustion → stop immediately, enter short worker-local cooldown and safe HTTP 200 economy response; no retries and no fake recommendation.
 7. Unknown provider/data/DB failure → fail closed: history remains available, unverified fallback is not actionable.
@@ -40,7 +40,7 @@ The old `recommend` called paid fresh web research, two critics and Judge on eac
 - Cached briefs are validated on read, and the deterministic generator validates its result before returning.
 
 ## Cost guard and tunables
-Default: **1 paid attempt/day**, approximate **USD $0.03/day** and **$0.30/month**. These values are reserves, not invoice totals. `PERSONA_V3_AI_CALLS_PER_DAY=0` disables paid AI entirely. Other tunables are `PERSONA_V3_AI_DAILY_USD`, `PERSONA_V3_AI_MONTHLY_USD`, `PERSONA_V3_INPUT_USD_PER_M`, `PERSONA_V3_OUTPUT_USD_PER_M`, and primary/cheap model names. The atomic DB RPC serializes concurrent budget reservations and tracks estimated input/output tokens plus reserved USD across Edge isolates and regions. Database outage → deny new paid calls, not unlimited fallback.
+Default: **ZERO paid AI calls/day** (`PERSONA_V3_AI_CALLS_PER_DAY=0`), with no recurring cost. USD $0.03/day and $0.30/month are the default *ceilings only if AI is explicitly enabled*, not invoices. Paid calls require *all three* conditions: operator sets `PERSONA_V3_PAID_AI_ENABLED=true`, configures a positive `PERSONA_V3_AI_CALLS_PER_DAY`, and a caller explicitly provides `allowPaidAi:true`. None is enabled by default. Other tunables are `PERSONA_V3_AI_DAILY_USD`, `PERSONA_V3_AI_MONTHLY_USD`, `PERSONA_V3_INPUT_USD_PER_M`, `PERSONA_V3_OUTPUT_USD_PER_M`, and primary/cheap model names. The atomic DB RPC serializes concurrent budget reservations and tracks estimated input/output tokens plus reserved USD across Edge isolates and regions. Database outage → deny new paid calls, not unlimited fallback.
 
 ## QA / Critic / regression gates
 - Pure tests: cached/stale and forged HMAC proofs; approval expiry; no AI deterministic brief; evidence caps; denied budget; zero credits; 429 no retry; timeout cheaper fallback; permission failure; budget store outage.
