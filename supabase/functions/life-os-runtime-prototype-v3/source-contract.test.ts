@@ -2,19 +2,20 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+const store = readFileSync(new URL('./persona-store.ts', import.meta.url), 'utf8');
 
-describe('prototype v3 OpenAI credential contract', () => {
-  it('keeps the deployed prototype source in the branch and reads only its dedicated secret', () => {
+describe('prototype v3 provider and secret isolation', () => {
+  it('reads only dedicated prototype AI credentials and never the production key', () => {
     expect(source).toContain('Deno.env.get("PERSONA_PROTOTYPE_OPENAI_API_KEY")');
     expect(source).not.toMatch(/Deno\.env\.get\(["']OPENAI_API_KEY["']\)/);
   });
-
-  it('records safe credential shape and structured OpenAI errors without logging secret material', () => {
-    expect(source).toContain('credentialShape');
-    expect(source).toContain('prefixFamily');
-    expect(source).toContain('trimmedChanged');
-    expect(source).toContain('errorCode');
+  it('uses atomic budget reservations, provider cooldown and no raw error-body logs', () => {
+    expect(source).toContain('reserveBudget(policy, reserveServerAiCall)');
+    expect(source).toContain('quotaCooldownUntil');
+    expect(source).toContain('AbortSignal.timeout(20_000)');
+    expect(source).not.toContain('console.error("openai response failed"');
     expect(source).not.toContain('response.text()');
-    expect(source).not.toContain('Authorization: `Bearer ${key}` },');
+    expect(store).toContain('/rest/v1/rpc/persona_v3_budget_reserve');
+    expect(store).toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 });
