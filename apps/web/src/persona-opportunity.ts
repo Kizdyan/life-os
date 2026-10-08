@@ -19,9 +19,9 @@ function hasWellFormedEvidence(item: PersonaMarketEvidence | null | undefined): 
     if (url.protocol !== 'https:' || url.username || url.password) return false;
     if (!host.includes('.') || host === 'example.com' || host.endsWith('.example') ||
         host.endsWith('.test') || host.endsWith('.invalid') || host.endsWith('.localhost') ||
-        host === 'localhost' || /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(host)) return false;
+        host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return false;
     const date = item.asOf.trim();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
     const parsed = new Date(date + 'T00:00:00Z');
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date &&
       parsed.getTime() <= Date.now() + 86_400_000;
