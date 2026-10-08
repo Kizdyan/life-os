@@ -179,9 +179,10 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
     return safeRecommendation("no_idea_clears_quality_bar", "DETERMINISTIC");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const reason = message.includes("429") ? "provider_quota" :
-      message.includes("budget") || message.includes("economy") ? "budget_exhausted" :
-      message.includes("abort") || message.includes("timeout") ? "provider_timeout" : "provider_unavailable";
+    const reason = message.includes("429") || message.includes("QUOTA") ? "provider_quota" :
+      message.includes("budget") || message.includes("economy") || message.includes("ECONOMY") ? "budget_exhausted" :
+      message.includes("TIMEOUT") || message.includes("abort") || message.includes("timeout") ? "provider_timeout" :
+      message.includes("PERMISSION") ? "provider_permission" : "provider_unavailable";
     console.warn("persona recommend in safe mode", reason);
     return safeRecommendation(reason, "ECONOMY");
   }
