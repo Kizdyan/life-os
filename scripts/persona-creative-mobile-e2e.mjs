@@ -9,7 +9,7 @@ assert(head?.length===40,"exact HEAD required");
 assert(passcode,"authenticated test secret unavailable");
 const body=async(token,payload)=>{
  const r=await fetch(edge,{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({op:"persona",token,payload}),signal:AbortSignal.timeout(30000)});
+  body:JSON.stringify({op:"persona",token,payload:{...payload,...(String(payload.action).startsWith("creative_")?{qaNamespace:"CI_V1"}:{})}}),signal:AbortSignal.timeout(30000)});
  return {status:r.status,data:await r.json().catch(()=>({}))};
 };
 const budget=async token=>body(token,{action:"budget_status"});
