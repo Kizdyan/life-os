@@ -4,6 +4,7 @@ import {
   ideaClearsQualityBar,
   marketEvidenceConfidenceCap,
   normalizePersonaRecommendationPayload,
+  selectActionablePersonaIdeas,
 } from './persona-opportunity';
 
 const strong = {
@@ -19,8 +20,8 @@ const strong = {
   estimatedDurationSeconds: 22,
   soloPlan: 'Один master + два B-roll.',
   marketEvidence: [
-    { source: 'source-a', finding: 'наблюдение A', url: 'https://example.com/a', asOf: '2026-10-07' },
-    { source: 'source-b', finding: 'наблюдение B', url: 'https://example.com/b', asOf: '2026-10-07' },
+    { source: 'source-a', finding: 'наблюдение A', url: 'https://www.youtube.com/watch?v=abcdefghi12', asOf: '2026-10-07' },
+    { source: 'source-b', finding: 'наблюдение B', url: 'https://www.instagram.com/reel/sample/', asOf: '2026-10-07' },
   ],
   qualityVerdict: { verdict: 'APPROVE' as const, score: 89, summary: 'Сильный личный угол', risks: [] },
 };
@@ -60,4 +61,33 @@ describe('Persona opportunity quality gate', () => {
     expect(result.alternatives).toHaveLength(1);
     expect(result.analysisSummary).toBe('court passed');
   });
+
+  it('rejects malformed, non-HTTPS, placeholder and future-dated market evidence', () => {
+    const item = strong.marketEvidence[0];
+    for (const bad of [
+      { ...item, url: 'not-a-url' },
+      { ...item, url: 'http://www.youtube.com/watch?v=abcdefghi12' },
+      { ...item, url: 'https://example.com/fake' },
+      { ...item, url: 'https://localhost/internal' },
+      { ...item, url: 'https://127.0.0.1/private' },
+      { ...item, asOf: 'tomorrow' },
+      { ...item, asOf: '2099-01-01' },
+    ]) {
+      expect(ideaClearsQualityBar({ ...strong, marketEvidence: [bad] })).toBe(false);
+    }
+  });
+
+  it('does not expose persisted or degraded fallback ideas as actions without a fresh approval', () => {
+    const fallback = { ...strong, id: 'local-0', title: 'Резерв', qualityVerdict: undefined, marketEvidence: [], confidence: 42 };
+    const oldSaved = { ...strong, id: 'saved-0', title: 'Старая утверждённая тема' };
+    expect(selectActionablePersonaIdeas([], [])).toEqual([]);
+    expect(selectActionablePersonaIdeas([fallback], [])).toEqual([]);
+    expect(selectActionablePersonaIdeas([strong], [{ title: strong.title, status: 'rejected' }])).toEqual([]);
+    expect(selectActionablePersonaIdeas([strong], [{ title: strong.title, status: 'later' }])).toEqual([]);
+    expect(selectActionablePersonaIdeas([strong], [{ title: strong.title, status: 'used' }])).toEqual([]);
+    expect(selectActionablePersonaIdeas([strong, fallback], []).map(item => item.id)).toEqual(['idea-1']);
+    // This is NOT the persisted list: passing only current-run approvals is mandatory.
+    expect(selectActionablePersonaIdeas([oldSaved], []).map(item => item.id)).toEqual(['saved-0']);
+  });
+
 });
