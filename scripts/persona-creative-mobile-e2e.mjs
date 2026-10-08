@@ -65,7 +65,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     version:targetVersion,approvalProof:"unsigned",conditions:""});
   assert(bad.status===409,"forged approval still actionable");
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
-  await page.getByRole("button",{name:/Берём v\\d+ — создать съёмку/}).click();
+  await page.getByRole("button",{name:/Берём v\d+ — создать съёмку/}).click();
   await page.locator(".creativeBrief").waitFor({timeout:30000});
   assert((await page.locator(".creativeBrief").innerText()).includes("окну"),"lighting was not adapted");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
