@@ -181,7 +181,7 @@ export default function PersonaCreativeLoop(){
         </select>
         <label className="creativePicker">Выбрать файлы с iPhone
          <input aria-label="Загрузить материал" type="file" accept="video/*,image/*,audio/*,.mov,.mp4,.m4a" multiple disabled={busy}
-          onChange={e=>{const list=Array.from(e.currentTarget.files||[]);e.currentTarget.value="";void upload(list);}}/>
+          onChange={e=>{const picker=e.currentTarget;const list=Array.from(picker.files||[]);void upload(list).finally(()=>{picker.value="";});}}/>
         </label>
         <small>Связка: проект → материал → утверждённая версия → сессия → asset.</small>
         <div className="creativeAssets">
