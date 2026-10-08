@@ -21,9 +21,9 @@ function numeric(env: Env, name: string, fallback: number, maximum: number): num
 export function budgetPolicy(
   env: Env, approximateInputChars: number, cheaper = false,
 ): AiBudgetPolicy {
-  // At most one automatic research request per day by default.
-  // This limit can be reduced to zero without redeploying the app.
-  const callsPerDay = Math.floor(numeric(env, "PERSONA_V3_AI_CALLS_PER_DAY", 1, 50));
+  // Zero paid AI calls by default. Positive limit requires explicit operator configuration.
+  // A separate explicit caller opt-in is enforced by the server route.
+  const callsPerDay = Math.floor(numeric(env, "PERSONA_V3_AI_CALLS_PER_DAY", 0, 50));
   const dailyUsd = numeric(env, "PERSONA_V3_AI_DAILY_USD", 0.03, 100);
   const monthlyUsd = numeric(env, "PERSONA_V3_AI_MONTHLY_USD", 0.30, 1000);
   const estInputTokens = Math.ceil(Math.min(Math.max(approximateInputChars, 0), 120_000) / 3.5);
