@@ -15,6 +15,7 @@ const body=async(token,payload)=>{
 const budget=async token=>body(token,{action:"budget_status"});
 for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
  const browser=await engine.launch();
+ const selectionIndex=name==="webkit"?2:1;
  try{
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
   const errors=[];
