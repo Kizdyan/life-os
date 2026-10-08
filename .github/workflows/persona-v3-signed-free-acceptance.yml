@@ -1,0 +1,138 @@
+name: persona-v3-signed-free-acceptance
+
+on:
+  push:
+    branches: [qa/persona-v3-signed-free-acceptance-20261009]
+
+permissions:
+  contents: read
+
+jobs:
+  signed-free-only-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify exact code base
+        run: |
+          test "$(git rev-parse HEAD^)" = '7c26f178298999e7f11491378114c2f78a5fef56'
+      - name: Live HTTP signed FREE_ONLY acceptance and cleanup
+        env:
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const endpoint='https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v3';
+          const seed='https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-persona-v3-qa-seed-20261009';
+          const frontend='https://life-os-persona-prototype.onrender.com';
+          const exactHead='7c26f178298999e7f11491378114c2f78a5fef56';
+          const fixtureId='QA_PERSONA_V3_SIGNED_FREE_20261009';
+          const passcode=process.env.PROTOTYPE_ACCESS_CODE;
+          assert(passcode,'PROTOTYPE_ACCESS_CODE missing (user must not QA)');
+          const post=async (url,body)=>{
+           const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
+           return {status:r.status,data:await r.json().catch(()=>({}))};
+          };
+          const asPersona=(token,action,more={})=>post(endpoint,{op:'persona',token,payload:{action,...more}});
+          let token=null,seeded=false,failures=[];
+          try{
+           let html='', matched=false;
+           for(let retry=0;retry<14;retry++){
+             const r=await fetch(frontend+'/?qa='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(20000)});
+             assert(r.ok,'Render prototype frontend unavailable HTTP '+r.status);
+             html=await r.text();
+             if(html.includes('life-os-build')&&html.includes(exactHead)){matched=true;break;}
+             await new Promise(resolve=>setTimeout(resolve,10000));
+           }
+           assert(matched,'FRONTEND_EXACT_HEAD_MISMATCH: expected 7c26f... (no false PASS)');
+           const asset=html.match(/src=["']([^"']*\/assets\/index-[^"']+\.js)["']/)?.[1];
+           assert(asset,'Render JS asset not found');
+           const js=await (await fetch(new URL(asset,frontend),{signal:AbortSignal.timeout(15000)})).text();
+           assert(js.includes('life-os-runtime-prototype-v3'),'frontend not targeting prototype v3');
+           console.log('PASS exact-head frontend + v3 bundle route');
+           const login=await post(endpoint,{op:'login',passcode});
+           assert(login.status===200&&login.data.authenticated===true&&typeof login.data.token==='string','login HTTP '+login.status);
+           token=login.data.token;
+           const status=await post(endpoint,{op:'status',token});
+           assert(status.status===200&&status.data.authenticated===true,'session/status failed '+status.status);
+           console.log('PASS real authenticated login / status');
+           const before=await asPersona(token,'budget_status');
+           assert(before.status===200&&before.data.source==='atomic_database_ledger','budget ledger unavailable');
+           const usageBefore=JSON.stringify(before.data.usage||[]);
+           const baseline=await asPersona(token,'recommend',{allowPaidAi:false,history:[{title:'QA ONLY — одна фраза, три актёрских характера',status:'rejected'}]});
+           assert(baseline.status===200&&baseline.data.ready===false&&baseline.data.degraded===true,'degraded fallback actionable');
+           console.log('PASS free-only unactionable degraded fallback');
+           const create=await post(seed,{action:'seed',token});
+           assert(create.status===200&&create.data.seeded===true&&create.data.fixtureId===fixtureId,'fixture seed HTTP '+create.status+' '+JSON.stringify(create.data));
+           seeded=true;
+           assert(create.data.freshness==='cached','server approval not fresh');
+           assert(Date.now()-Date.parse(create.data.evidenceCheckedAt)<7*86400000,'evidence TTL not fresh');
+           assert(create.data.paidAiCalls===0,'fixture unexpectedly billed AI');
+           console.log('PASS QA-only signed approval sealed by Supabase service-role HMAC');
+           const durable=await post(seed,{action:'state',token});
+           assert(durable.status===200&&durable.data.exists===true&&durable.data.verified===true&&durable.data.freshness==='cached','durable signed approval missing/invalid');
+           console.log('PASS durable Shared Brain persisted signed fresh approved fixture');
+           const recommend=await asPersona(token,'recommend',{allowPaidAi:false,history:[],priorIdeas:[],brain:{entries:[]}});
+           assert(recommend.status===200&&recommend.data.ready===true&&recommend.data.degraded===false,
+            'free-only live recommendation not actionable');
+           assert(recommend.data.recommendation?.id===fixtureId,'wrong recommended idea');
+           assert(recommend.data.intelligence?.costMode==='FREE_ONLY'&&recommend.data.intelligence?.mode==='CACHED'&&recommend.data.intelligence?.origin==='server_signed_approval','provenance/cost mismatch');
+           const proof=recommend.data.approvalProof;
+           assert(typeof proof==='string'&&proof.length>60,'missing server-signed proof');
+           console.log('PASS FREE_ONLY HTTP signed approval retrieved from server Shared Brain');
+           const shooting=await asPersona(token,'shooting',{idea:recommend.data.recommendation,approvalProof:proof});
+           assert(shooting.status===200,'live HTTP shooting '+shooting.status+' '+JSON.stringify(shooting.data));
+           const brief=shooting.data.brief;
+           assert(brief&&brief.title===recommend.data.recommendation.title,'brief title mismatch');
+           for(const k of ['title','orientation','resolution','audio','lighting','background']) assert(String(brief[k]||'').trim(),'brief field missing '+k);
+           assert(brief.orientation==='vertical'&&brief.resolution==='4k'&&[24,25,30,50,60].includes(Number(brief.fps)),'brief video settings invalid');
+           assert(Array.isArray(brief.references)&&Array.isArray(brief.shots)&&brief.shots.length>0,'brief references/shots missing');
+           let seconds=0;
+           for(const shot of brief.shots) {
+             for(const k of ['id','purpose','shotSize','angle','cameraPosition','cameraHeight','distance','composition','movement','action'])
+               assert(String(shot[k]||'').trim(),'shot field missing '+k);
+             assert(Number(shot.durationSeconds)>=2&&Number(shot.durationSeconds)<=30,'shot duration invalid');
+             assert(Number.isInteger(shot.takes)&&shot.takes>=1&&shot.takes<=20,'takes invalid');
+             seconds+=shot.durationSeconds;
+           }
+           assert(seconds>=15&&seconds<=30,'total brief duration outside 15-30s');
+           const persisted=await post(seed,{action:'state',token});
+           assert(persisted.status===200&&persisted.data.briefPersisted===true,'shooting brief not durable');
+           console.log('PASS real HTTP APPROVED -> shooting; schema/duration/shot details + persistence');
+           const corrupt=proof.slice(0,-1)+(proof.endsWith('A')?'B':'A');
+           const bad=await asPersona(token,'shooting',{idea:recommend.data.recommendation,approvalProof:corrupt});
+           assert(bad.status===409,'tampered approval not rejected');
+           const wrong=await asPersona(token,'shooting',{idea:{...recommend.data.recommendation,title:'Tampered title'},approvalProof:proof});
+           assert(wrong.status===409,'mismatched approved idea not rejected');
+           const stale=await post(seed,{action:'stale_proof',token});
+           assert(stale.status===200&&stale.data.freshness==='stale','stale signed fixture unavailable');
+           const staleShot=await asPersona(token,'shooting',{idea:stale.data.idea,approvalProof:stale.data.approvalProof});
+           assert(staleShot.status===409,'stale signed approval became actionable');
+           const degraded=await asPersona(token,'recommend',{allowPaidAi:false,history:[{status:'rejected',title:recommend.data.recommendation.title}]});
+           assert(degraded.status===200&&degraded.data.degraded===true&&degraded.data.ready===false&&!degraded.data.approvalProof,'degraded idea promoted');
+           console.log('PASS adversarial: tampered proof / mismatched idea / signed stale TTL / degraded blocked');
+           const after=await asPersona(token,'budget_status');
+           assert(after.status===200&&JSON.stringify(after.data.usage||[])===usageBefore,'paid AI ledger changed during FREE_ONLY E2E');
+           console.log('PASS ZERO_CREDIT_E2E budget ledger unchanged / no paid-provider path');
+           console.log('SIGNED_FREE_ONLY_LIVE_E2E_PASS');
+           console.log('EVIDENCE originalHead='+exactHead+' runtime=v15+ source-matched; budget unchanged; QA-fixture provenance only');
+          } catch(e) {
+           failures.push(String(e?.message||e));
+           console.error('SIGNED_FREE_ONLY_LIVE_E2E_FAIL',String(e?.message||e));
+          } finally {
+           if(token && seeded) {
+            try{
+             const clean=await post(seed,{action:'cleanup',token});
+             assert(clean.status===200&&clean.data.cleaned===true,'QA fixture cleanup failed '+clean.status);
+             const state=await post(seed,{action:'state',token});
+             assert(state.status===200&&state.data.exists===false&&state.data.briefPersisted===false,'QA fixture remained actionable');
+             console.log('PASS safe cleanup: removed QA-only fixture without clearing real owner data');
+            }catch(e){failures.push('CLEANUP_FAIL '+String(e.message));console.error('CLEANUP_FAIL',String(e.message));}
+           }
+          }
+          if(failures.length) process.exit(1);
+          
+          JS
