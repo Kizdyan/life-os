@@ -1,0 +1,48 @@
+name: persona-creative-v1-mobile-acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/persona-creative-loop-v1]
+    paths:
+      - "scripts/persona-creative-mobile-e2e.mjs"
+      - "apps/web/src/PersonaCreativeLoop.tsx"
+      - "apps/web/src/personaMediaIntake.ts"
+      - "apps/web/src/persona-creative-v1.css"
+      - "supabase/functions/life-os-runtime-prototype-v3/persona-creative-*.ts"
+      - ".github/workflows/persona-creative-v1-mobile-acceptance.yml"
+permissions:
+  contents: read
+jobs:
+  mobile-vertical-slice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test browsers
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium webkit
+      - name: Build isolated prototype frontend with exact HEAD
+        env:
+          VITE_LIFE_OS_REMOTE_ENABLED: "true"
+          VITE_LIFE_OS_EDGE_RUNTIME_URL: "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-creative-v1"
+          LIFE_OS_BUILD_SHA: ${{ github.sha }}
+        run: npm run web:build
+      - name: Start local preview
+        run: |
+          nohup npx vite preview --host 127.0.0.1 --port 4173 > /tmp/creative-vite-preview.log 2>&1 &
+          ready=0
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then cat /tmp/creative-vite-preview.log; exit 1; fi
+      - name: Real iPhone WebKit and Chromium V1 creative journey
+        env:
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+          CREATIVE_FRONTEND_URL: "http://127.0.0.1:4173"
+        run: node scripts/persona-creative-mobile-e2e.mjs
