@@ -40,8 +40,21 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const before=await budget(token);
   assert(before.status===200,"budget status unavailable");
   const usage=JSON.stringify(before.data.usage||[]);
-  const baseline=await body(token,{action:"creative_state"});
+  let baseline=await body(token,{action:"creative_state"});
   assert(baseline.status===200,"initial creative state unavailable");
+  const pending=baseline.data.items[selectionIndex].pending;
+  if(pending){
+    const recovered=await body(token,{action:"creative_discard_proposal",
+      ideaId:baseline.data.items[selectionIndex].id,
+      baseVersion:baseline.data.items[selectionIndex].currentVersion});
+    assert(recovered.status===200,"stale QA proposal could not be discarded");
+    await page.reload({waitUntil:"domcontentloaded"});
+    await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
+    await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
+    await page.locator(".creativeIdea").first().waitFor({timeout:30000});
+    baseline=await body(token,{action:"creative_state"});
+    assert(!baseline.data.items[selectionIndex].pending,"pending approval recovery failed");
+  }
   const baseVersion=baseline.data.items[selectionIndex].currentVersion;
   const targetVersion=baseVersion+1;
   await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
