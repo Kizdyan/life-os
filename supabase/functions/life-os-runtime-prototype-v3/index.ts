@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality-gates.ts";
 
 const AUTH_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v2";
 const STATUS_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype";
@@ -40,7 +41,14 @@ Deno.serve(async (request: Request) => {
     if (action === "shooting") return json({ brief: await shooting(payload as Record<string, unknown>) });
     return json({ error: "unsupported_persona_action" }, 400);
   } catch (error) {
-    console.error("persona prototype v3 failed", action, error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("persona prototype v3 failed", action, message);
+    if (message.startsWith("invalid_shooting_brief:")) {
+      return json({ error: "shooting_brief_quality_failed", action }, 422);
+    }
+    if (message.startsWith("openai_failed:429")) {
+      return json({ error: "ai_quota_unavailable", action }, 503);
+    }
     return json({ error: "persona_runtime_failed", action }, 503);
   }
 });
@@ -119,21 +127,26 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
     false,
   );
 
-  if ((judged as any)?.ready !== true || !(judged as any)?.recommendation) throw new Error("no_candidate_clears_quality_bar");
-  const rec = (judged as any).recommendation;
-  const score = Number(rec?.qualityVerdict?.score ?? 0);
-  const shoot = Number(rec?.estimatedMinutes);
-  const duration = Number(rec?.estimatedDurationSeconds);
-  const evidence = Array.isArray(rec?.marketEvidence)
-    ? rec.marketEvidence.filter((x: any) => x && String(x.source ?? "").trim() && String(x.url ?? "").trim() && String(x.asOf ?? "").trim() && String(x.finding ?? "").trim())
-    : [];
-  if (score < 80 || shoot < 5 || shoot > 15 || duration < 15 || duration > 30 || evidence.length === 0) {
-    throw new Error("deterministic_quality_gate_failed");
+  if ((judged as any)?.ready !== true || !(judged as any)?.recommendation) {
+    return { ready: false, recommendation: null, alternatives: [], analysisSummary: "Ни одна идея не прошла quality bar.", degraded: true };
   }
 
+  const evaluated = approvePersonaCandidate((judged as any).recommendation);
+  if (!evaluated.approved || !evaluated.candidate) {
+    // Never allow an unverified/unevidenced option to open Take or Create.
+    console.warn("persona quality gate rejected", evaluated.failures.join(","));
+    return { ready: false, recommendation: null, alternatives: [], analysisSummary: "Недостаточно подтверждений для съёмки.", degraded: true };
+  }
+  const alternatives = (Array.isArray((judged as any)?.alternatives) ? (judged as any).alternatives : [])
+    .map((idea: unknown) => approvePersonaCandidate(idea))
+    .filter((outcome: { approved: boolean; candidate: unknown }) => outcome.approved && Boolean(outcome.candidate))
+    .slice(0, 1)
+    .map((outcome: { candidate: unknown }) => outcome.candidate);
+
   return {
-    recommendation: rec,
-    alternatives: Array.isArray((judged as any)?.alternatives) ? (judged as any).alternatives.slice(0, 1) : [],
+    ready: true,
+    recommendation: evaluated.candidate,
+    alternatives,
     analysisSummary: String((judged as any)?.analysisSummary ?? "Research + independent critique + Judge."),
     degraded: false,
   };
@@ -156,29 +169,9 @@ async function shooting(payload: Record<string, unknown>): Promise<Record<string
     false,
   ) as Record<string, unknown>;
 
-  const issues = validateBrief(brief);
+  const issues = validatePersonaShootingBrief(brief);
   if (issues.length) throw new Error("invalid_shooting_brief:" + issues.join(","));
   return brief;
-}
-
-function validateBrief(value: Record<string, unknown>): string[] {
-  const b = value as any;
-  const issues: string[] = [];
-  for (const key of ["title","orientation","resolution","audio","lighting","background"]) {
-    if (!String(b?.[key] ?? "").trim()) issues.push(key);
-  }
-  if (!Number.isFinite(Number(b?.fps))) issues.push("fps");
-  if (!Array.isArray(b?.shots) || b.shots.length === 0) return [...issues, "shots"];
-  for (let i = 0; i < b.shots.length; i++) {
-    const s = b.shots[i] ?? {};
-    for (const key of ["id","purpose","shotSize","angle","cameraPosition","cameraHeight","distance","composition","movement","action"]) {
-      if (!String(s[key] ?? "").trim()) issues.push(`shots[${i}].${key}`);
-    }
-    if (!Number.isFinite(Number(s.durationSeconds)) || Number(s.durationSeconds) < 2) issues.push(`shots[${i}].durationSeconds`);
-    if (!Number.isInteger(Number(s.takes)) || Number(s.takes) < 1) issues.push(`shots[${i}].takes`);
-    if (s.bRoll === true && !String(s.bRollInstruction ?? "").trim()) issues.push(`shots[${i}].bRollInstruction`);
-  }
-  return issues;
 }
 
 async function aiJson(system: string, payload: unknown, web: boolean): Promise<unknown> {
