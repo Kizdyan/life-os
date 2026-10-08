@@ -5,6 +5,7 @@ import { validatePersonaShootingBrief } from '../../../supabase/functions/life-o
 import type { PersonaIdea, PersonaShootingBrief, PersonaShootingResult } from './personaIdeaState';
 
 interface Props {
+  approvalProof: string;
   idea: PersonaIdea;
   brief: PersonaShootingBrief | null;
   result: PersonaShootingResult | null;
@@ -20,19 +21,22 @@ function shootingFailureMessage(error: unknown): string {
   if (message.includes('ai_quota_unavailable') || message.includes('openai_failed:429')) {
     return 'AI-сервис временно недоступен из-за лимита API. Идея сохранена, но съёмочное задание пока не подтверждено.';
   }
+  if (message.includes('idea_approval_required')) {
+    return 'Съёмка доступна только для ранее подтверждённой идеи. Необходимо новое подтверждение runtime.';
+  }
   if (message.includes('authentication_required') || message.includes('session')) {
     return 'Сессия Persona закончилась. Подключи runtime заново, прежде чем создавать съёмочное задание.';
   }
   return 'Не удалось подтвердить съёмочное задание. Идея сохранена, но неполный план нельзя использовать для съёмки.';
 }
 
-export default function PersonaShooting({ idea, brief, result, onBrief, onResult }: Props) {
+export default function PersonaShooting({ approvalProof, idea, brief, result, onBrief, onResult }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   async function build() {
-    if (busy) return;
+    if (busy || !approvalProof) return;
     if (brief && validatePersonaShootingBrief(brief).length === 0) {
       setError('');
       setOpen(true);
@@ -41,7 +45,7 @@ export default function PersonaShooting({ idea, brief, result, onBrief, onResult
     setBusy(true);
     setError('');
     try {
-      const response = await personaEdgeRequest({ action: 'shooting', idea });
+      const response = await personaEdgeRequest({ action: 'shooting', idea, approvalProof });
       if (validatePersonaShootingBrief(response?.brief).length) {
         throw new Error('shooting_brief_quality_failed');
       }
@@ -55,14 +59,14 @@ export default function PersonaShooting({ idea, brief, result, onBrief, onResult
   }
 
   function complete() {
-    if (!brief || validatePersonaShootingBrief(brief).length) return;
+    if (!approvalProof || !brief || validatePersonaShootingBrief(brief).length) return;
     onResult({ completedAt: new Date().toISOString(), shotIds: brief.shots.map((shot) => shot.id) });
     setOpen(false);
   }
 
   return (
     <>
-      <button className="primary" disabled={busy} onClick={() => void build()}>
+      <button className="primary" disabled={busy || !approvalProof} onClick={() => void build()}>
         {busy ? 'Готовлю съёмку…' : brief && validatePersonaShootingBrief(brief).length === 0
           ? 'Открыть съёмочное задание' : 'Сделать материал'}
       </button>
