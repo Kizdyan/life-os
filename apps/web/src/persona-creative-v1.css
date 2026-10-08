@@ -1,0 +1,27 @@
+.creativeV1{display:grid;gap:16px;min-width:0;margin:0 0 26px;padding:0 0 24px;border-bottom:1px solid #dedbd4}
+.creativeV1 *{box-sizing:border-box;min-width:0;overflow-wrap:anywhere}
+.creativeV1 .creativeHead{display:block;margin:0 0 4px}
+.creativeHead h2{font-size:clamp(24px,6vw,34px);margin:6px 0}
+.creativeHead p{font-size:14px;line-height:1.48;color:#555;margin:0}
+.creativeShortlist{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.creativeIdea,.creativeEditor,.creativeCapture{background:#fff;border:1px solid #ece9e4;padding:16px;border-radius:19px;display:grid;gap:10px;box-shadow:0 5px 15px #00000009}
+.creativeIdea.selected{border:2px solid #3c5140}
+.creativeIdea h3,.creativeEditor h3,.creativeCapture h3{font-size:20px;line-height:1.2;margin:0}
+.creativeIdea p,.creativeEditor p,.creativeCapture p{font-size:13px;line-height:1.5;margin:0;color:#555}
+.creativeIdea small,.creativeEditor small,.creativeCapture small{font-size:10px;letter-spacing:.08em;color:#776b60}
+.creativeIdea .creativeEvidence{font-size:12px;color:#776b60}
+.creativeV1 button{min-height:44px;height:auto;padding:10px 12px;border:0;border-radius:12px;font-size:14px;line-height:1.3;white-space:normal;cursor:pointer}
+.creativeV1 button.primary{background:#171717;color:white}
+.creativeV1 button:disabled{opacity:.45;cursor:default}
+.creativeV1 textarea,.creativeV1 select{display:block;width:100%;max-width:100%;border:1px solid #d6d4ce;border-radius:12px;background:#fcfcfa;padding:12px;font-size:16px}
+.creativeV1 label{font-size:13px;font-weight:600;line-height:1.4}
+.creativeHistory,.creativeProposal,.creativeBrief,.creativeAssets{padding:12px;border-radius:12px;background:#f5f5f0;display:grid;gap:8px}
+.creativeHistory p{font-size:12px}
+.creativeActions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.creativeUpload{display:grid;gap:12px;border:1px solid #ddd9d1;border-radius:16px;padding:12px}
+.creativePicker{display:block;position:relative;text-align:center;background:#e8ede6;color:#203226;padding:12px;border-radius:12px;cursor:pointer}
+.creativePicker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.creativeFeedback{background:#e9eee6;border-radius:12px;padding:12px;font-size:13px}
+.creativeError{background:#fff0ed;border-radius:12px;padding:12px;font-size:13px;color:#892c2c}
+@media(min-width:760px){.creativeShortlist{grid-template-columns:repeat(3,minmax(0,1fr))}.creativeIdea{padding:18px}}
+@media(max-width:390px){.creativeIdea,.creativeEditor,.creativeCapture{padding:13px}.creativeActions{grid-template-columns:minmax(0,1fr)}}
