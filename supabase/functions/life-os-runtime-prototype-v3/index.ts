@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality-gates.ts";
 import { buildDeterministicShootingBrief, pickApprovedBrain, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
 import { budgetPolicy, reserveBudget } from "./persona-cost.ts";
+import { runProviderRouter } from "./persona-provider.ts";
 import { persistApprovedEntry, persistShootingBrief, readServerBrain, readServerBudget, reserveServerAiCall } from "./persona-store.ts";
 
 const AUTH_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v2";
@@ -212,56 +213,43 @@ let quotaCooldownUntil = 0;
 
 async function aiJson(system: string, payload: unknown, web: boolean): Promise<unknown> {
   if (Date.now() < quotaCooldownUntil) throw new Error("openai_failed:429_cooldown");
-  const rawKey = Deno.env.get("PERSONA_PROTOTYPE_OPENAI_API_KEY") ?? "";
-  const key = rawKey.trim();
+  const key = (Deno.env.get("PERSONA_PROTOTYPE_OPENAI_API_KEY") ?? "").trim();
   if (!key) throw new Error("prototype_ai_credentials_missing");
-
   const configured = (Deno.env.get("PERSONA_V3_AI_PRIMARY_MODEL") ?? "gpt-4.1-mini").trim();
   const cheaper = (Deno.env.get("PERSONA_V3_AI_CHEAP_MODEL") ?? "gpt-4o-mini").trim();
   const models = [...new Set([configured, cheaper].filter(Boolean))];
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
-    const request = {
-      model, store: false,
-      input: [{ role: "system", content: system },
-        { role: "user", content: JSON.stringify(payload) }],
-      ...(web ? { tools: [{ type: "web_search" }] } : {}),
-    };
-    // Atomic reservation happens for EACH paid attempt, including model fallback.
-    const policy = budgetPolicy((name) => Deno.env.get(name),
-      JSON.stringify(request).length, i > 0);
-    const reservation = await reserveBudget(policy, reserveServerAiCall);
-    if (!reservation.allowed) throw new Error("economy_mode:" + (reservation.reason || "budget_exhausted"));
-
-    let response: Response;
-    try {
-      response = await fetch("https://api.openai.com/v1/responses", {
+  const output = await runProviderRouter<unknown>(
+    models,
+    async (isFallback) => {
+      const model = isFallback ? models[1] : models[0];
+      const input = JSON.stringify({ model, system, payload, web });
+      const policy = budgetPolicy((name) => Deno.env.get(name), input.length, isFallback);
+      const reservation = await reserveBudget(policy, reserveServerAiCall);
+      return reservation.allowed;
+    },
+    async (model) => {
+      const request = {
+        model, store: false,
+        input: [{ role: "system", content: system },
+          { role: "user", content: JSON.stringify(payload) }],
+        ...(web ? { tools: [{ type: "web_search" }] } : {}),
+      };
+      const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
         body: JSON.stringify(request),
         signal: AbortSignal.timeout(20_000),
       });
-    } catch (error) {
-      if (i < models.length - 1) continue; // cheaper provider path only if budget permits
-      throw error;
-    }
-    if (response.ok) return parseJson(extractText(await response.json()));
-
-    const status = response.status;
-    const data = await response.json().catch(() => ({})) as
-      { error?: { code?: string; type?: string } };
-    const code = typeof data.error?.code === "string" ? data.error.code : "unknown";
-    // Never print credential material or provider error.message.
-    console.warn("persona model attempt rejected", JSON.stringify({ status, code, model }));
-    if (status === 429 || code === "credit_balance_exhausted") {
-      quotaCooldownUntil = Date.now() + 60 * 60 * 1000; // no runaway retry on quota
-      throw new Error("openai_failed:429");
-    }
-    if (status === 401 || status === 403) throw new Error("openai_failed:" + status);
-    if (![400, 404, 408, 500, 502, 503, 504].includes(status)) throw new Error("openai_failed:" + status);
-    // The next loop iteration is an independently budget-reserved, cheaper fallback.
-  }
-  throw new Error("provider_exhausted");
+      if (response.ok) return { status: response.status, value: await response.json() };
+      const status = response.status;
+      // Never print or store provider error text or API credentials.
+      await response.body?.cancel().catch(() => undefined);
+      console.warn("persona provider status", status, model);
+      return { status };
+    },
+    () => { quotaCooldownUntil = Date.now() + 60 * 60 * 1000; },
+  );
+  return parseJson(extractText(output));
 }
 
 function describeCredential(raw: string): Record<string, unknown> {
