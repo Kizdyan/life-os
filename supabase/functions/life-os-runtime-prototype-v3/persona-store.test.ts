@@ -19,8 +19,8 @@ describe('Persona durable Shared Brain artifact freshness', () => {
 
   it('retries a compare-and-swap conflict against a fresh snapshot', async () => {
     const snapshots = [
-      { schema: 1 as const, entries: [], trends: [], marketEvidence: [], criticJudge: [], shootingBriefs: [], updatedAt: 'a' },
-      { schema: 1 as const, entries: [], trends: [], marketEvidence: [], criticJudge: [], shootingBriefs: [{ ideaId: 'other', brief: {}, savedAt: 'x' }], updatedAt: 'b' },
+      { schema: 1 as const, entries: [], trends: [], marketEvidence: [], criticJudge: [], shootingBriefs: [], creativeItems: [], updatedAt: 'a' },
+      { schema: 1 as const, entries: [], trends: [], marketEvidence: [], criticJudge: [], shootingBriefs: [{ ideaId: 'other', brief: {}, savedAt: 'x' }], creativeItems: [], updatedAt: 'b' },
     ];
     let reads = 0, saves = 0;
     const result = await mutateServerBrain(
