@@ -89,10 +89,10 @@ export function parseBrainSnapshot(value: unknown, rowUpdatedAt?: string): Brain
   };
 }
 
-export async function readServerBrain(): Promise<BrainSnapshot> {
+export async function readServerBrain(cacheKey: string = BRAIN_KEY): Promise<BrainSnapshot> {
   const { origin, headers } = credentials();
   const url = origin + "/rest/v1/persona_v3_brain?cache_key=eq." +
-    encodeURIComponent(BRAIN_KEY) + "&select=payload,updated_at";
+    encodeURIComponent(cacheKey) + "&select=payload,updated_at";
   const response = await fetch(url, {
     headers, signal: AbortSignal.timeout(4_000),
   });
@@ -102,19 +102,19 @@ export async function readServerBrain(): Promise<BrainSnapshot> {
   return parseBrainSnapshot(rows[0].payload, rows[0].updated_at);
 }
 
-export async function saveServerBrain(snapshot: BrainSnapshot): Promise<boolean> {
+export async function saveServerBrain(snapshot: BrainSnapshot, cacheKey: string = BRAIN_KEY): Promise<boolean> {
   const { origin, headers } = credentials();
   const creating = snapshot.updatedAt === new Date(0).toISOString();
   const nextUpdatedAt = new Date().toISOString();
   const payload = { ...snapshot, schema: 1 as const, updatedAt: nextUpdatedAt };
-  const filter = creating ? "?on_conflict=cache_key" : "?cache_key=eq." + encodeURIComponent(BRAIN_KEY) +
+  const filter = creating ? "?on_conflict=cache_key" : "?cache_key=eq." + encodeURIComponent(cacheKey) +
     "&updated_at=eq." + encodeURIComponent(snapshot.updatedAt);
   const response = await fetch(origin + "/rest/v1/persona_v3_brain" + filter, {
     method: creating ? "POST" : "PATCH",
     headers: { ...headers, Prefer: creating
       ? "resolution=ignore-duplicates,return=representation" : "return=representation" },
     signal: AbortSignal.timeout(4_000),
-    body: JSON.stringify({ cache_key: BRAIN_KEY, updated_at: nextUpdatedAt, payload }),
+    body: JSON.stringify({ cache_key: cacheKey, updated_at: nextUpdatedAt, payload }),
   });
   if (!response.ok) throw new Error("prototype_cache_write:" + response.status);
   const rows = await response.json() as Array<{ payload?: unknown; updated_at?: string }>;
