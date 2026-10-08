@@ -102,5 +102,7 @@ describe('Persona prototype v3 server-side quality and shoot gates', () => {
       .toContain('shots[0].bRollInstruction');
     expect(validatePersonaShootingBrief({ ...brief, orientation: 'landscape-ish' }))
       .toContain('orientation_value');
+    expect(validatePersonaShootingBrief({ ...brief, references: undefined }))
+      .toContain('references');
   });
 });
