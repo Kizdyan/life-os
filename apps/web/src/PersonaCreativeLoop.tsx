@@ -79,11 +79,11 @@ export default function PersonaCreativeLoop(){
     ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,conditions},
    adapt?"Съёмочное задание изменено под реальные условия.":"Съёмочная сессия связана с утверждённой версией.");
  }
- async function upload(files:FileList|null){
-  if(!files||!session||!item||!revision||!actionable)return;
+ async function upload(files:File[]){
+  if(!files.length||!session||!item||!revision||!actionable)return;
   setBusy(true);setError("");let stored=0,registered=0;
   try{
-   for(const file of Array.from(files).slice(0,12)){
+   for(const file of files.slice(0,12)){
     const meta=createMediaMetadata(file,{
       projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,
       ideaVersion:item.currentVersion,sessionId:session.id,preferredVideo:videoKind
@@ -181,7 +181,7 @@ export default function PersonaCreativeLoop(){
         </select>
         <label className="creativePicker">Выбрать файлы с iPhone
          <input aria-label="Загрузить материал" type="file" accept="video/*,image/*,audio/*,.mov,.mp4,.m4a" multiple disabled={busy}
-          onChange={e=>{const list=e.currentTarget.files;void upload(list);e.currentTarget.value="";}}/>
+          onChange={e=>{const list=Array.from(e.currentTarget.files||[]);e.currentTarget.value="";void upload(list);}}/>
         </label>
         <small>Связка: проект → материал → утверждённая версия → сессия → asset.</small>
         <div className="creativeAssets">
