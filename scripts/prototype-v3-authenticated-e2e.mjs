@@ -33,6 +33,13 @@ try {
   const status=await post({op:'status',token});
   assert(status.status===200 && status.data.authenticated===true,'authenticated status failed HTTP '+status.status);
   console.log('PASS status authenticated');
+  // Ordinary CI proves frontend/auth without incurring paid tokens.
+  // This MUST NOT be called E2E_PASS: that requires an explicitly scheduled paid smoke.
+  if (process.env.PROTOTYPE_PAID_E2E !== '1') {
+    console.log('PAID_SMOKE_SKIPPED: no paid AI permitted in ordinary CI');
+    console.log('AUTH_STATUS_PASS_ONLY: NOT_READY_FOR_PHYSICAL_ACCEPTANCE');
+    process.exit(0);
+  }
   const recommendation=await post({op:'persona',token,payload:{action:'recommend',context:{profession:['actor','musician'],availableMinutes:15,solo:true},history:[],priorIdeas:[]}});
   assert(recommendation.status===200,'recommend failed HTTP '+recommendation.status+' '+String(recommendation.data.error||''));
   const rec=recommendation.data.recommendation;
@@ -42,7 +49,8 @@ try {
   assert(Number(rec.estimatedDurationSeconds)>=15 && Number(rec.estimatedDurationSeconds)<=30,'duration outside 15-30');
   assert(Array.isArray(rec.marketEvidence) && rec.marketEvidence.some(e=>e.source&&e.finding&&e.url&&e.asOf),'missing market evidence');
   console.log('PASS recommendation + server quality fields');
-  const shoot=await post({op:'persona',token,payload:{action:'shooting',idea:rec}});
+  assert(typeof recommendation.data.approvalProof==='string' && recommendation.data.approvalProof.length>60,'server approval proof missing');
+  const shoot=await post({op:'persona',token,payload:{action:'shooting',idea:rec,approvalProof:recommendation.data.approvalProof}});
   assert(shoot.status===200,'shooting failed HTTP '+shoot.status+' '+String(shoot.data.error||''));
   const b=shoot.data.brief;
   for(const key of ['title','orientation','resolution','audio','lighting','background']) assert(String(b?.[key]||'').trim(),'missing brief '+key);
