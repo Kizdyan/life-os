@@ -40,32 +40,37 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const before=await budget(token);
   assert(before.status===200,"budget status unavailable");
   const usage=JSON.stringify(before.data.usage||[]);
+  const baseline=await body(token,{action:"creative_state"});
+  assert(baseline.status===200,"initial creative state unavailable");
+  const baseVersion=baseline.data.items[selectionIndex].currentVersion;
+  const targetVersion=baseVersion+1;
   await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
   await page.locator("#creative-erika-input").fill("Мне нравится идея 2, но поменяй финал");
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
   assert((await page.locator(".creativeProposal").innerText()).includes("Critic"),"no reasoned critic");
   await page.getByRole("button",{name:/Утверждаю v\d+/}).click();
-  await page.waitForFunction(()=>document.querySelector(".creativeEditor small")?.textContent?.includes("v2"),{timeout:30000});
+  await page.waitForFunction((version)=>document.querySelector(".creativeEditor small")?.textContent?.includes("v"+version),targetVersion,{timeout:30000});
   const status=await body(token,{action:"creative_state"});
   assert(status.status===200,"creative state read failed");
   const selected=status.data.items[selectionIndex];
-  assert(selected.currentVersion===2 && selected.revisions.length===2,"revision v2 not durably reapproved");
-  assert(selected.revisions[0].proof!==selected.revisions[1].proof,"approval inherited after edit");
-  assert(selected.revisions[1].reason.includes("поменяй финал"),"edit reason not persisted");
+  assert(selected.currentVersion===targetVersion && selected.revisions.length>=2,"new revision not durably reapproved");
+  assert(selected.revisions.at(-2).proof!==selected.revisions.at(-1).proof,"approval inherited after edit");
+  assert(selected.revisions.at(-1).reason.includes("поменяй финал"),"edit reason not persisted");
   // A previously signed proof must be invalid for the new current idea revision.
   const old=await body(token,{action:"creative_start_session",ideaId:selected.id,
-    version:2,approvalProof:selected.revisions[0].proof,conditions:""});
+    version:targetVersion,approvalProof:selected.revisions.at(-2).proof,conditions:""});
   assert(old.status===409,"prior revision proof still actionable");
   const bad=await body(token,{action:"creative_start_session",ideaId:selected.id,
-    version:2,approvalProof:"unsigned",conditions:""});
+    version:targetVersion,approvalProof:"unsigned",conditions:""});
   assert(bad.status===409,"forged approval still actionable");
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
-  await page.getByRole("button",{name:/Берём v2 — создать съёмку/}).click();
+  await page.getByRole("button",{name:/Берём v\\d+ — создать съёмку/}).click();
   await page.locator(".creativeBrief").waitFor({timeout:30000});
   assert((await page.locator(".creativeBrief").innerText()).includes("окну"),"lighting was not adapted");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
+  await page.locator(".creativeFeedback").getByText(/Метаданные синхронизированы: 1/).waitFor({timeout:30000});
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
   const registered=await body(token,{action:"creative_state"});
   const item=registered.data.items[selectionIndex];
@@ -77,7 +82,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(media.storage==="device_local"&&media.pipeline.takeScoring==="PENDING",
     "local-only pipeline state lied");
   const reject=await body(token,{action:"creative_register_asset",ideaId:item.id,
-   version:2,approvalProof:item.revisions[1].proof,
+   version:targetVersion,approvalProof:item.revisions.at(-1).proof,
    asset:{...media,id:"otherfakeid00001",sessionId:"wrong-session"}});
   assert(reject.status===409,"asset cross-session provenance forgery accepted");
   await page.reload({waitUntil:"domcontentloaded"});
