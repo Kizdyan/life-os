@@ -26,7 +26,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
   const login=page.locator('input[type="password"]');
-  if(await login.isVisible().catch(()=>false)){
+  if(await login.waitFor({state:"visible",timeout:12000}).then(()=>true).catch(()=>false)){
     await login.fill(passcode);
     await page.getByRole("button",{name:"Подключить и проанализировать"}).click();
   }
@@ -39,7 +39,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const before=await budget(token);
   assert(before.status===200,"budget status unavailable");
   const usage=JSON.stringify(before.data.usage||[]);
-  await page.locator(".creativeIdea").nth(1).getByRole("button",{name:/Выбрать идею/}).click();
+  await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
   await page.locator("#creative-erika-input").fill("Мне нравится идея 2, но поменяй финал");
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
@@ -48,7 +48,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.waitForFunction(()=>document.querySelector(".creativeEditor small")?.textContent?.includes("v2"),{timeout:30000});
   const status=await body(token,{action:"creative_state"});
   assert(status.status===200,"creative state read failed");
-  const selected=status.data.items[1];
+  const selected=status.data.items[selectionIndex];
   assert(selected.currentVersion===2 && selected.revisions.length===2,"revision v2 not durably reapproved");
   assert(selected.revisions[0].proof!==selected.revisions[1].proof,"approval inherited after edit");
   assert(selected.revisions[1].reason.includes("поменяй финал"),"edit reason not persisted");
@@ -67,7 +67,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
   const registered=await body(token,{action:"creative_state"});
-  const item=registered.data.items[1];
+  const item=registered.data.items[selectionIndex];
   assert(item.session?.assets.length>=1,"registered media manifest not durable");
   const media=item.session.assets[0];
   for(const key of ["projectId","contentItemId","ideaId","ideaVersion","sessionId","id"]){
@@ -82,7 +82,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.reload({waitUntil:"domcontentloaded"});
   await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
-  await page.locator(".creativeIdea").nth(1).getByRole("button",{name:/Выбрать идею/}).click();
+  await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
   const after=await budget(token);
   assert(JSON.stringify(after.data.usage||[])===usage,"FREE_ONLY spent AI budget");
