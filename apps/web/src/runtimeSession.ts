@@ -7,6 +7,7 @@ export interface RuntimeSessionStatus {
 
 const edgeUrl = import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '';
 const apiUrl = import.meta.env.VITE_LIFE_OS_API_URL ?? '';
+const browserFetch: typeof fetch = (input, init) => globalThis.fetch(input, init);
 
 function sessionClient(fetchImpl: typeof fetch) {
   if (typeof localStorage === 'undefined') {
@@ -22,17 +23,17 @@ const memorylessStorage = {
   removeItem: (_key: string) => {},
 };
 
-export async function getRuntimeSessionStatus(fetchImpl: typeof fetch = fetch): Promise<RuntimeSessionStatus> {
+export async function getRuntimeSessionStatus(fetchImpl: typeof fetch = browserFetch): Promise<RuntimeSessionStatus> {
   return sessionClient(fetchImpl).status();
 }
 
 export async function loginRuntimeSession(
   passcode: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = browserFetch,
 ): Promise<RuntimeSessionStatus> {
   return sessionClient(fetchImpl).login(passcode);
 }
 
-export async function logoutRuntimeSession(fetchImpl: typeof fetch = fetch): Promise<void> {
+export async function logoutRuntimeSession(fetchImpl: typeof fetch = browserFetch): Promise<void> {
   await sessionClient(fetchImpl).logout();
 }

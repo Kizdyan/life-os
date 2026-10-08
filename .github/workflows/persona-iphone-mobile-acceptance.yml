@@ -1,0 +1,41 @@
+name: persona-iphone-mobile-acceptance
+
+on:
+  push:
+    branches: [prototype/persona-quality-loop-v0]
+    paths:
+      - "apps/web/src/app.css"
+      - "apps/web/src/SleepEnergyCard.tsx"
+      - "apps/web/src/PersonaFactory.tsx"
+      - "scripts/persona-v3-iphone-mobile-acceptance.mjs"
+      - ".github/workflows/persona-iphone-mobile-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  iphone-webkit-and-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install browser QA dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium webkit
+      - name: Verify real deployed iPhone Persona and sleep tracker
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+        run: node scripts/persona-v3-iphone-mobile-acceptance.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: persona-iphone-browser-evidence
+          path: artifacts/persona-iphone/
+          if-no-files-found: ignore

@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const OWNER_ID = 'b48182e1-0802-4741-89a1-bba6341cb8c8';
-const OWNER_PASSCODE_SHA256 = '7b9f92d5fff6262ad5ccecfd3c5e7e3eb2cf7cdc4af06804d27f90bf3defcafb';
+const OWNER_PASSCODE_SHA256 = 'cb8176ea295ab2bc544c5a7d1348ab9a67ebc7013c64baf6adb4575e74b85e0b';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -257,7 +257,34 @@ async function persona(rawToken: unknown, rawPayload: unknown): Promise<Response
   if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) return json({ error: 'invalid_persona_payload' }, 400);
   const payload = rawPayload as Record<string, unknown>;
   const action = String(payload.action ?? 'plan');
-  if (!['plan', 'shooting', 'generate', 'revise', 'prepublish'].includes(action)) return json({ error: 'unknown_persona_action' }, 400);
+  if (!['recommend', 'plan', 'shooting', 'generate', 'revise', 'prepublish'].includes(action)) return json({ error: 'unknown_persona_action' }, 400);
+  if (action === 'recommend') {
+    try {
+      return json(await personaRecommend(payload));
+    } catch (error) {
+      console.error('persona recommend failed', error instanceof Error ? error.message : 'unknown');
+      const fallback = localPersonaIdeas(Array.isArray(payload.history) ? payload.history : []).slice(0, 2).map((idea, index) => ({
+        ...idea,
+        score: 62 - index,
+        confidence: 42,
+        estimatedMinutes: 8,
+        whyNow: ['Свежая рыночная аналитика временно недоступна'],
+        soloPlan: 'Один разговорный дубль + два коротких B-roll.',
+        qualityVerdict: {
+          verdict: 'REVISE',
+          score: 55,
+          summary: 'Резервная идея без достаточного внешнего evidence. Не выдавать за высокоуверенную рекомендацию.',
+          risks: ['Нет подтверждённого свежего market evidence'],
+        },
+      }));
+      return json({
+        recommendation: fallback[0] ?? null,
+        alternatives: fallback.slice(1, 2),
+        analysisSummary: 'Свежая аналитика недоступна: confidence автоматически снижен, ложный green-check запрещён.',
+        degraded: true,
+      });
+    }
+  }
   if (action === 'plan') {
     try {
       const result = await personaAI('Ты контент-стратег актёра, музыканта и автора. Дай 16–24 разные идеи без повторов истории. Верни только JSON {"ideas":[{"id","title","angle","format","score","reason"}]}.', payload);
@@ -273,6 +300,8 @@ async function persona(rawToken: unknown, rawPayload: unknown): Promise<Response
       if (!idea || typeof idea.title !== 'string' || !idea.title.trim()) return json({ error: 'Сначала выбери идею' }, 400);
       const brief = await personaAI([
         'Ты режиссёр съёмки Persona. Задание должно позволять одному человеку открыть его на iPhone и снять материал без дополнительных вопросов.',
+        'Сохраняй утверждённый hook/script идеи и не превращай короткий ролик в длинную постановку.',
+        'Если helperPlan недоступен, автоматически строй полноценный solo-вариант. Минимизируй число смен кадров: один master + 1–3 B-roll, если этого достаточно для удержания.',
         'Для каждого кадра укажи id,purpose,shotSize,angle,cameraPosition,cameraHeight,distance,composition,movement,durationSeconds,takes,action,dialogue,bRoll,bRollInstruction.',
         'Отдельно укажи title,orientation,resolution,fps,audio,lighting,background,references.',
         'Для Reels/Shorts/VK Clips по умолчанию vertical, 4k, 30fps. Не выдумывай доступную локацию, реквизит или людей.',
@@ -297,23 +326,145 @@ async function persona(rawToken: unknown, rawPayload: unknown): Promise<Response
   }
 }
 
+async function personaRecommend(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const research = await personaAIWithWeb([
+    'Ты Research Lead Persona для российского рынка коротких вертикальных видео.',
+    'Задача: выбрать не много идей, а 3 реально сильных кандидата, которые пользователь может снять СЕЙЧАС.',
+    'Используй свежий web search по русскоязычному short-form рынку, прежде всего Россия/Москва, Instagram Reels, VK Clips и YouTube Shorts.',
+    'Не выдавай общий мировой тренд за российский. Не выдумывай просмотры, тренды, источники или биографические факты.',
+    'Пользователь — работающий актёр/музыкант/автор. Пока нельзя строить идею на неподтверждённой экспертности в мюзиклах. Предпочитай личное наблюдение из профессии, если оно сильнее.',
+    'Учитывай прошлые rejected/later/used идеи и не повторяй отвергнутые концепции или манифесты типа «начинаю путь / посмотрим, куда приведёт».',
+    'Учитывай реальный календарный контекст, доступное время и то, что человек может оказаться без оператора.',
+    'Каждый кандидат должен быть выполним за 5–15 минут, иметь сильный hook первых 1–2 секунд, короткий script 15–30 секунд, обязательно estimatedDurationSeconds от 15 до 30, soloPlan и helperPlan.',
+    'В marketEvidence дай только реальные источники/наблюдения, которые ты действительно нашёл. Если evidence слабое — так и напиши и понизь confidence.',
+    'Верни ТОЛЬКО JSON {"candidates":[{"id","title","angle","format","score","confidence","reason","hook","script","estimatedMinutes","estimatedDurationSeconds","whyNow":[],"resources":[],"soloPlan","helperPlan","marketEvidence":[{"source","finding","url","asOf"}]}],"evidenceSummary":"..."}'
+  ].join('\n'), payload);
+
+  const candidates = Array.isArray((research as any)?.candidates) ? (research as any).candidates.slice(0, 3) : [];
+  if (candidates.length < 2) throw new Error('persona:insufficient_research_candidates');
+
+  const frozenCase = {
+    candidates,
+    evidenceSummary: String((research as any)?.evidenceSummary ?? ''),
+    context: payload.context ?? {},
+    history: payload.history ?? [],
+  };
+
+  const [brandCritic, retentionCritic] = await Promise.all([
+    personaAI([
+      'Ты независимый Challenger/Personal Brand critic. Не соглашайся автоматически.',
+      'Проверь каждый кандидат на органичность для этого конкретного автора, повторяемость прошлых неудачных концепций, фальшивую экспертность, пафос, банальность и несоответствие текущему этапу позиционирования.',
+      'Верни только JSON {"reviews":[{"id","verdict":"APPROVE|REVISE|REJECT","score":0,"problems":[],"requiredChanges":[]}]}'
+    ].join('\n'), frozenCase),
+    personaAI([
+      'Ты независимый Audience/Retention critic российского short-form. Не соглашайся автоматически.',
+      'Проверь hook первых 1–2 секунд, понятность холодной аудитории, длину 15–30 секунд, визуальную реализуемость на улице/iPhone, потенциал удержания и отсутствие бессмысленной сложности.',
+      'Не считай утверждение о тренде доказанным, если в evidence нет источника.',
+      'Верни только JSON {"reviews":[{"id","verdict":"APPROVE|REVISE|REJECT","score":0,"problems":[],"requiredChanges":[]}]}'
+    ].join('\n'), frozenCase),
+  ]);
+
+  const judged = await personaAI([
+    'Ты Judge Persona. Получаешь замороженные кандидаты, market evidence и две независимые критики.',
+    'Не голосуй простым большинством. Выбери максимум ОДНУ основную идею и максимум ОДНУ альтернативу.',
+    'Если лучший кандидат можно существенно улучшить по замечаниям — исправь hook/script/angle сам до финального результата.',
+    'Основная рекомендация допускается только если после исправления quality score >=80 и confidence обоснован evidence. Если evidence неполное, confidence должен быть ниже.',
+    'Никаких обещаний «это 100% сработает». Confidence означает сравнительную уверенность, а не гарантию.',
+    'Верни только JSON {"ready":boolean,"recommendation":{полный кандидат,"qualityVerdict":{"verdict":"APPROVE|REVISE|REJECT","score":0,"summary":"...","risks":[]}},"alternatives":[{полный кандидат,"qualityVerdict":{...}}],"analysisSummary":"коротко почему именно это"}'
+  ].join('\n'), { ...frozenCase, brandCritic, retentionCritic });
+
+  if ((judged as any)?.ready !== true || !(judged as any)?.recommendation) {
+    throw new Error('persona:no_candidate_clears_quality_bar');
+  }
+  const recommendation = (judged as any).recommendation;
+  if (Number(recommendation?.qualityVerdict?.score ?? 0) < 80) {
+    throw new Error('persona:quality_bar_not_met');
+  }
+  return {
+    recommendation,
+    alternatives: Array.isArray((judged as any)?.alternatives) ? (judged as any).alternatives.slice(0, 1) : [],
+    analysisSummary: String((judged as any)?.analysisSummary ?? 'Рекомендация прошла research + independent critique + Judge.'),
+    degraded: false,
+  };
+}
+
+function openAIModelCandidates(): string[] {
+  const configured = (Deno.env.get('PERSONA_OPENAI_MODEL') ?? '').trim();
+  return [...new Set([configured, 'gpt-5.6-sol'].filter(Boolean))];
+}
+
+function parseJSONText(text: string): unknown {
+  const cleaned = text.trim().replace(/^\`\`\`(?:json)?/i, '').replace(/\`\`\`$/, '').trim();
+  if (!cleaned) throw new Error('openai:empty');
+  return JSON.parse(cleaned);
+}
+
+function extractResponsesText(raw: any): string {
+  if (typeof raw?.output_text === 'string' && raw.output_text.trim()) return raw.output_text.trim();
+  const parts: string[] = [];
+  for (const item of Array.isArray(raw?.output) ? raw.output : []) {
+    if (item?.type !== 'message' || !Array.isArray(item?.content)) continue;
+    for (const content of item.content) {
+      if (content?.type === 'output_text' && typeof content.text === 'string') parts.push(content.text);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+async function personaAIWithWeb(system: string, payload: unknown): Promise<unknown> {
+  const key = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+  if (!key) throw new Error('OPENAI_API_KEY is not configured in Supabase Edge');
+  let lastStatus = 0;
+  for (const model of openAIModelCandidates()) {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        store: false,
+        tools: [{ type: 'web_search' }],
+        input: [
+          { role: 'system', content: system },
+          { role: 'user', content: JSON.stringify(payload) },
+        ],
+      }),
+    });
+    lastStatus = response.status;
+    if (response.ok) {
+      const raw = await response.json() as any;
+      return parseJSONText(extractResponsesText(raw));
+    }
+    const body = await response.text().catch(() => '');
+    console.error('persona web AI failed', model, response.status, body.slice(0, 300));
+    if (![400, 404].includes(response.status)) break;
+  }
+  throw new Error(`openai:web:${lastStatus || 'failed'}`);
+}
+
 async function personaAI(system: string, payload: unknown): Promise<unknown> {
   const key = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
   if (!key) throw new Error('OPENAI_API_KEY is not configured in Supabase Edge');
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: (Deno.env.get('PERSONA_OPENAI_MODEL') ?? 'gpt-5.6-sol').trim(),
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(payload) }],
-    }),
-  });
-  if (!response.ok) throw new Error(`openai:${response.status}`);
-  const raw = await response.json() as any;
-  const text = String(raw?.choices?.[0]?.message?.content ?? '').trim().replace(/^\\x60\\x60\\x60(?:json)?/i, '').replace(/\\x60\\x60\\x60$/, '').trim();
-  if (!text) throw new Error('openai:empty');
-  return JSON.parse(text);
+  let lastStatus = 0;
+  for (const model of openAIModelCandidates()) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(payload) }],
+      }),
+    });
+    lastStatus = response.status;
+    if (response.ok) {
+      const raw = await response.json() as any;
+      return parseJSONText(String(raw?.choices?.[0]?.message?.content ?? ''));
+    }
+    const body = await response.text().catch(() => '');
+    console.error('persona AI failed', model, response.status, body.slice(0, 300));
+    if (![400, 404].includes(response.status)) break;
+  }
+  throw new Error(`openai:${lastStatus || 'failed'}`);
 }
 
 function validateEdgeShootingBrief(value: unknown): string[] {

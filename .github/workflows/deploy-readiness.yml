@@ -1,11 +1,19 @@
 name: deploy-readiness
 
 on:
+  workflow_dispatch:
+    inputs:
+      paid_persona_smoke:
+        description: "Run optional paid Persona recommendation smoke"
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - "apps/web/**"
       - "api/**"
       - "supabase/functions/life-os-runtime/**"
+      - "supabase/functions/life-os-runtime-prototype-v3/**"
       - "packages/core/src/yandex-oauth.ts"
       - "scripts/api-smoke.mjs"
       - "tsconfig.json"
@@ -13,18 +21,23 @@ on:
       - "package.json"
       - ".github/workflows/deploy-readiness.yml"
   push:
-    branches: [main]
+    branches: [main, prototype/persona-quality-loop-v0]
     paths:
       - "apps/web/**"
       - "api/**"
       - "packages/core/src/yandex-oauth.ts"
       - "scripts/api-smoke.mjs"
+      - "scripts/prototype-v3-authenticated-e2e.mjs"
+      - "scripts/prototype-v3-workflow.test.ts"
+      - "supabase/functions/life-os-runtime-prototype-v3/**"
       - "tsconfig.json"
       - "vercel.json"
       - "package.json"
+      - ".github/workflows/deploy-readiness.yml"
 
 jobs:
   preview-build:
+    if: github.ref_name != 'prototype/persona-quality-loop-v0'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,3 +105,38 @@ jobs:
           tr -d '\r' < /tmp/edge-headers > /tmp/edge-headers-normalized
           grep -qi '^access-control-allow-origin: \*$' /tmp/edge-headers-normalized
           grep -qi '^access-control-allow-methods: .*POST.*OPTIONS' /tmp/edge-headers-normalized
+
+  # Rerun authenticated HTTP E2E after repository-secret provisioning.
+  prototype-v3-authenticated-e2e:
+    if: github.ref_name == 'prototype/persona-quality-loop-v0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Run authenticated Persona prototype v3 E2E
+        env:
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+          PROTOTYPE_FRONTEND_URL: https://life-os-persona-prototype.onrender.com
+          PROTOTYPE_EDGE_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v3
+        run: node scripts/prototype-v3-authenticated-e2e.mjs
+
+  paid-persona-smoke:
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'prototype/persona-quality-loop-v0' && github.event.inputs.paid_persona_smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Run optional paid Persona smoke
+        env:
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+          PROTOTYPE_PAID_E2E: "1"
+          PROTOTYPE_FRONTEND_URL: https://life-os-persona-prototype.onrender.com
+          PROTOTYPE_EDGE_URL: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v3
+        run: node scripts/prototype-v3-authenticated-e2e.mjs
+
