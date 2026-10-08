@@ -7,10 +7,12 @@ import {
   type CreativeIdea, type CreativeItem, type CreativeRevision, type CreativeSession,
 } from "./persona-creative-core.ts";
 
-const CREATIVE_BRAIN_KEY = "persona-creative-v1:owner:brain:v1";
-const readCreativeBrain = () => readServerBrain(CREATIVE_BRAIN_KEY);
-const mutateCreativeBrain = (mutate: Parameters<typeof mutateServerBrain>[0]) =>
-  mutateServerBrain(mutate, readCreativeBrain, snapshot => saveServerBrain(snapshot, CREATIVE_BRAIN_KEY));
+const CREATIVE_OWNER_KEY = "persona-creative-v1:owner:brain:v1";
+const CREATIVE_CI_KEY = "persona-creative-v1:ci:brain:v1";
+const readCreativeBrain = (key: string) => readServerBrain(key);
+const mutateCreativeBrain = (key: string, mutate: Parameters<typeof mutateServerBrain>[0]) =>
+  mutateServerBrain(mutate, () => readCreativeBrain(key),
+    snapshot => saveServerBrain(snapshot, key));
 
 type Dict = Record<string,unknown>;
 const txt = (x:unknown) => typeof x==="string"?x.trim():"";
@@ -36,11 +38,11 @@ function itemById(items:CreativeItem[],id:unknown):CreativeItem {
   if(!found)err("idea_not_found");
   return found!;
 }
-async function read():Promise<CreativeItem[]> {
-  return (await readCreativeBrain()).creativeItems;
+async function read(key: string):Promise<CreativeItem[]> {
+  return (await readCreativeBrain(key)).creativeItems;
 }
-async function ensureShortlist():Promise<CreativeItem[]> {
-  const existing=await read();
+async function ensureShortlist(key: string):Promise<CreativeItem[]> {
+  const existing=await read(key);
   if(existing.length) return existing;
   const candidates=creativeShortlist();
   if(candidates.length!==MAX_CREATIVE_ITEMS)return [];
@@ -58,13 +60,13 @@ async function ensureShortlist():Promise<CreativeItem[]> {
       currentVersion:1,revisions:[revision],pending:null,session:null,pastSessions:[],
       status:"IDEA_APPROVED" as const,index};
   }));
-  await mutateCreativeBrain(snapshot=>{
+  await mutateCreativeBrain(key, snapshot=>{
     if(snapshot.creativeItems.length===0){
       snapshot.creativeItems=signed.map(({index,...entry})=>entry);
     }
     return snapshot;
   });
-  return read();
+  return read(key);
 }
 function publicView(item:CreativeItem, proofFreshness: string | null) {
  const rev=current(item);
@@ -78,9 +80,12 @@ async function views(items:CreativeItem[]) {
 }
 
 export async function handleCreative(payload:Dict):Promise<Dict> {
+  // Explicit CI marker is accepted only for the isolated non-production test brain.
+  // Normal user requests always use the owner key; no global mutable key/race.
+  const key=payload.qaNamespace==="CI_V1" ? CREATIVE_CI_KEY : CREATIVE_OWNER_KEY;
   const action=txt(payload.action);
   if(action==="creative_shortlist" || action==="creative_state"){
-    const items=action==="creative_shortlist"?await ensureShortlist():await read();
+    const items=action==="creative_shortlist"?await ensureShortlist(key):await read(key);
     const response=await views(items);
     return {items:response,ready:response.length===3,
       costMode:"FREE_ONLY",maxIdeas:3,aiInvoked:false,
@@ -90,7 +95,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
   if(!id)err("idea_id_required");
   if(action==="creative_edit"){
     let reply:Dict={};
-    await mutateCreativeBrain(snapshot=>{
+    await mutateCreativeBrain(key, snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(payload.baseVersion!==item.currentVersion)err("revision_conflict");
       if(item.pending)err("revision_pending");
@@ -111,7 +116,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     return reply;
   }
   if(action==="creative_discard_proposal"){
-    await mutateCreativeBrain(snapshot=>{
+    await mutateCreativeBrain(key, snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(payload.baseVersion!==item.currentVersion)err("revision_conflict");
       item.pending=null;item.status=item.session?"SHOOTING":"IDEA_APPROVED";
@@ -123,7 +128,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     let signed:CreativeRevision|null=null;
     // Sign candidate after verifying it is still based on the current revision;
     // CAS retry ensures an in-flight competing edit cannot approve the wrong version.
-    const first=itemById(await read(),id);
+    const first=itemById(await read(key),id);
     if(!first.pending || first.pending.status!=="APPROVE" ||
        first.pending.baseVersion!==first.currentVersion ||
        payload.expectedVersion!==first.currentVersion)err("proposal_not_approved");
@@ -134,7 +139,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
       version:first.currentVersion+1,idea:approval.idea,
       proof:approval.approvalProof,createdAt:approval.approvedAt,
       reason:first.pending.reason,critic:first.pending.critic,judge:first.pending.judge};
-    await mutateCreativeBrain(snapshot=>{
+    await mutateCreativeBrain(key, snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(item.currentVersion!==first.currentVersion || !item.pending ||
          item.pending.reason!==first.pending?.reason ||
@@ -153,12 +158,12 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
       reviewed:true,aiInvoked:false,reason:newRevision.reason};
   }
   if(action==="creative_start_session" || action==="creative_adapt_brief"){
-    const first=itemById(await read(),id);
+    const first=itemById(await read(key),id);
     const rev=await assertCurrent(first,payload.approvalProof,payload.version);
     const conditions=txt(payload.conditions).slice(0,500);
     const brief=adaptCreativeBrief(rev.idea,conditions);
     let created:CreativeSession|null=null;
-    await mutateCreativeBrain(snapshot=>{
+    await mutateCreativeBrain(key, snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(item.currentVersion!==first.currentVersion || item.pending)err("revision_conflict");
       const prior=item.session;
@@ -181,11 +186,11 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     return {session:created,aiInvoked:false};
   }
   if(action==="creative_register_asset"){
-    const first=itemById(await read(),id);
+    const first=itemById(await read(key),id);
     await assertCurrent(first,payload.approvalProof,payload.version);
     const normalized=validateIntakeAsset(payload.asset);
     let count=0;
-    await mutateCreativeBrain(snapshot=>{
+    await mutateCreativeBrain(key, snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       const ses=item.session;
       if(!ses || item.currentVersion!==first.currentVersion ||
