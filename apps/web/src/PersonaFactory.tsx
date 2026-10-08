@@ -11,6 +11,7 @@ import {
 } from './personaIdeaState';
 import { readLocalToday } from './localRuntime';
 import { normalizePersonaRecommendationPayload, selectActionablePersonaIdeas } from './persona-opportunity';
+import { brainForRuntime, freshnessLabel, rememberApprovedBrain, rememberShootingBrain, type Freshness } from './personaSharedBrain';
 import './persona-factory-v2.css';
 import { personaEdgeRequest } from './edgeRuntimeClient';
 import { getRuntimeSessionStatus, loginRuntimeSession, type RuntimeSessionStatus } from './runtimeSession';
@@ -92,6 +93,9 @@ export default function PersonaFactory() {
   const [ideas, setIdeas] = useState<Idea[]>(() => mergePersonaIdeas(localIdeas(history), readPersonaIdeas(localStorage)));
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [approvedRun, setApprovedRun] = useState<{ historyKey: string; ideas: Idea[] } | null>(null);
+  const [approvalProof, setApprovalProof] = useState('');
+  const [freshness, setFreshness] = useState<Freshness>('unverified');
+  const [costMode, setCostMode] = useState('ECONOMY');
   const [showBank, setShowBank] = useState(false);
   const [analysisState, setAnalysisState] = useState<'loading' | 'ready' | 'degraded'>('loading');
   const [analysisSummary, setAnalysisSummary] = useState('');
@@ -120,6 +124,8 @@ export default function PersonaFactory() {
 
   useEffect(() => {
     setApprovedRun(null);
+    setApprovalProof('');
+    setFreshness('unverified');
     setChosenId(null);
     setShowBank(false);
     if (!authStatus?.authenticated) return;
@@ -131,26 +137,53 @@ export default function PersonaFactory() {
       action: 'recommend',
       history,
       priorIdeas: readPersonaIdeas(localStorage),
-      seed: localIdeas(history),
+      brain: brainForRuntime(localStorage),
       context: compactContext(),
     })
       .then((data) => {
         if (cancelled) return;
         const normalized = normalizePersonaRecommendationPayload(data);
-        if (!normalized.recommendation) throw new Error('quality_bar_not_met');
+        const proof = typeof data?.approvalProof === 'string' ? data.approvalProof : '';
+        const source = data?.intelligence;
+        const freshnessValue: Freshness = source?.freshness === 'fresh' ||
+          source?.freshness === 'cached' || source?.freshness === 'stale'
+          ? source.freshness : 'unverified';
+        setFreshness(freshnessValue);
+        setCostMode(typeof source?.mode === 'string' ? source.mode : 'ECONOMY');
+        if (!normalized.recommendation || !proof) {
+          setApprovedRun(null);
+          setApprovalProof('');
+          setAnalysisSummary(
+            typeof data?.analysisSummary === 'string' && data.analysisSummary.trim()
+              ? data.analysisSummary : 'Новая идея не подтверждена. Можно работать с историей без AI.',
+          );
+          setAnalysisState('degraded');
+          return;
+        }
+        // Only a newly authenticated, HMAC-backed runtime response can unlock actions.
+        // The server checks that signature again before returning a shooting brief.
         const planned = [normalized.recommendation, ...normalized.alternatives];
+        setApprovalProof(proof);
         setApprovedRun({ historyKey: JSON.stringify(history), ideas: planned });
         setIdeas((current) => mergePersonaIdeas(planned, current));
-        setAnalysisSummary(normalized.analysisSummary || 'Рекомендация прошла внутреннюю критику.');
-        setAnalysisState('ready');
+        rememberApprovedBrain(localStorage, {
+          recommendation: normalized.recommendation,
+          approvalProof: proof, approvedAt: data.approvedAt,
+          evidenceCheckedAt: data.evidenceCheckedAt,
+        });
+        setAnalysisSummary(normalized.analysisSummary || 'Утверждённая идея доступна из Shared Brain.');
+        setAnalysisState(freshnessValue === 'stale' ? 'degraded' : 'ready');
       })
       .catch(() => {
         if (cancelled) return;
         setApprovedRun(null);
+        setApprovalProof('');
+        setFreshness('unverified');
+        setCostMode('ECONOMY');
         setChosenId(null);
         setShowBank(false);
         setIdeas((current) => mergePersonaIdeas(localIdeas(history), current));
-        setAnalysisSummary('Свежую рыночную аналитику сейчас получить не удалось. Показываю резерв без ложной уверенности.');
+        setAnalysisSummary('Сервис аналитики недоступен. Новые идеи не подтверждены, сохранённая история доступна.');
         setAnalysisState('degraded');
       });
 
@@ -162,7 +195,7 @@ export default function PersonaFactory() {
   // Persisted/fallback ideas are useful history, not an authorization to shoot.
   // The history fingerprint prevents one frame of stale actions before a new effect runs.
   const historyKey = JSON.stringify(history);
-  const visible = analysisState === 'ready' && authStatus?.authenticated &&
+  const visible = analysisState !== 'loading' && !!approvalProof && authStatus?.authenticated &&
     approvedRun?.historyKey === historyKey
     ? selectActionablePersonaIdeas(approvedRun.ideas, history)
     : [];
@@ -178,6 +211,7 @@ export default function PersonaFactory() {
 
   function saveBrief(idea: Idea, brief: NonNullable<Idea['shootingBrief']>) {
     setIdeas((current) => attachShootingBrief(current, idea.id, brief));
+    rememberShootingBrain(localStorage, idea.id, brief);
   }
 
   function saveResult(idea: Idea, result: { completedAt: string; shotIds: string[] }) {
@@ -240,7 +274,7 @@ export default function PersonaFactory() {
       <section className="personaFactoryV2">
         <button className="ghost" onClick={() => setChosenId(null)}>← К рекомендации</button>
         <div className="captureCard">
-          <small>{chosen.format.toUpperCase()} · confidence {Math.round(chosen.confidence ?? chosen.score)}%</small>
+          <small>{freshnessLabel(freshness)} · {chosen.format.toUpperCase()} · confidence {Math.round(chosen.confidence ?? chosen.score)}%</small>
           <h3>{chosen.title}</h3>
           <p>{chosen.angle}</p>
           {chosen.hook && <div className="ideaReason"><b>Хук:</b> {chosen.hook}</div>}
@@ -251,6 +285,7 @@ export default function PersonaFactory() {
             {chosen.helperPlan ? <> <b>С помощником:</b> {chosen.helperPlan}</> : null}
           </div>
           <PersonaShooting
+            approvalProof={approvalProof}
             idea={chosen}
             brief={chosen.shootingBrief ?? null}
             result={chosen.shootingResult ?? null}
@@ -275,14 +310,15 @@ export default function PersonaFactory() {
       </header>
 
       <div className="status" role="status">
-        {analysisState === 'loading' ? 'Анализирую…' : analysisState === 'ready' ? '✓ Анализ завершён' : '⚠ Аналитика ограничена'}
+        {analysisState === 'loading' ? 'Проверяю Shared Brain…' : analysisState === 'ready' ? '✓ Подтверждённая идея' : '⚠ Экономный режим · новые идеи не подтверждены'}
         {analysisSummary ? ` · ${analysisSummary}` : ''}
+        {analysisState !== 'loading' ? ` · ${costMode}` : ''}
       </div>
 
       {top ? (
         <div className="todayIdea">
           <small>
-            РЕШЕНИЕ РЕДАКЦИИ · {Math.round(top.confidence ?? top.score)}% confidence · ~{top.estimatedMinutes ?? 10} мин
+            {freshnessLabel(freshness)} · {Math.round(top.confidence ?? top.score)}% confidence · ~{top.estimatedMinutes ?? 10} мин
           </small>
           <h3>{top.title}</h3>
           <p>{top.angle}</p>
@@ -301,17 +337,17 @@ export default function PersonaFactory() {
             </div>
           ) : null}
           <div className="actions">
-            <button className="primary" disabled={analysisState === 'loading'} onClick={() => setChosenId(top.id)}>Берём — открыть съёмку</button>
+            <button className="primary" disabled={!approvalProof} onClick={() => setChosenId(top.id)}>{freshness === 'stale' ? 'Продолжить утверждённую съёмку' : 'Берём — открыть съёмку'}</button>
             <button className="ghost" onClick={() => setShowBank(!showBank)}>
               {showBank ? 'Скрыть альтернативу' : 'Другой вариант'}
             </button>
           </div>
         </div>
       ) : (
-        <div className="status">Сейчас нет идеи, которая проходит минимальный quality bar. Система не будет предлагать слабый материал ради регулярности.</div>
+        <div className="status">Нет новой подтверждённой идеи. AI-лимит не останавливает историю и сохранённые данные; непроверенные темы не становятся доступными для съёмки.</div>
       )}
 
-      {analysisState === 'ready' && showBank && visible.slice(1, 2).map((idea) => (
+      {visible.length > 1 && showBank && visible.slice(1, 2).map((idea) => (
         <div className="ideaBank" key={idea.id}>
           <article className="ideaRow">
             <button className="ideaSelect" onClick={() => setChosenId(idea.id)}>
