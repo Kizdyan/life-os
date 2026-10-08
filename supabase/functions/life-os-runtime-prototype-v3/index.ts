@@ -86,7 +86,9 @@ async function budgetStatus(): Promise<Record<string, unknown>> {
   const policy = budgetPolicy((key) => Deno.env.get(key), 0, true);
   try {
     const remote = await readServerBudget();
-    return { ...remote, policy, status: "AVAILABLE" };
+    const enabled = Deno.env.get("PERSONA_V3_PAID_AI_ENABLED") === "true";
+    return { ...remote, mode: enabled && policy.mode === "AI" ? "AI_ON_REQUEST" : "ECONOMY",
+      paidAiEnabled: enabled, policy, status: "AVAILABLE" };
   } catch {
     return { mode: "ECONOMY", policy, status: "BUDGET_STORE_UNAVAILABLE" };
   }
@@ -126,7 +128,12 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
     };
   }
 
-  if (payload.allowPaidAi === false) return safeRecommendation("paid_disabled_by_caller");
+  // Require BOTH operator permission and a fresh affirmative caller request.
+  // Neither legacy clients nor page reloads may implicitly trigger paid research.
+  if (payload.allowPaidAi !== true ||
+      Deno.env.get("PERSONA_V3_PAID_AI_ENABLED") !== "true") {
+    return safeRecommendation("paid_ai_explicitly_disabled");
+  }
 
   const policy = budgetPolicy((key) => Deno.env.get(key),
     JSON.stringify(payload.context ?? {}).length + 3000, true);
