@@ -83,7 +83,31 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert((await page.locator(".creativeBrief").innerText()).includes("окну"),"lighting was not adapted");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
-  await page.locator(".creativeFeedback").getByText(/Метаданные синхронизированы: 1/).waitFor({timeout:30000});
+  try {
+    await page.locator(".creativeFeedback").getByText(/Метаданные синхронизированы: 1/).waitFor({timeout:20000});
+  } catch (failure) {
+    const diagnostic = await page.evaluate(async () => {
+      const error = document.querySelector(".creativeError")?.textContent || "";
+      const feedback = document.querySelector(".creativeFeedback")?.textContent || "";
+      const assetList = document.querySelector(".creativeAssets")?.textContent || "";
+      let storage = "unknown";
+      try {
+        const req=indexedDB.open("persona-creative-media-v1",1);
+        storage=await new Promise(resolve=>{
+          req.onsuccess=()=>{const db=req.result;const tx=db.transaction("blobs","readonly");
+            const total=tx.objectStore("blobs").count();
+            total.onsuccess=()=>resolve("entries:"+total.result);
+            total.onerror=()=>resolve("count_failed:"+total.error?.name);
+            db.close();
+          };
+          req.onerror=()=>resolve("open_failed:"+req.error?.name);
+        });
+      } catch (e) {storage="exception:"+String(e)}
+      return {error,feedback,assetList:assetList.slice(0,160),storage};
+    });
+    console.error("CREATIVE_INTAKE_DIAGNOSTIC",name,JSON.stringify(diagnostic));
+    throw failure;
+  }
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
   const registered=await body(token,{action:"creative_state"});
   const item=registered.data.items[selectionIndex];
