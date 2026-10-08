@@ -79,6 +79,7 @@ export function validatePersonaShootingBrief(brief: unknown): string[] {
   if (!['vertical', 'horizontal'].includes(text(brief.orientation))) issues.push('orientation_value');
   if (!['1080p', '4k'].includes(text(brief.resolution))) issues.push('resolution_value');
   if (![24, 25, 30, 50, 60].includes(Number(brief.fps))) issues.push('fps');
+  if (!Array.isArray(brief.references) || !brief.references.every((x) => typeof x === 'string')) issues.push('references');
   if (!Array.isArray(brief.shots) || brief.shots.length === 0) return [...issues, 'shots'];
   let total = 0;
   for (const [i, raw] of brief.shots.entries()) {
