@@ -33,11 +33,41 @@ try {
   const status=await post({op:'status',token});
   assert(status.status===200 && status.data.authenticated===true,'authenticated status failed HTTP '+status.status);
   console.log('PASS status authenticated');
-  // Ordinary CI proves frontend/auth without incurring paid tokens.
-  // This MUST NOT be called E2E_PASS: that requires an explicitly scheduled paid smoke.
+  // Ordinary CI must exercise the REAL runtime in explicitly zero-credit mode.
+  // A cached approved idea may be shot without AI; a new unapproved idea never is.
+  const safe=await post({op:'persona',token,payload:{
+    action:'recommend', allowPaidAi:false,
+    context:{profession:['actor','musician'],availableMinutes:15,solo:true},
+    history:[],priorIdeas:[],brain:{entries:[]}
+  }});
+  assert(safe.status===200,'safe recommend must not fail HTTP '+safe.status);
+  if (safe.data.recommendation) {
+    assert(typeof safe.data.approvalProof==='string' && safe.data.approvalProof.length>60,'cached recommendation missing proof');
+    assert(['cached','stale'].includes(safe.data.intelligence?.freshness),'unlabeled cached approval');
+    const shot=await post({op:'persona',token,payload:{
+      action:'shooting',idea:safe.data.recommendation,approvalProof:safe.data.approvalProof
+    }});
+    assert(shot.status===200 && shot.data.brief?.shots?.length>0,'free approved shooting failed HTTP '+shot.status);
+    console.log('PASS cached APPROVED idea -> deterministic shooting without paid AI');
+  } else {
+    assert(safe.data.degraded===true && safe.data.intelligence?.mode==='ECONOMY',
+      'unverified idea must not be actionable');
+    console.log('PASS unactionable ECONOMY recommendation without paid AI');
+  }
+  const forgedShot=await post({op:'persona',token,payload:{
+    action:'shooting',idea:{id:'unverified',title:'Unsafe new idea'},approvalProof:''
+  }});
+  assert(forgedShot.status===409,'unverified shooting must fail closed HTTP '+forgedShot.status);
+  console.log('PASS unapproved shooting blocked without paid AI');
+  const budget=await post({op:'persona',token,payload:{action:'budget_status'}});
+  assert(budget.status===200 && budget.data?.source==='atomic_database_ledger',
+    'durable budget accounting unavailable HTTP '+budget.status);
+  console.log('PASS durable budget ledger health without paid AI');
+
   if (process.env.PROTOTYPE_PAID_E2E !== '1') {
-    console.log('PAID_SMOKE_SKIPPED: no paid AI permitted in ordinary CI');
-    console.log('AUTH_STATUS_PASS_ONLY: NOT_READY_FOR_PHYSICAL_ACCEPTANCE');
+    console.log('ZERO_CREDIT_E2E_PASS: frontend/auth/Economy/approval gates/budget');
+    console.log('PAID_SMOKE_SKIPPED: real AI recommendation is NOT verified');
+    console.log('NOT_READY_FOR_PHYSICAL_ACCEPTANCE');
     process.exit(0);
   }
   const recommendation=await post({op:'persona',token,payload:{action:'recommend',context:{profession:['actor','musician'],availableMinutes:15,solo:true},history:[],priorIdeas:[]}});
