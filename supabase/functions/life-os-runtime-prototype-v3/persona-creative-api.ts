@@ -1,11 +1,16 @@
 import { isActionableApproval, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
 import { approvePersonaCandidate } from "./quality-gates.ts";
-import { mutateServerBrain, readServerBrain } from "./persona-store.ts";
+import { mutateServerBrain, readServerBrain, saveServerBrain } from "./persona-store.ts";
 import {
   CREATIVE_PROJECT, MAX_CREATIVE_ITEMS, adaptCreativeBrief, creativeShortlist,
   editorialAssessment, validateIntakeAsset,
   type CreativeIdea, type CreativeItem, type CreativeRevision, type CreativeSession,
 } from "./persona-creative-core.ts";
+
+const CREATIVE_BRAIN_KEY = "persona-creative-v1:owner:brain:v1";
+const readCreativeBrain = () => readServerBrain(CREATIVE_BRAIN_KEY);
+const mutateCreativeBrain = (mutate: Parameters<typeof mutateServerBrain>[0]) =>
+  mutateServerBrain(mutate, readCreativeBrain, snapshot => saveServerBrain(snapshot, CREATIVE_BRAIN_KEY));
 
 type Dict = Record<string,unknown>;
 const txt = (x:unknown) => typeof x==="string"?x.trim():"";
@@ -32,7 +37,7 @@ function itemById(items:CreativeItem[],id:unknown):CreativeItem {
   return found!;
 }
 async function read():Promise<CreativeItem[]> {
-  return (await readServerBrain()).creativeItems;
+  return (await readCreativeBrain()).creativeItems;
 }
 async function ensureShortlist():Promise<CreativeItem[]> {
   const existing=await read();
@@ -53,7 +58,7 @@ async function ensureShortlist():Promise<CreativeItem[]> {
       currentVersion:1,revisions:[revision],pending:null,session:null,pastSessions:[],
       status:"IDEA_APPROVED" as const,index};
   }));
-  await mutateServerBrain(snapshot=>{
+  await mutateCreativeBrain(snapshot=>{
     if(snapshot.creativeItems.length===0){
       snapshot.creativeItems=signed.map(({index,...entry})=>entry);
     }
@@ -85,7 +90,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
   if(!id)err("idea_id_required");
   if(action==="creative_edit"){
     let reply:Dict={};
-    await mutateServerBrain(snapshot=>{
+    await mutateCreativeBrain(snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(payload.baseVersion!==item.currentVersion)err("revision_conflict");
       if(item.pending)err("revision_pending");
@@ -106,7 +111,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     return reply;
   }
   if(action==="creative_discard_proposal"){
-    await mutateServerBrain(snapshot=>{
+    await mutateCreativeBrain(snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(payload.baseVersion!==item.currentVersion)err("revision_conflict");
       item.pending=null;item.status=item.session?"SHOOTING":"IDEA_APPROVED";
@@ -129,7 +134,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
       version:first.currentVersion+1,idea:approval.idea,
       proof:approval.approvalProof,createdAt:approval.approvedAt,
       reason:first.pending.reason,critic:first.pending.critic,judge:first.pending.judge};
-    await mutateServerBrain(snapshot=>{
+    await mutateCreativeBrain(snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(item.currentVersion!==first.currentVersion || !item.pending ||
          item.pending.reason!==first.pending?.reason ||
@@ -153,7 +158,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     const conditions=txt(payload.conditions).slice(0,500);
     const brief=adaptCreativeBrief(rev.idea,conditions);
     let created:CreativeSession|null=null;
-    await mutateServerBrain(snapshot=>{
+    await mutateCreativeBrain(snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       if(item.currentVersion!==first.currentVersion || item.pending)err("revision_conflict");
       const prior=item.session;
@@ -180,7 +185,7 @@ export async function handleCreative(payload:Dict):Promise<Dict> {
     await assertCurrent(first,payload.approvalProof,payload.version);
     const normalized=validateIntakeAsset(payload.asset);
     let count=0;
-    await mutateServerBrain(snapshot=>{
+    await mutateCreativeBrain(snapshot=>{
       const item=itemById(snapshot.creativeItems,id);
       const ses=item.session;
       if(!ses || item.currentVersion!==first.currentVersion ||
