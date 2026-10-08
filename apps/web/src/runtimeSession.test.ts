@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRuntimeSessionClient } from './runtimeTransport';
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
@@ -42,4 +42,44 @@ describe('runtime session client', () => {
     await createRuntimeSessionClient({ edgeUrl, apiUrl: '', storage, fetchImpl }).logout();
     expect(storage.getItem('life-os:edge-session:v1')).toBeNull();
   });
+
+  it('adversarially preserves Safari WebKit fetch receiver through real session helpers and sync', async () => {
+    const storage = new MemoryStorage();
+    const requests: string[] = [];
+    const currentFetch = globalThis.fetch;
+    const currentStorage = (globalThis as { localStorage?: Storage }).localStorage;
+    const currentEnv = import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL;
+    try {
+      vi.stubEnv('VITE_LIFE_OS_EDGE_RUNTIME_URL', edgeUrl);
+      vi.stubGlobal('localStorage', storage);
+      globalThis.fetch = function (this: unknown, _input: RequestInfo | URL, init?: RequestInit) {
+        if (this !== globalThis) throw new TypeError('Can only call Window.fetch on instances of Window');
+        const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string };
+        requests.push(body.op ?? '');
+        if (body.op === 'login') {
+          return Promise.resolve(new Response(JSON.stringify({ authenticated: true, token: 'opaque.token' }), { status: 200 }));
+        }
+        if (body.op === 'sync') {
+          return Promise.resolve(new Response(JSON.stringify({ storeRevision: 1, results: [], records: [] }), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ authenticated: true }), { status: 200 }));
+      } as typeof fetch;
+      vi.resetModules();
+      const { loginRuntimeSession, getRuntimeSessionStatus } = await import('./runtimeSession');
+      const { createRuntimeGateway } = await import('./runtimeTransport');
+      await expect(loginRuntimeSession(' secret ')).resolves.toEqual({ configured: true, authenticated: true });
+      await expect(getRuntimeSessionStatus()).resolves.toEqual({ configured: true, authenticated: true });
+      const gateway = createRuntimeGateway({ edgeUrl, apiUrl: '', storage });
+      await gateway.sync({ mutations: [], sinceRevision: 0 });
+      expect(requests).toEqual(['login', 'status', 'sync']);
+    } finally {
+      globalThis.fetch = currentFetch;
+      if (currentStorage === undefined) vi.unstubAllGlobals();
+      else vi.stubGlobal('localStorage', currentStorage);
+      vi.unstubAllEnvs();
+      vi.resetModules();
+      expect(import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL).toBe(currentEnv);
+    }
+  });
+
 });
