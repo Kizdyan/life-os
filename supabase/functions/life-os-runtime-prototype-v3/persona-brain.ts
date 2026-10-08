@@ -13,6 +13,10 @@ export interface SealedApproval {
   freshness?: IntelligenceFreshness;
 }
 
+export function isActionableApproval(approval: SealedApproval | null): approval is SealedApproval {
+  return approval?.freshness === "cached";
+}
+
 const encoder = new TextEncoder();
 function b64Url(bytes: Uint8Array): string {
   let binary = "";

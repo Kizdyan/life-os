@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { approvePersonaCandidate, validatePersonaShootingBrief } from './quality-gates';
 import {
   APPROVAL_TTL_MS, EVIDENCE_TTL_MS, approvalFreshness, buildDeterministicShootingBrief,
-  pickApprovedBrain, sealApprovedIdea, verifyApproval,
+  isActionableApproval, pickApprovedBrain, sealApprovedIdea, verifyApproval,
 } from './persona-brain';
 
 const date = Date.parse('2026-10-08T12:00:00.000Z');
@@ -50,6 +50,8 @@ describe('Persona V3 offline approval cache and deterministic shooting', () => {
     expect(approvalFreshness(issued.approvedAt, issued.evidenceCheckedAt, date)).toBe('cached');
     expect(approvalFreshness(issued.approvedAt, issued.evidenceCheckedAt,
       date + APPROVAL_TTL_MS + 60_000)).toBe('expired');
+    expect(isActionableApproval(aged)).toBe(false);
+    expect(isActionableApproval(await verifyApproval(issued.approvalProof, secret, date))).toBe(true);
   });
 
   it('reuses a current approved idea before stale one, ignores rejected history', async () => {

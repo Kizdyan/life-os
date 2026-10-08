@@ -30,4 +30,12 @@ describe('prototype v3 authenticated E2E workflow', () => {
     expect(executor).toContain('forgedShot.status===409');
   });
 
+  it('keeps paid AI E2E in a separately gated optional smoke job', () => {
+    expect(workflow).toContain('workflow_dispatch:');
+    expect(workflow).toContain('paid-persona-smoke:');
+    expect(workflow).toContain("github.event.inputs.paid_persona_smoke == 'true'");
+    expect(workflow).toContain("github.ref_name == 'prototype/persona-quality-loop-v0'");
+    expect(workflow).toContain('PROTOTYPE_PAID_E2E: "1"');
+  });
+
 });

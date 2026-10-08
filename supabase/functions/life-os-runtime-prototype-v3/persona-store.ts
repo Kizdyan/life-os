@@ -5,13 +5,51 @@ import type { SealedApproval } from "./persona-brain.ts";
 // No browser is given a service-role key or permitted to read these tables.
 const DEFAULT_SUPABASE_URL = "https://zhehdbhpkcucgcjwuhxm.supabase.co";
 const BRAIN_KEY = "persona-v3:owner:brain:v1";
+const FRESH_WINDOW_MS = 5 * 60_000;
+const EVIDENCE_TTL_MS = 7 * 86_400_000;
+
+export type ArtifactFreshness = "fresh" | "cached" | "stale" | "unverified";
+export type CachedArtifact<T> = {
+  value: T;
+  savedAt: string;
+  evidenceCheckedAt: string;
+  freshness: ArtifactFreshness;
+};
+
+export function artifactFreshness(savedAt: string, evidenceCheckedAt: string, now = Date.now()): ArtifactFreshness {
+  const saved = Date.parse(savedAt), evidence = Date.parse(evidenceCheckedAt);
+  if (!Number.isFinite(saved) || !Number.isFinite(evidence) || saved > now + 60_000 || evidence > now + 86_400_000) {
+    return "unverified";
+  }
+  if (evidence < now - EVIDENCE_TTL_MS) return "stale";
+  return saved >= now - FRESH_WINDOW_MS ? "fresh" : "cached";
+}
+
+export function normalizeArtifacts<T>(items: unknown, now = Date.now()): CachedArtifact<T>[] {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, 40).map((raw) => {
+    if (raw && typeof raw === "object" && "value" in raw) {
+      const item = raw as { value: T; savedAt?: unknown; evidenceCheckedAt?: unknown };
+      const savedAt = typeof item.savedAt === "string" ? item.savedAt : "";
+      const evidenceCheckedAt = typeof item.evidenceCheckedAt === "string" ? item.evidenceCheckedAt : "";
+      return { value: item.value, savedAt, evidenceCheckedAt,
+        freshness: artifactFreshness(savedAt, evidenceCheckedAt, now) };
+    }
+    return { value: raw as T, savedAt: "", evidenceCheckedAt: "", freshness: "unverified" };
+  });
+}
+
+function cachedArtifact<T>(value: T, savedAt: string, evidenceCheckedAt: string): CachedArtifact<T> {
+  return { value, savedAt, evidenceCheckedAt,
+    freshness: artifactFreshness(savedAt, evidenceCheckedAt) };
+}
 
 export type BrainSnapshot = {
   schema: 1;
   entries: SealedApproval[];
-  trends: string[];
-  marketEvidence: unknown[];
-  criticJudge: unknown[];
+  trends: CachedArtifact<string>[];
+  marketEvidence: CachedArtifact<unknown>[];
+  criticJudge: CachedArtifact<unknown>[];
   shootingBriefs: Array<{ ideaId: string; brief: Record<string, unknown>; savedAt: string }>;
   updatedAt: string;
 };
@@ -44,7 +82,9 @@ export async function readServerBrain(): Promise<BrainSnapshot> {
   return {
     ...emptySnapshot(), ...value,
     entries: value.entries.slice(0, 30),
-    trends: Array.isArray(value.trends) ? value.trends.slice(0, 30) : [],
+    trends: normalizeArtifacts<string>(value.trends).slice(0, 30),
+    marketEvidence: normalizeArtifacts(value.marketEvidence).slice(0, 40),
+    criticJudge: normalizeArtifacts(value.criticJudge).slice(0, 30),
     shootingBriefs: Array.isArray(value.shootingBriefs) ? value.shootingBriefs.slice(0, 30) : [],
   };
 }
@@ -66,14 +106,17 @@ export async function saveServerBrain(snapshot: BrainSnapshot): Promise<boolean>
 }
 
 export async function persistApprovedEntry(entry: SealedApproval, criticJudge: unknown = null): Promise<void> {
-  let snapshot: BrainSnapshot;
-  try { snapshot = await readServerBrain(); } catch { snapshot = emptySnapshot(); }
+  // Never overwrite durable cache with an empty snapshot after a transient read failure.
+  const snapshot = await readServerBrain();
   snapshot.entries = [entry, ...snapshot.entries.filter(x => x.idea.id !== entry.idea.id)].slice(0, 30);
   snapshot.marketEvidence = snapshot.entries.flatMap(x =>
-    Array.isArray(x.idea.marketEvidence) ? x.idea.marketEvidence : []).slice(0, 40);
+    Array.isArray(x.idea.marketEvidence) ? x.idea.marketEvidence.map(value =>
+      cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 40);
   snapshot.trends = snapshot.entries.flatMap(x =>
-    Array.isArray(x.idea.whyNow) ? x.idea.whyNow.filter((y): y is string => typeof y === "string") : []).slice(0, 30);
-  snapshot.criticJudge = [criticJudge ?? entry.idea.qualityVerdict, ...snapshot.criticJudge].slice(0, 30);
+    Array.isArray(x.idea.whyNow) ? x.idea.whyNow.filter((y): y is string => typeof y === "string")
+      .map(value => cachedArtifact(value, x.approvedAt, x.evidenceCheckedAt)) : []).slice(0, 30);
+  snapshot.criticJudge = [cachedArtifact(criticJudge ?? entry.idea.qualityVerdict,
+    entry.approvedAt, entry.evidenceCheckedAt), ...snapshot.criticJudge].slice(0, 30);
   await saveServerBrain(snapshot);
 }
 

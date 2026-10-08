@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality-gates.ts";
-import { buildDeterministicShootingBrief, pickApprovedBrain, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
+import { buildDeterministicShootingBrief, isActionableApproval, pickApprovedBrain, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
 import { budgetPolicy, reserveBudget } from "./persona-cost.ts";
 import { runProviderRouter } from "./persona-provider.ts";
 import { persistApprovedEntry, persistShootingBrief, readServerBrain, readServerBudget, reserveServerAiCall } from "./persona-store.ts";
@@ -75,11 +75,11 @@ async function authenticated(token: string): Promise<boolean> {
 
 const APPROVAL_SIGNING_SECRET = () => (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
-function safeRecommendation(reason: string, mode: string = "ECONOMY"): Record<string, unknown> {
+function safeRecommendation(reason: string, mode: string = "FREE_ONLY"): Record<string, unknown> {
   return {
     ready: false, recommendation: null, alternatives: [], degraded: true,
     analysisSummary: "Новые идеи не подтверждены. История, банк идей и съёмка утверждённого материала доступны без AI.",
-    intelligence: { mode, freshness: "unverified", reason, providerRequired: false },
+    intelligence: { mode, costMode: "FREE_ONLY", freshness: "unverified", reason, providerRequired: false },
   };
 }
 async function budgetStatus(): Promise<Record<string, unknown>> {
@@ -110,6 +110,9 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
   ];
   const approved = await pickApprovedBrain(combined, signingSecret, payload.history);
   if (approved) {
+    if (!isActionableApproval(approved)) {
+      return safeRecommendation("stale_cache_non_actionable");
+    }
     return {
       ready: true,
       recommendation: approved.idea,
@@ -122,7 +125,7 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
         ? "Утверждённую идею можно доснять. Рыночные данные устарели, новая аналитика не заявляется."
         : "Использована ранее утверждённая рекомендация из Shared Brain без платного AI.",
       intelligence: {
-        mode: "CACHED", freshness: approved.freshness, providerRequired: false,
+        mode: "CACHED", costMode: "FREE_ONLY", freshness: approved.freshness, providerRequired: false,
         origin: "server_signed_approval",
       },
     };
@@ -176,7 +179,7 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
           degraded: false,
           analysisSummary: typeof response.analysisSummary === "string"
             ? response.analysisSummary : "AI-редакция и deterministic quality bar выполнены.",
-          intelligence: { mode: "AI", freshness: "fresh",
+          intelligence: { mode: "AI", costMode: "PAID_OPTIONAL", freshness: "fresh",
             providerRequired: true, criticType: "single_pass_self_critique" },
         };
       } catch (error) {
@@ -198,7 +201,7 @@ async function recommend(payload: Record<string, unknown>): Promise<Record<strin
 async function shooting(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   // No paid model call. Only an unexpired, authentic approval from this server is actionable.
   const approved = await verifyApproval(payload.approvalProof, APPROVAL_SIGNING_SECRET());
-  if (!approved) throw new Error("idea_approval_required");
+  if (!isActionableApproval(approved)) throw new Error("idea_approval_required");
   const claimed = payload.idea && typeof payload.idea === "object"
     ? payload.idea as Record<string, unknown> : {};
   if (claimed.id !== approved.idea.id || claimed.title !== approved.idea.title) {

@@ -4,6 +4,7 @@ type Env = (name: string) => string | undefined;
 
 export interface AiBudgetPolicy {
   mode: "ECONOMY" | "AI";
+  costMode: "FREE_ONLY" | "PAID_OPTIONAL";
   callsPerDay: number;
   dailyUsd: number;
   monthlyUsd: number;
@@ -24,6 +25,7 @@ export function budgetPolicy(
   // Zero paid AI calls by default. Positive limit requires explicit operator configuration.
   // A separate explicit caller opt-in is enforced by the server route.
   const callsPerDay = Math.floor(numeric(env, "PERSONA_V3_AI_CALLS_PER_DAY", 0, 50));
+  const costMode = callsPerDay > 0 ? "PAID_OPTIONAL" as const : "FREE_ONLY" as const;
   const dailyUsd = numeric(env, "PERSONA_V3_AI_DAILY_USD", 0.03, 100);
   const monthlyUsd = numeric(env, "PERSONA_V3_AI_MONTHLY_USD", 0.30, 1000);
   const estInputTokens = Math.ceil(Math.min(Math.max(approximateInputChars, 0), 120_000) / 3.5);
@@ -34,10 +36,10 @@ export function budgetPolicy(
   const reserveUsd = Math.ceil(Math.max(0.0001,
     (estInputTokens * inputPerMillion + estOutputTokens * outputPerMillion) / 1_000_000) * 1_000_000) / 1_000_000;
   if (!callsPerDay || dailyUsd < reserveUsd || monthlyUsd < reserveUsd) {
-    return { mode: "ECONOMY", reason: "budget_config_exhausted", callsPerDay,
+    return { mode: "ECONOMY", costMode, reason: "budget_config_exhausted", callsPerDay,
       dailyUsd, monthlyUsd, reserveUsd, estInputTokens, estOutputTokens };
   }
-  return { mode: "AI", callsPerDay, dailyUsd, monthlyUsd,
+  return { mode: "AI", costMode, callsPerDay, dailyUsd, monthlyUsd,
     reserveUsd, estInputTokens, estOutputTokens };
 }
 

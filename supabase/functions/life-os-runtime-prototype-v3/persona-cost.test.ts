@@ -9,7 +9,7 @@ describe('Persona V3 AI cost guard and provider resilience (offline fixtures onl
   it('defaults to ZERO paid calls on the existing configuration', async () => {
     const policy = budgetPolicy(config({}), 6000);
     expect(policy.callsPerDay).toBe(0);
-    expect(policy.mode).toBe('ECONOMY');
+    expect(policy).toMatchObject({ mode: 'ECONOMY', costMode: 'FREE_ONLY', callsPerDay: 0 });
     let reserved = 0;
     const result = await reserveBudget(policy, async () => {
       reserved++;
@@ -22,7 +22,7 @@ describe('Persona V3 AI cost guard and provider resilience (offline fixtures onl
   it('blocks zero-credits mode before any paid call', async () => {
     const policy = budgetPolicy(config({ PERSONA_V3_AI_CALLS_PER_DAY: '0' }), 5000);
     const reserve = async () => { throw new Error('must not contact quota backend'); };
-    expect(policy.mode).toBe('ECONOMY');
+    expect(policy).toMatchObject({ mode: 'ECONOMY', costMode: 'FREE_ONLY', callsPerDay: 0 });
     expect((await reserveBudget(policy, reserve)).allowed).toBe(false);
   });
 
@@ -38,6 +38,7 @@ describe('Persona V3 AI cost guard and provider resilience (offline fixtures onl
       requests.push(args);
       return { allowed: true, mode: 'AI', dailyCalls: 1 };
     }, Date.parse('2026-10-08T12:00:00Z'));
+    expect(policy.costMode).toBe('PAID_OPTIONAL');
     expect(result).toEqual({ allowed: true, mode: 'AI', dailyCalls: 1 });
     expect(policy.estInputTokens).toBeGreaterThan(1000);
     expect(policy.estOutputTokens).toBe(2000);

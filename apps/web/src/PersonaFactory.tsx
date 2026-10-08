@@ -95,7 +95,7 @@ export default function PersonaFactory() {
   const [approvedRun, setApprovedRun] = useState<{ historyKey: string; ideas: Idea[] } | null>(null);
   const [approvalProof, setApprovalProof] = useState('');
   const [freshness, setFreshness] = useState<Freshness>('unverified');
-  const [costMode, setCostMode] = useState('ECONOMY');
+  const [costMode, setCostMode] = useState('FREE_ONLY');
   const [showBank, setShowBank] = useState(false);
   const [analysisState, setAnalysisState] = useState<'loading' | 'ready' | 'degraded'>('loading');
   const [analysisSummary, setAnalysisSummary] = useState('');
@@ -135,6 +135,8 @@ export default function PersonaFactory() {
 
     void api({
       action: 'recommend',
+      costMode: 'FREE_ONLY',
+      allowPaidAi: false,
       history,
       priorIdeas: readPersonaIdeas(localStorage),
       brain: brainForRuntime(localStorage),
@@ -149,7 +151,7 @@ export default function PersonaFactory() {
           source?.freshness === 'cached' || source?.freshness === 'stale'
           ? source.freshness : 'unverified';
         setFreshness(freshnessValue);
-        setCostMode(typeof source?.mode === 'string' ? source.mode : 'ECONOMY');
+        setCostMode(typeof source?.costMode === 'string' ? source.costMode : 'FREE_ONLY');
         if (!normalized.recommendation || !proof) {
           setApprovedRun(null);
           setApprovalProof('');
@@ -179,7 +181,7 @@ export default function PersonaFactory() {
         setApprovedRun(null);
         setApprovalProof('');
         setFreshness('unverified');
-        setCostMode('ECONOMY');
+        setCostMode('FREE_ONLY');
         setChosenId(null);
         setShowBank(false);
         setIdeas((current) => mergePersonaIdeas(localIdeas(history), current));
