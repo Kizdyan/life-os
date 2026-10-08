@@ -1,5 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality-gates.ts";
+import { buildDeterministicShootingBrief, pickApprovedBrain, sealApprovedIdea, verifyApproval } from "./persona-brain.ts";
+import { budgetPolicy, reserveBudget } from "./persona-cost.ts";
+import { persistApprovedEntry, persistShootingBrief, readServerBrain, readServerBudget, reserveServerAiCall } from "./persona-store.ts";
 
 const AUTH_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v2";
 const STATUS_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype";
@@ -39,10 +42,14 @@ Deno.serve(async (request: Request) => {
   try {
     if (action === "recommend") return json(await recommend(payload as Record<string, unknown>));
     if (action === "shooting") return json({ brief: await shooting(payload as Record<string, unknown>) });
+    if (action === "budget_status") return json(await budgetStatus());
     return json({ error: "unsupported_persona_action" }, 400);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("persona prototype v3 failed", action, message);
+    if (message === "idea_approval_required" || message === "approval_idea_mismatch") {
+      return json({ error: "idea_approval_required", action }, 409);
+    }
     if (message.startsWith("invalid_shooting_brief:")) {
       return json({ error: "shooting_brief_quality_failed", action }, 422);
     }
@@ -65,161 +72,196 @@ async function authenticated(token: string): Promise<boolean> {
   return payload.authenticated === true;
 }
 
-async function recommend(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const research = await aiJson(
-    [
-      "Ты Research Lead Persona для российского рынка коротких вертикальных видео.",
-      "Используй web search и выбери 3 сильных кандидата, которые пользователь может снять сейчас.",
-      "Не выдумывай тренды, просмотры, источники, биографию или доступные ресурсы.",
-      "Не повторяй отвергнутые концепции и манифесты про начало пути.",
-      "Пользователь — работающий актёр, музыкант и автор; не ставь его в неподтверждённую экспертную позицию.",
-      "Каждый кандидат: 15–30 секунд итоговой длительности, 5–15 минут на съёмку, сильный hook первых 1–2 секунд, короткий script, soloPlan и helperPlan.",
-      "marketEvidence содержит только реально найденные источники: source, finding, url, asOf.",
-      "Верни только JSON: {candidates:[{id,title,angle,format,score,confidence,reason,hook,script,estimatedMinutes,estimatedDurationSeconds,whyNow:[],resources:[],soloPlan,helperPlan,marketEvidence:[{source,finding,url,asOf}]}],evidenceSummary:string}."
-    ].join("\n"),
-    payload,
-    true,
-  );
+const APPROVAL_SIGNING_SECRET = () => (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
-  const candidates = Array.isArray((research as any)?.candidates) ? (research as any).candidates.slice(0, 3) : [];
-  if (candidates.length < 2) throw new Error("insufficient_research_candidates");
-
-  const frozen = {
-    candidates,
-    evidenceSummary: String((research as any)?.evidenceSummary ?? ""),
-    context: payload.context ?? {},
-    history: payload.history ?? [],
-    priorIdeas: payload.priorIdeas ?? [],
-  };
-
-  const [brand, retention] = await Promise.all([
-    aiJson(
-      [
-        "Ты независимый Challenger по персональному бренду. Не соглашайся автоматически.",
-        "Для каждого кандидата проверь органичность, банальность, повтор прошлых идей, фальшивую экспертность и соответствие текущему позиционированию.",
-        "Верни только JSON {reviews:[{id,verdict:'APPROVE|REVISE|REJECT',score:number,problems:[],requiredChanges:[]}]}."
-      ].join("\n"),
-      frozen,
-      false,
-    ),
-    aiJson(
-      [
-        "Ты независимый Audience/Retention critic российского short-form.",
-        "Для каждого кандидата проверь hook первых 1–2 секунд, понятность холодной аудитории, реальную длительность 15–30 секунд, выполнимость за 5–15 минут и качество market evidence.",
-        "Утверждение о тренде без source+url+asOf считать недоказанным.",
-        "Верни только JSON {reviews:[{id,verdict:'APPROVE|REVISE|REJECT',score:number,problems:[],requiredChanges:[]}]}."
-      ].join("\n"),
-      frozen,
-      false,
-    ),
-  ]);
-
-  const judged = await aiJson(
-    [
-      "Ты Judge Persona. Получаешь замороженные кандидаты, evidence и две независимые критики.",
-      "Выбери максимум одну основную рекомендацию и максимум одну альтернативу.",
-      "Если замечания исправимы, сам исправь angle/hook/script до финального варианта.",
-      "Основная рекомендация только если qualityVerdict.score >=80, estimatedMinutes 5–15, estimatedDurationSeconds 15–30 и confidence соответствует evidence.",
-      "При отсутствии верифицируемого market evidence не выдавай рекомендацию как готовую.",
-      "Верни только JSON {ready:boolean,recommendation:{полный кандидат,qualityVerdict:{verdict:'APPROVE|REVISE|REJECT',score:number,summary:string,risks:[]}},alternatives:[{полный кандидат,qualityVerdict:{verdict:'APPROVE|REVISE|REJECT',score:number,summary:string,risks:[]}}],analysisSummary:string}."
-    ].join("\n"),
-    { ...frozen, brandCritic: brand, retentionCritic: retention },
-    false,
-  );
-
-  if ((judged as any)?.ready !== true || !(judged as any)?.recommendation) {
-    return { ready: false, recommendation: null, alternatives: [], analysisSummary: "Ни одна идея не прошла quality bar.", degraded: true };
-  }
-
-  const evaluated = approvePersonaCandidate((judged as any).recommendation);
-  if (!evaluated.approved || !evaluated.candidate) {
-    // Never allow an unverified/unevidenced option to open Take or Create.
-    console.warn("persona quality gate rejected", evaluated.failures.join(","));
-    return { ready: false, recommendation: null, alternatives: [], analysisSummary: "Недостаточно подтверждений для съёмки.", degraded: true };
-  }
-  const alternatives = (Array.isArray((judged as any)?.alternatives) ? (judged as any).alternatives : [])
-    .map((idea: unknown) => approvePersonaCandidate(idea))
-    .filter((outcome: { approved: boolean; candidate: unknown }) => outcome.approved && Boolean(outcome.candidate))
-    .slice(0, 1)
-    .map((outcome: { candidate: unknown }) => outcome.candidate);
-
+function safeRecommendation(reason: string, mode: string = "ECONOMY"): Record<string, unknown> {
   return {
-    ready: true,
-    recommendation: evaluated.candidate,
-    alternatives,
-    analysisSummary: String((judged as any)?.analysisSummary ?? "Research + independent critique + Judge."),
-    degraded: false,
+    ready: false, recommendation: null, alternatives: [], degraded: true,
+    analysisSummary: "Новые идеи не подтверждены. История, банк идей и съёмка утверждённого материала доступны без AI.",
+    intelligence: { mode, freshness: "unverified", reason, providerRequired: false },
   };
+}
+async function budgetStatus(): Promise<Record<string, unknown>> {
+  const policy = budgetPolicy((key) => Deno.env.get(key), 0, true);
+  try {
+    const remote = await readServerBudget();
+    return { ...remote, policy, status: "AVAILABLE" };
+  } catch {
+    return { mode: "ECONOMY", policy, status: "BUDGET_STORE_UNAVAILABLE" };
+  }
+}
+
+async function recommend(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Provider-free path runs first. The server verifies the HMAC for any client snapshot.
+  // Persisted cache survives Edge restarts and iPhone browser reloads.
+  const signingSecret = APPROVAL_SIGNING_SECRET();
+  let snapshot: Awaited<ReturnType<typeof readServerBrain>> | null = null;
+  try { snapshot = await readServerBrain(); } catch (error) {
+    console.warn("persona Shared Brain read unavailable", error instanceof Error ? error.message : "unknown");
+  }
+  const submitted = payload.brain && typeof payload.brain === "object"
+    ? (payload.brain as Record<string, unknown>).entries : [];
+  const combined = [
+    ...(snapshot?.entries ?? []),
+    ...(Array.isArray(submitted) ? submitted : []),
+  ];
+  const approved = await pickApprovedBrain(combined, signingSecret, payload.history);
+  if (approved) {
+    return {
+      ready: true,
+      recommendation: approved.idea,
+      approvalProof: approved.approvalProof,
+      approvedAt: approved.approvedAt,
+      evidenceCheckedAt: approved.evidenceCheckedAt,
+      alternatives: [],
+      degraded: approved.freshness === "stale",
+      analysisSummary: approved.freshness === "stale"
+        ? "Утверждённую идею можно доснять. Рыночные данные устарели, новая аналитика не заявляется."
+        : "Использована ранее утверждённая рекомендация из Shared Brain без платного AI.",
+      intelligence: {
+        mode: "CACHED", freshness: approved.freshness, providerRequired: false,
+        origin: "server_signed_approval",
+      },
+    };
+  }
+
+  const policy = budgetPolicy((key) => Deno.env.get(key),
+    JSON.stringify(payload.context ?? {}).length + 3000, true);
+  if (policy.mode === "ECONOMY") return safeRecommendation("budget_disabled_or_exhausted");
+
+  try {
+    // Single paid research+critique pass (instead of four calls for every visit).
+    // web_search may be used only on a fresh cache miss and after atomic budget reservation.
+    const response = await aiJson([
+      "Ты Research Lead и самокритичный редактор Persona для российского short-form.",
+      "Найди реальные свежие рыночные сигналы через web_search. Не выдумывай тренды.",
+      "Сначала предложи 2–3 кандидата, проверь холодный hook, естественность для актёра/музыканта,",
+      "выполнимость за 5–15 минут и длительность итогового видео 15–30 секунд.",
+      "Новая идея может быть утверждена только при >=80/100 и подтверждённых источниках.",
+      "Если источников нет, отвечай ready:false. Никаких неподтверждённых экспертных обещаний.",
+      "Верни JSON: {ready:boolean,candidates:[{id,title,angle,format:'reel',score,confidence,",
+      "reason,hook,script,soloPlan,helperPlan,estimatedMinutes,estimatedDurationSeconds,",
+      "whyNow:[],marketEvidence:[{source,finding,url,asOf}],qualityVerdict:{verdict:'APPROVE|REVISE|REJECT',score,summary,risks:[]}}],",
+      "criticJudge:{criticNotes:[],judgeSummary:string},analysisSummary:string}."
+    ].join("\n"), {
+      context: payload.context ?? {}, history: payload.history ?? [],
+      priorIdeas: payload.priorIdeas ?? [],
+    }, true) as Record<string, unknown>;
+
+    const candidates = Array.isArray(response.candidates) ? response.candidates : [];
+    for (const item of candidates.slice(0, 3)) {
+      const checked = approvePersonaCandidate(item);
+      if (!checked.approved || !checked.candidate) continue;
+      try {
+        const sealed = await sealApprovedIdea(checked.candidate, signingSecret);
+        try { await persistApprovedEntry(sealed, response.criticJudge ?? checked.candidate.qualityVerdict); }
+        catch (error) {
+          // iPhone keeps the signed approval locally if the DB cache is temporarily down.
+          console.warn("persona Shared Brain write unavailable", error instanceof Error ? error.message : "unknown");
+        }
+        return {
+          ready: true, recommendation: sealed.idea, alternatives: [],
+          approvalProof: sealed.approvalProof,
+          approvedAt: sealed.approvedAt, evidenceCheckedAt: sealed.evidenceCheckedAt,
+          degraded: false,
+          analysisSummary: typeof response.analysisSummary === "string"
+            ? response.analysisSummary : "AI-редакция и deterministic quality bar выполнены.",
+          intelligence: { mode: "AI", freshness: "fresh",
+            providerRequired: true, criticType: "single_pass_self_critique" },
+        };
+      } catch (error) {
+        console.warn("persona candidate cannot be signed", error instanceof Error ? error.message : "unknown");
+      }
+    }
+    return safeRecommendation("no_idea_clears_quality_bar", "DETERMINISTIC");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const reason = message.includes("429") ? "provider_quota" :
+      message.includes("budget") || message.includes("economy") ? "budget_exhausted" :
+      message.includes("abort") || message.includes("timeout") ? "provider_timeout" : "provider_unavailable";
+    console.warn("persona recommend in safe mode", reason);
+    return safeRecommendation(reason, "ECONOMY");
+  }
 }
 
 async function shooting(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const idea = payload.idea;
-  if (!idea || typeof idea !== "object" || Array.isArray(idea) || !String((idea as any).title ?? "").trim()) {
-    throw new Error("missing_idea");
+  // No paid model call. Only an unexpired, authentic approval from this server is actionable.
+  const approved = await verifyApproval(payload.approvalProof, APPROVAL_SIGNING_SECRET());
+  if (!approved) throw new Error("idea_approval_required");
+  const claimed = payload.idea && typeof payload.idea === "object"
+    ? payload.idea as Record<string, unknown> : {};
+  if (claimed.id !== approved.idea.id || claimed.title !== approved.idea.title) {
+    throw new Error("approval_idea_mismatch");
   }
-  const brief = await aiJson(
-    [
-      "Ты режиссёр съёмки Persona. Создай конкретное съёмочное задание для одного человека с iPhone.",
-      "Сохраняй утверждённые hook и script идеи. Не придумывай локацию, реквизит или помощника.",
-      "Для Reels/Shorts/VK Clips по умолчанию vertical, 4k, 30fps.",
-      "Один master + 1–3 B-roll, если этого достаточно.",
-      "Верни только JSON {title,orientation,resolution,fps,audio,lighting,background,references:[],shots:[{id,purpose,shotSize,angle,cameraPosition,cameraHeight,distance,composition,movement,durationSeconds,takes,action,dialogue,bRoll,bRollInstruction}]}."
-    ].join("\n"),
-    { idea },
-    false,
-  ) as Record<string, unknown>;
-
-  const issues = validatePersonaShootingBrief(brief);
-  if (issues.length) throw new Error("invalid_shooting_brief:" + issues.join(","));
+  let cached: Record<string, unknown> | null = null;
+  try {
+    const brain = await readServerBrain();
+    const entry = brain.shootingBriefs.find(x => x.ideaId === approved.idea.id &&
+      Date.parse(x.savedAt) >= Date.parse(approved.approvedAt));
+    if (entry && validatePersonaShootingBrief(entry.brief).length === 0) cached = entry.brief;
+  } catch { /* cache failure never blocks approved shooting */ }
+  if (cached) return cached;
+  const brief = buildDeterministicShootingBrief(approved.idea);
+  try { await persistShootingBrief(String(approved.idea.id), brief); } catch {
+    // The client also persists the returned brief in the local Shared Brain.
+  }
   return brief;
 }
 
+let quotaCooldownUntil = 0;
+
 async function aiJson(system: string, payload: unknown, web: boolean): Promise<unknown> {
+  if (Date.now() < quotaCooldownUntil) throw new Error("openai_failed:429_cooldown");
   const rawKey = Deno.env.get("PERSONA_PROTOTYPE_OPENAI_API_KEY") ?? "";
   const key = rawKey.trim();
-  if (!key) throw new Error("PERSONA_PROTOTYPE_OPENAI_API_KEY_not_configured");
-  const credentialShape = describeCredential(rawKey);
-  const configured = (Deno.env.get("PERSONA_OPENAI_MODEL") ?? "").trim();
-  const models = [...new Set([configured, "gpt-5.6-sol"].filter(Boolean))];
-  let last = 0;
+  if (!key) throw new Error("prototype_ai_credentials_missing");
 
-  for (const model of models) {
-    const body: Record<string, unknown> = {
-      model,
-      store: false,
-      input: [
-        { role: "system", content: system },
-        { role: "user", content: JSON.stringify(payload) },
-      ],
+  const configured = (Deno.env.get("PERSONA_V3_AI_PRIMARY_MODEL") ?? "gpt-4.1-mini").trim();
+  const cheaper = (Deno.env.get("PERSONA_V3_AI_CHEAP_MODEL") ?? "gpt-4o-mini").trim();
+  const models = [...new Set([configured, cheaper].filter(Boolean))];
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    const request = {
+      model, store: false,
+      input: [{ role: "system", content: system },
+        { role: "user", content: JSON.stringify(payload) }],
+      ...(web ? { tools: [{ type: "web_search" }] } : {}),
     };
-    if (web) body.tools = [{ type: "web_search" }];
+    // Atomic reservation happens for EACH paid attempt, including model fallback.
+    const policy = budgetPolicy((name) => Deno.env.get(name),
+      JSON.stringify(request).length, i > 0);
+    const reservation = await reserveBudget(policy, reserveServerAiCall);
+    if (!reservation.allowed) throw new Error("economy_mode:" + (reservation.reason || "budget_exhausted"));
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    last = response.status;
-    if (response.ok) {
-      const raw = await response.json() as any;
-      const text = extractText(raw);
-      return parseJson(text);
+    let response: Response;
+    try {
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      if (i < models.length - 1) continue; // cheaper provider path only if budget permits
+      throw error;
     }
-    const errorPayload = await response.json().catch(() => ({})) as {
-      error?: { code?: unknown; type?: unknown; param?: unknown };
-    };
-    console.error("openai response failed", JSON.stringify({
-      model,
-      status: response.status,
-      errorCode: String(errorPayload.error?.code ?? "unknown"),
-      errorType: String(errorPayload.error?.type ?? "unknown"),
-      errorParam: errorPayload.error?.param == null ? null : String(errorPayload.error.param),
-      credentialShape,
-      requestIdPresent: Boolean(response.headers.get("x-request-id")),
-    }));
-    if (![400, 404].includes(response.status)) break;
+    if (response.ok) return parseJson(extractText(await response.json()));
+
+    const status = response.status;
+    const data = await response.json().catch(() => ({})) as
+      { error?: { code?: string; type?: string } };
+    const code = typeof data.error?.code === "string" ? data.error.code : "unknown";
+    // Never print credential material or provider error.message.
+    console.warn("persona model attempt rejected", JSON.stringify({ status, code, model }));
+    if (status === 429 || code === "credit_balance_exhausted") {
+      quotaCooldownUntil = Date.now() + 60 * 60 * 1000; // no runaway retry on quota
+      throw new Error("openai_failed:429");
+    }
+    if (status === 401 || status === 403) throw new Error("openai_failed:" + status);
+    if (![400, 404, 408, 500, 502, 503, 504].includes(status)) throw new Error("openai_failed:" + status);
+    // The next loop iteration is an independently budget-reserved, cheaper fallback.
   }
-  throw new Error("openai_failed:" + (last || "unknown"));
+  throw new Error("provider_exhausted");
 }
 
 function describeCredential(raw: string): Record<string, unknown> {
