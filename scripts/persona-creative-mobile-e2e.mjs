@@ -134,7 +134,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const bad=await body(token,{action:"creative_start_session",ideaId:selected.id,
     version:targetVersion,approvalProof:"unsigned",conditions:""});
   assert(bad.status===409,"forged approval still actionable");
-  await page.locator(".creativeTake").getByText(/Берём — к съёмке/).click();
+  await page.getByRole("button",{name:/Берём — к съёмке/}).click();
   await page.locator('.creativeV1[data-stage="shoot"]').waitFor({timeout:30000});
   await page.getByText("Изменить условия съёмки").click();
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
