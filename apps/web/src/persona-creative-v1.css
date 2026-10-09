@@ -71,3 +71,11 @@ main:has(.creativeV1) .personaFactoryV2{padding-bottom:calc(108px + env(safe-are
 
 /* Keep the five stage labels legible on narrow devices. */
 .creativeV1 .creativeProgress button{font-size:clamp(9px,2.7vw,12px)!important;line-height:1.2!important}
+
+/* iOS virtual keyboard: hide the app's fixed footer while the creative copilot has focus. */
+main:has(.creativeV1 textarea:focus)>.mainNav,
+main:has(.creativeV1 select:focus)>.mainNav{display:none!important}
+main:has(.creativeV1 textarea:focus) .creativeV1 textarea{
+ scroll-margin-top:calc(20px + env(safe-area-inset-top));
+ scroll-margin-bottom:calc(24px + env(safe-area-inset-bottom));
+}
