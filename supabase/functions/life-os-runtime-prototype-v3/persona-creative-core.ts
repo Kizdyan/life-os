@@ -15,6 +15,8 @@ export type CreativeAsset = {
   id: string; projectId: string; contentItemId: string; ideaId: string;
   ideaVersion: number; sessionId: string; kind: "take" | "photo" | "broll" | "audio" | "additional";
   filename: string; mime: string; bytes: number; createdAt: string;
+  role?: "primary_take"|"alternate_take"|"broll"|"photo"|"audio"|"reference_other";
+  roleConfidence?: "high"|"medium"|"low";
   storage: "device_local"; state: "INTAKE_LOCAL" | "QA_PENDING";
   pipeline: { mediaQA: "PENDING"; transcription: "PENDING"; takeScoring: "PENDING"; 
     selectedSegments: "PENDING"; editDecisions: "PENDING"; outputs: "PENDING" };
@@ -177,7 +179,9 @@ export function validateIntakeAsset(value:unknown): CreativeAsset {
     !a.mime || a.mime.length>150 || !Number.isFinite(a.bytes) || (a.bytes??0)<=0 ||
     (a.bytes??0)>5*1024*1024*1024 ||
     !["take","photo","broll","audio","additional"].includes(String(a.kind)) ||
-    a.storage!=="device_local") throw Error("invalid_asset");
+    a.storage!=="device_local" ||
+    (a.role!==undefined && !["primary_take","alternate_take","broll","photo","audio","reference_other"].includes(a.role)) ||
+    (a.roleConfidence!==undefined && !["high","medium","low"].includes(a.roleConfidence))) throw Error("invalid_asset");
  return {...a,kind:a.kind!,projectId:a.projectId,contentItemId:a.contentItemId,
    ideaId:a.ideaId,ideaVersion:a.ideaVersion,sessionId:a.sessionId,id:a.id,
    filename:a.filename,mime:a.mime,bytes:a.bytes,storage:"device_local",state:"INTAKE_LOCAL",
