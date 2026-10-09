@@ -98,6 +98,19 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(await page.locator(".creativeStage").count()===1,"Edit stage is not isolated");
   await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
   await page.locator("#creative-erika-input").fill(qaInstruction);
+  await page.setViewportSize({width:390,height:540});
+  await page.locator("#creative-erika-input").focus();
+  const keyboard=await page.evaluate(()=>{
+    const nav=document.querySelector("main>.mainNav");
+    return {footerDisplay:nav?getComputedStyle(nav).display:"missing"};
+  });
+  assert(keyboard.footerDisplay==="none","fixed Life OS footer obscures the Erika keyboard");
+  await page.locator(".creativeDiscuss").scrollIntoViewIfNeeded();
+  const keyboardButton=await page.locator(".creativeDiscuss").boundingBox();
+  assert(keyboardButton&&keyboardButton.y+keyboardButton.height<=542,
+    "Erika submit button hidden behind simulated short keyboard viewport");
+  await page.setViewportSize({width:390,height:844});
+  console.log("PASS "+name+" Erika virtual-keyboard viewport 390x540: footer hidden, submit visible");
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
   assert(await page.locator(".creativeStage").count()===1,"proposal must not display other stages");
