@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+mkdirSync("artifacts/persona-creative-v1",{recursive:true});
 import {chromium,webkit} from "playwright";
 
 const head=process.env.GITHUB_SHA;
@@ -50,6 +52,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
       assert(button.width>=100&&button.height>=44&&button.x>=0&&button.right<=width+1,
         name+" "+width+" idea CTA collapsed or clipped "+JSON.stringify(button));
     }
+    await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-"+width+"-shortlist.png"});
     console.log("PASS "+name+" "+width+"px idea CTA geometry and safe-area/overflow");
   }
   await page.setViewportSize({width:390,height:844});
@@ -81,10 +84,13 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator("#creative-erika-input").fill("Мне нравится идея 2, но поменяй финал");
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
-  assert((await page.locator(".creativeProposal").innerText()).includes("Critic"),"no reasoned critic");
+  assert((await page.locator(".creativeProposal").innerText()).includes("Почему"),"no reasoned Erika assessment");
+  await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-proposed.png"});
   await page.getByRole("button",{name:"Применить"}).click();
   await page.locator(".creativeApplied").waitFor({timeout:30000});
   assert((await page.locator(".creativeApplied").innerText()).includes("Правка применена"),"missing visible applied+success UI");
+  assert((await page.locator(".creativeApplied").innerText()).includes("Теперь"),"user cannot see exact applied editorial diff");
+  await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-applied.png"});
   const status=await body(token,{action:"creative_state"});
   assert(status.status===200,"creative state read failed");
   const selected=status.data.items[selectionIndex];
@@ -111,7 +117,17 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
   await page.getByRole("button",{name:"Берём — создать задание"}).click();
   await page.locator(".creativeBrief").waitFor({timeout:30000});
-  assert((await page.locator(".creativeBrief").innerText()).includes("окну"),"lighting was not adapted");
+  const readableBrief=await page.locator(".creativeBrief").innerText();
+  for(const label of ["Что сказать","Телефон","Кадр","Дублей","Длина","Свет"]){
+    assert(readableBrief.includes(label),"simplified brief missing "+label);
+  }
+  assert(readableBrief.includes("окну"),"lighting was not adapted");
+  await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-shooting.png"});
+  const uploadBounds=await page.locator(".creativePicker").evaluate(node=>{
+    const r=node.getBoundingClientRect();const nav=document.querySelector(".mainNav")?.getBoundingClientRect();
+    return {top:r.top,bottom:r.bottom,navTop:nav?.top,width:r.width};
+  });
+  assert(uploadBounds.width>=190,"upload CTA collapsed");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
   try {
@@ -213,6 +229,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert((await page.locator(".sleepSelectionSummary").innerText()).includes(expectedChoice),
     "sleep interval lost after reload");
   console.log("PASS "+name+" sleep single selection + visible save + reload persistence");
+  await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-sleep-saved.png"});
   const after=await budget(token);
   assert(JSON.stringify(after.data.usage||[])===usage,"FREE_ONLY spent AI budget");
   assert(errors.length===0,"browser JS error: "+errors.join("; "));
