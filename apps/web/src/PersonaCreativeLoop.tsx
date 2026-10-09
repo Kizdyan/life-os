@@ -101,7 +101,8 @@ export default function PersonaCreativeLoop(){
   const answer=await act({action:"creative_edit",ideaId:item.id,baseVersion:item.currentVersion,instruction});
   if(answer){
    setErikaAssessment(str(answer.critic));
-   if(answer.proposedVersion)setInstruction("");
+   setInstruction("");
+   if(!answer.proposedVersion)setEditorOpen(false);
    requestAnimationFrame(()=>responseRef.current?.scrollIntoView({block:"nearest",behavior:"smooth"}));
   }else setErikaAssessment("");
  }
