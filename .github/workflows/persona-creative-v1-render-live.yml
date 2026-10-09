@@ -51,6 +51,6 @@ jobs:
           if grep -E -q '/api/(persona|runtime/(sync|session))' /tmp/persona-render-live.js; then
             echo "::error::Unexpected Vercel runtime dependency"; exit 1
           fi
-          grep -Fq 'Выбери, что снимем' /tmp/persona-render-live.js || \
+          grep -Fq 'Я снял — загрузить материалы' /tmp/persona-render-live.js || \
             { echo "::error::Creative V1 frontend absent"; exit 1; }
           echo "RENDER_CREATIVE_V1_LIVE_EXACT_HEAD_PASS $EXACT_HEAD"
