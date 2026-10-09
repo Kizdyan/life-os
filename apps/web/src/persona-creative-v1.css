@@ -68,3 +68,6 @@ main:has(.creativeV1) .personaFactoryV2{padding-bottom:calc(108px + env(safe-are
 @media(min-width:760px){.creativeV1 .creativeShortlist{grid-template-columns:repeat(3,minmax(0,1fr))}.creativeV1 article.creativeIdea{padding:19px!important}}
 @media(max-width:390px){.creativeV1 .creativeShortlist{grid-template-columns:minmax(0,1fr)}.creativeV1 article.creativeIdea{padding:15px!important}.creativeStepDot{width:22px;height:22px}.creativeV1 .creativeDirection,.creativeV1 .creativeBrief{padding:15px}}
 @media(prefers-reduced-motion:reduce){.creativeV1{scroll-behavior:auto!important}}
+
+/* Keep the five stage labels legible on narrow devices. */
+.creativeV1 .creativeProgress button{font-size:clamp(9px,2.7vw,12px)!important;line-height:1.2!important}
