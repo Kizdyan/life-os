@@ -43,7 +43,7 @@ export default function PersonaCreativeLoop(){
  const [feedback,setFeedback]=useState("");
  const [erikaAssessment,setErikaAssessment]=useState("");
  const [justApplied,setJustApplied]=useState(false);
- const responseRef=useRef<HTMLDivElement|null>(null);
+ const responseRef=useRef<HTMLElement|null>(null);
  const refresh=useCallback(async(seed=false)=>{
    const response=await personaEdgeRequest({action:seed?"creative_shortlist":"creative_state"}) as {items?:ViewItem[]};
    const safe=Array.isArray(response.items)?response.items.slice(0,3):[];
