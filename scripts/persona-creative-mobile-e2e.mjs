@@ -109,6 +109,22 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     throw failure;
   }
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
+  const beforeReload=await page.evaluate(async()=>{
+    const open=indexedDB.open("persona-creative-media-v1",2);
+    const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
+    try{
+      const getAll=store=>new Promise((resolve,reject)=>{
+        const req=db.transaction(store,"readonly").objectStore(store).getAll();
+        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+      });
+      const records=await getAll("blobs"),chunks=await getAll("chunks");
+      return {entries:records.length,chunks:chunks.length,record:records[0],byteLength:chunks.reduce((n,c)=>n+c.bytes.byteLength,0)};
+    }finally{db.close();}
+  });
+  assert(beforeReload.entries>=1,"no committed IndexedDB asset manifest before reload");
+  assert(beforeReload.chunks>=1,"no structured-clone ArrayBuffer chunks before reload");
+  assert(beforeReload.byteLength>=20,"binary bytes not stored before reload");
+  console.log("PASS "+name+" IDB committed manifests:"+beforeReload.entries+" chunks:"+beforeReload.chunks+" bytes:"+beforeReload.byteLength);
   const registered=await body(token,{action:"creative_state"});
   const item=registered.data.items[selectionIndex];
   assert(item.session?.assets.length>=1,"registered media manifest not durable");
@@ -127,6 +143,21 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
   await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
   await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
+  const persisted=await page.evaluate(async()=>{
+    const open=indexedDB.open("persona-creative-media-v1",2);
+    const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
+    try{
+      const all=store=>new Promise((resolve,reject)=>{
+        const req=db.transaction(store,"readonly").objectStore(store).getAll();
+        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+      });
+      const records=await all("blobs"),chunks=await all("chunks");
+      return {entries:records.length,chunks:chunks.length,bytes:chunks.reduce((n,c)=>n+c.bytes.byteLength,0)};
+    }finally{db.close();}
+  });
+  assert(persisted.entries>=beforeReload.entries&&persisted.chunks>=beforeReload.chunks &&
+    persisted.bytes>=beforeReload.byteLength,"WebKit/Chromium binary asset lost after Safari reload");
+  console.log("PASS "+name+" IDB binary persisted AFTER RELOAD entries:"+persisted.entries+" chunks:"+persisted.chunks);
   const after=await budget(token);
   assert(JSON.stringify(after.data.usage||[])===usage,"FREE_ONLY spent AI budget");
   assert(errors.length===0,"browser JS error: "+errors.join("; "));
