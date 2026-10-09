@@ -1,0 +1,56 @@
+name: persona-creative-v1-render-live
+on:
+  push:
+    branches: [feature/persona-creative-loop-v1]
+    paths:
+      - "render.yaml"
+      - ".github/workflows/persona-creative-v1-render-live.yml"
+  pull_request:
+    paths:
+      - "render.yaml"
+      - ".github/workflows/persona-creative-v1-render-live.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-independent-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      RENDER_CREATIVE_V1_URL: ${{ vars.RENDER_CREATIVE_V1_URL || secrets.RENDER_CREATIVE_V1_URL }}
+      EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      EDGE_TARGET: https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-creative-v1
+    steps:
+      - name: Require independent Render site binding
+        run: |
+          if [ -z "$RENDER_CREATIVE_V1_URL" ]; then
+            echo "::error::Independent Creative V1 Render site URL not connected. Vercel does not count."
+            exit 1
+          fi
+          case "$RENDER_CREATIVE_V1_URL" in
+            https://*.onrender.com|https://*.onrender.com/) ;;
+            *) echo "::error::Render URL must be independent HTTPS *.onrender.com"; exit 1 ;;
+          esac
+      - name: Verify exact HEAD served by live Render, not local preview
+        run: |
+          ok=0
+          for i in {1..30}; do
+            status="$(curl --connect-timeout 10 --max-time 20 -sS -w '%{http_code}' -o /tmp/persona-render-live.html "${RENDER_CREATIVE_V1_URL%/}/?head=$EXACT_HEAD" || true)"
+            if [ "$status" = "200" ] && grep -Fq "$EXACT_HEAD" /tmp/persona-render-live.html; then ok=1; break; fi
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Creative V1 exact-head Render LIVE absent: $EXACT_HEAD"; exit 1
+          fi
+          asset="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/persona-render-live.html | head -1)"
+          test -n "$asset" || { echo "::error::No Vite bundle asset"; exit 1; }
+          curl --fail --show-error --location --connect-timeout 10 --max-time 30 \
+            "${RENDER_CREATIVE_V1_URL%/}$asset" -o /tmp/persona-render-live.js
+          grep -Fq "$EDGE_TARGET" /tmp/persona-render-live.js || \
+            { echo "::error::Wrong Creative V1 Edge target"; exit 1; }
+          if grep -E -q '/api/(persona|runtime/(sync|session))' /tmp/persona-render-live.js; then
+            echo "::error::Unexpected Vercel runtime dependency"; exit 1
+          fi
+          grep -Fq 'PERSONA CREATIVE LOOP' /tmp/persona-render-live.js || \
+            { echo "::error::Creative V1 frontend absent"; exit 1; }
+          echo "RENDER_CREATIVE_V1_LIVE_EXACT_HEAD_PASS $EXACT_HEAD"
