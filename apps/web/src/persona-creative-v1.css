@@ -65,7 +65,7 @@
   .creativeV1 .creativeActions{grid-template-columns:minmax(0,1fr)}
 }
 /* Respect all four safe-area insets and leave room for fixed Life OS bottom navigation. */
-main:has(.creativeV1){padding-top:max(18px,env(safe-area-inset-top));padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));padding-bottom:calc(130px + env(safe-area-inset-bottom))}
+main:has(.creativeV1){padding-top:calc(18px + env(safe-area-inset-top));padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right));padding-bottom:calc(130px + env(safe-area-inset-bottom))}
 main:has(.creativeV1)>header{min-height:48px;scroll-margin-top:env(safe-area-inset-top)}
 main:has(.creativeV1) .mainNav{padding-bottom:calc(14px + env(safe-area-inset-bottom));min-height:calc(66px + env(safe-area-inset-bottom))}
 main:has(.creativeV1) .personaFactoryV2{padding-bottom:calc(105px + env(safe-area-inset-bottom))}
