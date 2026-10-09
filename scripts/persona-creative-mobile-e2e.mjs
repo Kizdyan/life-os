@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 mkdirSync("artifacts/persona-creative-v1",{recursive:true});
 import {chromium,webkit} from "playwright";
 
@@ -15,6 +17,35 @@ const body=async(token,payload)=>{
  return {status:r.status,data:await r.json().catch(()=>({}))};
 };
 const budget=async token=>body(token,{action:"budget_status"});
+// Real, decodable MP4 fixture, not a fake MOV/text blob. Generated once per run.
+const videoPath="artifacts/persona-creative-v1/real-iphone-qa.mp4";
+execFileSync("ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi",
+ "-i","color=c=black:s=160x288:r=4","-t","1","-an","-c:v","libx264",
+ "-pix_fmt","yuv420p","-movflags","+faststart",videoPath],{timeout:30000});
+const video=readFileSync(videoPath);
+assert(video.length>1000&&video.toString("ascii",4,8)==="ftyp","real MP4 encoding invalid");
+const videoProbe=JSON.parse(execFileSync("ffprobe",["-v","quiet","-print_format","json",
+ "-show_streams",videoPath],{encoding:"utf8",timeout:30000}));
+assert(videoProbe.streams.some(s=>s.codec_name==="h264"&&s.width===160&&s.height===288),
+ "MP4 must contain a real H.264 track");
+const mediaSha256=createHash("sha256").update(video).digest("hex");
+console.log("PASS valid H.264 MP4 media fixture bytes:"+video.length+" sha256:"+mediaSha256);
+const verifyVisibleAction=async(page,selector,screen)=>{
+ const target=page.locator(selector);
+ await target.scrollIntoViewIfNeeded();
+ const geometry=await target.evaluate((element)=>{
+  const c=element.getBoundingClientRect(),nav=document.querySelector("main>.mainNav");
+  const n=nav?.getBoundingClientRect();
+  return {buttonTop:c.top,buttonBottom:c.bottom,buttonHeight:c.height,navTop:n?.top,navHeight:n?.height,
+    scrollWidth:document.documentElement.scrollWidth,innerWidth,viewportHeight:innerHeight};
+ });
+ assert(geometry.buttonHeight>=44&&geometry.buttonTop>=0&&
+   geometry.buttonBottom<=geometry.navTop-3&&geometry.scrollWidth<=geometry.innerWidth+2,
+   "fixed bottom bar covers "+screen+" CTA "+JSON.stringify(geometry));
+ assert(geometry.navHeight<=62,"bottom nav dominates "+screen+" vertical space "+JSON.stringify(geometry));
+ console.log("PASS "+screen+" primary CTA uncovered; compact footer "+geometry.navHeight+"px");
+};
+
 for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
  const browser=await engine.launch();
  const selectionIndex=name==="webkit"?2:1;
@@ -62,6 +93,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
         name+" "+width+" idea CTA collapsed or clipped "+JSON.stringify(button));
     }
     await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-"+width+"-shortlist.png"});
+    await verifyVisibleAction(page,'.creativeIdea:last-child .creativeSelect',name+" "+width+"px IDEA");
     console.log("PASS "+name+" "+width+"px idea CTA geometry and safe-area/overflow");
   }
   await page.setViewportSize({width:390,height:844});
@@ -118,6 +150,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-proposed.png"});
   await page.getByRole("button",{name:"Применить"}).click();
   await page.locator(".creativeApplied").waitFor({timeout:30000});
+  await verifyVisibleAction(page,'.creativeErikaLaunch',name+" EDIT");
   assert((await page.locator(".creativeApplied").innerText()).includes("Правка применена"),"missing visible applied+success UI");
   assert((await page.locator(".creativeApplied").innerText()).includes("Что изменилось"),"user cannot see applied change summary");
   await page.locator(".creativeApplied summary").click();
@@ -129,6 +162,23 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(selected.currentVersion===targetVersion && selected.revisions.length>=2,"new revision not durably reapproved");
   assert(selected.revisions.at(-2).proof!==selected.revisions.at(-1).proof,"approval inherited after edit");
   assert(selected.revisions.at(-1).reason.includes("поменяй финал"),"edit reason not persisted");
+  assert(String(selected.revisions.at(-1).idea.script).includes(qaEnding),
+    "precise user ending not reflected in signed new version");
+  // No button/navigation should be needed to recover current revision after a full iPhone Safari reload.
+  await page.reload({waitUntil:"domcontentloaded"});
+  await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
+  await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
+  await page.locator('.creativeV1[data-stage="edit"]').waitFor({timeout:30000});
+  await page.waitForFunction((ending)=>{
+    const text=document.querySelector(".creativeDirection")?.textContent||"";
+    return text.includes(ending);
+  },qaEnding,{timeout:30000});
+  const versionOnReload=await body(token,{action:"creative_state"});
+  assert(versionOnReload.data.items[selectionIndex].currentVersion===targetVersion,
+    "precisely edited version lost on reload");
+  assert((versionOnReload.data.items[selectionIndex].revisions.at(-1).proof||"").length>10,
+    "reloaded revision lost its independent approval proof");
+  console.log("PASS "+name+" Erika precise ending one signed version survives reload");
   // Adversarial repeat: identical request must not produce another revision or duplicate ending.
   await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
   await page.locator("#creative-erika-input").fill(qaInstruction);
@@ -149,8 +199,17 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(bad.status===409,"forged approval still actionable");
   await page.getByRole("button",{name:/Берём — к съёмке/}).click();
   await page.locator('.creativeV1[data-stage="shoot"]').waitFor({timeout:30000});
+  await verifyVisibleAction(page,'.creativeShooting>.creativeTake',name+" SHOOT");
   await page.getByText("Изменить условия съёмки").click();
+  const adjust=page.getByRole("button",{name:"Подстроить съёмку"});
+  assert(await adjust.isDisabled(),"adapt should remain disabled until conditions are supplied");
+  assert((await page.locator(".creativeAdjustHint").innerText()).includes("кнопка станет активной"),
+    "disabled explanation missing");
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
+  assert(await adjust.isEnabled(),"adapt does not become enabled after describing conditions");
+  assert((await page.locator(".creativeAdjustHint").innerText()).includes("можно применить"),
+    "ready-to-apply state not shown");
+  await verifyVisibleAction(page,'.creativeAdjust',name+" ADAPT");
   await page.getByRole("button",{name:"Подстроить съёмку"}).click();
   await page.waitForFunction(()=>document.querySelector(".creativeBrief")?.textContent?.includes("окну"),null,{timeout:30000});
   const readableBrief=await page.locator(".creativeBrief").innerText();
@@ -168,8 +227,9 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     return {top:r.top,bottom:r.bottom,navTop:nav?.top,width:r.width};
   });
   assert(uploadBounds.width>=190,"upload CTA collapsed");
+  await verifyVisibleAction(page,'.creativePicker',name+" UPLOAD");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
-  await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
+  await fileInput.setInputFiles({name:"take-ci.mp4",mimeType:"video/mp4",buffer:video});
   try {
     await page.locator(".creativeFeedback").getByText(/Загружено 1 файл/).waitFor({timeout:20000});
   } catch (failure) {
@@ -210,12 +270,21 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   });
   assert(beforeReload.entries>=1,"no committed IndexedDB asset manifest before reload");
   assert(beforeReload.chunks>=1,"no structured-clone ArrayBuffer chunks before reload");
-  assert(beforeReload.byteLength>=20,"binary bytes not stored before reload");
+  assert(beforeReload.byteLength===video.length,"binary bytes mismatch versus real MP4 original");
+  assert(beforeReload.record?.meta?.bytes===video.length,"committed manifest size differs from real video");
   console.log("PASS "+name+" IDB committed manifests:"+beforeReload.entries+" chunks:"+beforeReload.chunks+" bytes:"+beforeReload.byteLength);
   const registered=await body(token,{action:"creative_state"});
   const item=registered.data.items[selectionIndex];
   assert(item.session?.assets.length>=1,"registered media manifest not durable");
   const media=item.session.assets[0];
+  assert(media.id===beforeReload.record?.meta?.id,"Edge asset ID differs from real Safari IndexedDB asset");
+  assert(media.ideaId===selected.id&&media.ideaVersion===targetVersion,
+    "asset lost exact approved idea/version lineage");
+  assert(media.sessionId===item.session.id&&media.projectId===item.projectId&&
+    media.contentItemId===item.contentItemId,"asset attached to wrong session/project/content item");
+  assert(media.mime==="video/mp4"&&media.bytes===video.length,"real MP4 metadata altered");
+  assert(media.role==="primary_take"||media.role==="alternate_take",
+    "video should classify automatically as a take without manual category");
   for(const key of ["projectId","contentItemId","ideaId","ideaVersion","sessionId","id"]){
     assert(media[key]!==undefined,"media lineage missing "+key);
   }
@@ -245,12 +314,42 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   });
   assert(persisted.entries>=beforeReload.entries&&persisted.chunks>=beforeReload.chunks &&
     persisted.bytes>=beforeReload.byteLength,"WebKit/Chromium binary asset lost after Safari reload");
+  const originalSha=await page.evaluate(async(assetId)=>{
+    const opened=indexedDB.open("persona-creative-media-v1",2);
+    const db=await new Promise((resolve,reject)=>{
+      opened.onsuccess=()=>resolve(opened.result);opened.onerror=()=>reject(opened.error);
+    });
+    try{
+      const get=(store,key)=>new Promise((resolve,reject)=>{
+        const request=db.transaction(store,"readonly").objectStore(store).get(key);
+        request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+      });
+      const manifest=await get("blobs",assetId);
+      if(!manifest||manifest.parts<1)throw Error("missing committed manifest");
+      const buffers=[];
+      for(let i=0;i<manifest.parts;i++){
+        const part=await get("chunks",assetId+":"+i);
+        if(!part?.bytes)throw Error("missing chunk "+i);
+        buffers.push(part.bytes);
+      }
+      const data=await new Blob(buffers).arrayBuffer();
+      const hash=await crypto.subtle.digest("SHA-256",data);
+      return {bytes:data.byteLength,hash:Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,"0")).join(""),
+        ideaId:manifest.meta.ideaId,ideaVersion:manifest.meta.ideaVersion,sessionId:manifest.meta.sessionId};
+    }finally{db.close();}
+  },media.id);
+  assert(originalSha.bytes===video.length&&originalSha.hash===mediaSha256,
+    "Safari/WebKit media corrupt after reload: "+JSON.stringify(originalSha));
+  assert(originalSha.ideaId===selected.id&&originalSha.ideaVersion===targetVersion &&
+    originalSha.sessionId===item.session.id,"persisted binary lineage changed on reload");
+  console.log("PASS "+name+" REAL MP4 SHA-256 unchanged + exact session/idea linkage after reload");
   console.log("PASS "+name+" IDB binary persisted AFTER RELOAD entries:"+persisted.entries+" chunks:"+persisted.chunks);
   await page.getByRole("button",{name:/Перейти к монтажу/}).click();
   await page.locator('.creativeV1[data-stage="assembly"]').waitFor({timeout:15000});
   assert(await page.locator(".creativeStage").count()===1,"Assembly placeholder not isolated");
   const assemblyText=await page.locator(".creativeStage").innerText();
   assert(assemblyText.includes("Монтаж ещё не собран"),"Future editing stage falsely claims an existing cut");
+  await verifyVisibleAction(page,'.creativeAssembly>.creativeTake',name+" ASSEMBLY");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-assembly.png"});
   // Physical sleep interaction: one pressed window, save confirmation, persisted after reload.
   await page.locator(".mainNav").getByText("Сегодня",{exact:true}).click();
