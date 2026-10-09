@@ -33,6 +33,26 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   }
   await page.locator(".creativeIdea").first().waitFor({timeout:30000});
   assert(await page.locator(".creativeIdea").count()===3,"not exactly 3 creative shortlist cards");
+  for(const width of [320,375,390,430]){
+    await page.setViewportSize({width,height:844});
+    const metrics=await page.evaluate(()=>{
+      const cards=[...document.querySelectorAll(".creativeIdea")];
+      const buttons=cards.map(x=>x.querySelector("button.creativeSelect")?.getBoundingClientRect())
+        .filter(Boolean).map(r=>({x:r.x,right:r.right,width:r.width,height:r.height,top:r.top}));
+      const header=document.querySelector("main>header")?.getBoundingClientRect();
+      return {scroll:document.documentElement.scrollWidth,viewport:innerWidth,
+        headerTop:header?.top,buttons};
+    });
+    assert(metrics.scroll<=width+2,name+" "+width+" horizontal overflow "+JSON.stringify(metrics));
+    assert(metrics.headerTop>=-1,name+" "+width+" header collides with safe area");
+    assert(metrics.buttons.length===3,name+" "+width+" missing selectable ideas");
+    for(const button of metrics.buttons){
+      assert(button.width>=100&&button.height>=44&&button.x>=0&&button.right<=width+1,
+        name+" "+width+" idea CTA collapsed or clipped "+JSON.stringify(button));
+    }
+    console.log("PASS "+name+" "+width+"px idea CTA geometry and safe-area/overflow");
+  }
+  await page.setViewportSize({width:390,height:844});
   const titles=await page.locator(".creativeIdea h3").allInnerTexts();
   assert(new Set(titles).size===3,"shortlist alternatives not meaningfully distinct");
   const token=await page.evaluate(()=>localStorage.getItem("life-os:edge-session:v1"));
@@ -62,14 +82,25 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
   assert((await page.locator(".creativeProposal").innerText()).includes("Critic"),"no reasoned critic");
-  await page.getByRole("button",{name:/Утверждаю v\d+/}).click();
-  await page.waitForFunction((version)=>document.querySelector(".creativeEditor small")?.textContent?.includes("v"+version),targetVersion,{timeout:30000});
+  await page.getByRole("button",{name:"Применить"}).click();
+  await page.locator(".creativeApplied").waitFor({timeout:30000});
+  assert((await page.locator(".creativeApplied").innerText()).includes("Правка применена"),"missing visible applied+success UI");
   const status=await body(token,{action:"creative_state"});
   assert(status.status===200,"creative state read failed");
   const selected=status.data.items[selectionIndex];
   assert(selected.currentVersion===targetVersion && selected.revisions.length>=2,"new revision not durably reapproved");
   assert(selected.revisions.at(-2).proof!==selected.revisions.at(-1).proof,"approval inherited after edit");
   assert(selected.revisions.at(-1).reason.includes("поменяй финал"),"edit reason not persisted");
+  // Adversarial repeat: identical request must not produce another revision or duplicate ending.
+  await page.locator("#creative-erika-input").fill("поменяй финал");
+  await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
+  await page.locator(".creativeEditorialResponse").getByText(/уже есть|уже внесена/).waitFor({timeout:30000});
+  const unchanged=await body(token,{action:"creative_state"});
+  assert(unchanged.data.items[selectionIndex].currentVersion===targetVersion,"duplicate edit created phantom version");
+  assert(!unchanged.data.items[selectionIndex].pending,"identical edit created duplicate pending version");
+  const currentScript=unchanged.data.items[selectionIndex].revisions.at(-1).idea.script;
+  assert(currentScript.split("А финал оставим открытым:").length-1===1,
+    "ending concatenated instead of replaced exactly once");
   // A previously signed proof must be invalid for the new current idea revision.
   const old=await body(token,{action:"creative_start_session",ideaId:selected.id,
     version:targetVersion,approvalProof:selected.revisions.at(-2).proof,conditions:""});
@@ -84,7 +115,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
   try {
-    await page.locator(".creativeFeedback").getByText(/Метаданные синхронизированы: 1/).waitFor({timeout:20000});
+    await page.locator(".creativeFeedback").getByText(/Учтено в сессии: 1/).waitFor({timeout:20000});
   } catch (failure) {
     const diagnostic = await page.evaluate(async () => {
       const error = document.querySelector(".creativeError")?.textContent || "";
@@ -108,7 +139,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     console.error("CREATIVE_INTAKE_DIAGNOSTIC",name,JSON.stringify(diagnostic));
     throw failure;
   }
-  await page.getByText(/Сохранённые исходники на этом iPhone: 1/).waitFor({timeout:30000});
+  await page.getByText(/На этом iPhone: 1 файл/).waitFor({timeout:30000});
   const beforeReload=await page.evaluate(async()=>{
     const open=indexedDB.open("persona-creative-media-v1",2);
     const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
@@ -132,6 +163,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   for(const key of ["projectId","contentItemId","ideaId","ideaVersion","sessionId","id"]){
     assert(media[key]!==undefined,"media lineage missing "+key);
   }
+  assert(["primary_take","alternate_take"].includes(media.role),"video role not automatically inferred");
   assert(media.storage==="device_local"&&media.pipeline.takeScoring==="PENDING",
     "local-only pipeline state lied");
   const reject=await body(token,{action:"creative_register_asset",ideaId:item.id,
@@ -158,6 +190,29 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(persisted.entries>=beforeReload.entries&&persisted.chunks>=beforeReload.chunks &&
     persisted.bytes>=beforeReload.byteLength,"WebKit/Chromium binary asset lost after Safari reload");
   console.log("PASS "+name+" IDB binary persisted AFTER RELOAD entries:"+persisted.entries+" chunks:"+persisted.chunks);
+  // Physical sleep interaction: one pressed window, save confirmation, persisted after reload.
+  await page.locator(".mainNav").getByText("Сегодня",{exact:true}).click();
+  const sleepChoices=page.locator(".sleepWindows button");
+  await sleepChoices.first().waitFor({state:"visible",timeout:20000});
+  await sleepChoices.nth(1).click();
+  const firstChoice=await sleepChoices.nth(1).innerText();
+  await sleepChoices.nth(2).click();
+  const expectedChoice=await sleepChoices.nth(2).innerText();
+  assert(firstChoice!==expectedChoice,"sleep windows indistinguishable");
+  assert(await page.locator('.sleepWindows button[aria-pressed="true"]').count()===1,"multiple sleep windows pressed");
+  assert((await page.locator(".sleepSelectionSummary").innerText()).includes(expectedChoice),
+    "sleep selected interval not visible");
+  await page.getByRole("button",{name:"Сохранить сон и состояние"}).click();
+  await page.locator(".sleepSavedConfirmation").waitFor({timeout:20000});
+  assert((await page.locator(".sleepSavedConfirmation").innerText()).includes(expectedChoice),
+    "sleep save does not confirm chosen interval");
+  await page.reload({waitUntil:"domcontentloaded"});
+  await page.locator(".sleepWindows button").first().waitFor({timeout:20000});
+  assert(await page.locator('.sleepWindows button[aria-pressed="true"]').count()===1,
+    "sleep selection missing or multiple after reload");
+  assert((await page.locator(".sleepSelectionSummary").innerText()).includes(expectedChoice),
+    "sleep interval lost after reload");
+  console.log("PASS "+name+" sleep single selection + visible save + reload persistence");
   const after=await budget(token);
   assert(JSON.stringify(after.data.usage||[])===usage,"FREE_ONLY spent AI budget");
   assert(errors.length===0,"browser JS error: "+errors.join("; "));
