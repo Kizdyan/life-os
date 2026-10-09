@@ -101,12 +101,14 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
   assert(await page.locator(".creativeStage").count()===1,"proposal must not display other stages");
-  assert((await page.locator(".creativeProposal").innerText()).includes("Почему"),"no reasoned Erika assessment");
+  assert((await page.locator(".creativeProposal").innerText()).includes("Моё мнение"),"no reasoned Erika assessment");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-proposed.png"});
   await page.getByRole("button",{name:"Применить"}).click();
   await page.locator(".creativeApplied").waitFor({timeout:30000});
   assert((await page.locator(".creativeApplied").innerText()).includes("Правка применена"),"missing visible applied+success UI");
-  assert((await page.locator(".creativeApplied").innerText()).includes("Теперь"),"user cannot see exact applied editorial diff");
+  assert((await page.locator(".creativeApplied").innerText()).includes("Что изменилось"),"user cannot see applied change summary");
+  await page.locator(".creativeApplied summary").click();
+  assert((await page.locator(".creativeApplied").innerText()).includes("Стало"),"user cannot inspect detailed applied diff");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-applied.png"});
   const status=await body(token,{action:"creative_state"});
   assert(status.status===200,"creative state read failed");
