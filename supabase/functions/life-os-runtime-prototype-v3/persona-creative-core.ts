@@ -76,6 +76,11 @@ export function creativeShortlist(now = Date.now()): CreativeIdea[] {
   return all.filter(item => approvePersonaCandidate(item,now).approved).slice(0,MAX_CREATIVE_ITEMS);
 }
 
+const EDITORIAL_ENDING = "А финал оставим открытым: что бы ты сделал на его месте?";
+const EDITORIAL_JOKE = "И нет, запасного дублёра моей серьёзности не завезли.";
+const EDITORIAL_SOLO = "Снять одному: iPhone на безопасной устойчивой опоре, один непрерывный дубль, без движения камеры.";
+const EDITORIAL_HOOK_PREFIX = "А что, если показать это совсем иначе? ";
+const EDITORIAL_NATURAL_PREFIX = "Покажу один простой момент: ";
 export function editorialAssessment(idea: CreativeIdea, request: string):
   {kind:string; proposal:CreativeIdea|null; critic:string; judge:string} {
   const text = request.trim().slice(0,600);
@@ -87,35 +92,49 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
   }
   const next={...idea};
   let kind="UNRECOGNIZED",critic="Это изменение пока слишком расплывчато: есть риск потерять исходный замысел.";
-  const hook=String(idea.hook||"");
-  const script=String(idea.script||"");
+  const hook=String(idea.hook||"").trim();
+  const script=String(idea.script||"").trim();
   if (/финал|концовк|в конце/i.test(text)) {
     kind="ENDING";
-    next.script=script.replace(/[.!?\s]+$/,"")+" А финал оставим открытым: что бы ты сделал на его месте?";
-    critic="Открытый финал вовлекает, но не должен звучать как просьба поставить лайк.";
+    const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{12,220})$/i)?.[1]?.trim();
+    // Revision means replacing the actual last thought, never appending to prior revisions.
+    if(script.includes(EDITORIAL_ENDING) && !replacement){
+      return {kind:"NO_CHANGE",proposal:null,critic:"Такой финал уже есть в текущей версии. Повторное применение не нужно.",judge:"COMMENT_ONLY"};
+    }
+    const clean=script.replace(/(?:\s*А финал оставим открытым: что бы ты сделал на его месте\?)+/g,"").trim();
+    const sentences=clean.match(/[^.!?]+[.!?]*/g)?.map(x=>x.trim()).filter(Boolean)||[];
+    const prefix=sentences.length>1?sentences.slice(0,-1).join(" ").trim():clean;
+    const nextEnding=replacement||EDITORIAL_ENDING;
+    next.script=(prefix?prefix+" ":"")+nextEnding;
+    critic="Изменяем финальную мысль, а не дописываем вторую концовку. Сохраняем естественный разговорный тон.";
   } else if (/смешн|юмор|ирони|шуточ/i.test(text)) {
     kind="HUMOR";
-    next.hook=hook.replace(/[!?]+$/,"")+" — и без пафоса.";
-    next.script=script.replace(/[.!?\s]+$/,"")+" И нет, запасного дублёра моей серьёзности не завезли.";
+    if(script.includes(EDITORIAL_JOKE))return {kind:"NO_CHANGE",proposal:null,critic:"Шутка уже есть. Ещё одно повторение ослабит финал.",judge:"COMMENT_ONLY"};
+    next.hook=hook.endsWith(" — и без пафоса.")?hook:hook.replace(/[!?]+$/,"")+" — и без пафоса.";
+    next.script=script.replace(/[.!?\s]+$/,"")+" "+EDITORIAL_JOKE;
     critic="Добавим лёгкую самоиронию, но не будем превращать важную актёрскую сцену в клоунаду.";
   } else if (/без эксперт|не учи|без наставник|не поучай/i.test(text)) {
     kind="NON_EXPERT";
-    next.script="Это просто мой опыт: "+script.replace(/^(Вы должны|Нужно всем|Правильный способ)[,:]?\s*/i,"");
+    next.script=script.startsWith("Это просто мой опыт: ")?script:
+      "Это просто мой опыт: "+script.replace(/^(Вы должны|Нужно всем|Правильный способ)[,:]?\s*/i,"");
     critic="Согласна: конкретное личное наблюдение убедительнее неподтверждённого совета.";
   } else if (/пафосн|слишком громк|проще|естествен/i.test(text)) {
     kind="NATURAL";
-    next.hook="Покажу один простой момент: "+hook.replace(/[!?]+$/,"").toLowerCase();
+    next.hook=hook.startsWith(EDITORIAL_NATURAL_PREFIX)?hook:
+      EDITORIAL_NATURAL_PREFIX+hook.replace(/[!?]+$/,"").toLowerCase();
     critic="Да, снизим тон: естественная подача важнее громких обещаний.";
   } else if (/нет помощник|один снима|сама снима|сам снима|без оператора/i.test(text)) {
     kind="SOLO";
-    next.soloPlan="Снять одному: iPhone на безопасной устойчивой опоре, один непрерывный дубль, без движения камеры.";
+    next.soloPlan=EDITORIAL_SOLO;
     critic="При съёмке одному лучше один устойчивый кадр, чем сложный монтаж без оператора.";
   } else if (/поменяй хук|другой хук|новое начало/i.test(text)) {
     kind="HOOK";
-    next.hook="А что, если показать это совсем иначе? "+hook;
+    next.hook=hook.startsWith(EDITORIAL_HOOK_PREFIX)?hook:EDITORIAL_HOOK_PREFIX+hook;
     critic="Новый хук понятнее только если он точно связан с содержанием; это нужно проверить на первом дубле.";
   }
   if (kind==="UNRECOGNIZED") return {kind,proposal:null,critic:critic+" Уточни: финал, хук, юмор, тон или съёмочные условия?",judge:"REVISE"};
+  if (["script","hook","soloPlan"].every(key => String(next[key]??"")===String(idea[key]??"")))
+    return {kind:"NO_CHANGE",proposal:null,critic:"Эта правка уже внесена; лишнюю версию создавать не будем.",judge:"COMMENT_ONLY"};
   const check=approvePersonaCandidate(next);
   if (!check.approved || !check.candidate) return {kind,proposal:null,critic:"Критик отклонил изменение: "+check.failures.join(", "),judge:"REVISE"};
   return {kind,proposal:check.candidate,critic,judge:"APPROVE"};
