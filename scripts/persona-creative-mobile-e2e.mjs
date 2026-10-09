@@ -35,8 +35,9 @@ const verifyVisibleAction=async(page,selector,screen)=>{
  await target.scrollIntoViewIfNeeded();
  const geometry=await target.evaluate((element)=>{
   const c=element.getBoundingClientRect(),nav=document.querySelector("main>.mainNav");
-  const n=nav?.getBoundingClientRect();
-  return {buttonTop:c.top,buttonBottom:c.bottom,buttonHeight:c.height,navTop:n?.top,navHeight:n?.height,
+  const n=nav&&getComputedStyle(nav).display!=="none"?nav.getBoundingClientRect():null;
+  return {buttonTop:c.top,buttonBottom:c.bottom,buttonHeight:c.height,
+    navTop:n?.top??innerHeight,navHeight:n?.height??0,
     scrollWidth:document.documentElement.scrollWidth,innerWidth,viewportHeight:innerHeight};
  });
  assert(geometry.buttonHeight>=44&&geometry.buttonTop>=0&&
