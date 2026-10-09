@@ -33,7 +33,16 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     await login.fill(passcode);
     await page.getByRole("button",{name:"Подключить и проанализировать"}).click();
   }
+  await page.locator('.creativeV1[data-stage="idea"]').waitFor({timeout:30000});
   await page.locator(".creativeIdea").first().waitFor({timeout:30000});
+  assert(await page.locator(".creativeStage").count()===1,"more than one workflow stage on screen");
+  const stepLabels=await page.locator(".creativeProgress button").allInnerTexts();
+  assert(stepLabels.every((x,i)=>x.includes(["Идея","Правки","Съёмка","Материалы","Монтаж"][i])),
+    "five-step progress not present");
+  for(const term of ["cached","confidence","provenance","revision","asset schema"]){
+    const visible=await page.locator(".creativeStage").innerText();
+    assert(!visible.toLowerCase().includes(term),"implementation leakage: "+term);
+  }
   assert(await page.locator(".creativeIdea").count()===3,"not exactly 3 creative shortlist cards");
   for(const width of [320,375,390,430]){
     await page.setViewportSize({width,height:844});
@@ -84,10 +93,14 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   // Use a new coherent ending per version, then repeat that SAME request to test idempotence.
   const qaEnding="В конце герой спокойно начинает новую сцену номер "+targetVersion+".";
   const qaInstruction="поменяй финал на "+qaEnding;
-  await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
+  await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:"Выбрать"}).click();
+  await page.locator('.creativeV1[data-stage="edit"]').waitFor({timeout:15000});
+  assert(await page.locator(".creativeStage").count()===1,"Edit stage is not isolated");
+  await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
   await page.locator("#creative-erika-input").fill(qaInstruction);
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
+  assert(await page.locator(".creativeStage").count()===1,"proposal must not display other stages");
   assert((await page.locator(".creativeProposal").innerText()).includes("Почему"),"no reasoned Erika assessment");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-proposed.png"});
   await page.getByRole("button",{name:"Применить"}).click();
@@ -102,9 +115,10 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(selected.revisions.at(-2).proof!==selected.revisions.at(-1).proof,"approval inherited after edit");
   assert(selected.revisions.at(-1).reason.includes("поменяй финал"),"edit reason not persisted");
   // Adversarial repeat: identical request must not produce another revision or duplicate ending.
+  await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
   await page.locator("#creative-erika-input").fill(qaInstruction);
-  await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
-  await page.locator(".creativeEditorialResponse").getByText(/уже есть|уже внесена|лишнюю версию/).waitFor({timeout:30000});
+  await page.getByRole("button",{name:"Обсудить с Эрикой",exact:true}).click();
+  await page.locator(".creativeErikaReply").getByText(/уже есть|уже внесена|лишнюю версию/).waitFor({timeout:30000});
   const unchanged=await body(token,{action:"creative_state"});
   assert(unchanged.data.items[selectionIndex].currentVersion===targetVersion,"duplicate edit created phantom version");
   assert(!unchanged.data.items[selectionIndex].pending,"identical edit created duplicate pending version");
@@ -118,15 +132,22 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const bad=await body(token,{action:"creative_start_session",ideaId:selected.id,
     version:targetVersion,approvalProof:"unsigned",conditions:""});
   assert(bad.status===409,"forged approval still actionable");
+  await page.locator(".creativeTake").getByText(/Берём — к съёмке/).click();
+  await page.locator('.creativeV1[data-stage="shoot"]').waitFor({timeout:30000});
+  await page.getByText("Изменить условия съёмки").click();
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
-  await page.getByRole("button",{name:"Берём — создать задание"}).click();
+  await page.getByRole("button",{name:"Подстроить съёмку"}).click();
   await page.locator(".creativeBrief").waitFor({timeout:30000});
   const readableBrief=await page.locator(".creativeBrief").innerText();
-  for(const label of ["Что сказать","Телефон","Кадр","Дублей","Длина","Свет"]){
+  for(const label of ["Что делать","Что сказать","Куда поставить iPhone","Дублей","Секунд","Свет"]){
     assert(readableBrief.includes(label),"simplified brief missing "+label);
   }
   assert(readableBrief.includes("окну"),"lighting was not adapted");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-shooting.png"});
+  assert(await page.locator(".creativeStage").count()===1,"Shoot stage is not isolated");
+  await page.getByRole("button",{name:/Я снял — загрузить материалы/}).click();
+  await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:20000});
+  assert(await page.locator(".creativeStage").count()===1,"Upload stage is not isolated");
   const uploadBounds=await page.locator(".creativePicker").evaluate(node=>{
     const r=node.getBoundingClientRect();const nav=document.querySelector(".mainNav")?.getBoundingClientRect();
     return {top:r.top,bottom:r.bottom,navTop:nav?.top,width:r.width};
@@ -135,7 +156,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mov",mimeType:"video/quicktime",buffer:Buffer.from("CI sample media payload: only fake demo binary")});
   try {
-    await page.locator(".creativeFeedback").getByText(/Учтено в сессии: 1/).waitFor({timeout:20000});
+    await page.locator(".creativeFeedback").getByText(/Загружено 1 файл/).waitFor({timeout:20000});
   } catch (failure) {
     const diagnostic = await page.evaluate(async () => {
       const error = document.querySelector(".creativeError")?.textContent || "";
@@ -159,7 +180,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     console.error("CREATIVE_INTAKE_DIAGNOSTIC",name,JSON.stringify(diagnostic));
     throw failure;
   }
-  await page.getByText(/На этом iPhone: 1 файл/).waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Загружено 1 файл/).waitFor({timeout:30000});
   const beforeReload=await page.evaluate(async()=>{
     const open=indexedDB.open("persona-creative-media-v1",2);
     const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
@@ -193,8 +214,8 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.reload({waitUntil:"domcontentloaded"});
   await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
-  await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
-  await page.getByText(/На этом iPhone: 1 файл/).waitFor({timeout:30000});
+  await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Загружено 1 файл/).waitFor({timeout:30000});
   const persisted=await page.evaluate(async()=>{
     const open=indexedDB.open("persona-creative-media-v1",2);
     const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
@@ -210,6 +231,12 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(persisted.entries>=beforeReload.entries&&persisted.chunks>=beforeReload.chunks &&
     persisted.bytes>=beforeReload.byteLength,"WebKit/Chromium binary asset lost after Safari reload");
   console.log("PASS "+name+" IDB binary persisted AFTER RELOAD entries:"+persisted.entries+" chunks:"+persisted.chunks);
+  await page.getByRole("button",{name:/Перейти к монтажу/}).click();
+  await page.locator('.creativeV1[data-stage="assembly"]').waitFor({timeout:15000});
+  assert(await page.locator(".creativeStage").count()===1,"Assembly placeholder not isolated");
+  const assemblyText=await page.locator(".creativeStage").innerText();
+  assert(assemblyText.includes("Монтаж ещё не собран"),"Future editing stage falsely claims an existing cut");
+  await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-assembly.png"});
   // Physical sleep interaction: one pressed window, save confirmation, persisted after reload.
   await page.locator(".mainNav").getByText("Сегодня",{exact:true}).click();
   const sleepChoices=page.locator(".sleepWindows button");
