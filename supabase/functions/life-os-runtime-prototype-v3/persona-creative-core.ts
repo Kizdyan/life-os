@@ -100,7 +100,7 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
     kind="ENDING";
     const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{12,220})$/i)?.[1]?.trim();
     // Revision means replacing the actual last thought, never appending to prior revisions.
-    if(script.includes(EDITORIAL_ENDING) && !replacement){
+    if(script.split(EDITORIAL_ENDING).length-1===1 && !replacement){
       return {kind:"NO_CHANGE",proposal:null,critic:"Такой финал уже есть в текущей версии. Повторное применение не нужно.",judge:"COMMENT_ONLY"};
     }
     const clean=script.replace(/(?:\s*А финал оставим открытым: что бы ты сделал на его месте\?)+/g,"").trim();
