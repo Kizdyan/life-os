@@ -152,7 +152,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.getByText("Изменить условия съёмки").click();
   await page.locator("#creative-conditions").fill("нет штатива, плохой свет, снимаю один, есть 7 минут, дома");
   await page.getByRole("button",{name:"Подстроить съёмку"}).click();
-  await page.locator(".creativeBrief").waitFor({timeout:30000});
+  await page.waitForFunction(()=>document.querySelector(".creativeBrief")?.textContent?.includes("окну"),null,{timeout:30000});
   const readableBrief=await page.locator(".creativeBrief").innerText();
   for(const label of ["Что делать","Что сказать","Куда поставить iPhone","Дублей","Секунд","Свет"]){
     assert(readableBrief.includes(label),"simplified brief missing "+label);
