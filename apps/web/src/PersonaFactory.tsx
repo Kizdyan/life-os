@@ -305,6 +305,7 @@ export default function PersonaFactory() {
   return (
     <section className="personaFactoryV2">
       <PersonaCreativeLoop />
+      <details className="legacyPersona"><summary>Ранее утверждённая съёмка и резервные идеи</summary>
       <header className="pfHead">
         <div>
           <small>PERSONA · SHOOT NOW</small>
@@ -383,6 +384,7 @@ export default function PersonaFactory() {
           </article>
         </div>
       ))}
+      </details>
     </section>
   );
 }
