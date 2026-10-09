@@ -80,8 +80,12 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   }
   const baseVersion=baseline.data.items[selectionIndex].currentVersion;
   const targetVersion=baseVersion+1;
+  // CI namespace is durable across runs; a repeated identical edit must be a no-op.
+  // Use a new coherent ending per version, then repeat that SAME request to test idempotence.
+  const qaEnding="В конце герой спокойно начинает новую сцену номер "+targetVersion+".";
+  const qaInstruction="поменяй финал на "+qaEnding;
   await page.locator(".creativeIdea").nth(selectionIndex).getByRole("button",{name:/Выбрать идею/}).click();
-  await page.locator("#creative-erika-input").fill("Мне нравится идея 2, но поменяй финал");
+  await page.locator("#creative-erika-input").fill(qaInstruction);
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
   assert((await page.locator(".creativeProposal").innerText()).includes("Почему"),"no reasoned Erika assessment");
@@ -98,14 +102,14 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(selected.revisions.at(-2).proof!==selected.revisions.at(-1).proof,"approval inherited after edit");
   assert(selected.revisions.at(-1).reason.includes("поменяй финал"),"edit reason not persisted");
   // Adversarial repeat: identical request must not produce another revision or duplicate ending.
-  await page.locator("#creative-erika-input").fill("поменяй финал");
+  await page.locator("#creative-erika-input").fill(qaInstruction);
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
-  await page.locator(".creativeEditorialResponse").getByText(/уже есть|уже внесена/).waitFor({timeout:30000});
+  await page.locator(".creativeEditorialResponse").getByText(/уже есть|уже внесена|лишнюю версию/).waitFor({timeout:30000});
   const unchanged=await body(token,{action:"creative_state"});
   assert(unchanged.data.items[selectionIndex].currentVersion===targetVersion,"duplicate edit created phantom version");
   assert(!unchanged.data.items[selectionIndex].pending,"identical edit created duplicate pending version");
   const currentScript=unchanged.data.items[selectionIndex].revisions.at(-1).idea.script;
-  assert(currentScript.split("А финал оставим открытым:").length-1===1,
+  assert(currentScript.split(qaEnding).length-1===1,
     "ending concatenated instead of replaced exactly once");
   // A previously signed proof must be invalid for the new current idea revision.
   const old=await body(token,{action:"creative_start_session",ideaId:selected.id,
