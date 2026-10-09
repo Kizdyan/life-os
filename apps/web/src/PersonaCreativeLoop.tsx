@@ -253,8 +253,16 @@ export default function PersonaCreativeLoop(){
     <label htmlFor="creative-conditions">Что изменилось?</label>
     <textarea id="creative-conditions" rows={2} value={conditions} onChange={e=>setConditions(e.target.value)}
      placeholder="Снимаю один, нет штатива, плохой свет, есть 7 минут."/>
-    <button className="creativeSecondary" disabled={busy||!actionable||!conditions.trim()}
-      onClick={()=>void startShooting(true)}>Подстроить съёмку</button>
+    <p className="creativeAdjustHint" role="status">
+      {conditions.trim()?"Условия описаны — теперь можно применить.":"Напиши, что изменилось — кнопка станет активной."}
+    </p>
+    <button className="creativeAdjust" type="button" disabled={busy||!actionable||!conditions.trim()}
+      aria-describedby="creative-adjust-reason" onClick={()=>void startShooting(true)}>
+      {busy?"Подстраиваю съёмку…":"Подстроить съёмку"}
+    </button>
+    <span id="creative-adjust-reason" className="creativeVisuallyHidden">
+      {conditions.trim()?"Условия готовы к применению":"Сначала опиши условия в поле выше"}
+    </span>
    </details>
   </section>}
   {stage==="upload"&&item&&session&&<section className="creativeStage creativeUploadStage" aria-label="Материалы">
