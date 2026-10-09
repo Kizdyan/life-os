@@ -120,7 +120,7 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
     next.script=script.startsWith("Это просто мой опыт: ")?script:
       "Это просто мой опыт: "+script.replace(/^(Вы должны|Нужно всем|Правильный способ)[,:]?\s*/i,"");
     critic="Согласна: конкретное личное наблюдение убедительнее неподтверждённого совета.";
-  } else if (/пафосн|слишком громк|проще|естествен/i.test(text)) {
+  } else if (/пафос|слишком громк|проще|естествен/i.test(text)) {
     kind="NATURAL";
     next.hook=hook.startsWith(EDITORIAL_NATURAL_PREFIX)?hook:
       EDITORIAL_NATURAL_PREFIX+hook.replace(/[!?]+$/,"").toLowerCase();
