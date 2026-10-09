@@ -305,7 +305,8 @@ export default function PersonaFactory() {
   return (
     <section className="personaFactoryV2">
       <PersonaCreativeLoop />
-      <details className="legacyPersona"><summary>Ранее утверждённая съёмка и резервные идеи</summary>
+      <details className="legacyPersona"><summary>Архив и прежние идеи</summary>
+      <p className="legacyDescription">Здесь сохранены ранее утверждённые съёмки и резервные варианты. Они не входят в текущие пять шагов.</p>
       <header className="pfHead">
         <div>
           <small>PERSONA · SHOOT NOW</small>
