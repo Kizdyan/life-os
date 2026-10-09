@@ -85,7 +85,28 @@ export default function PersonaCreativeLoop(){
  const changeStage=(next:Stage)=>{
   setNavigation(nav=>({id:nav.id,stage:next}));
   setFeedback("");setError("");
+  requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}));
  };
+ // iOS WebKit treats fixed navigation as viewport-visible. Correct partial
+ // occlusion when the next primary action sits behind the native app footer.
+ useEffect(()=>{
+  const selector:Partial<Record<Stage,string>>={
+    shoot:".creativeShooting>.creativeTake",
+    upload:".creativeUploadStage>.creativePicker",
+    assembly:".creativeAssembly>.creativeTake"
+  };
+  const targetSelector=selector[stage];if(!targetSelector)return;
+  const frame=requestAnimationFrame(()=>{
+   const action=document.querySelector<HTMLElement>(targetSelector);
+   const footer=document.querySelector<HTMLElement>("main > .mainNav");
+   if(!action||!footer||getComputedStyle(footer).display==="none")return;
+   const a=action.getBoundingClientRect(),n=footer.getBoundingClientRect();
+   if(a.top>=0&&a.top<window.innerHeight&&a.bottom>n.top-10){
+     window.scrollBy({top:a.bottom-n.top+16,behavior:"auto"});
+   }
+  });
+  return ()=>cancelAnimationFrame(frame);
+ },[stage,session?.briefVersion,localAssets.length]);
  useEffect(()=>{
   if(!session){setLocalAssets([]);return;}
   let active=true;
