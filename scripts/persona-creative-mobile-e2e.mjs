@@ -76,6 +76,13 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     assert(!visible.toLowerCase().includes(term),"implementation leakage: "+term);
   }
   assert(await page.locator(".creativeIdea").count()===3,"not exactly 3 creative shortlist cards");
+  const legacy=page.locator(".legacyPersona");
+  assert(await legacy.count()===1,"legacy workflow missing from quiet archive");
+  assert(!(await legacy.evaluate(node=>node.open)),"legacy archive expanded over primary Creative flow");
+  const legacyFontSize=await legacy.locator("summary").evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+  assert(legacyFontSize<=13,"legacy workflow competes visually with the current creation stage");
+  assert(!(await legacy.locator(".legacyDescription").isVisible()),
+    "legacy explanation leaked onto the main creation surface");
   for(const width of [320,375,390,430]){
     await page.setViewportSize({width,height:844});
     await page.evaluate(()=>window.scrollTo(0,0));
@@ -230,6 +237,10 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   });
   assert(uploadBounds.width>=190,"upload CTA collapsed");
   await verifyVisibleAction(page,'.creativePicker',name+" UPLOAD");
+  const roleSelector=page.locator("#creative-upload-kind");
+  assert(await roleSelector.inputValue()==="auto","manual media type selection became mandatory");
+  assert(!(await page.locator('.creativeUploadStage .creativeDetails').first().evaluate(el=>el.open)),
+    "technical media override expanded by default");
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mp4",mimeType:"video/mp4",buffer:video});
   try {
