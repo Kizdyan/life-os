@@ -12,9 +12,24 @@ const edge="https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtim
 assert(head?.length===40,"exact HEAD required");
 assert(passcode,"authenticated test secret unavailable");
 const body=async(token,payload)=>{
- const r=await fetch(edge,{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({op:"persona",token,payload:{...payload,...(String(payload.action).startsWith("creative_")?{qaNamespace:"CI_V1"}:{})}}),signal:AbortSignal.timeout(30000)});
- return {status:r.status,data:await r.json().catch(()=>({}))};
+ const action=String(payload.action||"unknown");
+ const readOnly=["budget_status","creative_state","creative_shortlist"].includes(action);
+ const request={op:"persona",token,payload:{...payload,...(action.startsWith("creative_")?{qaNamespace:"CI_V1"}:{})}};
+ for(let attempt=1;attempt<=(readOnly?2:1);attempt++){
+  const start=Date.now();
+  try{
+   const r=await fetch(edge,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(request),signal:AbortSignal.timeout(45000)});
+   const data=await r.json().catch(()=>({}));
+   console.log("EDGE "+action+" "+r.status+" "+(Date.now()-start)+"ms");
+   return {status:r.status,data};
+  }catch(e){
+   console.error("CREATIVE_EDGE_DIAGNOSTIC "+action+" attempt="+attempt+
+     " latencyMs="+(Date.now()-start)+" error="+String(e));
+   if(!readOnly||attempt===2)throw Error("Edge "+action+" network timeout: "+String(e));
+  }
+ }
+ throw Error("Unreachable Edge retry state "+action);
 };
 const budget=async token=>body(token,{action:"budget_status"});
 // Real, decodable MP4 fixture, not a fake MOV/text blob. Generated once per run.
