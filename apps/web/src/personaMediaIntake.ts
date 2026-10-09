@@ -1,3 +1,4 @@
+import { inferMediaRole, type InferredRole, type MediaOverride } from "./personaMediaRoles";
 // ZERO-COST media intake. Safari/WebKit does not reliably structured-clone File
 // instances into IndexedDB. Persist bounded ArrayBuffer chunks instead, and
 // publish the asset manifest only after every chunk transaction committed.
@@ -6,6 +7,7 @@ export type CreativeMediaMetadata = {
  id:string;projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;
  sessionId:string;filename:string;mime:string;bytes:number;kind:CreativeMediaKind;
  storage:"device_local";state:"INTAKE_LOCAL";createdAt:string;
+ role:InferredRole; roleConfidence:"high"|"medium"|"low";
 };
 const DB_NAME="persona-creative-media-v1";
 const META="blobs";
@@ -44,14 +46,17 @@ export function mediaKind(file:File,preferredVideo:"take"|"broll"="take"):Creati
 }
 export function createMediaMetadata(file:File,params:{
  projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;sessionId:string;
- preferredVideo?:"take"|"broll";
+ preferredVideo?:"take"|"broll";existing?:ReadonlyArray<{role?:string;kind?:string}>;
+ roleOverride?:MediaOverride;
 }):CreativeMediaMetadata{
  if(!file||!file.size||file.size>MAX_FILE_BYTES)throw new Error("Файл пустой или превышает лимит 5 ГБ");
  if(!params.projectId||!params.contentItemId||!params.ideaId||!params.sessionId||
  !Number.isInteger(params.ideaVersion)||params.ideaVersion<1)throw new Error("Отсутствует версия утверждённой идеи");
+ const role=inferMediaRole(file,params.existing||[],
+  params.roleOverride??(params.preferredVideo==="broll"?"broll":"auto"));
  return {id:crypto.randomUUID().replace(/-/g,""),projectId:params.projectId,
  contentItemId:params.contentItemId,ideaId:params.ideaId,ideaVersion:params.ideaVersion,
- sessionId:params.sessionId,kind:mediaKind(file,params.preferredVideo),
+ sessionId:params.sessionId,kind:role.kind,role:role.role,roleConfidence:role.confidence,
  filename:file.name.slice(0,255),mime:(file.type||"application/octet-stream").slice(0,150),
  bytes:file.size,storage:"device_local",state:"INTAKE_LOCAL",createdAt:new Date().toISOString()};
 }
