@@ -78,6 +78,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(await page.locator(".creativeIdea").count()===3,"not exactly 3 creative shortlist cards");
   for(const width of [320,375,390,430]){
     await page.setViewportSize({width,height:844});
+    await page.evaluate(()=>window.scrollTo(0,0));
     const metrics=await page.evaluate(()=>{
       const cards=[...document.querySelectorAll(".creativeIdea")];
       const buttons=cards.map(x=>x.querySelector("button.creativeSelect")?.getBoundingClientRect())
