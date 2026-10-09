@@ -66,7 +66,19 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     await page.getByRole("button",{name:"Подключить и проанализировать"}).click();
   }
   await page.locator('.creativeV1[data-stage="idea"]').waitFor({timeout:30000});
-  await page.locator(".creativeIdea").first().waitFor({timeout:30000});
+  if(!(await page.locator(".creativeIdea").first().waitFor({timeout:30000})
+    .then(()=>true).catch(()=>false))){
+    const diagnostic=await page.evaluate(()=>({
+      stage:document.querySelector(".creativeV1")?.getAttribute("data-stage"),
+      error:document.querySelector(".creativeError")?.textContent,
+      message:document.querySelector(".creativeSimpleStatus")?.textContent,
+      pageText:document.querySelector(".personaFactoryV2")?.textContent?.slice(0,900),
+      authenticated:!!localStorage.getItem("life-os:edge-session:v1")
+    }));
+    console.error("CREATIVE_SHORTLIST_DIAGNOSTIC",name,JSON.stringify(diagnostic));
+    await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-shortlist-error.png"});
+    throw Error("No approved ideas in "+name+" after internal Safari retry");
+  }
   assert(await page.locator(".creativeStage").count()===1,"more than one workflow stage on screen");
   const stepLabels=await page.locator(".creativeProgress button").allInnerTexts();
   assert(stepLabels.every((x,i)=>x.includes(["Идея","Правки","Съёмка","Материалы","Монтаж"][i])),
