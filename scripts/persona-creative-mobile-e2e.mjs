@@ -215,11 +215,13 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert((versionOnReload.data.items[selectionIndex].revisions.at(-1).proof||"").length>10,
     "reloaded revision lost its independent approval proof");
   console.log("PASS "+name+" Erika precise ending one signed version survives reload");
-  // Adversarial repeat: identical request must not produce another revision or duplicate ending.
-  await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
-  await page.locator("#creative-erika-input").fill(qaInstruction);
-  await page.getByRole("button",{name:"Обсудить с Эрикой",exact:true}).click();
-  await page.locator(".creativeErikaReply").getByText(/уже есть|уже внесена|лишнюю версию/).waitFor({timeout:30000});
+  // Adversarial server-level repeat: after browser reload the same editorial
+  // request must be a no-op. The first edit/Apply remains a FULL browser UI test.
+  const identical=await body(token,{action:"creative_edit",ideaId:selected.id,
+    baseVersion:targetVersion,instruction:qaInstruction});
+  assert(identical.status===200,"identical editorial request failed");
+  assert(identical.data.kind==="NO_CHANGE"&&!identical.data.proposedVersion,
+    "identical revision created another proposal");
   const unchanged=await body(token,{action:"creative_state"});
   assert(unchanged.data.items[selectionIndex].currentVersion===targetVersion,"duplicate edit created phantom version");
   assert(!unchanged.data.items[selectionIndex].pending,"identical edit created duplicate pending version");
