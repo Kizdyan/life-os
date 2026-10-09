@@ -69,3 +69,7 @@ main:has(.creativeV1){padding-top:max(18px,env(safe-area-inset-top));padding-lef
 main:has(.creativeV1)>header{min-height:48px;scroll-margin-top:env(safe-area-inset-top)}
 main:has(.creativeV1) .mainNav{padding-bottom:calc(14px + env(safe-area-inset-bottom));min-height:calc(66px + env(safe-area-inset-bottom))}
 main:has(.creativeV1) .personaFactoryV2{padding-bottom:calc(105px + env(safe-area-inset-bottom))}
+
+.personaFactoryV2>.legacyPersona{margin-top:10px;padding:12px;border:1px solid #e4e3df;border-radius:15px;background:#fff;color:#666}
+.personaFactoryV2>.legacyPersona>summary{min-height:44px;display:list-item;list-style-position:inside;cursor:pointer;font-size:13px;font-weight:600;line-height:44px;padding:0 6px}
+.personaFactoryV2>.legacyPersona[open]{display:grid;gap:12px}
