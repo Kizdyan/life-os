@@ -6,20 +6,35 @@ import { roleLabel, type MediaOverride } from "./personaMediaRoles";
 import "./persona-creative-v1.css";
 
 type ViewItem = CreativeItem & {verifiedFreshness:"cached"|"stale"|"unverified"};
-type Api = Record<string,any>;
-const str=(v:unknown)=>typeof v==="string"?v:"";
-const niceError=(e:unknown)=>{
- const message=e instanceof Error?e.message:String(e);
- if(message.includes("revision_conflict"))return "Изменилась редакция. Обнови идеи и повтори действие.";
- if(message.includes("revision_pending"))return "Сначала реши, принимать ли предложенную правку.";
- if(message.includes("approval_not_current"))return "Эту редакцию нужно снова утвердить перед съёмкой.";
- return "Не удалось завершить действие: "+message.slice(0,120);
+type Stage = "idea"|"edit"|"shoot"|"upload"|"assembly";
+type Api = Record<string, any>;
+const STAGES:ReadonlyArray<{id:Stage;label:string}> = [
+  {id:"idea",label:"Идея"},{id:"edit",label:"Правки"},
+  {id:"shoot",label:"Съёмка"},{id:"upload",label:"Материалы"},
+  {id:"assembly",label:"Монтаж"}
+];
+const NAV_KEY="persona:creative:v1:navigation";
+const str=(value:unknown)=>typeof value==="string"?value:"";
+const niceError=(error:unknown)=>{
+ const message=error instanceof Error?error.message:String(error);
+ if(message.includes("revision_conflict"))return "Идея обновилась. Открой её снова и попробуй ещё раз.";
+ if(message.includes("revision_pending"))return "Сначала реши, принять ли предложенную правку.";
+ if(message.includes("approval_not_current"))return "Изменённый текст нужно утвердить заново.";
+ return "Не получилось выполнить действие. "+message.slice(0,130);
 };
+function initialNavigation():{id:string;stage:Stage}{
+ try {
+  const saved=JSON.parse(sessionStorage.getItem(NAV_KEY)||"{}");
+  const stage=STAGES.find(x=>x.id===saved.stage)?.id||"idea";
+  return {id:typeof saved.id==="string"?saved.id:"",stage};
+ } catch {return {id:"",stage:"idea"};}
+}
 export default function PersonaCreativeLoop(){
+ const [navigation,setNavigation]=useState(initialNavigation);
  const [items,setItems]=useState<ViewItem[]>([]);
- const [selected,setSelected]=useState("");
  const [instruction,setInstruction]=useState("");
  const [conditions,setConditions]=useState("");
+ const [editorOpen,setEditorOpen]=useState(false);
  const [roleOverride,setRoleOverride]=useState<MediaOverride>("auto");
  const [localAssets,setLocalAssets]=useState<CreativeMediaMetadata[]>([]);
  const [busy,setBusy]=useState(false);
@@ -30,53 +45,85 @@ export default function PersonaCreativeLoop(){
  const [justApplied,setJustApplied]=useState(false);
  const responseRef=useRef<HTMLDivElement|null>(null);
  const refresh=useCallback(async(seed=false)=>{
-  const response=await personaEdgeRequest({action:seed?"creative_shortlist":"creative_state"}) as {items?:ViewItem[]};
-  const safe=Array.isArray(response.items)?response.items.slice(0,3):[];
-  setItems(safe);return safe;
+   const response=await personaEdgeRequest({action:seed?"creative_shortlist":"creative_state"}) as {items?:ViewItem[]};
+   const safe=Array.isArray(response.items)?response.items.slice(0,3):[];
+   setItems(safe);
+   return safe;
  },[]);
- useEffect(()=>{let live=true;void refresh(true).then(()=>{if(live)setLoaded(true)})
-   .catch(e=>{if(live){setError(niceError(e));setLoaded(true)}});return()=>{live=false}},[refresh]);
- const item=items.find(x=>x.id===selected);
+ useEffect(()=>{
+  let active=true;
+  void refresh(true).then(()=>{if(active)setLoaded(true)})
+   .catch(e=>{if(active){setError(niceError(e));setLoaded(true)}});
+  return ()=>{active=false};
+ },[refresh]);
+ useEffect(()=>{
+  try{sessionStorage.setItem(NAV_KEY,JSON.stringify(navigation));}catch{/* private browsing */}
+ },[navigation]);
+ const item=items.find(x=>x.id===navigation.id);
  const revision=item?.revisions.find(x=>x.version===item.currentVersion);
  const idea=revision?.idea;
  const actionable=item?.verifiedFreshness==="cached"&&!item.pending&&!!revision?.proof;
  const session=item?.session&&item.session.ideaVersion===item.currentVersion?item.session:null;
- const lastPrevious=item?.revisions.find(x=>x.version===item.currentVersion-1);
- const latestReason=revision?.reason;
- useEffect(()=>{if(!session){setLocalAssets([]);return}
-  let live=true;void listCapturedAssets(session.id).then(assets=>{if(live)setLocalAssets(assets)})
-  .catch(()=>{if(live)setError("Локальные материалы недоступны.")});return()=>{live=false};
+ const previous=item?.revisions.find(x=>x.version===item.currentVersion-1);
+ const stage:Stage=!item?"idea":
+  !session&&["shoot","upload","assembly"].includes(navigation.stage)?"edit":navigation.stage;
+ const stepIndex=STAGES.findIndex(x=>x.id===stage);
+ const canVisit=(index:number)=>index===0||(!!item&&(index===1||((index===2||index===3)&&!!session)
+   ||(index===4&&!!session&&localAssets.length>0)));
+ const changeStage=(next:Stage)=>{
+  setNavigation(nav=>({id:nav.id,stage:next}));
+  setFeedback("");setError("");
+ };
+ useEffect(()=>{
+  if(!session){setLocalAssets([]);return;}
+  let active=true;
+  void listCapturedAssets(session.id).then(xs=>{if(active)setLocalAssets(xs)})
+   .catch(()=>{if(active)setError("Не удалось прочитать сохранённые файлы.")});
+  return ()=>{active=false};
  },[session?.id]);
  async function act(payload:Record<string,unknown>,message=""){
   setBusy(true);setError("");setFeedback("");
-  try{const answer=await personaEdgeRequest(payload) as Api;await refresh();if(message)setFeedback(message);return answer}
-  catch(e){setError(niceError(e));return null}
+  try{
+   const result=await personaEdgeRequest(payload) as Api;
+   await refresh();
+   if(message)setFeedback(message);
+   return result;
+  }catch(e){setError(niceError(e));return null}
   finally{setBusy(false)}
  }
- async function edit(){
-  if(!item||!instruction.trim())return;
-  setErikaAssessment("Эрика проверяет, улучшает ли правка идею…");setJustApplied(false);
+ const choose=(id:string)=>{
+  setNavigation({id,stage:"edit"});setInstruction("");setEditorOpen(false);
+  setErikaAssessment("");setJustApplied(false);setConditions("");setFeedback("");setError("");
+ };
+ async function discuss(){
+  if(!item||!instruction.trim()||busy)return;
+  setErikaAssessment("Эрика оценивает правку…");setJustApplied(false);
   const answer=await act({action:"creative_edit",ideaId:item.id,baseVersion:item.currentVersion,instruction});
   if(answer){
    setErikaAssessment(str(answer.critic));
    if(answer.proposedVersion)setInstruction("");
-   window.requestAnimationFrame(()=>responseRef.current?.scrollIntoView({block:"nearest",behavior:"smooth"}));
+   requestAnimationFrame(()=>responseRef.current?.scrollIntoView({block:"nearest",behavior:"smooth"}));
   }else setErikaAssessment("");
  }
  async function approve(){
   if(!item||busy)return;
   const answer=await act({action:"creative_approve",ideaId:item.id,expectedVersion:item.currentVersion});
-  if(answer?.approved){setJustApplied(true);setErikaAssessment("Правка принята после новой редакционной проверки.");
-   setFeedback("Готово: новая редакция сохранена. Сниматься будет только утверждённый текст.");
+  if(answer?.approved){
+   setJustApplied(true);setErikaAssessment("");setEditorOpen(false);setInstruction("");
+   setFeedback("Правка применена. Эрика повторно проверила новую редакцию.");
    setConditions("");
-   window.requestAnimationFrame(()=>responseRef.current?.scrollIntoView({block:"nearest",behavior:"smooth"}));
   }
  }
- async function start(adapt=false){
+ async function discard(){
+  if(!item)return;
+  const result=await act({action:"creative_discard_proposal",ideaId:item.id,baseVersion:item.currentVersion});
+  if(result){setErikaAssessment("Оставляем прежний вариант.");setEditorOpen(false)}
+ }
+ async function startShooting(adapt=false){
   if(!item||!revision||!actionable)return;
-  await act({action:adapt?"creative_adapt_brief":"creative_start_session",
-   ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,conditions},
-   adapt?"Задание обновлено под твои условия.":"Съёмка готова. Теперь можно загрузить материал.");
+  const result=await act({action:adapt?"creative_adapt_brief":"creative_start_session",
+   ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,conditions});
+  if(result?.session){if(!adapt)changeStage("shoot");else setFeedback("Съёмка подстроена под твои условия.");}
  }
  async function upload(files:File[]){
   if(!files.length||!session||!item||!revision||!actionable)return;
@@ -91,150 +138,162 @@ export default function PersonaCreativeLoop(){
     await persistCapturedAsset(meta,file);stored++;
     batchRoles.push(meta);
     setLocalAssets(current=>[...current.filter(x=>x.id!==meta.id),meta]);
-    try{const result=await personaEdgeRequest({action:"creative_register_asset",
+    try{
+     const answer=await personaEdgeRequest({action:"creative_register_asset",
       ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,asset:meta});
-      if(result.registered)registered++;
-    }catch{/* Local bytes remain committed, never claim successful server sync. */}
+     if(answer.registered)registered++;
+    }catch{/* Local binary remains committed; never claim the cloud contains files. */}
    }
    await refresh();
-   setFeedback("Сохранено на iPhone: "+stored+". Учтено в сессии: "+registered+
-    ". Persona определила типы файлов автоматически. Исходники пока только на устройстве.");
-  }catch(e){setError(niceError(e))}
+   setFeedback("Загружено "+stored+" файл(ов) на этом iPhone."+
+    (registered<stored?" Некоторые сведения о файлах ещё не синхронизированы.":""));
+  }catch(e){setError(niceError(e));}
   finally{setBusy(false)}
  }
- return <section className="creativeV1" aria-label="Persona Creative Loop V1">
-   <div className="creativeHead"><small>PERSONA · МОИ СЪЁМКИ</small><h2>Выбери, что снимем</h2>
-    <p>Три разные идеи. Лучше один сильный ролик, чем много слабых.</p></div>
-   {!loaded?<p role="status">Подбираю идеи…</p>:null}
-   {loaded&&items.length===0?<p role="status">Сейчас нет идей, прошедших проверку. Не будем снимать ради количества.</p>:null}
+ return <section className="creativeV1" aria-label="Persona Creative Loop V1" data-stage={stage}>
+  <nav className="creativeProgress" aria-label="Этапы создания ролика">
+   {STAGES.map((step,index)=><button type="button" key={step.id} className={index===stepIndex?"current":""}
+    aria-current={index===stepIndex?"step":undefined} disabled={busy||!canVisit(index)}
+    onClick={()=>changeStage(step.id)}>
+    <span className="creativeStepDot" aria-hidden="true">{index<stepIndex?"✓":index+1}</span>
+    <span>{step.label}</span>
+   </button>)}
+  </nav>
+  {!loaded?<p role="status" className="creativeSimpleStatus">Готовлю идеи…</p>:null}
+  {loaded&&items.length===0?<p role="status" className="creativeSimpleStatus">Пока нет идей, которые прошли проверку.</p>:null}
+  {stage==="idea"&&<section className="creativeStage" aria-label="Идея">
+   <div className="creativeStageHead"><small>ШАГ 1 · ИДЕЯ</small><h2>Что снимем?</h2></div>
    <div className="creativeShortlist">
     {items.map((entry,index)=>{
-     const current=entry.revisions.find(x=>x.version===entry.currentVersion);
-     const concept=current?.idea||{};
-     return <article className={"creativeIdea"+(selected===entry.id?" selected":"")} key={entry.id}>
-      <small>{index===0?"РЕКОМЕНДУЮ":"ВАРИАНТ "+(index+1)}</small>
+     const concept=entry.revisions.find(x=>x.version===entry.currentVersion)?.idea||{};
+     return <article className="creativeIdea" key={entry.id}>
+      <small>{index===0?"РЕКОМЕНДУЮ":`ВАРИАНТ ${index+1}`}</small>
       <h3>{str(concept.title)}</h3>
-      <p>{str(concept.angle)}</p>
-      <p><b>Начало:</b> {str(concept.hook)}</p>
-      <p><b>Снять:</b> {str(concept.soloPlan)||str(concept.angle)}</p>
-      <p><b>Почему тебе:</b> {str(concept.reason)}</p>
-      <p><b>Время:</b> около {String(concept.estimatedMinutes||"—")} мин.</p>
+      <p className="creativeHook"><b>Хук</b>{str(concept.hook)}</p>
+      <p className="creativeOneLine"><b>Что снять</b>{str(concept.soloPlan)||str(concept.angle)}</p>
+      <p className="creativeTime">Примерно {String(concept.estimatedMinutes||"—")} мин.</p>
       <button className="primary creativeSelect" disabled={busy||entry.verifiedFreshness!=="cached"}
-       aria-pressed={selected===entry.id}
-       onClick={()=>{setSelected(entry.id);setFeedback("");setInstruction("");setConditions("");
-        setErikaAssessment("");setJustApplied(false)}}>
-       {selected===entry.id?"Выбрано ✓":"Выбрать идею "+(index+1)}
-      </button>
-      <details className="creativeDetails"><summary>Подробнее об идее</summary>
-       <p>Формат: {str(concept.format)} · редакция {entry.currentVersion}</p>
-       <p>Подтверждены рекомендации по формату, не обещание просмотров.</p>
-       <p>Достоверность: {str(entry.verifiedFreshness)} · {String(concept.confidence||"—")}%</p>
+       onClick={()=>choose(entry.id)}>Выбрать</button>
+      <details className="creativeDetails"><summary>Подробнее</summary>
+       <p><b>Почему подходит:</b> {str(concept.reason)}</p>
+       <p>Формат: {str(concept.format)}</p><p>Редакция {entry.currentVersion} · {str(entry.verifiedFreshness)}</p>
+       <p>Рекомендации платформ по формату, не доказательство тренда · уверенность {String(concept.confidence??"—")}%</p>
       </details>
-     </article>
+     </article>;
     })}
    </div>
-   {item&&revision&&<>
-    <section className="creativeEditor" aria-label="Редактор Эрика">
-     <small>ЭРИКА · ОБСУЖДЕНИЕ ИДЕИ</small>
-     <h3>{str(idea?.title)}</h3>
-     <p><b>Что сказать:</b> {str(idea?.script)}</p>
-     <label htmlFor="creative-erika-input">Что изменим?</label>
+  </section>}
+  {stage==="edit"&&item&&revision&&<section className="creativeStage creativeEdit" aria-label="Правки">
+   <div className="creativeStageHead"><small>ШАГ 2 · ПРАВКИ</small><h2>{str(idea?.title)}</h2></div>
+   <div className="creativeDirection">
+    <p><b>Что сказать</b>{str(idea?.script)}</p>
+    <p><b>Что снять</b>{str(idea?.soloPlan)||str(idea?.angle)}</p>
+   </div>
+   {item.pending?<div ref={responseRef} className="creativeProposal" role="status">
+    <h3>Эрика предлагает</h3>
+    <p><b>Предлагаю</b>{str(item.pending.idea.script)}</p>
+    {str(item.pending.idea.hook)!==str(idea?.hook)&&<p><b>Начало</b>{str(item.pending.idea.hook)}</p>}
+    <p className="creativeOpinion"><b>Моё мнение</b>{item.pending.critic}</p>
+    <button className="primary creativeApply" disabled={busy||item.pending.status!=="APPROVE"}
+     onClick={()=>void approve()}>Применить</button>
+    <button className="creativeSecondary" disabled={busy} onClick={()=>void discard()}>Оставить как было</button>
+    <details className="creativeDetails"><summary>Сравнить с исходником</summary>
+     <p>{str(idea?.script)}</p>
+    </details>
+   </div>:<>
+    {justApplied&&<div className="creativeApplied" role="status">
+     <strong>✓ Правка применена</strong>
+     <p>Что изменилось: {str(revision.reason)}</p>
+     {previous&&<details className="creativeDetails"><summary>Было / стало</summary>
+      <p><b>Было:</b> {str(previous.idea.script)}</p><p><b>Стало:</b> {str(idea?.script)}</p>
+     </details>}
+    </div>}
+    {erikaAssessment&&<p ref={responseRef} className="creativeErikaReply" role="status">
+      <b>Эрика</b>{erikaAssessment}
+    </p>}
+    {!editorOpen?<button className="creativeErikaLaunch" onClick={()=>setEditorOpen(true)}>
+      <span aria-hidden="true">✦</span> Обсудить с Эрикой <span aria-hidden="true">→</span>
+    </button>:<div className="creativeConversation">
+     <label htmlFor="creative-erika-input">Что хочешь изменить?</label>
      <textarea id="creative-erika-input" rows={3} value={instruction} onChange={e=>setInstruction(e.target.value)}
-      placeholder="Поменяй финал, сделай смешнее, без пафоса. Что думаешь о моей правке?"/>
-     <button className="primary creativeDiscuss" onClick={()=>void edit()}
-      disabled={busy||!instruction.trim()||!!item.pending}>
-      {busy?"Эрика проверяет…":"Обсудить с Эрикой"}
+      placeholder="Сделай финал смешнее. А может, лучше оставить как есть?"/>
+     <button className="primary creativeDiscuss" disabled={busy||!instruction.trim()} onClick={()=>void discuss()}>
+      {busy?"Эрика думает…":"Обсудить с Эрикой"}
      </button>
-     <div ref={responseRef} className="creativeEditorialResponse" aria-live="polite">
-      {erikaAssessment&&!item.pending&&<p role="status"><b>Эрика:</b> {erikaAssessment}</p>}
-      {item.pending&&<div className="creativeProposal" role="status">
-       <h4>Эрика предлагает изменить текст</h4>
-       <p><b>Было:</b> {str(idea?.script)}</p>
-       <p><b>Предлагаю:</b> {str(item.pending.idea.script)}</p>
-       {str(item.pending.idea.hook)!==str(idea?.hook)&&
-         <p><b>Новое начало:</b> {str(item.pending.idea.hook)}</p>}
-       <p><b>Почему:</b> {item.pending.critic}</p>
-       <div className="creativeActions">
-        <button className="primary" disabled={busy||item.pending.status!=="APPROVE"}
-          onClick={()=>void approve()}>Применить</button>
-        <button disabled={busy} onClick={()=>void act({action:"creative_discard_proposal",
-          ideaId:item.id,baseVersion:item.currentVersion},"Оставили исходный вариант.")}>Оставить как было</button>
-       </div>
-      </div>}
-      {justApplied&&item.currentVersion>1&&<div className="creativeApplied" role="status">
-        <b>✓ Правка применена и проверена</b>
-        <p><b>Что изменилось:</b> {latestReason}</p>
-        {lastPrevious&&<p><b>Раньше:</b> {str(lastPrevious.idea.script)}</p>}
-        <p><b>Теперь:</b> {str(idea?.script)}</p>
-       </div>}
-     </div>
-     <details className="creativeDetails"><summary>История правок и проверка</summary>
-      {item.revisions.map(r=><p key={r.version}>Редакция {r.version}: {r.reason} · {r.judge}</p>)}
-     </details>
-    </section>
-    <section className="creativeCapture" aria-label="Съёмка и загрузка материала">
-     <h3>Снять этот ролик</h3>
-     <label htmlFor="creative-conditions">Условия съёмки</label>
-     <textarea id="creative-conditions" rows={2} value={conditions} onChange={e=>setConditions(e.target.value)}
-      placeholder="Нет штатива, плохой свет, один, есть 7 минут…"/>
-     {!session?<button className="primary creativeTake" disabled={busy||!actionable}
-       onClick={()=>void start()}>Берём — создать задание</button>:
-      <>
-       <div className="creativeBrief" aria-label="Краткое съёмочное задание">
-        <h3>Съёмочное задание</h3>
-        <p><b>Что сказать / сделать:</b> {str(idea?.hook)} {str(idea?.script)}</p>
-        {Array.isArray(session.brief.shots)&&session.brief.shots.slice(0,1).map((shot:any)=>
-         <div key={shot.id}>
-          <p><b>Телефон:</b> {str(shot.cameraPosition)}</p>
-          <p><b>Кадр:</b> {str(shot.composition)}</p>
-          <p><b>Дублей:</b> {String(shot.takes||2)} · <b>Длина:</b> около {String(shot.durationSeconds||25)} сек.</p>
-         </div>)}
-        <p><b>Свет:</b> {str(session.brief.lighting)}</p>
-        <details className="creativeDetails"><summary>Технические детали</summary>
-         <p><b>Звук:</b> {str(session.brief.audio)}</p>
-         <p><b>Фон:</b> {str(session.brief.background)}</p>
-         <p>Вертикальное видео · {str(session.brief.resolution)} · {String(session.brief.fps)} кадр/с.</p>
-        </details>
-       </div>
-       <button className="creativeAdapt" disabled={busy||!actionable}
-        onClick={()=>void start(true)}>Подстроить под условия</button>
-       <section className="creativeUpload">
-        <h3>Загрузить материал</h3>
-        <p>Выбери файлы — Persona сама предварительно определит, где дубли, B-roll, фото или звук.</p>
-        <label className="creativePicker">Выбрать фото или видео
-         <input aria-label="Загрузить материал" type="file"
-          accept="video/*,image/*,audio/*,.mov,.mp4,.m4a" multiple disabled={busy}
-          onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
-           void upload(files).finally(()=>{picker.value=""})}}/>
-        </label>
-        <details className="creativeDetails creativeOverride">
-         <summary>Изменить определение типа вручную</summary>
-         <label htmlFor="creative-upload-kind">Тип всех файлов следующей загрузки</label>
-         <select id="creative-upload-kind" value={roleOverride}
-          onChange={e=>setRoleOverride(e.target.value as MediaOverride)}>
-          <option value="auto">Persona определит сама</option>
-          <option value="primary_take">Основной дубль</option>
-          <option value="alternate_take">Другой дубль</option>
-          <option value="broll">B-roll</option>
-          <option value="photo">Фото</option>
-          <option value="audio">Отдельный звук</option>
-          <option value="reference_other">Референс / другое</option>
-         </select>
-        </details>
-        <div className="creativeAssets">
-         <b>На этом iPhone: {localAssets.length} файл(ов)</b>
-         {localAssets.map(asset=><p key={asset.id}>
-           {roleLabel(asset.role||"reference_other")} · {asset.filename}</p>)}
-         <details className="creativeDetails"><summary>Где хранятся файлы</summary>
-          <p>Пока исходники хранятся только в Safari этого iPhone, не в облаке.
-            Не удаляй данные сайта. Анализ дублей и монтаж — следующий этап.</p>
-         </details>
-        </div>
-       </section>
-      </>}
-    </section>
+     <button className="creativeSecondary" onClick={()=>{setEditorOpen(false);setInstruction("")}}>Закрыть</button>
+    </div>}
+    {!editorOpen&&<button className="primary creativeTake" disabled={busy||!actionable} onClick={()=>void startShooting()}>
+     Берём — к съёмке <span aria-hidden="true">→</span>
+    </button>}
    </>}
-   {feedback&&<p role="status" className="creativeFeedback">{feedback}</p>}
-   {error&&<p role="alert" className="creativeError">{error}</p>}
-  </section>;
+   <details className="creativeDetails"><summary>Подробнее · история правок</summary>
+    {item.revisions.map(r=><p key={r.version}>Редакция {r.version}: {r.reason} · {r.judge}</p>)}
+   </details>
+  </section>}
+  {stage==="shoot"&&item&&session&&<section className="creativeStage creativeShooting" aria-label="Съёмка">
+   <div className="creativeStageHead"><small>ШАГ 3 · СЪЁМКА</small><h2>Сними ролик</h2></div>
+   <div className="creativeBrief" aria-label="Краткое съёмочное задание">
+    <p className="creativeHeroInstruction"><b>Что делать</b>{str(idea?.soloPlan)||str(idea?.angle)}</p>
+    <p className="creativeSpoken"><b>Что сказать</b>{str(idea?.script)}</p>
+    {Array.isArray(session.brief.shots)&&session.brief.shots.slice(0,1).map((shot:any)=><div key={shot.id} className="creativeShootGrid">
+     <p><b>Куда поставить iPhone</b>{str(shot.cameraPosition)}</p>
+     <p><b>Свет</b>{str(session.brief.lighting)}</p>
+     <p><b>Дублей</b>{String(shot.takes||2)}</p>
+     <p><b>Секунд</b>{String(shot.durationSeconds||25)}</p>
+    </div>)}
+   </div>
+   <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Я снял — загрузить материалы →</button>
+   <details className="creativeDetails"><summary>Подробнее · кадр и настройки</summary>
+    {Array.isArray(session.brief.shots)&&session.brief.shots.map((shot:any)=>
+      <p key={shot.id}><b>{str(shot.purpose)}</b> · Кадр: {str(shot.composition)} · {str(shot.action)}</p>)}
+    <p>Звук: {str(session.brief.audio)} · Фон: {str(session.brief.background)}</p>
+   </details>
+   <details className="creativeDetails"><summary>Изменить условия съёмки</summary>
+    <label htmlFor="creative-conditions">Что изменилось?</label>
+    <textarea id="creative-conditions" rows={2} value={conditions} onChange={e=>setConditions(e.target.value)}
+     placeholder="Снимаю один, нет штатива, плохой свет, есть 7 минут."/>
+    <button className="creativeSecondary" disabled={busy||!actionable||!conditions.trim()}
+      onClick={()=>void startShooting(true)}>Подстроить съёмку</button>
+   </details>
+  </section>}
+  {stage==="upload"&&item&&session&&<section className="creativeStage creativeUploadStage" aria-label="Материалы">
+   <div className="creativeStageHead"><small>ШАГ 4 · МАТЕРИАЛЫ</small><h2>Загрузить материалы</h2>
+    <p>Выбери записи. Persona сама разберёт, где дубли, фото и звук.</p></div>
+   {localAssets.length>0&&<div className="creativeUploadStatus" role="status">
+    <b>✓ Загружено {localAssets.length} файлов</b>
+    <p>Анализ дублей — следующий этап. Лучший дубль пока не определён.</p>
+   </div>}
+   <label className="creativePicker">Загрузить материалы
+    <input aria-label="Загрузить материал" type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.m4a"
+     disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
+      void upload(files).finally(()=>{picker.value=""});}}/>
+   </label>
+   {localAssets.length>0&&<button className="creativeNext" onClick={()=>changeStage("assembly")}>
+    Перейти к монтажу →</button>}
+   <details className="creativeDetails"><summary>Подробнее · мои материалы</summary>
+    {localAssets.length===0?<p>Файлы ещё не добавлены.</p>:localAssets.map(asset=><p key={asset.id}>
+     {roleLabel(asset.role||"reference_other")} · {asset.filename}</p>)}
+    <p>Оригиналы пока сохраняются только на этом iPhone, не в облаке. Не удаляй данные сайта.</p>
+    <label htmlFor="creative-upload-kind">Уточнить тип файлов вручную (необязательно)</label>
+    <select id="creative-upload-kind" value={roleOverride} onChange={e=>setRoleOverride(e.target.value as MediaOverride)}>
+     <option value="auto">Persona определит сама</option>
+     <option value="primary_take">Основной дубль</option><option value="alternate_take">Другой дубль</option>
+     <option value="broll">B-roll</option><option value="photo">Фото</option>
+     <option value="audio">Отдельный звук</option><option value="reference_other">Референс / другое</option>
+    </select>
+   </details>
+  </section>}
+  {stage==="assembly"&&item&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
+   <div className="creativeStageHead"><small>ШАГ 5 · МОНТАЖ</small><h2>Рекомендуемый монтаж</h2></div>
+   <p className="creativeSimpleStatus">Монтаж ещё не собран. Анализ дублей и сборка видео появятся в следующем этапе Persona.</p>
+   <details className="creativeDetails"><summary>Как будет работать монтаж</summary>
+    <p>Persona сравнит дубли, выберет лучшие фрагменты, уберёт паузы,
+       добавит субтитры, нормализует звук и подготовит вертикальное видео.</p>
+    <p>Рекомендуемый монтаж и не более одной альтернативы. Решения: Берём / Изменить / Не берём.</p>
+   </details>
+   <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Вернуться к материалам</button>
+  </section>}
+  {feedback&&<p className="creativeFeedback" role="status">{feedback}</p>}
+  {error&&<p className="creativeError" role="alert">{error}</p>}
+ </section>;
 }
