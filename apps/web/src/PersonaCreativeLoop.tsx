@@ -52,8 +52,20 @@ export default function PersonaCreativeLoop(){
  },[]);
  useEffect(()=>{
   let active=true;
-  void refresh(true).then(()=>{if(active)setLoaded(true)})
-   .catch(e=>{if(active){setError(niceError(e));setLoaded(true)}});
+  // Safari can transiently lose a request on Wi-Fi handover. Bounded retry is
+  // internal; never invent ideas or bypass approval when the Edge really fails.
+  void (async()=>{
+   let failure:unknown=null;
+   for(let attempt=0;attempt<3&&active;attempt++){
+    try{
+     const candidates=await refresh(true);
+     if(candidates.length>0){if(active){setError("");setLoaded(true)}return;}
+     failure=new Error("empty_creative_shortlist");
+    }catch(e){failure=e;}
+    if(attempt<2)await new Promise<void>(resolve=>setTimeout(resolve,300*(attempt+1)));
+   }
+   if(active){setError(niceError(failure));setLoaded(true);}
+  })();
   return ()=>{active=false};
  },[refresh]);
  useEffect(()=>{
