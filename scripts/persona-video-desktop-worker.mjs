@@ -13,6 +13,7 @@ import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {createRequest,newJob,markInputReady,transition,retry,canClaim,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
 import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
+import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
 
 const exec=promisify(execFile),root=resolve(process.env.PERSONA_BRIDGE_DATA||'.persona-processing');
 const jobsDir=join(root,'jobs'),host=process.env.PERSONA_BRIDGE_HOST||'127.0.0.1';
@@ -24,7 +25,7 @@ if(bearer.length<32||!origin.startsWith('https://')||!Number.isInteger(port)||po
  throw Error('Configure long PERSONA_BRIDGE_TOKEN, exact HTTPS PERSONA_BRIDGE_ORIGIN, valid port');
 if(Boolean(cert)!==Boolean(key)||(!cert&&!['127.0.0.1','::1','localhost'].includes(host)))
  throw Error('LAN bridge requires Safari-trusted TLS certificate and key');
-const locks=new Map(),uploads=new Set();let pumping=false;
+const locks=new Map(),uploads=new Set();
 const safeId=id=>/^job-[a-f0-9]{32}$/.test(id);
 const dir=id=>join(jobsDir,id),jsonPath=id=>join(dir(id),'job.json');
 const inputPath=id=>join(dir(id),'input.media'),outputDir=id=>join(dir(id),'outputs');
@@ -144,8 +145,7 @@ async function runPinnedEngine(job){
  await durableJson(resultPath(job.id),processed);
  return processed;
 }
-async function pump(){
- if(pumping)return;pumping=true;
+const pump=createCoalescedDrain(async()=>{
  try{
   for(const id of (await readdir(jobsDir)).filter(safeId).sort()){
    if(uploads.has(id))continue;
@@ -169,8 +169,7 @@ async function pump(){
    }
   }
  }catch(e){console.error('Persona queue error',e);}
- finally{pumping=false;}
-}
+});
 async function serveVideo(req,res,id,url){
  const job=await readJob(id);
  if(!['review','ready'].includes(job.status)||!job.outputToken||!equal(job.outputToken,url.searchParams.get('token')))
