@@ -48,3 +48,9 @@ test('rejects unsafe output and immutable client input',()=>{
  assert.throws(()=>createRequest({...input,ideaVersion:0}));
  assert.equal(publicJob(job).request.assetId,input.assetId);
 });
+
+test('review output cannot attach another source or attempt',()=>{
+ const request=createRequest(input);
+ const processing=transition(markInputReady(newJob(request),input.bytes),'processing');
+ assert.throws(()=>transition(processing,'review',{instagramFile:'instagram.mp4',processedAsset:{sourceAssetId:'wrong',processingRequestId:request.id}}));
+});
