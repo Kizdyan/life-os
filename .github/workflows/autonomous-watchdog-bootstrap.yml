@@ -2,7 +2,8 @@ name: autonomous-watchdog-bootstrap
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    # Low-cost heartbeat only; full QA never runs on a timer.
+    - cron: '17 3 * * *'
   push:
     branches: [main]
     paths:
@@ -28,6 +29,7 @@ jobs:
         with:
           ref: recovery/iphone-static-supabase
       - uses: actions/setup-node@v4
+        if: github.event_name != 'schedule'
         with:
           node-version: 22
       - name: Restore durable supervisor state
@@ -38,10 +40,29 @@ jobs:
           gh api repos/${{ github.repository }}/issues/comments/$ADR_STATE_COMMENT_ID --jq .body |
             sed -n '/^\x60\x60\x60json$/,/^\x60\x60\x60$/p' | sed '1d;$d' > .autonomous/runtime-state.json
           node -e "JSON.parse(require('fs').readFileSync('.autonomous/runtime-state.json','utf8'))"
-      - run: npm install
-      - name: Run autonomous supervisor
+      - name: Install dependencies only for explicit full QA
+        if: github.event_name != 'schedule'
+        run: npm install --no-audit --no-fund
+      - name: Run autonomous supervisor and complete QA only when requested
+        if: github.event_name != 'schedule'
         run: node scripts/autonomous-runtime.mjs
+      - name: Heartbeat only (no build, tests, paid AI, or remote coding agent)
+        if: github.event_name == 'schedule'
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const file='.autonomous/runtime-state.json';
+          const state=JSON.parse(fs.readFileSync(file,'utf8'));
+          const now=new Date().toISOString();
+          // A heartbeat is NOT evidence of a successful build, QA, or development.
+          // Retain status, checkpoint, role blockers, lastActivityAt, and lastAutomatedQA.
+          state.heartbeat=now;
+          state.events=[...(state.events||[]),{type:'WATCHDOG_HEARTBEAT_ONLY',at:now}].slice(-30);
+          fs.writeFileSync(file,JSON.stringify(state,null,2)+'\n');
+          console.log('WATCHDOG_HEARTBEAT_ONLY; no QA was executed');
+          NODE
       - name: Verify durable merge and recovery paths
+        if: github.event_name != 'schedule'
         run: |
           node scripts/merge-runtime-state.check.mjs
           cp .autonomous/runtime-state.json /tmp/adr-state.json

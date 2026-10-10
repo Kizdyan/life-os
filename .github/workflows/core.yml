@@ -1,16 +1,42 @@
 name: core
 on:
+  workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "apps/**"
+      - "api/**"
+      - "packages/**"
+      - "src/**"
+      - "supabase/**"
+      - "scripts/**"
+      - "package.json"
+      - "tsconfig.json"
+      - ".github/workflows/core.yml"
   pull_request:
+    paths:
+      - "apps/**"
+      - "api/**"
+      - "packages/**"
+      - "src/**"
+      - "supabase/**"
+      - "scripts/**"
+      - "package.json"
+      - "tsconfig.json"
+      - ".github/workflows/core.yml"
+# Only the latest commit of each PR needs the expensive typecheck/test result.
+concurrency:
+  group: core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm test
       - run: npm run typecheck
