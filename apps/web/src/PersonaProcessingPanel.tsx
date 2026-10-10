@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useState} from 'react';
 import {readCapturedAsset,type CreativeMediaMetadata} from './personaMediaIntake';
-import {desktopRequest,getWorkerSettings,jobIdForAsset,processingRequest,safeOutputLink,
+import {desktopRequest,getWorkerSettings,jobIdForAsset,processingRequest,safeOutputLink,videoMime,
  saveWorkerSettings,type ProcessingJob,type WorkerSettings} from './personaProcessingClient';
 
 type Scope={projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;sessionId:string};
@@ -13,7 +13,7 @@ const message=(e:unknown)=> {
  return s.slice(0,240);
 };
 export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMediaMetadata[];scope:Scope}){
- const videos=assets.filter(x=>x.mime.startsWith('video/')&&
+ const videos=assets.filter(x=>!!videoMime(x)&&
   x.projectId===scope.projectId&&x.contentItemId===scope.contentItemId&&
   x.ideaId===scope.ideaId&&x.ideaVersion===scope.ideaVersion&&x.sessionId===scope.sessionId);
  const [selected,setSelected]=useState('');
