@@ -28,11 +28,24 @@ export function saveWorkerSettings(settings:WorkerSettings){
  if(!url||settings.token.length<32)throw Error('Укажи защищённый адрес компьютера и его ключ доступа.');
  localStorage.setItem(SETTINGS_KEY,JSON.stringify({url,token:settings.token}));
 }
+export function videoMime(asset:Pick<CreativeMediaMetadata,'mime'|'filename'>):string|null{
+ const mime=asset.mime.toLowerCase();
+ if(mime.startsWith('video/'))return mime;
+ // iOS Files sometimes reports an empty/unknown MIME for a valid .MOV.
+ // Extension is a tentative hint; the desktop engine must still decode media.
+ if(mime!=='application/octet-stream'&&mime!=='')return null;
+ if(/\.mov$/i.test(asset.filename))return 'video/quicktime';
+ if(/\.mp4$/i.test(asset.filename))return 'video/mp4';
+ if(/\.m4v$/i.test(asset.filename))return 'video/x-m4v';
+ if(/\.webm$/i.test(asset.filename))return 'video/webm';
+ return null;
+}
 export function processingRequest(asset:CreativeMediaMetadata){
- if(!asset.mime.startsWith('video/'))throw Error('Для обработки выбери видео.');
+ const mime=videoMime(asset);
+ if(!mime)throw Error('Для обработки выбери видео.');
  return {assetId:asset.id,projectId:asset.projectId,contentItemId:asset.contentItemId,
   ideaId:asset.ideaId,ideaVersion:asset.ideaVersion,sessionId:asset.sessionId,
-  mime:asset.mime,filename:asset.filename,bytes:asset.bytes};
+  mime,filename:asset.filename,bytes:asset.bytes};
 }
 export function jobIdForAsset(assetId:string){
  if(!/^[a-f0-9]{32}$/i.test(assetId))throw Error('Неверный идентификатор файла');
