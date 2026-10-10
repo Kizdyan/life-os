@@ -6,12 +6,12 @@ export function createCoalescedDrain(processBatch){
  async function signal(){
   requested=true;
   if(active)return active;
-  const running=(async()=>{
+  const running=Promise.resolve().then(async()=>{
    while(requested){
     requested=false;
     await processBatch();
    }
-  })();
+  });
   active=running;
   try{await running;}
   finally{
