@@ -56,6 +56,15 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
    catch{}await delay(100);
   }
   assert(online,'local worker did not start');
+  // A second worker, even on a different port, must not claim the same data.
+  const competing=spawn(process.execPath,[resolve('scripts/persona-video-desktop-worker.mjs')],
+   {env:{...env,PERSONA_BRIDGE_PORT:String(await freePort())},stdio:'ignore'});
+  const competingResult=await Promise.race([
+   new Promise(resolve=>competing.once('exit',(code)=>resolve({code}))),
+   delay(3000).then(()=>({timeout:true}))
+  ]);
+  if(competingResult.timeout){competing.kill();throw Error('two desktop workers shared a job folder');}
+  assert.notEqual(competingResult.code,0,'second worker should fail ownership');
   const denied=await fetch(base+'/v1/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   assert.equal(denied.status,401);
   const wrongOrigin=await fetch(base+'/v1/jobs',{method:'GET',headers:{
