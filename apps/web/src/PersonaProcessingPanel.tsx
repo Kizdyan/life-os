@@ -2,6 +2,7 @@ import {useCallback,useEffect,useRef,useState} from 'react';
 import {readCapturedAsset,type CreativeMediaMetadata} from './personaMediaIntake';
 import {desktopRequest,getWorkerSettings,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,videoMime,
  saveWorkerSettings,type ProcessingJob,type WorkerSettings} from './personaProcessingClient';
+import {readProcessingSnapshot,saveProcessingSnapshot,clearProcessingSnapshot,type ProcessingSnapshot} from './personaProcessingSnapshot';
 
 type Scope={projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;sessionId:string};
 const words:Record<string,string>={queued:'В очереди',processing:'Обрабатывается',
@@ -21,6 +22,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  const [settings,setSettings]=useState<WorkerSettings>(getWorkerSettings);
  const [draft,setDraft]=useState<WorkerSettings>(getWorkerSettings);
  const [job,setJob]=useState<ProcessingJob|null>(null);
+ const [lastKnown,setLastKnown]=useState<ProcessingSnapshot|null>(null);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [configOpen,setConfigOpen]=useState(false);
@@ -41,14 +43,21 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
    const updated=await desktopRequest(settings,'/v1/jobs/'+jobId,'GET');
    if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
    if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
-   setJob(updated);setError('');
+   setJob(updated);
+   setLastKnown(saveProcessingSnapshot(updated,current,localStorage));
+   setError('');
   }catch(e){
    if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
-   if(e instanceof Error&&e.message==='job_not_found'){setJob(null);setError('');}
+   if(e instanceof Error&&e.message==='job_not_found'){
+    setJob(null);setLastKnown(null);clearProcessingSnapshot(current,localStorage);setError('');
+   }
    else setError(message(e));
   }
  },[current?.id,jobId,enabled,settings.url,settings.token,scopeKey]);
- useEffect(()=>{setJob(null);setError('');if(enabled)void sync();},[sync,enabled]);
+ useEffect(()=>{
+  setJob(null);setError('');setLastKnown(readProcessingSnapshot(current,localStorage));
+  if(enabled)void sync();
+ },[sync,enabled]);
  useEffect(()=>{
   if(!enabled||!current)return;
   const interval=window.setInterval(()=>{if(document.visibilityState==='visible')void sync();},5000);
@@ -72,14 +81,14 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
    // Registration is idempotent; no media bytes are sent until locally committed.
    let updated=await desktopRequest(settings,'/v1/jobs','POST',processingRequest(current));
    if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
-   if(currentScopeRef.current===capturedScope)setJob(updated);
+   if(currentScopeRef.current===capturedScope){setJob(updated);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
    if(updated.status==='failed')throw Error('Предыдущая обработка не завершилась. Используй «Повторить».');
    if(!updated.inputReady&&updated.status==='queued'){
     // IndexedDB holds source media on the iPhone. Safari does no codec work.
     const blob=await readCapturedAsset(current.id);
     if(!blob||blob.size!==current.bytes)throw Error('Файл на iPhone повреждён или отсутствует.');
     updated=await desktopRequest(settings,'/v1/jobs/'+updated.id+'/input','PUT',blob);
-    if(currentScopeRef.current===capturedScope)setJob(updated);
+    if(currentScopeRef.current===capturedScope){setJob(updated);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
    }
    if(currentScopeRef.current===capturedScope)await sync();
   }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
@@ -92,7 +101,9 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   setBusy(true);setError('');
   try{
    const result=await desktopRequest(settings,'/v1/jobs/'+existingJob.id+'/'+type,'POST');
-   if(currentScopeRef.current===capturedScope&&jobBelongsToAsset(result,current))setJob(result);
+   if(currentScopeRef.current===capturedScope&&jobBelongsToAsset(result,current)){
+    setJob(result);setLastKnown(saveProcessingSnapshot(result,current,localStorage));
+   }
   }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
   finally{setBusy(false);}
  }
@@ -117,7 +128,9 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
     </label>
     <button type="button" className="creativeSecondary" onClick={configure}>Сохранить подключение</button>
    </details>
-   {!visibleJob?<button type="button" className="primary" disabled={!enabled||busy} onClick={()=>void submit()}>
+   {!visibleJob&&lastKnown&&<p role="status" className="personaProcessorState">
+    Последний известный статус: {words[lastKnown.status]||lastKnown.status}. Связь с компьютером проверяется.</p>}
+   {!visibleJob&&!lastKnown?<button type="button" className="primary" disabled={!enabled||busy} onClick={()=>void submit()}>
     {busy?'Передаю видео…':'Отправить на обработку'}
    </button>:<>
     <p role="status" className="personaProcessorState">Статус: {words[visibleJob.status]||visibleJob.status}</p>
