@@ -241,27 +241,27 @@ export default function PersonaCreativeLoop(){
  async function upload(files:File[]){
   if(!files.length||!session||!item||!revision||!actionable)return;
   setBusy(true);setError("");setFeedback("");
-  let stored=0,registered=0;
   const batchRoles:Array<{role?:string;kind?:string}>=[...activeAssets,...session.assets];
   try{
    for(const file of files.slice(0,12)){
     const meta=createMediaMetadata(file,{projectId:item.projectId,contentItemId:item.contentItemId,
      ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id,
      existing:batchRoles,roleOverride});
-    await persistCapturedAsset(meta,file);stored++;
+    await persistCapturedAsset(meta,file);
     batchRoles.push(meta);
     setLocalAssets(current=>[...current.filter(x=>x.id!==meta.id),meta]);
     try{
-     const answer=await personaEdgeRequest({action:"creative_register_asset",
+     await personaEdgeRequest({action:"creative_register_asset",
       ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,asset:meta});
-     if(answer.registered)registered++;
     }catch{/* Local binary remains committed; never claim the cloud contains files. */}
    }
-   await refresh();
-   setFeedback("Загружено "+stored+" файл(ов) на этом iPhone."+
-    (registered<stored?" Некоторые сведения о файлах ещё не синхронизированы.":""));
+   // An offline MP4 save is successful even when Edge cannot answer.
+   // The device-local status card owns confirmation; server reconciliation
+   // is a separate step, without a false "upload failed" toast.
+   try{await refresh();}catch{/* Local binary remains committed. */}
+
   }catch(e){setError(niceError(e));}
-  finally{setBusy(false)}
+  finally{setBusy(false);setRoleOverride("auto");}
  }
  return <section className="creativeV1" aria-label="Persona Creative Loop V1" data-stage={stage}>
   <nav className="creativeProgress" aria-label="Этапы создания ролика">
@@ -381,10 +381,10 @@ export default function PersonaCreativeLoop(){
    <div className="creativeStageHead"><h2>Загрузить материалы</h2>
     <p>Выбери записи. Persona сама разберёт, где дубли, фото и звук.</p></div>
    {activeAssets.length>0&&<div className="creativeUploadStatus" role="status">
-    <b>✓ Загружено {activeAssets.length} файлов</b>
-    <p>Анализ дублей — следующий этап. Лучший дубль пока не определён.</p>
+    <b>✓ Сохранено на iPhone: {activeAssets.length}</b>
+    <p>Оригиналы на телефоне. Выбор лучших кадров — следующий шаг.</p>
    </div>}
-   {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Сохраняю сведения о материалах…":"Файлы сохранены на этом iPhone. Сведения ещё не подтверждены сервером; при восстановлении связи отправим их автоматически."}</p>}
+   {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Синхронизирую список файлов…":"Список файлов ещё не синхронизирован. Оригиналы остаются на iPhone."}</p>}
    <label className="creativePicker">Загрузить материалы
     <input aria-label="Загрузить материал" type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.m4a"
      disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
@@ -406,7 +406,7 @@ export default function PersonaCreativeLoop(){
    </details>
   </section>}
   {stage==="assembly"&&item&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
-   <div className="creativeStageHead"><h2>Рекомендуемый монтаж</h2></div>
+   <div className="creativeStageHead"><h2>Монтаж</h2></div>
    <p className="creativeSimpleStatus">Монтаж ещё не собран. Анализ дублей и сборка видео появятся в следующем этапе Persona.</p>
    <details className="creativeDetails"><summary>Как будет работать монтаж</summary>
     <p>Persona сравнит дубли, выберет лучшие фрагменты, уберёт паузы,

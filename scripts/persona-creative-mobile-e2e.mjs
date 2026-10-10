@@ -330,7 +330,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   const fileInput=page.locator('input[aria-label="Загрузить материал"]');
   await fileInput.setInputFiles({name:"take-ci.mp4",mimeType:"video/mp4",buffer:video});
   try {
-    await page.locator(".creativeFeedback").getByText(/Загружено 1 файл/).waitFor({timeout:20000});
+    await page.locator(".creativeUploadStatus").getByText(/Сохранено на iPhone: 1/).waitFor({timeout:20000});
   } catch (failure) {
     const diagnostic = await page.evaluate(async () => {
       const error = document.querySelector(".creativeError")?.textContent || "";
@@ -354,7 +354,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     console.error("CREATIVE_INTAKE_DIAGNOSTIC",name,JSON.stringify(diagnostic));
     throw failure;
   }
-  await page.locator(".creativeUploadStatus").getByText(/Загружено 1 файл/).waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Сохранено на iPhone: 1/).waitFor({timeout:30000});
   const beforeReload=await page.evaluate(async()=>{
     const open=indexedDB.open("persona-creative-media-v1",2);
     const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
@@ -398,7 +398,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
   await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:30000});
-  await page.locator(".creativeUploadStatus").getByText(/Загружено 1 файл/).waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Сохранено на iPhone: 1/).waitFor({timeout:30000});
   const persisted=await page.evaluate(async()=>{
     const open=indexedDB.open("persona-creative-media-v1",2);
     const db=await new Promise((resolve,reject)=>{open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error)});
@@ -448,9 +448,10 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator('input[aria-label="Загрузить материал"]').setInputFiles({
     name:"alternate-offline-ci.mp4",mimeType:"video/mp4",buffer:video
   });
-  await page.locator(".creativeUploadStatus").getByText(/Загружено 2 файлов/).waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Сохранено на iPhone: 2/).waitFor({timeout:30000});
   await page.locator(".creativeMediaSyncStatus").waitFor({timeout:30000});
-  await page.locator(".creativeError").waitFor({timeout:30000});
+  assert(await page.locator(".creativeError").count()===0,
+    "offline local save incorrectly showed an Edge network error");
   const stillOneOnServer=await body(token,{action:"creative_state"});
   assert(stillOneOnServer.data.items[selectionIndex].session?.assets.length===1,
     "offline upload silently registered a cloud manifest");
@@ -472,7 +473,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
   await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
   await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:30000});
-  await page.locator(".creativeUploadStatus").getByText(/Загружено 2 файлов/).waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Сохранено на iPhone: 2/).waitFor({timeout:30000});
   assert(await page.locator(".creativeMediaSyncStatus").count()===0,
     "reloaded media manifests were incorrectly treated as unsynced");
   console.log("PASS "+name+" OFFLINE MP4 intake -> automatic Edge metadata sync -> reload");
