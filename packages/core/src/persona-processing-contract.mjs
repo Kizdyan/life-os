@@ -1,3 +1,4 @@
+import {validProcessedAsset} from './persona-processed-asset.mjs';
 // Shared runtime-neutral contract. Neither Safari nor this module runs media codecs.
 export const JOB_STATES=Object.freeze(['queued','processing','review','ready','failed']);
 const ID_RE=/^[a-f0-9]{32}$/i;
@@ -51,11 +52,7 @@ export function transition(job,next,extra={},at=new Date().toISOString()){
     throw Error('invalid_instagram_output');
   updated.instagramFile=file;updated.completedAt=at;
   if(extra.processedAsset!==undefined){
-   if(extra.processedAsset?.sourceAssetId!==job.request.assetId||
-      extra.processedAsset?.processingRequestId!==job.id||
-      extra.processedAsset?.ideaVersion!==job.request.ideaVersion||
-      extra.processedAsset?.sessionId!==job.request.sessionId||
-      extra.processedAsset?.attempt!==job.attempt)throw Error('invalid_processed_asset_lineage');
+   if(!validProcessedAsset(job,extra.processedAsset))throw Error('invalid_processed_asset_lineage');
    updated.processedAsset=extra.processedAsset;
   }
  }
