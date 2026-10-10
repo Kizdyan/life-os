@@ -15,6 +15,21 @@ const STAGES:ReadonlyArray<{id:Stage;label:string}> = [
 ];
 const NAV_KEY="persona:creative:v1:navigation";
 const str=(value:unknown)=>typeof value==="string"?value:"";
+const shootActionOnly=(plan:string,numberOfTakes:number,seconds:number)=>{
+ const takes=Math.max(1,Math.trunc(numberOfTakes||2));
+ const duration=Math.max(1,Math.trunc(seconds||25));
+ // Physical setup belongs exclusively under "Куда поставить iPhone".
+ const withoutSetup=plan
+  .replace(/(?:^|\s)(?:Поставь|Установи|Расположи|Закрепи)\s+(?:iPhone|телефон|камеру)[^.!?]*[.!?]?\s*/gi," ")
+  .trim();
+ const direction=withoutSetup
+  .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+[^,.;]*?дубль\s*,?\s*/i,"")
+  .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+дубль\s*,?\s*/i,"")
+  .trim().replace(/[.!?]+$/,"");
+ const sentence=direction?direction[0].toUpperCase()+direction.slice(1)+".":"";
+ const takeNoun=takes===1?"дубль":takes<5?"дубля":"дублей";
+ return `Сними ${takes} ${takeNoun} по ${duration} секунд.${sentence?" "+sentence:""}`;
+};
 const niceError=(error:unknown)=>{
  const message=error instanceof Error?error.message:String(error);
  if(message.includes("revision_conflict"))return "Идея обновилась. Открой её снова и попробуй ещё раз.";
@@ -222,9 +237,9 @@ export default function PersonaCreativeLoop(){
       <button className="primary creativeSelect" disabled={busy||entry.verifiedFreshness!=="cached"}
        onClick={()=>choose(entry.id)}>Выбрать</button>
       <details className="creativeDetails"><summary>Подробнее</summary>
-       <p><b>Почему подходит:</b> {str(concept.reason)}</p>
-       <p>Формат: {str(concept.format)}</p><p>Редакция {entry.currentVersion} · {str(entry.verifiedFreshness)}</p>
-       <p>Рекомендации платформ по формату, не доказательство тренда · уверенность {String(concept.confidence??"—")}%</p>
+       <p><b>Почему рекомендуем</b> {str(concept.reason)}</p>
+       <p><b>На чём основано</b> Рекомендации по коротким вертикальным видео от Meta и YouTube. Это не подтверждение популярности идеи.</p>
+       <p><b>Насколько уверены</b> Формат подходит для съёмки на телефон, но отклик зрителей заранее неизвестен.</p>
       </details>
      </article>;
     })}
@@ -280,7 +295,7 @@ export default function PersonaCreativeLoop(){
   {stage==="shoot"&&item&&session&&<section className="creativeStage creativeShooting" aria-label="Съёмка">
    <div className="creativeStageHead"><small>ШАГ 3 · СЪЁМКА</small><h2>Сними ролик</h2></div>
    <div className="creativeBrief" aria-label="Краткое съёмочное задание">
-    <p className="creativeHeroInstruction"><b>Что делать</b>{str(idea?.soloPlan)||str(idea?.angle)}</p>
+    <p className="creativeHeroInstruction"><b>Что делать</b>{shootActionOnly(str(idea?.soloPlan)||str(idea?.angle),Number((session.brief.shots as Array<Record<string,unknown>>)?.[0]?.takes||2),Number((session.brief.shots as Array<Record<string,unknown>>)?.[0]?.durationSeconds||25))}</p>
     <p className="creativeSpoken"><b>Что сказать</b>{str(idea?.script)}</p>
     {Array.isArray(session.brief.shots)&&session.brief.shots.slice(0,1).map((shot:any)=><div key={shot.id} className="creativeShootGrid">
      <p><b>Куда поставить iPhone</b>{str(shot.cameraPosition)}</p>
@@ -290,12 +305,12 @@ export default function PersonaCreativeLoop(){
     </div>)}
    </div>
    <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Я снял — загрузить материалы →</button>
-   <details className="creativeDetails"><summary>Подробнее · кадр и настройки</summary>
+   <details className="creativeDetails creativeShootSecondary"><summary>Подробнее</summary>
     {Array.isArray(session.brief.shots)&&session.brief.shots.map((shot:any)=>
       <p key={shot.id}><b>{str(shot.purpose)}</b> · Кадр: {str(shot.composition)} · {str(shot.action)}</p>)}
     <p>Звук: {str(session.brief.audio)} · Фон: {str(session.brief.background)}</p>
    </details>
-   <details className="creativeDetails"><summary>Изменить условия съёмки</summary>
+   <details className="creativeDetails creativeShootSecondary"><summary>Изменить условия съёмки</summary>
     <label htmlFor="creative-conditions">Что изменилось?</label>
     <textarea id="creative-conditions" rows={2} value={conditions} onChange={e=>setConditions(e.target.value)}
      placeholder="Снимаю один, нет штатива, плохой свет, есть 7 минут."/>
