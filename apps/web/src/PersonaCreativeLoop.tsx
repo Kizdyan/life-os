@@ -232,7 +232,7 @@ export default function PersonaCreativeLoop(){
       <small>{index===0?"РЕКОМЕНДУЮ":`ВАРИАНТ ${index+1}`}</small>
       <h3>{str(concept.title)}</h3>
       <p className="creativeHook"><b>Хук</b>{str(concept.hook)}</p>
-      <p className="creativeOneLine"><b>Что снять</b>{str(concept.soloPlan)||str(concept.angle)}</p>
+      <p className="creativeOneLine"><b>Что за видео</b>{str(concept.angle)||str(concept.soloPlan)}</p>
       <p className="creativeTime">Примерно {String(concept.estimatedMinutes||"—")} мин.</p>
       <button className="primary creativeSelect" disabled={busy||entry.verifiedFreshness!=="cached"}
        onClick={()=>choose(entry.id)}>Выбрать</button>
