@@ -25,7 +25,7 @@ const shootActionOnly=(plan:string,numberOfTakes:number,seconds:number)=>{
  const direction=withoutSetup
   .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+[^,.;]*?дубль\s*,?\s*/i,"")
   .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+дубль\s*,?\s*/i,"")
-  .trim().replace(/[.!?]+$/,"");
+  .trim().replace(/[.!?]+$/,"").replace(/^меняя\b/i,"Меняй");
  const sentence=direction?direction[0].toUpperCase()+direction.slice(1)+".":"";
  const takeNoun=takes===1?"дубль":takes<5?"дубля":"дублей";
  return `Сними ${takes} ${takeNoun} по ${duration} секунд.${sentence?" "+sentence:""}`;
