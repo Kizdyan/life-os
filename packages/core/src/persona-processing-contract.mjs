@@ -68,6 +68,11 @@ export function retry(job,at=new Date().toISOString()){
  return {...job,status:'queued',attempt:job.attempt+1,startedAt:null,completedAt:null,
   instagramFile:null,processedAsset:null,outputToken:null,error:null,updatedAt:at};
 }
+export function recoverMissingSource(job,at=new Date().toISOString()){
+ if(!job?.request||!['queued','failed'].includes(job.status))throw Error('source_recovery_unavailable');
+ return {...job,status:'queued',inputReady:false,error:'local_source_missing_upload_again',
+   instagramFile:null,processedAsset:null,outputToken:null,updatedAt:at};
+}
 export function publicJob(job){
  const {outputToken,...safe}=job;
  return {...safe,outputAvailable:!!job.instagramFile && ['review','ready'].includes(job.status)};
