@@ -31,6 +31,11 @@ describe("Creative Loop V1 bounded FREE_ONLY core",()=>{
   expect(v2.approvalProof).not.toBe(v1.approvalProof);
   expect((await verifyApproval(v2.approvalProof,signingKey,at+60_000))?.idea.creativeVersion).toBe(2);
   expect(editorialAssessment(v1.idea,"что думаешь о моей правке?").proposal).toBeNull();
+  expect(editorialAssessment(v1.idea,"Сделай финал смешнее. А может, лучше оставить как есть?").proposal).toBeNull();
+  const hookOnly=editorialAssessment(v1.idea,"Не меняй финал, поменяй хук");
+  expect(hookOnly.kind).toBe("HOOK");
+  expect(hookOnly.proposal?.hook).not.toBe(v1.idea.hook);
+  expect(hookOnly.proposal?.script).toBe(v1.idea.script);
   expect(editorialAssessment(v1.idea,"добавь неопределённую магию").judge).toBe("REVISE");
  });
  it("makes shooting conditions genuinely change a validated brief",()=>{
@@ -41,13 +46,16 @@ describe("Creative Loop V1 bounded FREE_ONLY core",()=>{
   expect(String((brief.shots as Array<{cameraPosition:string}>)[0].cameraPosition)).toContain("полке");
   expect((brief.shots as Array<{takes:number}>)[0].takes).toBe(1);
   expect(()=>adaptCreativeBrief(idea,"только 2 минуты")).toThrow("shooting_time_too_short");
-  for (const words of ["нет помощника", "без оператора", "нету помощника, снимаю один"]){
+  for (const words of ["нет помощника", "без оператора", "нету помощника, снимаю один", "помощника нет", "оператор не будет", "не нужен помощник"]){
     const solo=adaptCreativeBrief(idea,words);
     expect(validatePersonaShootingBrief(solo)).toEqual([]);
     const shot=(solo.shots as Array<{cameraPosition:string;action:string}>)[0];
     expect(shot.cameraPosition).not.toContain("Помощник держит");
     expect(shot.action).toContain("Снять одному");
   }
+  const unknownHelper=adaptCreativeBrief(idea,"вдруг помощник будет недоступен");
+  expect(String((unknownHelper.shots as Array<{cameraPosition:string}>)[0].cameraPosition))
+    .not.toContain("Помощник держит");
   const withHelper=adaptCreativeBrief(idea,"есть помощник");
   expect(String((withHelper.shots as Array<{cameraPosition:string}>)[0].cameraPosition))
     .toContain("Помощник держит");

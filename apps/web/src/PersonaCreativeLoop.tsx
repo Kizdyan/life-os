@@ -25,9 +25,16 @@ const niceError=(error:unknown)=>{
  if(message.includes("shooting_time_too_short"))return "Нужно хотя бы 5 минут для съёмки. Можно выбрать более короткий план позже.";
  if(message.includes("invalid_adapted_brief"))return "Не удалось подобрать безопасный план. Уточни условия съёмки.";
  if(message.includes("creative:")||message.includes("prototype_")||message.includes("asset_"))
-  return "Не удалось сохранить изменение. Данные на iPhone останутся на месте; попробуй ещё раз.";
+  return "Не удалось выполнить действие. Проверь, что нужные файлы сохранены на iPhone, и попробуй снова.";
  return "Не получилось выполнить действие. Проверь связь и попробуй снова.";
 };
+function mediaSaveError(error:unknown):string {
+ const message=error instanceof Error?error.message:String(error);
+ if(/превышает лимит 5 ГБ/i.test(message))return "Файл больше 5 ГБ. Выбери файл поменьше.";
+ if(/quota|space|storage|indexeddb|запись не завершена/i.test(message))
+  return "Не получилось сохранить файл на iPhone. Проверь место на устройстве и попробуй снова.";
+ return "Не получилось сохранить файл. Уже добавленные материалы остались на этом iPhone.";
+}
 function initialNavigation():{id:string;stage:Stage}{
  try {
   const saved=JSON.parse(sessionStorage.getItem(NAV_KEY)||"{}");
@@ -260,7 +267,7 @@ export default function PersonaCreativeLoop(){
    // is a separate step, without a false "upload failed" toast.
    try{await refresh();}catch{/* Local binary remains committed. */}
 
-  }catch(e){setError(niceError(e));}
+  }catch(e){setError(mediaSaveError(e));}
   finally{setBusy(false);setRoleOverride("auto");}
  }
  return <section className="creativeV1" aria-label="Persona Creative Loop V1" data-stage={stage}>
@@ -379,13 +386,13 @@ export default function PersonaCreativeLoop(){
   </section>}
   {stage==="upload"&&item&&session&&<section className="creativeStage creativeUploadStage" aria-label="Материалы">
    <div className="creativeStageHead"><h2>Загрузить материалы</h2>
-    <p>Выбери записи. Persona сама разберёт, где дубли, фото и звук.</p></div>
+    <p>Выбери записи. Тип файлов определится автоматически; дубли пока различаются по порядку, без анализа видео.</p></div>
    {activeAssets.length>0&&<div className="creativeUploadStatus" role="status">
     <b>✓ Сохранено на iPhone: {activeAssets.length}</b>
-    <p>Оригиналы на телефоне. Выбор лучших кадров — следующий шаг.</p>
+    <p>Копии файлов сохранены здесь. Лучшие кадры пока не выбраны.</p>
    </div>}
    {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Синхронизирую список файлов…":"Список файлов ещё не синхронизирован. Оригиналы остаются на iPhone."}</p>}
-   <label className="creativePicker">Загрузить материалы
+   <label className="creativePicker">Выбрать файлы
     <input aria-label="Загрузить материал" type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.m4a"
      disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
       void upload(files).finally(()=>{picker.value=""});}}/>

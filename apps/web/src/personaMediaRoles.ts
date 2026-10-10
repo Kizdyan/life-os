@@ -2,7 +2,8 @@ export type InferredRole = "primary_take"|"alternate_take"|"broll"|"photo"|"audi
 export type MediaKind = "take"|"photo"|"broll"|"audio"|"additional";
 export type MediaOverride = "auto"|InferredRole;
 export interface MediaClassification {role:InferredRole; kind:MediaKind; explanation:string; confidence:"high"|"medium"|"low";}
-const RE_BROLL=/(?:b[\s_-]?roll|б[\s_-]?ролл|врезк|детал|перебив|atmos|cutaway|insert|scenery|фон|establish)/i;
+// "фон" is a standalone filename tag, never the suffix of "айфон"/"микрофон".
+const RE_BROLL=/(?:b[\s_-]?roll|б[\s_-]?ролл|врезк|детал|перебив|atmos|cutaway|insert|scenery|establish|(?:^|[\s_.-])фон(?=$|[\s_.-]))/i;
 const RE_REFERENCE=/(?:reference|references|референс|ref[_-]|пример|inspiration|moodboard)/i;
 export function inferMediaRole(file:Pick<File,"name"|"type">,
   existing:ReadonlyArray<{role?:string;kind?:string}>,override:MediaOverride="auto"):MediaClassification{

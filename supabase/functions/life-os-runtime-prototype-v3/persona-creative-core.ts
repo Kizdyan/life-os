@@ -88,8 +88,14 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
   {kind:string; proposal:CreativeIdea|null; critic:string; judge:string} {
   const text = request.trim().slice(0,600);
   if (!text) return {kind:"EMPTY",proposal:null,critic:"Уточни, что именно меняем.",judge:"REVISE"};
-  if (/^(?:не меняй|не трогай|не изменяй)\s+(?:финал|концовку)/i.test(text))
-    return {kind:"OPINION",proposal:null,critic:"Хорошо, финал оставляем без изменений.",judge:"COMMENT_ONLY"};
+  const preserveEnding=/(?:не меняй|не трогай|не изменяй)\s+(?:финал|концовку)/i.test(text);
+  const wantsHook=/(?:поменяй хук|другой хук|новое начало)/i.test(text);
+  // A question about keeping the original is not approval to mutate it.
+  if (/(?:а может|или лучше|может,?\s+лучше)/i.test(text) &&
+      /(?:оставить как есть|оставить прежн|не менять|без изменений)/i.test(text))
+    return {kind:"OPINION",proposal:null,critic:"Можно оставить прежний вариант. Если решишь менять, скажи, что именно.",judge:"COMMENT_ONLY"};
+  if (preserveEnding && !wantsHook)
+    return {kind:"OPINION",proposal:null,critic:"Финал не трогаем. Если нужна другая правка, уточни её.",judge:"COMMENT_ONLY"};
   if (/что (ты )?думаешь|как считаешь|оцени|согласн/i.test(text) &&
       !/поменяй|измени|сделай|добавь|убери|перепиши/i.test(text)) {
     return {kind:"OPINION",proposal:null,
@@ -100,7 +106,11 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
   let kind="UNRECOGNIZED",critic="Это изменение пока слишком расплывчато: есть риск потерять исходный замысел.";
   const hook=String(idea.hook||"").trim();
   const script=String(idea.script||"").trim();
-  if (/финал|концовк|в конце/i.test(text)) {
+  if (preserveEnding && wantsHook) {
+    kind="HOOK";
+    next.hook=hook.startsWith(EDITORIAL_HOOK_PREFIX)?hook:EDITORIAL_HOOK_PREFIX+hook;
+    critic="Сменим начало, не трогая финал.";
+  } else if (/финал|концовк|в конце/i.test(text)) {
     kind="ENDING";
     const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{3,220})$/i)?.[1]?.trim();
     const humorEnding=!replacement&&/смешн|юмор|ирони|шуточ/i.test(text);
@@ -162,11 +172,13 @@ export function adaptCreativeBrief(idea:CreativeIdea, conditions:string):Record<
   if (/плох.*свет|темно/i.test(lower)) brief.lighting="Встать лицом к доступному окну или лампе, избегать контрового света и пересвета.";
   // Negation must win: «нет помощника» and «без оператора» must NOT turn
   // the very same brief into an assistant-operated camera setup.
-  const noHelper=/(?:нет(?:у)?|без|не будет)\s+(?:помощник\w*|оператор\w*)/i.test(lower);
+  const noHelper=/(?:нет(?:у)?|без|не будет|не нужен|не нужна)\s+(?:помощник[а-яё]*|оператор[а-яё]*)|(?:помощник[а-яё]*|оператор[а-яё]*)\s+(?:нет(?:у)?|не будет|не прид[её]т|не нужен|будет недоступен)/i.test(lower);
   if (noHelper||/снимаю од(?:ин|на)|од(?:ин|на) снимаю|снимаю сам(?:а)?/i.test(lower)) {
     for(const shot of shots) shot.action=String(shot.action)+" Снять одному, с таймером.";
   }
-  if (/помощник|оператор/i.test(lower)&& !noHelper) {
+  // A negative or hypothetical helper mention is not consent to add an operator.
+  const hasHelper=/(?:есть|будет|помогает|снимает|приш[её]л)\s+(?:помощник[а-яё]*|оператор[а-яё]*)|(?:помощник[а-яё]*|оператор[а-яё]*)\s+(?:есть|будет|помогает|снимает|приш[её]л)/i.test(lower);
+  if (hasHelper && !noHelper) {
     for(const shot of shots) shot.cameraPosition="Помощник держит телефон стабильно на уровне глаз";
   }
   const mins=lower.match(/(\d{1,2})\s*мин/);
