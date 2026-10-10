@@ -1,6 +1,6 @@
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {readCapturedAsset,type CreativeMediaMetadata} from './personaMediaIntake';
-import {desktopRequest,getWorkerSettings,jobIdForAsset,processingRequest,safeOutputLink,videoMime,
+import {desktopRequest,getWorkerSettings,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,videoMime,
  saveWorkerSettings,type ProcessingJob,type WorkerSettings} from './personaProcessingClient';
 
 type Scope={projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;sessionId:string};
@@ -26,18 +26,28 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  const [configOpen,setConfigOpen]=useState(false);
  const enabled=!!settings.token&&!!settings.url;
  const jobId=current?jobIdForAsset(current.id):'';
+ // Ignore out-of-order replies from an earlier selection, session or request.
+ const scopeKey=[scope.projectId,scope.contentItemId,scope.ideaId,scope.ideaVersion,
+   scope.sessionId,current?.id,settings.url,settings.token].join('|');
+ const currentScopeRef=useRef(scopeKey);
+ currentScopeRef.current=scopeKey;
+ const fetchSerialRef=useRef(0);
+ const visibleJob=jobBelongsToAsset(job,current)?job:null;
  const sync=useCallback(async()=>{
   if(!current||!enabled)return;
+  const expectedScope=scopeKey;
+  const serial=++fetchSerialRef.current;
   try{
    const updated=await desktopRequest(settings,'/v1/jobs/'+jobId,'GET');
-   if(updated.request.assetId!==current.id||updated.request.sessionId!==scope.sessionId||
-      updated.request.ideaVersion!==scope.ideaVersion)throw Error('Неверная версия материалов.');
+   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
+   if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
    setJob(updated);setError('');
   }catch(e){
+   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
    if(e instanceof Error&&e.message==='job_not_found'){setJob(null);setError('');}
    else setError(message(e));
   }
- },[current?.id,jobId,enabled,settings.url,settings.token,scope.sessionId,scope.ideaVersion]);
+ },[current?.id,jobId,enabled,settings.url,settings.token,scopeKey]);
  useEffect(()=>{setJob(null);setError('');if(enabled)void sync();},[sync,enabled]);
  useEffect(()=>{
   if(!enabled||!current)return;
@@ -56,33 +66,42 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  async function submit(){
   if(!current||busy||!enabled)return;
   setBusy(true);setError('');
+  const capturedScope=scopeKey;
+  ++fetchSerialRef.current;
   try{
    // Registration is idempotent; no media bytes are sent until locally committed.
    let updated=await desktopRequest(settings,'/v1/jobs','POST',processingRequest(current));
-   setJob(updated);
+   if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
+   if(currentScopeRef.current===capturedScope)setJob(updated);
    if(updated.status==='failed')throw Error('Предыдущая обработка не завершилась. Используй «Повторить».');
    if(!updated.inputReady&&updated.status==='queued'){
     // IndexedDB holds source media on the iPhone. Safari does no codec work.
     const blob=await readCapturedAsset(current.id);
     if(!blob||blob.size!==current.bytes)throw Error('Файл на iPhone повреждён или отсутствует.');
     updated=await desktopRequest(settings,'/v1/jobs/'+updated.id+'/input','PUT',blob);
-    setJob(updated);
+    if(currentScopeRef.current===capturedScope)setJob(updated);
    }
-   await sync();
-  }catch(e){setError(message(e));}
+   if(currentScopeRef.current===capturedScope)await sync();
+  }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
   finally{setBusy(false);}
  }
  async function action(type:'retry'|'approve'){
-  if(!job||busy)return;setBusy(true);setError('');
-  try{const result=await desktopRequest(settings,'/v1/jobs/'+job.id+'/'+type,'POST');setJob(result);}
-  catch(e){setError(message(e));}finally{setBusy(false);}
+  if(!visibleJob||busy)return;
+  const capturedScope=scopeKey,existingJob=visibleJob;
+  ++fetchSerialRef.current;
+  setBusy(true);setError('');
+  try{
+   const result=await desktopRequest(settings,'/v1/jobs/'+existingJob.id+'/'+type,'POST');
+   if(currentScopeRef.current===capturedScope&&jobBelongsToAsset(result,current))setJob(result);
+  }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
+  finally{setBusy(false);}
  }
- const output=job?safeOutputLink(settings.url,job):null;
+ const output=visibleJob?safeOutputLink(settings.url,visibleJob):null;
  return <section className="personaProcessor" aria-label="Обработка видео на компьютере">
   <h3>Обработка на компьютере</h3>
   {videos.length===0?<p>Сначала добавь видео на шаге «Материалы».</p>:<>
    {videos.length>1&&<label>Видео для обработки
-    <select value={current?.id||''} onChange={e=>setSelected(e.target.value)}>
+    <select disabled={busy} value={current?.id||''} onChange={e=>setSelected(e.target.value)}>
      {videos.map(x=><option key={x.id} value={x.id}>{x.filename}</option>)}
     </select></label>}
    <p className="personaProcessorFile">{current?.filename} · исходник на iPhone</p>
@@ -98,17 +117,18 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
     </label>
     <button type="button" className="creativeSecondary" onClick={configure}>Сохранить подключение</button>
    </details>
-   {!job?<button type="button" className="primary" disabled={!enabled||busy} onClick={()=>void submit()}>
+   {!visibleJob?<button type="button" className="primary" disabled={!enabled||busy} onClick={()=>void submit()}>
     {busy?'Передаю видео…':'Отправить на обработку'}
    </button>:<>
-    <p role="status" className="personaProcessorState">Статус: {words[job.status]||job.status}</p>
-    {job.status==='queued'&&!job.inputReady&&<button className="primary" disabled={busy} onClick={()=>void submit()}>
+    <p role="status" className="personaProcessorState">Статус: {words[visibleJob.status]||visibleJob.status}</p>
+    {visibleJob.status==='failed'&&visibleJob.error&&<p role="alert">{message(new Error(visibleJob.error))}</p>}
+    {visibleJob.status==='queued'&&!visibleJob.inputReady&&<button className="primary" disabled={busy} onClick={()=>void submit()}>
      {busy?'Передаю видео…':'Продолжить передачу видео'}</button>}
-    {job.status==='failed'&&<button className="primary" disabled={busy} onClick={()=>void action('retry')}>
+    {visibleJob.status==='failed'&&<button className="primary" disabled={busy} onClick={()=>void action('retry')}>
       Повторить обработку</button>}
     {output&&<a className="personaProcessorOutput" href={output} target="_blank" rel="noopener noreferrer">
       Открыть видео для Instagram ↗</a>}
-    {job.status==='review'&&<button className="primary" disabled={busy} onClick={()=>void action('approve')}>
+    {visibleJob.status==='review'&&<button className="primary" disabled={busy} onClick={()=>void action('approve')}>
       Видео подходит — готово</button>}
    </>}
   </>}
