@@ -1,15 +1,9 @@
 name: persona-creative-v1-mobile-acceptance
+# Full WebKit/Chromium acceptance is an explicit release gate.
+# Running it after every small UX commit burns the private-repo Actions allowance
+# without improving exact-HEAD acceptance. Never fake PASS; dispatch when ready.
 on:
   workflow_dispatch:
-  push:
-    branches: [feature/persona-creative-loop-v1]
-    paths:
-      - "scripts/persona-creative-mobile-e2e.mjs"
-      - "apps/web/src/PersonaCreativeLoop.tsx"
-      - "apps/web/src/personaMediaIntake.ts"
-      - "apps/web/src/persona-creative-v1.css"
-      - "supabase/functions/life-os-runtime-prototype-v3/persona-creative-*.ts"
-      - ".github/workflows/persona-creative-v1-mobile-acceptance.yml"
 concurrency:
   group: persona-creative-v1-mobile-${{ github.ref }}
   cancel-in-progress: true
