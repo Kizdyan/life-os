@@ -3,7 +3,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import {readFile,writeFile,rename,mkdir,readdir,stat,copyFile,open,rm} from 'node:fs/promises';
-import {createWriteStream,createReadStream} from 'node:fs';
+import {createWriteStream,createReadStream,readFileSync,rmSync} from 'node:fs';
 import {randomBytes,timingSafeEqual,createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -16,7 +16,8 @@ import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/perso
 import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
 
 const exec=promisify(execFile),root=resolve(process.env.PERSONA_BRIDGE_DATA||'.persona-processing');
-const jobsDir=join(root,'jobs'),host=process.env.PERSONA_BRIDGE_HOST||'127.0.0.1';
+const jobsDir=join(root,'jobs'),ownerFile=join(root,'.desktop-worker-owner.json');
+const host=process.env.PERSONA_BRIDGE_HOST||'127.0.0.1';
 const port=Number(process.env.PERSONA_BRIDGE_PORT||8787),bearer=process.env.PERSONA_BRIDGE_TOKEN||'';
 const origin=process.env.PERSONA_BRIDGE_ORIGIN||'';
 const cert=process.env.PERSONA_TLS_CERT,key=process.env.PERSONA_TLS_KEY;
@@ -25,6 +26,49 @@ if(bearer.length<32||!origin.startsWith('https://')||!Number.isInteger(port)||po
  throw Error('Configure long PERSONA_BRIDGE_TOKEN, exact HTTPS PERSONA_BRIDGE_ORIGIN, valid port');
 if(Boolean(cert)!==Boolean(key)||(!cert&&!['127.0.0.1','::1','localhost'].includes(host)))
  throw Error('LAN bridge requires Safari-trusted TLS certificate and key');
+// Two workers with different ports must never claim the same job directory.
+const ownerNonce=randomBytes(16).toString('hex');
+function pidAlive(pid){
+ if(!Number.isInteger(pid)||pid<1)return false;
+ try{process.kill(pid,0);return true;}
+ catch(e){return e.code!=='ESRCH';}
+}
+async function acquireOwnership(){
+ await mkdir(root,{recursive:true});
+ for(let attempt=0;attempt<3;attempt++){
+  try{
+   const file=await open(ownerFile,'wx',0o600);
+   try{
+    await file.writeFile(JSON.stringify({pid:process.pid,nonce:ownerNonce}));
+    await file.sync();
+   }finally{await file.close();}
+   return;
+  }catch(e){
+   if(e.code!=='EEXIST')throw e;
+   let stale=false;
+   try{
+    const owner=JSON.parse(await readFile(ownerFile,'utf8'));
+    stale=!pidAlive(Number(owner.pid));
+   }catch{
+    // Another process may be writing the lock at this very moment.
+    const age=Date.now()-(await stat(ownerFile).catch(()=>({mtimeMs:Date.now()}))).mtimeMs;
+    if(age>10_000)stale=true;
+   }
+   if(!stale)throw Error('desktop_worker_already_running_or_lock_recent');
+   const renamed=ownerFile+'.stale-'+randomBytes(8).toString('hex');
+   try{await rename(ownerFile,renamed);await rm(renamed,{force:true});}
+   catch(e){if(e.code!=='ENOENT')throw e;}
+  }
+ }
+ throw Error('desktop_worker_ownership_unavailable');
+}
+// An unclean OS/desktop kill leaves a PID lock; acquireOwnership reclaims it.
+process.on('exit',()=>{
+ try{
+  const owner=JSON.parse(readFileSync(ownerFile,'utf8'));
+  if(owner.pid===process.pid&&owner.nonce===ownerNonce)rmSync(ownerFile,{force:true});
+ }catch{}
+});
 const locks=new Map(),uploads=new Set();
 const safeId=id=>/^job-[a-f0-9]{32}$/.test(id);
 const dir=id=>join(jobsDir,id),jsonPath=id=>join(dir(id),'job.json');
@@ -232,6 +276,7 @@ async function serve(req,res){
   throw error(404,'route_not_found');
  }catch(e){fail(res,e);}
 }
+await acquireOwnership();
 await mkdir(jobsDir,{recursive:true});
 for(const id of (await readdir(jobsDir)).filter(safeId)){
  await lock(id,async()=>{
