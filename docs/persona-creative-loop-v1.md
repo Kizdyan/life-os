@@ -10,7 +10,7 @@
 - No production deploy, main merge, existing branch/project/folder rename, or user-as-QA process.
 
 ## Scope: one coherent, real vertical slice
-1. Exactly **one primary + two distinct alternatives**, pre-edited from theatre, acting, and music; no fictitious trend evidence. Sources describe platform **formats** only. Editorial fixture expires after 7 days and no source date is rolled forward automatically.
+1. Exactly **one primary + two distinct alternatives**, pre-edited from theatre, acting, and music; no fictitious trend evidence. Sources describe platform **formats** only. Official static format guidance expires after a bounded 180-day review window; market/trending evidence still expires after 7 days. Signed static-format approvals share this 180-day window, while market/trend approvals keep their 30-day authorization cap. The original evidence dates never roll forward automatically.
 2. Select candidate and discuss in natural Russian through an Erika-labeled **deterministic editorial adapter**; supported topics: ending, humor, no expert voice, natural tone, solo filming, hooks, and asking for an opinion. Unrecognized intent is explicitly declined, not hallucinated as completed. Feedback contains a reasoned Critic response.
 3. Significant change creates **pending vN+1**. No inherited approval. A separate explicit user action triggers the server's deterministic Critic/Judge quality gate and a *new* HMAC signed approval. Version history keeps original, rationale, review, timestamp.
 4. Shooting requires the **current signed version**. Adaptive conditions change camera/light/takes/location/solo-helper; brief schema is checked. Creates revision-bound `ShootingSession` with provenance; old sessions preserved.
@@ -22,6 +22,27 @@ The week should show a capacity-limited pool of **up to 3–4 videos**, never au
 
 ## Next milestone: media intelligence
 Donor video pipeline is not yet integrated. Next bounded PR: **on-device/source QA → transcription → score takes → select best segments/hook → one recommended rough cut + at most one alternative**, followed by caption/sound/export and platform variants. All actions must be traceable to exact asset IDs and human-approved candidate revision. Publish only after explicit user decision; do not automatically pay AI.
+
+## CI_BUDGET_SAVER — deferred exact-HEAD acceptance (NOT a release claim)
+Status: `USABLE_ARTIFACT / CI_DEFERRED`. Free GitHub Actions minutes for this private repository are exhausted; this is a CI-only limitation, not a reason to stop implementing. **Do not rerun intermediate commits, pay for runner minutes, or use the owner as QA.**
+
+The checks below are **unverified for the current candidate HEAD**, not passes. Keep this list pending until one consolidated final run on the **same immutable commit SHA** (record SHA and actual artifact/log URL per gate):
+
+- [ ] `core`: complete unit tests, deterministic regression tests, TypeScript checks.
+- [ ] `deploy-readiness`: API typecheck, static production build, exact HEAD identity and Edge-only runtime contract.
+- [ ] Chromium iPhone emulation: 320/375/390/430px geometry, safe areas, focus/keyboard, one primary action per stage, footer never obscures CTA.
+- [ ] WebKit iPhone emulation: repeat the same geometry and real browser behavior separately; no inferred PASS from Chromium.
+- [ ] Persona Creative V1 mobile: shortlist, one idea selection, isolated stages, clear nontechnical copy.
+- [ ] Erika: vague prompt requests clarification **without changing version**; exact ending edit → critique/proposal → explicit approve → one new signed version; repeat identical edit stays no-op.
+- [ ] Persistence/reload: exact edited script/proof survives reload, previous version proof fails, no forged approvals.
+- [ ] Shooting: adapt solo/no tripod/poor lighting/7 minutes, visible changed brief and signed version/session retained after reload.
+- [ ] Real H.264 MP4 binary: iPhone IndexedDB commit → reload → byte count and SHA-256 identical, exact project/content/idea/version/session/asset lineage.
+- [ ] Automatic classification: video primary/alternate, B-roll, photo, audio and reference heuristics; any uncertain classification is labelled an inference; optional correction only.
+- [ ] Offline media: save binary with network down, restore online manifest automatically, no false cloud-upload claim, no cross-session metadata leak.
+- [ ] Render independent `*.onrender.com` Creative V1: real live page serves chosen **exact HEAD**, right Supabase Edge target, not a Vercel preview and no paid runtime dependency.
+- [ ] Production/recovery rollout remains separately authorised; no merge or deploy based solely on source-level checks.
+
+Offline verification before selecting final HEAD: inspect exact diff, review deterministic tests/contract, verify PWA mobile flow and risk of stale offline data, adversarial Critic rejection of misleading state, and ZERO-RECURRING-AI-COST (no paid inference/background jobs). Defer status `READY_FOR_PHYSICAL_ACCEPTANCE` until **all** applicable automated gates are genuinely green on the same HEAD.
 
 ## Safety and regressions
 - Old and forged signatures rejected; previous revision signature cannot start current Creative session.

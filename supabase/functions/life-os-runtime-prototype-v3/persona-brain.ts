@@ -65,11 +65,12 @@ function earliestEvidenceDate(idea: Dict): number {
 export function approvalFreshness(
   approvedAt: string, evidenceCheckedAt: string, now = Date.now(),
   evidenceMaxAgeMs = EVIDENCE_TTL_MS,
+  approvalMaxAgeMs = APPROVAL_TTL_MS,
 ): "cached" | "stale" | "expired" {
   const approved = Date.parse(approvedAt), evidence = Date.parse(evidenceCheckedAt);
   if (!Number.isFinite(approved) || !Number.isFinite(evidence) ||
       approved > now + 60_000 || evidence > now + 86_400_000 ||
-      approved < now - APPROVAL_TTL_MS) return "expired";
+      approved < now - approvalMaxAgeMs) return "expired";
   return evidence < now - evidenceMaxAgeMs ? "stale" : "cached";
 }
 
@@ -106,8 +107,13 @@ export async function verifyApproval(proof: unknown, secret: string, now = Date.
     const value = JSON.parse(new TextDecoder().decode(unB64Url(parts[0]))) as Record<string, unknown>;
     if (value.version !== 1 || typeof value.approvedAt !== "string" ||
         typeof value.evidenceCheckedAt !== "string") return null;
+    const reviewWindowMs = evidenceReviewWindowMs(value.idea);
+    // A signed static-format recommendation remains usable during its bounded
+    // official-guidance review window. Live/trending claims keep the 30-day cap.
+    const approvalWindowMs = reviewWindowMs === FORMAT_GUIDANCE_TTL_MS
+      ? FORMAT_GUIDANCE_TTL_MS : APPROVAL_TTL_MS;
     const fresh = approvalFreshness(value.approvedAt, value.evidenceCheckedAt, now,
-      evidenceReviewWindowMs(value.idea));
+      reviewWindowMs, approvalWindowMs);
     if (fresh === "expired") return null;
     const checked = approvePersonaCandidate(value.idea, now);
     if (!checked.approved || !checked.candidate) return null;
