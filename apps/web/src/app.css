@@ -5,3 +5,24 @@
 .taskOpen{border:0!important;background:transparent!important;text-align:left!important;height:auto!important;display:grid;gap:4px;padding:0!important}.taskOpen span{font-size:12px;color:#777}.taskEditor{grid-column:1/-1;display:grid;gap:9px;padding-top:10px;border-top:1px solid #eee}.taskEditor input,.taskEditor select{width:100%;min-height:44px;border:1px solid #ddd;border-radius:11px;padding:8px;background:#fff}.formGrid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px}.seg{display:grid;grid-template-columns:1fr 1fr;background:#e9e9e5;padding:3px;border-radius:12px;margin-bottom:12px}.seg button{border:0;background:transparent;min-height:40px;border-radius:9px}.seg .active{background:#fff}.calendarDays{display:grid;gap:14px}.calendarDays section{display:grid;gap:7px}.dayTitle{border:0;background:transparent;text-align:left;font-weight:800;padding:4px 2px;font-size:16px}.timeline:empty:after{content:'Нет запланированных блоков';color:#888;background:#fff;border-radius:16px;padding:14px}.mainNav{-webkit-overflow-scrolling:touch;scrollbar-width:none}.mainNav::-webkit-scrollbar{display:none}@media(max-width:390px){.formGrid{grid-template-columns:1fr 1fr}.taskEditor{padding:10px 0 2px}.mainNav>*{padding:0 9px}}
 .moreSheet{width:min(720px,100%);margin:auto;background:#fff;border-radius:24px 24px 0 0;padding:18px 14px calc(18px + env(safe-area-inset-bottom));display:grid;gap:7px}.moreSheet>b{padding:6px 8px 10px}.moreSheet button{min-height:48px;border:0;border-radius:14px;background:#f3f3f0;text-align:left;padding:0 14px;font-size:16px}
 .entityList details{background:#fff;border-radius:18px;padding:14px}.entityList summary{list-style:none;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;cursor:pointer}.entityList summary::-webkit-details-marker{display:none}.entityList details>label{display:grid;gap:5px;margin-top:12px;font-size:12px;color:#666}.entityList details select{min-height:44px;border:1px solid #ddd;border-radius:11px;background:#fff;padding:8px}.linked{padding:9px 0;border-top:1px solid #eee;font-size:13px;overflow-wrap:anywhere}@media(max-width:390px){.entityList summary{grid-template-columns:1fr}.entityList summary span{font-size:12px;color:#777}}
+
+
+/* iPhone calendar: date changes remain available inside the calendar itself. */
+.calendarNavigator{
+ display:grid;grid-template-columns:44px minmax(0,1fr) 44px auto;
+ align-items:center;gap:6px;margin:2px 0 10px;
+}
+.calendarNavigator button{
+ min-height:44px;min-width:44px;border:1px solid #e5e7e2;
+ border-radius:12px;background:#fff;color:#171717;font-size:22px;
+}
+.calendarNavigator strong{
+ text-align:center;overflow-wrap:anywhere;font-size:14px;line-height:1.3;
+}
+.calendarNavigator .calendarToday{
+ min-width:68px;padding:0 9px;font-size:12px;font-weight:700;
+}
+@media(max-width:350px){
+ .calendarNavigator{grid-template-columns:44px minmax(0,1fr) 44px}
+ .calendarNavigator .calendarToday{grid-column:1/-1;width:100%;min-height:40px}
+}
