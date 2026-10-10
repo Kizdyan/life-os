@@ -103,6 +103,18 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     assert(!visible.toLowerCase().includes(term),"implementation leakage: "+term);
   }
   assert(await page.locator(".creativeIdea").count()===3,"not exactly 3 creative shortlist cards");
+  const humanDetails=page.locator(".creativeIdea").first().locator("details");
+  assert(!(await humanDetails.evaluate(node=>node.open)),"Idea details should start collapsed");
+  await humanDetails.locator("summary").click();
+  const detailsText=await humanDetails.innerText();
+  for(const heading of ["Почему рекомендуем","На чём основано","Насколько уверены"]){
+    assert(detailsText.includes(heading),"human explanation missing: "+heading);
+  }
+  for(const jargon of ["cached","revision","provenance","Редакция","confidence","QA state"]){
+    assert(!detailsText.includes(jargon),"technical jargon leaked into Idea details: "+jargon);
+  }
+  await humanDetails.locator("summary").click();
+  console.log("PASS "+name+" Idea details: clear human reasons and no internal terminology");
   const legacy=page.locator(".legacyPersona");
   assert(await legacy.count()===1,"legacy workflow missing from quiet archive");
   assert(!(await legacy.evaluate(node=>node.open)),"legacy archive expanded over primary Creative flow");
@@ -165,6 +177,16 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.locator('.creativeV1[data-stage="edit"]').waitFor({timeout:15000});
   assert(await page.locator(".creativeStage").count()===1,"Edit stage is not isolated");
   await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
+  await page.locator("#creative-erika-input").fill("Сделай лучше");
+  await page.getByRole("button",{name:"Обсудить с Эрикой",exact:true}).click();
+  await page.locator(".creativeErikaReply").waitFor({timeout:30000});
+  assert((await page.locator(".creativeErikaReply").innerText()).includes("Уточни"),
+    "vague Erika request did not ask for clarification");
+  const noVague=await body(token,{action:"creative_state"});
+  assert(noVague.data.items[selectionIndex].currentVersion===baseVersion &&
+    !noVague.data.items[selectionIndex].pending,
+    "vague Erika request created an unapproved revision");
+  await page.getByRole("button",{name:/Обсудить с Эрикой/}).click();
   await page.locator("#creative-erika-input").fill(qaInstruction);
   await page.setViewportSize({width:390,height:540});
   await page.locator("#creative-erika-input").focus();
@@ -181,6 +203,7 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   console.log("PASS "+name+" Erika virtual-keyboard viewport 390x540: footer hidden, submit visible");
   await page.getByRole("button",{name:"Обсудить с Эрикой"}).click();
   await page.locator(".creativeProposal").waitFor({timeout:30000});
+  assert(!(await page.locator(".creativeErikaReply").count()),"precise request asked unnecessary follow-up");
   assert(await page.locator(".creativeStage").count()===1,"proposal must not display other stages");
   assert((await page.locator(".creativeProposal").innerText()).includes("Моё мнение"),"no reasoned Erika assessment");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-erika-proposed.png"});
@@ -237,6 +260,15 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(bad.status===409,"forged approval still actionable");
   await page.getByRole("button",{name:/Берём — к съёмке/}).click();
   await page.locator('.creativeV1[data-stage="shoot"]').waitFor({timeout:30000});
+  const essentialAction=await page.locator(".creativeHeroInstruction").innerText();
+  assert(essentialAction.includes("Сними")&&!essentialAction.includes("iPhone")&&!essentialAction.includes("телефон"),
+    "shooting action duplicates phone placement: "+essentialAction);
+  assert((await page.locator(".creativeShootGrid").innerText()).includes("Куда поставить iPhone"),
+    "camera placement missing dedicated location");
+  const shootSecondary=page.locator(".creativeShootSecondary");
+  assert(await shootSecondary.count()===2,"shoot has additional prominent technical sections");
+  assert(await shootSecondary.evaluateAll(nodes=>nodes.every(n=>!n.open)),
+    "secondary shooting details must default to collapsed");
   await verifyVisibleAction(page,'.creativeShooting>.creativeTake',name+" SHOOT");
   await page.getByText("Изменить условия съёмки").click();
   const adjust=page.getByRole("button",{name:"Подстроить съёмку"});
@@ -258,7 +290,27 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
     assert(readableBrief.includes(label),"simplified brief missing "+label);
   }
   assert(readableBrief.includes("окну"),"lighting was not adapted");
+  await page.locator(".creativeAdaptedStatus").waitFor({timeout:30000});
+  assert((await page.locator(".creativeAdaptedStatus").innerText()).includes("нет штатива"),
+    "shooting adaptation has no visible persisted explanation");
+  const adapted=await body(token,{action:"creative_state"});
+  const adaptedSession=adapted.data.items[selectionIndex].session;
+  assert(adaptedSession?.briefVersion>=2&&adaptedSession.conditions.includes("нет штатива") &&
+    JSON.stringify(adaptedSession.brief).includes("полке"),"adapted brief not persisted at Edge");
   await page.screenshot({path:"artifacts/persona-creative-v1/"+name+"-shooting.png"});
+  await page.reload({waitUntil:"domcontentloaded"});
+  await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
+  await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
+  await page.locator('.creativeV1[data-stage="shoot"]').waitFor({timeout:30000});
+  await page.locator(".creativeAdaptedStatus").waitFor({timeout:30000});
+  assert((await page.locator(".creativeBrief").innerText()).includes("окну") &&
+    (await page.locator(".creativeAdaptedStatus").innerText()).includes("нет штатива"),
+    "adapted brief or conditions lost after reload");
+  const afterAdaptReload=await body(token,{action:"creative_state"});
+  assert(afterAdaptReload.data.items[selectionIndex].session?.briefVersion===adaptedSession.briefVersion &&
+    afterAdaptReload.data.items[selectionIndex].session?.conditions===adaptedSession.conditions,
+    "server-side adapted brief revision changed across reload");
+  console.log("PASS "+name+" adaptive brief visible and durable after full reload");
   assert(await page.locator(".creativeStage").count()===1,"Shoot stage is not isolated");
   await page.getByRole("button",{name:/Я снял — загрузить материалы/}).click();
   await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:20000});
