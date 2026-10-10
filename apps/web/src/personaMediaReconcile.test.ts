@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {currentSessionAssets,pendingServerAssets} from "./personaMediaReconcile";
+import {currentSessionAssets,mediaReconcileAttemptKey,pendingServerAssets} from "./personaMediaReconcile";
 import type {CreativeMediaMetadata} from "./personaMediaIntake";
 
 const asset:CreativeMediaMetadata={
@@ -29,6 +29,15 @@ describe("Persona offline manifests reconcile safely after browser reload",()=>{
  it("requires a durable device-local committed manifest",()=>{
   expect(pendingServerAssets([{...asset,state:"QA_PENDING"} as unknown as CreativeMediaMetadata],[],scope))
    .toEqual([]);
+ });
+ it("retry identity changes only with meaningful scope, media or reconnection",()=>{
+  const base=mediaReconcileAttemptKey(scope,[asset],0);
+  expect(mediaReconcileAttemptKey(scope,[asset],0)).toBe(base);
+  expect(mediaReconcileAttemptKey(scope,[asset],1)).not.toBe(base);
+  expect(mediaReconcileAttemptKey({...scope,sessionId:"other"},[asset],0)).not.toBe(base);
+  expect(mediaReconcileAttemptKey(scope,[{id:"extra"},asset],0)).toBe(
+   mediaReconcileAttemptKey(scope,[asset,{id:"extra"}],0));
+  expect(mediaReconcileAttemptKey(scope,[asset,{id:"extra"}],0)).not.toBe(base);
  });
  it("sends missing alternate takes without duplicate primary metadata",()=>{
   const alt={...asset,id:"asset002",role:"alternate_take" as const};

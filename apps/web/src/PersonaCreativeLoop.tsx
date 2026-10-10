@@ -3,7 +3,7 @@ import type { CreativeItem } from "../../../supabase/functions/life-os-runtime-p
 import { personaEdgeRequest } from "./edgeRuntimeClient";
 import { createMediaMetadata, listCapturedAssets, persistCapturedAsset, type CreativeMediaMetadata } from "./personaMediaIntake";
 import { roleLabel, type MediaOverride } from "./personaMediaRoles";
-import { currentSessionAssets,pendingServerAssets } from "./personaMediaReconcile";
+import { currentSessionAssets,mediaReconcileAttemptKey,pendingServerAssets } from "./personaMediaReconcile";
 import { shootActionOnly } from "./personaShootCopy";
 import "./persona-creative-v1.css";
 
@@ -46,7 +46,10 @@ export default function PersonaCreativeLoop(){
  const [busy,setBusy]=useState(false);
  const [connectionEpoch,setConnectionEpoch]=useState(0);
  const [syncingMediaMetadata,setSyncingMediaMetadata]=useState(false);
+ const [reconcileDrain,setReconcileDrain]=useState(0);
  const mediaReconcileRef=useRef(false);
+ const mediaLastAttemptRef=useRef("");
+ const mediaMountedRef=useRef(true);
  const [loaded,setLoaded]=useState(false);
  const [error,setError]=useState("");
  const [feedback,setFeedback]=useState("");
@@ -86,8 +89,10 @@ export default function PersonaCreativeLoop(){
  const actionable=item?.verifiedFreshness==="cached"&&!item.pending&&!!revision?.proof;
  const session=item?.session&&item.session.ideaVersion===item.currentVersion?item.session:null;
  const previous=item?.revisions.find(x=>x.version===item.currentVersion-1);
- const activeAssets=session&&item?currentSessionAssets(localAssets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
- const pendingMedia=session&&item?pendingServerAssets(activeAssets,session.assets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
+ const assetScope=session&&item?{projectId:item.projectId,contentItemId:item.contentItemId,
+  ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}:null;
+ const activeAssets=assetScope?currentSessionAssets(localAssets,assetScope):[];
+ const pendingMedia=session&&assetScope?pendingServerAssets(activeAssets,session.assets,assetScope):[];
  const stage:Stage=!item?"idea":
   !session&&["shoot","upload","assembly"].includes(navigation.stage)?"edit":navigation.stage;
  const stepIndex=STAGES.findIndex(x=>x.id===stage);
@@ -131,6 +136,7 @@ export default function PersonaCreativeLoop(){
   return ()=>cancelAnimationFrame(frame);
  },[stage,session?.briefVersion,activeAssets.length,conditions]);
  useEffect(()=>{
+  setRoleOverride("auto");
   if(!session){setLocalAssets([]);return;}
   let active=true;
   void listCapturedAssets(session.id).then(xs=>{if(active)setLocalAssets(xs)})
@@ -146,37 +152,46 @@ export default function PersonaCreativeLoop(){
   return ()=>window.removeEventListener("online",onOnline);
  },[]);
  useEffect(()=>{
+  mediaMountedRef.current=true;
+  return ()=>{mediaMountedRef.current=false;};
+ },[]);
+ useEffect(()=>{
   if(!session||!item||!revision||!actionable||busy||mediaReconcileRef.current||
-    activeAssets.length===0||!navigator.onLine)return;
-  const unsynced=pendingServerAssets(activeAssets,session.assets,{
-   projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,
-   ideaVersion:item.currentVersion,sessionId:session.id
-  });
-  if(!unsynced.length)return;
-  let active=true;
+    pendingMedia.length===0||!navigator.onLine||!assetScope)return;
+  // A stable attempt key prevents endless free-quota retries when Edge is down.
+  // A new connection, missing file set or signed session permits another attempt.
+  const attemptKey=mediaReconcileAttemptKey(assetScope,pendingMedia,connectionEpoch);
+  if(mediaLastAttemptRef.current===attemptKey)return;
+  mediaLastAttemptRef.current=attemptKey;
   mediaReconcileRef.current=true;
   setSyncingMediaMetadata(true);
+  // Do not cancel the in-flight server acknowledgement on routine re-renders.
   void (async()=>{
    let restored=0;
    try{
-    for(const asset of unsynced){
-     if(!active)break;
+    for(const asset of pendingMedia){
      try{
-      await personaEdgeRequest({action:"creative_register_asset",ideaId:item.id,
-       version:item.currentVersion,approvalProof:revision.proof,asset});
+      const result=await personaEdgeRequest({action:"creative_register_asset",
+       ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,asset});
+      if(result?.registered!==true)break;
       restored++;
      }catch{break;}
     }
-    if(active&&restored)await refresh();
-   }catch{/* Keep the durable local manifest; retry on a future connection event. */}
+    if(restored&&mediaMountedRef.current)await refresh();
+   }catch{/* Original chunks remain in IndexedDB for later reconnection. */}
    finally{
     mediaReconcileRef.current=false;
-    if(active)setSyncingMediaMetadata(false);
+    if(mediaMountedRef.current){
+     setSyncingMediaMetadata(false);
+     // A different session can arrive while a previous request is in flight.
+     // The stable attempt key prevents repeating failures for the same scope.
+     setReconcileDrain(value=>value+1);
+    }
    }
   })();
-  return ()=>{active=false;};
- },[session?.id,session?.assets.length,item?.currentVersion,revision?.proof,
-   localAssets,busy,actionable,connectionEpoch,refresh]);
+ },[session?.id,session?.assets.length,item?.id,item?.currentVersion,revision?.proof,
+   localAssets,busy,actionable,connectionEpoch,reconcileDrain,refresh]);
+
  async function act(payload:Record<string,unknown>,message=""){
   setBusy(true);setError("");setFeedback("");
   try{
@@ -188,7 +203,7 @@ export default function PersonaCreativeLoop(){
   finally{setBusy(false)}
  }
  const choose=(id:string)=>{
-  setNavigation({id,stage:"edit"});setInstruction("");setEditorOpen(false);
+  setNavigation({id,stage:"edit"});setInstruction("");setEditorOpen(false);setRoleOverride("auto");
   setErikaAssessment("");setJustApplied(false);setConditions("");setFeedback("");setError("");
  };
  async function discuss(){

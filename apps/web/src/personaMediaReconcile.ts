@@ -34,3 +34,12 @@ export function pendingServerAssets(
   const serverIds = new Set(server.map(asset => asset.id).filter(Boolean));
   return currentSessionAssets(local, scope).filter(asset => !serverIds.has(asset.id));
 }
+
+/** One retry per missing-file set and connection; no background paid polling. */
+export function mediaReconcileAttemptKey(
+  scope: Scope, pending: readonly {id:string}[], connectionEpoch: number,
+): string {
+  return JSON.stringify([scope.projectId,scope.contentItemId,scope.ideaId,
+    scope.ideaVersion,scope.sessionId,connectionEpoch,
+    pending.map(asset=>asset.id).sort()]);
+}
