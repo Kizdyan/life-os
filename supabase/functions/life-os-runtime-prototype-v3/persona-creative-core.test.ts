@@ -20,7 +20,7 @@ describe("Creative Loop V1 bounded FREE_ONLY core",()=>{
  it("keeps semantic revision approval separate, with Critic and Judge",async()=>{
   const [idea]=creativeShortlist(at);
   const v1=await sealApprovedIdea({...idea,creativeVersion:1},signingKey,at);
-  const proposal=editorialAssessment(v1.idea,"мне нравится, но поменяй финал");
+  const proposal=editorialAssessment(v1.idea,"мне нравится, но поменяй финал на Герой неожиданно улыбнулся.");
   expect(proposal.kind).toBe("ENDING");
   expect(proposal.proposal?.script).not.toBe(v1.idea.script);
   expect(proposal.critic).toMatch(/финал|вовлекает/);

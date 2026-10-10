@@ -5,23 +5,32 @@ describe("Erika revised ending always replaces instead of appending",()=>{
  it("repeated identical ending never creates a third proposal or duplicates a phrase",()=>{
   const [idea]=creativeShortlist(now);
   const initial=String(idea.script);
-  const v2=editorialAssessment(idea,"мне нравится идея 2, но поменяй финал");
+  const v2=editorialAssessment(idea,"мне нравится идея 2, но сделай финал открытым");
   expect(v2.proposal).not.toBeNull();
   const text=String(v2.proposal?.script);
   expect(text).not.toBe(initial);
   expect(text.split("А финал оставим открытым:").length-1).toBe(1);
-  const repeated=editorialAssessment(v2.proposal!,"поменяй финал");
+  const repeated=editorialAssessment(v2.proposal!,"сделай финал открытым");
   expect(repeated.kind).toBe("NO_CHANGE");
   expect(repeated.proposal).toBeNull();
  });
  it("a different requested ending replaces the previous ending in place",()=>{
   const [idea]=creativeShortlist(now);
-  const first=editorialAssessment(idea,"поменяй финал").proposal!;
+  const first=editorialAssessment(idea,"сделай финал открытым").proposal!;
   const second=editorialAssessment(first,"поменяй финал на В последний момент герой рассмеялся.");
   expect(second.proposal).not.toBeNull();
   const text=String(second.proposal?.script);
   expect(text).toContain("В последний момент герой рассмеялся.");
   expect(text).not.toContain("А финал оставим открытым:");
+ });
+ it("clarifies unspecified endings instead of inventing a final line",()=>{
+  const [idea]=creativeShortlist(now);
+  for(const request of ["поменяй финал","измени концовку","сделай другой финал"]){
+    const result=editorialAssessment(idea,request);
+    expect(result.kind).toBe("CLARIFY");
+    expect(result.proposal).toBeNull();
+    expect(result.judge).toBe("REVISE");
+  }
  });
  it("humorous ending changes the ending itself, rather than hiding a generic open question",()=>{
   const [idea]=creativeShortlist(now);

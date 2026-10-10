@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {pendingServerAssets} from "./personaMediaReconcile";
+import {currentSessionAssets,pendingServerAssets} from "./personaMediaReconcile";
 import type {CreativeMediaMetadata} from "./personaMediaIntake";
 
 const asset:CreativeMediaMetadata={
@@ -10,6 +10,13 @@ const asset:CreativeMediaMetadata={
 };
 const scope={projectId:"project",contentItemId:"content",ideaId:"idea",ideaVersion:2,sessionId:"session"};
 describe("Persona offline manifests reconcile safely after browser reload",()=>{
+ it("never shows stale files from a different idea, revision or shooting session",()=>{
+  const prior={...asset,id:"prior",sessionId:"old"};
+  const other={...asset,id:"other",ideaId:"another"};
+  const oldRevision={...asset,id:"revision",ideaVersion:1};
+  expect(currentSessionAssets([prior,other,oldRevision,asset,asset],scope)).toEqual([asset]);
+  expect(currentSessionAssets([asset],{...scope,sessionId:"brand-new"})).toEqual([]);
+ });
  it("only retries each committed asset ID once and is server-idempotent",()=>{
   expect(pendingServerAssets([asset,asset],[],scope)).toEqual([asset]);
   expect(pendingServerAssets([asset],[{id:asset.id}],scope)).toEqual([]);

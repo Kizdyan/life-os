@@ -9,7 +9,6 @@
 .creativeProgress button.current .creativeStepDot{background:#1d3a2a;color:#fff;box-shadow:0 0 0 3px #e0e9e0}
 .creativeV1 .creativeStage{display:grid;gap:20px;min-width:0;width:100%;max-width:100%;align-items:start;align-content:start;background:transparent;border:0;padding:0;margin:0}
 .creativeStageHead{display:grid;gap:7px;padding:2px 0 0}
-.creativeStageHead small{color:#83847e;font-size:10px;letter-spacing:.14em;font-weight:800}
 .creativeStageHead h2{margin:0;font-size:clamp(25px,6.7vw,34px);line-height:1.12;letter-spacing:-.035em;color:#151a15;overflow-wrap:anywhere}
 .creativeStageHead p{margin:0;color:#676c64;font-size:14px;line-height:1.5}
 .creativeV1 .creativeShortlist{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}

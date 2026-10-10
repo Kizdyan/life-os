@@ -3,7 +3,7 @@ import type { CreativeItem } from "../../../supabase/functions/life-os-runtime-p
 import { personaEdgeRequest } from "./edgeRuntimeClient";
 import { createMediaMetadata, listCapturedAssets, persistCapturedAsset, type CreativeMediaMetadata } from "./personaMediaIntake";
 import { roleLabel, type MediaOverride } from "./personaMediaRoles";
-import { pendingServerAssets } from "./personaMediaReconcile";
+import { currentSessionAssets,pendingServerAssets } from "./personaMediaReconcile";
 import { shootActionOnly } from "./personaShootCopy";
 import "./persona-creative-v1.css";
 
@@ -86,12 +86,13 @@ export default function PersonaCreativeLoop(){
  const actionable=item?.verifiedFreshness==="cached"&&!item.pending&&!!revision?.proof;
  const session=item?.session&&item.session.ideaVersion===item.currentVersion?item.session:null;
  const previous=item?.revisions.find(x=>x.version===item.currentVersion-1);
- const pendingMedia=session&&item?pendingServerAssets(localAssets,session.assets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
+ const activeAssets=session&&item?currentSessionAssets(localAssets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
+ const pendingMedia=session&&item?pendingServerAssets(activeAssets,session.assets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
  const stage:Stage=!item?"idea":
   !session&&["shoot","upload","assembly"].includes(navigation.stage)?"edit":navigation.stage;
  const stepIndex=STAGES.findIndex(x=>x.id===stage);
  const canVisit=(index:number)=>index===0||(!!item&&(index===1||((index===2||index===3)&&!!session)
-   ||(index===4&&!!session&&localAssets.length>0)));
+   ||(index===4&&!!session&&activeAssets.length>0)));
  const changeStage=(next:Stage)=>{
   setNavigation(nav=>({id:nav.id,stage:next}));
   setFeedback("");setError("");
@@ -128,7 +129,7 @@ export default function PersonaCreativeLoop(){
    }
   });
   return ()=>cancelAnimationFrame(frame);
- },[stage,session?.briefVersion,localAssets.length,conditions]);
+ },[stage,session?.briefVersion,activeAssets.length,conditions]);
  useEffect(()=>{
   if(!session){setLocalAssets([]);return;}
   let active=true;
@@ -146,8 +147,8 @@ export default function PersonaCreativeLoop(){
  },[]);
  useEffect(()=>{
   if(!session||!item||!revision||!actionable||busy||mediaReconcileRef.current||
-    localAssets.length===0||!navigator.onLine)return;
-  const unsynced=pendingServerAssets(localAssets,session.assets,{
+    activeAssets.length===0||!navigator.onLine)return;
+  const unsynced=pendingServerAssets(activeAssets,session.assets,{
    projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,
    ideaVersion:item.currentVersion,sessionId:session.id
   });
@@ -226,7 +227,7 @@ export default function PersonaCreativeLoop(){
   if(!files.length||!session||!item||!revision||!actionable)return;
   setBusy(true);setError("");setFeedback("");
   let stored=0,registered=0;
-  const batchRoles:Array<{role?:string;kind?:string}>=[...localAssets,...session.assets];
+  const batchRoles:Array<{role?:string;kind?:string}>=[...activeAssets,...session.assets];
   try{
    for(const file of files.slice(0,12)){
     const meta=createMediaMetadata(file,{projectId:item.projectId,contentItemId:item.contentItemId,
@@ -259,7 +260,7 @@ export default function PersonaCreativeLoop(){
   {!loaded?<p role="status" className="creativeSimpleStatus">Готовлю идеи…</p>:null}
   {loaded&&items.length===0?<p role="status" className="creativeSimpleStatus">Пока нет идей, которые прошли проверку.</p>:null}
   {stage==="idea"&&<section className="creativeStage" aria-label="Идея">
-   <div className="creativeStageHead"><small>ШАГ 1 · ИДЕЯ</small><h2>Что снимем?</h2></div>
+   <div className="creativeStageHead"><h2>Что снимем?</h2></div>
    <div className="creativeShortlist">
     {items.map((entry,index)=>{
      const concept=entry.revisions.find(x=>x.version===entry.currentVersion)?.idea||{};
@@ -281,7 +282,7 @@ export default function PersonaCreativeLoop(){
    </div>
   </section>}
   {stage==="edit"&&item&&revision&&<section className="creativeStage creativeEdit" aria-label="Правки">
-   <div className="creativeStageHead"><small>ШАГ 2 · ПРАВКИ</small><h2>{str(idea?.title)}</h2></div>
+   <div className="creativeStageHead"><h2>{str(idea?.title)}</h2></div>
    <div className="creativeDirection">
     <p><b>Что сказать</b>{str(idea?.script)}</p>
     <p><b>Что за видео</b>{str(idea?.angle)}</p>
@@ -329,7 +330,7 @@ export default function PersonaCreativeLoop(){
    </details>
   </section>}
   {stage==="shoot"&&item&&session&&<section className="creativeStage creativeShooting" aria-label="Съёмка">
-   <div className="creativeStageHead"><small>ШАГ 3 · СЪЁМКА</small><h2>Сними ролик</h2></div>
+   <div className="creativeStageHead"><h2>Сними ролик</h2></div>
    <div className="creativeBrief" aria-label="Краткое съёмочное задание">
     <p className="creativeHeroInstruction"><b>Что делать</b>{shootActionOnly(str(idea?.soloPlan)||str(idea?.angle),Number((session.brief.shots as Array<Record<string,unknown>>)?.[0]?.takes||2),Number((session.brief.shots as Array<Record<string,unknown>>)?.[0]?.durationSeconds||25))}</p>
     <p className="creativeSpoken"><b>Что сказать</b>{str(idea?.script)}</p>
@@ -362,10 +363,10 @@ export default function PersonaCreativeLoop(){
    </details>
   </section>}
   {stage==="upload"&&item&&session&&<section className="creativeStage creativeUploadStage" aria-label="Материалы">
-   <div className="creativeStageHead"><small>ШАГ 4 · МАТЕРИАЛЫ</small><h2>Загрузить материалы</h2>
+   <div className="creativeStageHead"><h2>Загрузить материалы</h2>
     <p>Выбери записи. Persona сама разберёт, где дубли, фото и звук.</p></div>
-   {localAssets.length>0&&<div className="creativeUploadStatus" role="status">
-    <b>✓ Загружено {localAssets.length} файлов</b>
+   {activeAssets.length>0&&<div className="creativeUploadStatus" role="status">
+    <b>✓ Загружено {activeAssets.length} файлов</b>
     <p>Анализ дублей — следующий этап. Лучший дубль пока не определён.</p>
    </div>}
    {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Сохраняю сведения о материалах…":"Файлы сохранены на этом iPhone. Сведения ещё не подтверждены сервером; при восстановлении связи отправим их автоматически."}</p>}
@@ -374,13 +375,13 @@ export default function PersonaCreativeLoop(){
      disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
       void upload(files).finally(()=>{picker.value=""});}}/>
    </label>
-   {localAssets.length>0&&<button className="creativeNext" onClick={()=>changeStage("assembly")}>
+   {activeAssets.length>0&&<button className="creativeNext" onClick={()=>changeStage("assembly")}>
     Перейти к монтажу →</button>}
    <details className="creativeDetails"><summary>Подробнее · мои материалы</summary>
-    {localAssets.length===0?<p>Файлы ещё не добавлены.</p>:localAssets.map(asset=><p key={asset.id}>
-     {roleLabel(asset.role||"reference_other")} · {asset.filename}</p>)}
+    {activeAssets.length===0?<p>Файлы ещё не добавлены.</p>:activeAssets.map(asset=><p key={asset.id}>
+     {asset.roleConfidence==="low"?"Предположительно: ":""}{roleLabel(asset.role||"reference_other")} · {asset.filename}</p>)}
     <p>Оригиналы пока сохраняются только на этом iPhone, не в облаке. Не удаляй данные сайта.</p>
-    <label htmlFor="creative-upload-kind">Уточнить тип файлов вручную (необязательно)</label>
+    <label htmlFor="creative-upload-kind">Тип следующих файлов (необязательно)</label>
     <select id="creative-upload-kind" value={roleOverride} onChange={e=>setRoleOverride(e.target.value as MediaOverride)}>
      <option value="auto">Persona определит сама</option>
      <option value="primary_take">Основной дубль</option><option value="alternate_take">Другой дубль</option>
@@ -390,7 +391,7 @@ export default function PersonaCreativeLoop(){
    </details>
   </section>}
   {stage==="assembly"&&item&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
-   <div className="creativeStageHead"><small>ШАГ 5 · МОНТАЖ</small><h2>Рекомендуемый монтаж</h2></div>
+   <div className="creativeStageHead"><h2>Рекомендуемый монтаж</h2></div>
    <p className="creativeSimpleStatus">Монтаж ещё не собран. Анализ дублей и сборка видео появятся в следующем этапе Persona.</p>
    <details className="creativeDetails"><summary>Как будет работать монтаж</summary>
     <p>Persona сравнит дубли, выберет лучшие фрагменты, уберёт паузы,

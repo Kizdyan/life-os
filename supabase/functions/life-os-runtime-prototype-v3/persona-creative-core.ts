@@ -104,8 +104,9 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
     kind="ENDING";
     const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{3,220})$/i)?.[1]?.trim();
     const humorEnding=!replacement&&/смешн|юмор|ирони|шуточ/i.test(text);
-    if (!replacement && /(?:финал|концовку)\s+на\s*$/i.test(text))
-      return {kind:"CLARIFY",proposal:null,critic:"Какой именно финал ты хочешь? Напиши его после «на».",judge:"REVISE"};
+    const explicitlyOpen=!replacement&&/открыт\w*|вопрос\w*/i.test(text);
+    if (!replacement && !humorEnding && !explicitlyOpen)
+      return {kind:"CLARIFY",proposal:null,critic:"Какой финал ты хочешь? Напиши конкретные слова или попроси смешной или открытый финал.",judge:"REVISE"};
     // Revision means replacing the actual last thought, never appending to prior revisions.
     if(!replacement && ((humorEnding&&script.endsWith(EDITORIAL_HUMOR_ENDING)) ||
       (!humorEnding&&script.endsWith(EDITORIAL_ENDING)))){

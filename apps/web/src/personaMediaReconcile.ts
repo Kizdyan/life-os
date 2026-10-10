@@ -9,6 +9,21 @@ type Scope = {
   sessionId: string;
 };
 
+// Never expose an older IndexedDB response in the current iPhone idea/session.
+export function currentSessionAssets(
+  local: readonly CreativeMediaMetadata[], scope: Scope,
+): CreativeMediaMetadata[] {
+  const seen = new Set<string>();
+  return local.filter(asset => {
+    if (!asset.id || seen.has(asset.id) ||
+      asset.storage !== "device_local" || asset.state !== "INTAKE_LOCAL" ||
+      asset.projectId !== scope.projectId || asset.contentItemId !== scope.contentItemId ||
+      asset.ideaId !== scope.ideaId || asset.ideaVersion !== scope.ideaVersion ||
+      asset.sessionId !== scope.sessionId) return false;
+    seen.add(asset.id);
+    return true;
+  });
+}
 // Register only committed local manifests belonging to this signed revision.
 // Neither a prior shooting session nor an earlier revision may be inherited.
 export function pendingServerAssets(
@@ -17,15 +32,5 @@ export function pendingServerAssets(
   scope: Scope,
 ): CreativeMediaMetadata[] {
   const serverIds = new Set(server.map(asset => asset.id).filter(Boolean));
-  const pendingIds = new Set<string>();
-  return local.filter(asset => {
-    if (asset.storage !== 'device_local' || asset.state !== 'INTAKE_LOCAL' ||
-      asset.projectId !== scope.projectId || asset.contentItemId !== scope.contentItemId ||
-      asset.ideaId !== scope.ideaId || asset.ideaVersion !== scope.ideaVersion ||
-      asset.sessionId !== scope.sessionId || serverIds.has(asset.id) || pendingIds.has(asset.id)) {
-      return false;
-    }
-    pendingIds.add(asset.id);
-    return true;
-  });
+  return currentSessionAssets(local, scope).filter(asset => !serverIds.has(asset.id));
 }
