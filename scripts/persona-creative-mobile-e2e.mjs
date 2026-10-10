@@ -248,6 +248,9 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert((await page.locator(".creativeAdjustHint").innerText()).includes("можно применить"),
     "ready-to-apply state not shown");
   await verifyVisibleAction(page,'.creativeAdjust',name+" ADAPT");
+  await adjust.focus();
+  assert(await page.locator("main>.mainNav").evaluate(nav=>getComputedStyle(nav).display)==="none",
+    "bottom navigation reappears while the adapt action owns focus");
   await page.getByRole("button",{name:"Подстроить съёмку"}).click();
   await page.waitForFunction(()=>document.querySelector(".creativeBrief")?.textContent?.includes("окну"),null,{timeout:30000});
   const readableBrief=await page.locator(".creativeBrief").innerText();

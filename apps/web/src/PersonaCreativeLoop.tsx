@@ -169,6 +169,7 @@ export default function PersonaCreativeLoop(){
   if(!item||!revision||!actionable)return;
   const result=await act({action:adapt?"creative_adapt_brief":"creative_start_session",
    ideaId:item.id,version:item.currentVersion,approvalProof:revision.proof,conditions});
+  if(adapt&&document.activeElement instanceof HTMLElement)document.activeElement.blur();
   if(result?.session){if(!adapt)changeStage("shoot");else setFeedback("Съёмка подстроена под твои условия.");}
  }
  async function upload(files:File[]){
