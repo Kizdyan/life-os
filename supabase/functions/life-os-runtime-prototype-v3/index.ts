@@ -4,6 +4,7 @@ import { buildDeterministicShootingBrief, isActionableApproval, pickApprovedBrai
 import { budgetPolicy, reserveBudget } from "./persona-cost.ts";
 import { runProviderRouter } from "./persona-provider.ts";
 import { signFreeEditorialStarter } from "./persona-free-editorial.ts";
+import { handleCreative } from "./persona-creative-api.ts";
 import { persistApprovedEntry, persistShootingBrief, readServerBrain, readServerBudget, reserveServerAiCall } from "./persona-store.ts";
 
 const AUTH_UPSTREAM = "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-prototype-v2";
@@ -43,12 +44,18 @@ Deno.serve(async (request: Request) => {
   const action = String((payload as Record<string, unknown>).action ?? "");
   try {
     if (action === "recommend") return json(await recommend(payload as Record<string, unknown>));
+    if (action.startsWith("creative_")) return json(await handleCreative(payload as Record<string, unknown>));
     if (action === "shooting") return json({ brief: await shooting(payload as Record<string, unknown>) });
     if (action === "budget_status") return json(await budgetStatus());
     return json({ error: "unsupported_persona_action" }, 400);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("persona prototype v3 failed", action, message);
+    if (message.startsWith("creative:")) {
+      const code = message.slice("creative:".length);
+      const isConflict = /conflict|pending|mismatch|not_current|missing|gate|expired|not_approved/.test(code);
+      return json({ error: code, action }, isConflict ? 409 : 422);
+    }
     if (message === "idea_approval_required" || message === "approval_idea_mismatch") {
       return json({ error: "idea_approval_required", action }, 409);
     }

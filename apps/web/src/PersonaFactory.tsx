@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import PersonaShooting from './PersonaShooting';
+import PersonaCreativeLoop from './PersonaCreativeLoop';
 import {
   attachShootingBrief,
   completePersonaShooting,
@@ -303,6 +304,9 @@ export default function PersonaFactory() {
   const top = visible[0];
   return (
     <section className="personaFactoryV2">
+      <PersonaCreativeLoop />
+      <details className="legacyPersona"><summary>Архив и прежние идеи</summary>
+      <p className="legacyDescription">Здесь сохранены ранее утверждённые съёмки и резервные варианты. Они не входят в текущие пять шагов.</p>
       <header className="pfHead">
         <div>
           <small>PERSONA · SHOOT NOW</small>
@@ -381,6 +385,7 @@ export default function PersonaFactory() {
           </article>
         </div>
       ))}
+      </details>
     </section>
   );
 }

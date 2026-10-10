@@ -1,0 +1,24 @@
+# Persona Creative V1 only: independent static Render preview.
+# This blueprint does NOT modify the existing iPhone production/static service.
+services:
+  - type: web
+    name: life-os-persona-creative-v1
+    runtime: static
+    repo: https://github.com/Kizdyan/life-os
+    branch: feature/persona-creative-loop-v1
+    autoDeployTrigger: checksPass
+    buildCommand: npm install --no-audit --no-fund && npm run web:build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_LIFE_OS_REMOTE_ENABLED
+        value: "true"
+      - key: VITE_LIFE_OS_EDGE_RUNTIME_URL
+        value: "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-creative-v1"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff

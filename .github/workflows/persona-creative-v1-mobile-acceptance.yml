@@ -1,0 +1,58 @@
+name: persona-creative-v1-mobile-acceptance
+# Full WebKit/Chromium acceptance is an explicit release gate.
+# Running it after every small UX commit burns the private-repo Actions allowance
+# without improving exact-HEAD acceptance. Never fake PASS; dispatch when ready.
+on:
+  workflow_dispatch:
+concurrency:
+  group: persona-creative-v1-mobile-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  mobile-vertical-slice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test browsers
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium webkit
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -hide_banner -version | head -1
+      - name: Build isolated prototype frontend with exact HEAD
+        env:
+          VITE_LIFE_OS_REMOTE_ENABLED: "true"
+          VITE_PERSONA_CREATIVE_QA_NAMESPACE: "CI_V1"
+          VITE_LIFE_OS_EDGE_RUNTIME_URL: "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime-creative-v1"
+          LIFE_OS_BUILD_SHA: ${{ github.sha }}
+        run: npm run web:build
+      - name: Start local preview
+        run: |
+          nohup npx vite preview --host 127.0.0.1 --port 4173 > /tmp/creative-vite-preview.log 2>&1 &
+          ready=0
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then cat /tmp/creative-vite-preview.log; exit 1; fi
+      - name: Real iPhone WebKit and Chromium V1 creative journey
+        env:
+          PROTOTYPE_ACCESS_CODE: ${{ secrets.PROTOTYPE_ACCESS_CODE }}
+          CREATIVE_FRONTEND_URL: "http://127.0.0.1:4173"
+        run: node scripts/persona-creative-mobile-e2e.mjs
+      - name: Save iPhone WebKit and Chromium QA screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: persona-creative-v1-iphone-evidence
+          path: artifacts/persona-creative-v1/
+          if-no-files-found: ignore

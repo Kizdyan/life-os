@@ -2,6 +2,9 @@ import { approvePersonaCandidate, validatePersonaShootingBrief } from "./quality
 
 type Dict = Record<string, unknown>;
 export const EVIDENCE_TTL_MS = 7 * 86_400_000;
+// Static format guidance is not a time-sensitive market trend. It has its own
+// bounded review window; the original evidence date never moves forward.
+export const FORMAT_GUIDANCE_TTL_MS = 180 * 86_400_000;
 export const APPROVAL_TTL_MS = 30 * 86_400_000;
 export type IntelligenceFreshness = "cached" | "stale";
 
@@ -15,6 +18,26 @@ export interface SealedApproval {
 
 export function isActionableApproval(approval: SealedApproval | null): approval is SealedApproval {
   return approval?.freshness === "cached";
+}
+
+export function evidenceReviewWindowMs(idea: unknown): number {
+  if (!idea || typeof idea !== "object" || Array.isArray(idea)) return EVIDENCE_TTL_MS;
+  const candidate = idea as Dict;
+  if (candidate.evidenceKind !== "EDITORIAL_PLATFORM_GUIDANCE_NOT_LIVE_TREND" ||
+      !/^(?:HUMAN_EDITORIAL_CURATED|CURATED_FREE_ONLY)_2026-10-08/.test(String(candidate.reviewProvenance||"")))
+    return EVIDENCE_TTL_MS;
+  const sources = Array.isArray(candidate.marketEvidence) ? candidate.marketEvidence : [];
+  if (sources.length<2) return EVIDENCE_TTL_MS;
+  // A lookalike, redirector, personal blog, or user-submitted trend source
+  // never inherits evergreen formatting status.
+  const official = new Set(["www.facebook.com","facebook.com","blog.youtube"]);
+  if (!sources.every(source=>{
+    try {
+      const url=new URL(String(source?.url||""));
+      return url.protocol==="https:"&&!url.username&&!url.password&&official.has(url.hostname.toLowerCase());
+    } catch {return false;}
+  })) return EVIDENCE_TTL_MS;
+  return FORMAT_GUIDANCE_TTL_MS;
 }
 
 const encoder = new TextEncoder();
@@ -41,12 +64,14 @@ function earliestEvidenceDate(idea: Dict): number {
 }
 export function approvalFreshness(
   approvedAt: string, evidenceCheckedAt: string, now = Date.now(),
+  evidenceMaxAgeMs = EVIDENCE_TTL_MS,
+  approvalMaxAgeMs = APPROVAL_TTL_MS,
 ): "cached" | "stale" | "expired" {
   const approved = Date.parse(approvedAt), evidence = Date.parse(evidenceCheckedAt);
   if (!Number.isFinite(approved) || !Number.isFinite(evidence) ||
       approved > now + 60_000 || evidence > now + 86_400_000 ||
-      approved < now - APPROVAL_TTL_MS) return "expired";
-  return evidence < now - EVIDENCE_TTL_MS ? "stale" : "cached";
+      approved < now - approvalMaxAgeMs) return "expired";
+  return evidence < now - evidenceMaxAgeMs ? "stale" : "cached";
 }
 
 export async function sealApprovedIdea(idea: unknown, secret: string, now = Date.now()):
@@ -54,7 +79,7 @@ export async function sealApprovedIdea(idea: unknown, secret: string, now = Date
   const checked = approvePersonaCandidate(idea, now);
   if (!checked.approved || !checked.candidate) throw new Error("idea_quality_not_approved");
   const timestamp = earliestEvidenceDate(checked.candidate);
-  if (!Number.isFinite(timestamp) || timestamp < now - EVIDENCE_TTL_MS) {
+  if (!Number.isFinite(timestamp) || timestamp < now - evidenceReviewWindowMs(checked.candidate)) {
     throw new Error("market_evidence_too_old_to_approve");
   }
   const envelope = {
@@ -82,7 +107,13 @@ export async function verifyApproval(proof: unknown, secret: string, now = Date.
     const value = JSON.parse(new TextDecoder().decode(unB64Url(parts[0]))) as Record<string, unknown>;
     if (value.version !== 1 || typeof value.approvedAt !== "string" ||
         typeof value.evidenceCheckedAt !== "string") return null;
-    const fresh = approvalFreshness(value.approvedAt, value.evidenceCheckedAt, now);
+    const reviewWindowMs = evidenceReviewWindowMs(value.idea);
+    // A signed static-format recommendation remains usable during its bounded
+    // official-guidance review window. Live/trending claims keep the 30-day cap.
+    const approvalWindowMs = reviewWindowMs === FORMAT_GUIDANCE_TTL_MS
+      ? FORMAT_GUIDANCE_TTL_MS : APPROVAL_TTL_MS;
+    const fresh = approvalFreshness(value.approvedAt, value.evidenceCheckedAt, now,
+      reviewWindowMs, approvalWindowMs);
     if (fresh === "expired") return null;
     const checked = approvePersonaCandidate(value.idea, now);
     if (!checked.approved || !checked.candidate) return null;

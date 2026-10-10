@@ -40,10 +40,15 @@ describe("Persona FREE_ONLY editorial starter — physical acceptance regression
     }
   });
   it("never refreshes evidence date automatically, and expires without paid AI", async () => {
-    const expired = Date.parse("2026-10-16T00:00:01Z");
+    const expired = Date.parse("2027-04-07T00:00:01Z");
+    expect(freeEditorialCandidate(Date.parse("2026-11-01T00:00:00Z"))).not.toBeNull();
     expect(freeEditorialCandidate(expired)).toBeNull();
     expect(await signFreeEditorialStarter(secret, [], expired)).toBeNull();
     expect(freeEditorialCandidate(Date.parse("2026-10-07T12:00:00Z"))).toBeNull();
+    const atRenewal = Date.parse("2026-11-01T00:00:00Z");
+    const renewed = await signFreeEditorialStarter(secret, [], atRenewal);
+    expect(renewed?.evidenceCheckedAt).toBe("2026-10-08T00:00:00.000Z");
+    expect(isActionableApproval(await verifyApproval(renewed?.approvalProof, secret, atRenewal))).toBe(true);
     const signed = await signFreeEditorialStarter(secret, [], now);
     expect(isActionableApproval(await verifyApproval(signed?.approvalProof, secret, expired))).toBe(false);
     expect(await verifyApproval(signed?.approvalProof, "wrong-signing-key", now)).toBeNull();
