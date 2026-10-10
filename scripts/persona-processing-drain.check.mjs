@@ -18,7 +18,9 @@ test('multiple notifications do not start concurrent worker instances',async()=>
  const drain=createCoalescedDrain(async()=>{
   active++;maxActive=Math.max(maxActive,active);count++;await delay(8);active--;
  });
- await Promise.all(Array.from({length:10},()=>drain()));
+ const first=drain();
+ await delay(0); // ensure the first batch is already running
+ await Promise.all([first,...Array.from({length:10},()=>drain())]);
  assert.equal(maxActive,1);
  assert.equal(count,2,'burst coalesced to one follow-up scan');
 });
