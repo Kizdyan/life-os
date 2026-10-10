@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequest, newJob, transition, canClaim, retry, markInputReady, publicJob, JOB_STATES } from '../packages/core/src/persona-processing-contract.mjs';
+import { createRequest, newJob, transition, canClaim, retry, recoverMissingSource, markInputReady, publicJob, JOB_STATES } from '../packages/core/src/persona-processing-contract.mjs';
 
 const input={assetId:'a'.repeat(32),projectId:'persona:owner:project:v1',contentItemId:'content:idea',ideaId:'idea',ideaVersion:2,sessionId:'shoot:id',mime:'video/mp4',filename:'one.mp4',bytes:5500};
 
@@ -53,4 +53,15 @@ test('review output cannot attach another source or attempt',()=>{
  const request=createRequest(input);
  const processing=transition(markInputReady(newJob(request),input.bytes),'processing');
  assert.throws(()=>transition(processing,'review',{instagramFile:'instagram.mp4',processedAsset:{sourceAssetId:'wrong',processingRequestId:request.id}}));
+});
+
+test('missing source after desktop restart returns same job to queued transfer state',()=>{
+ const job=markInputReady(newJob(createRequest(input)),input.bytes);
+ const restored=recoverMissingSource(job);
+ assert.equal(restored.id,job.id);
+ assert.equal(restored.request.assetId,input.assetId);
+ assert.equal(restored.status,'queued');
+ assert.equal(restored.inputReady,false);
+ assert.equal(canClaim(restored),false);
+ assert.equal(markInputReady(restored,input.bytes).inputReady,true);
 });
