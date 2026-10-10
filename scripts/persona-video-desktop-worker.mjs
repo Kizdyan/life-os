@@ -91,13 +91,21 @@ async function runPinnedEngine(job){
  if(stdout.trim()!==PIN)throw Error('v11_commit_mismatch');
  const runner=await import(pathToFileURL(adapter).href);
  if(typeof runner.process!=='function')throw Error('v11_adapter_invalid');
- await mkdir(outputDir(job.id),{recursive:true});
- const result=await runner.process({inputPath:inputPath(job.id),outputDir:outputDir(job.id),request:job.request});
+ // Stage each attempt separately. The published output appears only after
+ // completed V1.1 processing and an atomic rename, never as a partial MP4.
+ const runDir=join(outputDir(job.id),'run-'+job.attempt);
+ await mkdir(runDir,{recursive:true});
+ const result=await runner.process({inputPath:inputPath(job.id),outputDir:runDir,request:job.request});
  if(!result||typeof result.instagramPath!=='string'||!isAbsolute(result.instagramPath))
   throw Error('v11_no_instagram_output');
  const file=resolve(result.instagramPath),details=await stat(file);
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
- if(file!==outputPath(job.id))await copyFile(file,outputPath(job.id));
+ const temp=join(outputDir(job.id),'publish-'+randomBytes(8).toString('hex')+'.tmp');
+ try{
+  await copyFile(file,temp);
+  const fd=await open(temp,'r');try{await fd.sync();}finally{await fd.close();}
+  await rename(temp,outputPath(job.id));
+ }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
  return 'instagram.mp4';
 }
 async function pump(){
@@ -189,7 +197,17 @@ await mkdir(jobsDir,{recursive:true});
 for(const id of (await readdir(jobsDir)).filter(safeId)){
  await lock(id,async()=>{
   const job=await readJob(id);
-  if(job.status==='processing')await save(transition(job,'failed',{error:'desktop_interrupted_retry_required'}));
+  if(job.status==='processing'){
+   // Crash after final atomic output promotion must not re-run the engine.
+   // Recover the existing single result instead of generating a duplicate.
+   let finished=false;
+   try{const result=await stat(outputPath(id));finished=result.isFile()&&result.size>1000;}
+   catch{}
+   if(finished){
+    const next=transition(job,'review',{instagramFile:'instagram.mp4'});
+    next.outputToken=randomBytes(32).toString('hex');await save(next);
+   }else await save(transition(job,'failed',{error:'desktop_interrupted_retry_required'}));
+  }
  });
 }
 const server=cert?https.createServer({cert:await readFile(cert),key:await readFile(key)},(req,res)=>void serve(req,res)):
