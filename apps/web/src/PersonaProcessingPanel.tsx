@@ -95,7 +95,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   finally{setBusy(false);}
  }
  async function action(type:'retry'|'approve'){
-  if(!visibleJob||busy)return;
+  if(!visibleJob||!current||busy)return;
   const capturedScope=scopeKey,existingJob=visibleJob;
   ++fetchSerialRef.current;
   setBusy(true);setError('');
