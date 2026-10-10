@@ -7,11 +7,11 @@ import {createWriteStream,createReadStream,readFileSync,rmSync} from 'node:fs';
 import {randomBytes,timingSafeEqual,createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {resolve,join,isAbsolute} from 'node:path';
+import {resolve,join,isAbsolute,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
-import {createRequest,newJob,markInputReady,transition,retry,canClaim,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
+import {createRequest,newJob,markInputReady,transition,retry,canClaim,recoverMissingSource,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
 import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
 
@@ -169,6 +169,7 @@ async function runPinnedEngine(job){
  if(!result||typeof result.instagramPath!=='string'||!isAbsolute(result.instagramPath))
   throw Error('v11_no_instagram_output');
  const file=resolve(result.instagramPath),details=await stat(file);
+ if(!file.startsWith(resolve(runDir)+sep))throw Error('v11_output_outside_attempt_directory');
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
  // Acceptance is a real, decodable 9:16-ish H.264 MP4, not an arbitrary path.
  const inspected=await exec('ffprobe',['-v','error','-select_streams','v:0',
@@ -177,6 +178,8 @@ async function runPinnedEngine(job){
  const ratio=Number(stream?.height)/Number(stream?.width);
  if(stream?.codec_name!=='h264'||!Number.isFinite(ratio)||ratio<1.7||ratio>1.85)
   throw Error('v11_instagram_output_not_valid_vertical_h264');
+ // This is validation, not re-encoding: decode entire video on desktop.
+ await exec('ffmpeg',['-v','error','-xerror','-i',file,'-f','null','-'],{timeout:180_000});
  const temp=join(outputDir(job.id),'publish-'+randomBytes(8).toString('hex')+'.tmp');
  try{
   await copyFile(file,temp);
@@ -189,11 +192,24 @@ async function runPinnedEngine(job){
  await durableJson(resultPath(job.id),processed);
  return processed;
 }
+async function sourceExists(job){
+ try{
+  const s=await stat(inputPath(job.id));
+  return s.isFile()&&s.size===job.request.bytes;
+ }catch{return false;}
+}
 const pump=createCoalescedDrain(async()=>{
  try{
   for(const id of (await readdir(jobsDir)).filter(safeId).sort()){
    if(uploads.has(id))continue;
    const current=await readJob(id);if(!canClaim(current))continue;
+   if(!(await sourceExists(current))){
+    await lock(id,async()=>{
+     const job=await readJob(id);
+     if(canClaim(job)&&!(await sourceExists(job)))await save(recoverMissingSource(job));
+    });
+    continue;
+   }
    const claimed=await lock(id,async()=>{
     const job=await readJob(id);if(!canClaim(job))return null;
     const next=transition(job,'processing');await save(next);return next;
@@ -279,8 +295,16 @@ async function serve(req,res){
 await acquireOwnership();
 await mkdir(jobsDir,{recursive:true});
 for(const id of (await readdir(jobsDir)).filter(safeId)){
+ // A desktop crash may strand temporary uploads before manifest promotion.
+ for(const name of await readdir(dir(id))){
+  if(/^upload\.[a-f0-9]{16}\.tmp$/.test(name)||/^job\.[a-f0-9]{16}\.tmp$/.test(name))
+   await rm(join(dir(id),name),{force:true});
+ }
  await lock(id,async()=>{
   const job=await readJob(id);
+  if(['queued','failed'].includes(job.status)&&job.inputReady&&!(await sourceExists(job))){
+   await save(recoverMissingSource(job));return;
+  }
   if(job.status==='processing'){
    // Crash after final atomic output promotion must not re-run the engine.
    // Recover the existing single result instead of generating a duplicate.
