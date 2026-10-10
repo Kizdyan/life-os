@@ -1,5 +1,5 @@
 /* Creative Loop: five focused stages, not nested dashboard cards. */
-.creativeV1{display:grid;gap:20px;min-width:0;width:100%;max-width:100%;margin:0 auto 24px;padding-bottom:calc(92px + env(safe-area-inset-bottom));color:#171717}
+.creativeV1{--creative-safe-bottom:env(safe-area-inset-bottom,0px);--creative-action-clearance:16px;display:grid;gap:20px;min-width:0;width:100%;max-width:100%;margin:0 auto 24px;padding-bottom:calc(92px + env(safe-area-inset-bottom));color:#171717}
 .creativeV1 *{box-sizing:border-box;min-width:0;overflow-wrap:break-word}
 .creativeV1 .creativeProgress{position:static!important;z-index:auto!important;display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;max-width:100%;width:100%;gap:2px;padding:7px 2px!important;margin:0!important;background:#f3f2ee!important;border:0!important;border-radius:16px;box-shadow:none!important;backdrop-filter:none!important;text-align:center}
 .creativeProgress button{display:flex!important;align-items:center;justify-content:flex-start;flex-direction:column;gap:6px;border:0;background:transparent!important;color:#747672;min-height:56px;height:auto;padding:5px 1px!important;font-size:clamp(9px,2.7vw,12px);line-height:1.2;white-space:normal;text-align:center;cursor:pointer}
@@ -141,5 +141,8 @@ main:has(.creativeV1)>.mainNav>*{
   cursor:not-allowed;
 }
 .creativeV1 .creativeAdjust:not(:disabled){background:#1b3927!important;color:#fff!important}
+.creativeV1 .creativeShooting .creativeDetails[open]:has(.creativeAdjust){
+  padding-bottom:calc(var(--creative-action-clearance) + var(--creative-safe-bottom));
+}
 .creativeV1 .creativeAdjustHint{margin:3px 0;font-size:12px;line-height:1.4;color:#5c6b5d}
 .creativeVisuallyHidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important}

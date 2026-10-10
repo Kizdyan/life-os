@@ -87,26 +87,38 @@ export default function PersonaCreativeLoop(){
   setFeedback("");setError("");
   requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}));
  };
- // iOS WebKit treats fixed navigation as viewport-visible. Correct partial
- // occlusion when the next primary action sits behind the native app footer.
+ // iOS WebKit can report an action as visible while Safari chrome or the
+ // fixed app footer still occupies its tap area. Keep the active action clear
+ // of whichever boundary is higher, including while a focused field hides nav.
  useEffect(()=>{
   const selector:Partial<Record<Stage,string>>={
-    shoot:".creativeShooting>.creativeTake",
+    shoot:conditions.trim()?".creativeAdjust:not(:disabled)":".creativeShooting>.creativeTake",
     upload:".creativeUploadStage>.creativePicker",
     assembly:".creativeAssembly>.creativeTake"
   };
   const targetSelector=selector[stage];if(!targetSelector)return;
   const frame=requestAnimationFrame(()=>{
    const action=document.querySelector<HTMLElement>(targetSelector);
+   if(!action)return;
    const footer=document.querySelector<HTMLElement>("main > .mainNav");
-   if(!action||!footer||getComputedStyle(footer).display==="none")return;
-   const a=action.getBoundingClientRect(),n=footer.getBoundingClientRect();
-   if(a.top>=0&&a.top<window.innerHeight&&a.bottom>n.top-10){
-     window.scrollBy({top:a.bottom-n.top+16,behavior:"auto"});
+   const footerVisible=!!footer&&getComputedStyle(footer).display!=="none";
+   const visual=window.visualViewport;
+   const viewportTop=visual?.offsetTop??0;
+   const viewportBottom=viewportTop+(visual?.height??window.innerHeight);
+   const footerTop=footerVisible?footer!.getBoundingClientRect().top:viewportBottom;
+   const root=action.closest<HTMLElement>(".creativeV1");
+   const rootStyle=root?getComputedStyle(root):null;
+   const clearance=parseFloat(rootStyle?.getPropertyValue("--creative-action-clearance")||"")||16;
+   const safeInset=footerVisible?0:
+    parseFloat(rootStyle?.getPropertyValue("--creative-safe-bottom")||"")||0;
+   const safeBoundary=Math.min(viewportBottom,footerTop)-clearance-safeInset;
+   const actionBox=action.getBoundingClientRect();
+   if(actionBox.top>=viewportTop&&actionBox.top<viewportBottom&&actionBox.bottom>safeBoundary){
+    window.scrollBy({top:actionBox.bottom-safeBoundary,behavior:"auto"});
    }
   });
   return ()=>cancelAnimationFrame(frame);
- },[stage,session?.briefVersion,localAssets.length]);
+ },[stage,session?.briefVersion,localAssets.length,conditions]);
  useEffect(()=>{
   if(!session){setLocalAssets([]);return;}
   let active=true;
