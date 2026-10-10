@@ -31,7 +31,7 @@ export function newJob(request,at=new Date().toISOString()){
  if(!request||request.id!=='job-'+request.assetId)throw Error('invalid_processing_request');
  return {id:request.id,request,status:'queued',attempt:0,inputReady:false,
   createdAt:at,updatedAt:at,startedAt:null,completedAt:null,
-  instagramFile:null,outputToken:null,error:null};
+  instagramFile:null,processedAsset:null,outputToken:null,error:null};
 }
 export function canClaim(job){return job?.status==='queued' && job.inputReady===true;}
 export function markInputReady(job,receivedBytes,at=new Date().toISOString()){
@@ -50,6 +50,14 @@ export function transition(job,next,extra={},at=new Date().toISOString()){
   if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,150}\.mp4$/i.test(file)||file.includes('..'))
     throw Error('invalid_instagram_output');
   updated.instagramFile=file;updated.completedAt=at;
+  if(extra.processedAsset!==undefined){
+   if(extra.processedAsset?.sourceAssetId!==job.request.assetId||
+      extra.processedAsset?.processingRequestId!==job.id||
+      extra.processedAsset?.ideaVersion!==job.request.ideaVersion||
+      extra.processedAsset?.sessionId!==job.request.sessionId||
+      extra.processedAsset?.attempt!==job.attempt)throw Error('invalid_processed_asset_lineage');
+   updated.processedAsset=extra.processedAsset;
+  }
  }
  if(next==='ready'&&!job.instagramFile)throw Error('missing_instagram_output');
  if(next==='failed'){updated.error=String(extra.error||'processing_failed').slice(0,300);updated.completedAt=at;}
@@ -58,7 +66,7 @@ export function transition(job,next,extra={},at=new Date().toISOString()){
 export function retry(job,at=new Date().toISOString()){
  if(job?.status!=='failed'||!job.inputReady)throw Error('retry_unavailable');
  return {...job,status:'queued',attempt:job.attempt+1,startedAt:null,completedAt:null,
-  instagramFile:null,outputToken:null,error:null,updatedAt:at};
+  instagramFile:null,processedAsset:null,outputToken:null,error:null,updatedAt:at};
 }
 export function publicJob(job){
  const {outputToken,...safe}=job;
