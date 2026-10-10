@@ -178,3 +178,16 @@ main:has(.creativeV1)>.mainNav>*{
   font-size:12px;
   line-height:1.4;
 }
+
+/* Secondary reassurance: local originals stay on-device while offline metadata
+   is retried after reconnection; never imply a cloud video upload. */
+.creativeV1 .creativeMediaSyncStatus{
+  margin:4px 0 10px;
+  padding:9px 11px;
+  border:1px solid #e1e6dc;
+  background:#f6f8f3;
+  border-radius:10px;
+  font-size:12px;
+  color:#52634f;
+  line-height:1.4;
+}

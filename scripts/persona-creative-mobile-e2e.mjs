@@ -440,6 +440,41 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   assert(originalSha.ideaId===selected.id&&originalSha.ideaVersion===targetVersion &&
     originalSha.sessionId===item.session.id,"persisted binary lineage changed on reload");
   console.log("PASS "+name+" REAL MP4 SHA-256 unchanged + exact session/idea linkage after reload");
+  // iPhone can finish writing an MP4 offline while its Edge metadata POST fails.
+  // Recovery must be automatic on reconnection, without reuploading the binary.
+  await page.context().setOffline(true);
+  await page.locator('input[aria-label="Загрузить материал"]').setInputFiles({
+    name:"alternate-offline-ci.mp4",mimeType:"video/mp4",buffer:video
+  });
+  await page.locator(".creativeUploadStatus").getByText(/Загружено 2 файлов/).waitFor({timeout:30000});
+  await page.locator(".creativeMediaSyncStatus").waitFor({timeout:30000});
+  await page.locator(".creativeError").waitFor({timeout:30000});
+  const stillOneOnServer=await body(token,{action:"creative_state"});
+  assert(stillOneOnServer.data.items[selectionIndex].session?.assets.length===1,
+    "offline upload silently registered a cloud manifest");
+  await page.context().setOffline(false);
+  await page.evaluate(()=>window.dispatchEvent(new Event("online")));
+  let afterOffline=null;
+  for(let attempt=0;attempt<20;attempt++){
+    afterOffline=await body(token,{action:"creative_state"});
+    if(afterOffline.data.items[selectionIndex].session?.assets.length>=2)break;
+    await new Promise(resolve=>setTimeout(resolve,300));
+  }
+  assert(afterOffline.data.items[selectionIndex].session?.assets.length===2,
+    "offline media metadata was not automatically reconciled after reconnect");
+  const offlineMedia=afterOffline.data.items[selectionIndex].session.assets[1];
+  assert(offlineMedia.sessionId===media.sessionId&&offlineMedia.ideaVersion===media.ideaVersion &&
+    offlineMedia.projectId===media.projectId&&offlineMedia.id!==media.id,
+    "reconciled metadata lost signed version/session lineage");
+  await page.reload({waitUntil:"domcontentloaded"});
+  await page.locator(".mainNav").getByText("Ещё",{exact:true}).click();
+  await page.locator(".moreSheet").getByRole("button",{name:"Контент"}).click();
+  await page.locator('.creativeV1[data-stage="upload"]').waitFor({timeout:30000});
+  await page.locator(".creativeUploadStatus").getByText(/Загружено 2 файлов/).waitFor({timeout:30000});
+  assert(await page.locator(".creativeMediaSyncStatus").count()===0,
+    "reloaded media manifests were incorrectly treated as unsynced");
+  console.log("PASS "+name+" OFFLINE MP4 intake -> automatic Edge metadata sync -> reload");
+
   console.log("PASS "+name+" IDB binary persisted AFTER RELOAD entries:"+persisted.entries+" chunks:"+persisted.chunks);
   await page.getByRole("button",{name:/Перейти к монтажу/}).click();
   await page.locator('.creativeV1[data-stage="assembly"]').waitFor({timeout:15000});

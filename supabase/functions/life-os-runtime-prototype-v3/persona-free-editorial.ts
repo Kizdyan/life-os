@@ -1,4 +1,4 @@
-import { sealApprovedIdea, type SealedApproval } from "./persona-brain.ts";
+import { FORMAT_GUIDANCE_TTL_MS, sealApprovedIdea, type SealedApproval } from "./persona-brain.ts";
 
 // A bounded, human-editorial FREE_ONLY starter — NOT a newly detected viral trend.
 // References were independently checked on 2026-10-08 (UTC). Never roll the date
@@ -6,7 +6,10 @@ import { sealApprovedIdea, type SealedApproval } from "./persona-brain.ts";
 export const FREE_EDITORIAL_ID = "free-editorial-three-characters-20261009";
 export const FREE_EDITORIAL_AS_OF = "2026-10-08";
 export const FREE_EDITORIAL_TITLE = "Одна фраза — три совершенно разных персонажа";
-const MAX_EVIDENCE_AGE_MS = 7 * 86_400_000;
+// This starter cites official, evergreen filming FORMAT advice, not live
+// popularity signals. Keep the 2026-10-08 review date unchanged and fail closed
+// after 180 days; market/trend evidence elsewhere still expires in seven days.
+const MAX_EVIDENCE_AGE_MS = FORMAT_GUIDANCE_TTL_MS;
 
 export function freeEditorialCandidate(now = Date.now()): Record<string, unknown> | null {
   const asOf = Date.parse(FREE_EDITORIAL_AS_OF + "T00:00:00Z");

@@ -14,7 +14,8 @@ describe("Creative Loop V1 bounded FREE_ONLY core",()=>{
     "Один аккорд — три настроения",
     "30 секунд до выхода на сцену"]);
   expect(ideas.every(i=>i.evidenceKind==="EDITORIAL_PLATFORM_GUIDANCE_NOT_LIVE_TREND" && Number(i.estimatedMinutes)<=15)).toBe(true);
-  expect(creativeShortlist(Date.parse("2026-10-17T00:00:00.000Z"))).toEqual([]);
+  expect(creativeShortlist(Date.parse("2026-11-01T00:00:00.000Z"))).toHaveLength(3);
+  expect(creativeShortlist(Date.parse("2027-04-07T00:00:01.000Z"))).toEqual([]);
  });
  it("keeps semantic revision approval separate, with Critic and Judge",async()=>{
   const [idea]=creativeShortlist(at);

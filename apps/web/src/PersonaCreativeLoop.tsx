@@ -3,6 +3,8 @@ import type { CreativeItem } from "../../../supabase/functions/life-os-runtime-p
 import { personaEdgeRequest } from "./edgeRuntimeClient";
 import { createMediaMetadata, listCapturedAssets, persistCapturedAsset, type CreativeMediaMetadata } from "./personaMediaIntake";
 import { roleLabel, type MediaOverride } from "./personaMediaRoles";
+import { pendingServerAssets } from "./personaMediaReconcile";
+import { shootActionOnly } from "./personaShootCopy";
 import "./persona-creative-v1.css";
 
 type ViewItem = CreativeItem & {verifiedFreshness:"cached"|"stale"|"unverified"};
@@ -15,21 +17,6 @@ const STAGES:ReadonlyArray<{id:Stage;label:string}> = [
 ];
 const NAV_KEY="persona:creative:v1:navigation";
 const str=(value:unknown)=>typeof value==="string"?value:"";
-const shootActionOnly=(plan:string,numberOfTakes:number,seconds:number)=>{
- const takes=Math.max(1,Math.trunc(numberOfTakes||2));
- const duration=Math.max(1,Math.trunc(seconds||25));
- // Physical setup belongs exclusively under "Куда поставить iPhone".
- const withoutSetup=plan
-  .replace(/(?:^|\s)(?:Поставь|Установи|Расположи|Закрепи)\s+(?:iPhone|телефон|камеру)[^.!?]*[.!?]?\s*/gi," ")
-  .trim();
- const direction=withoutSetup
-  .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+[^,.;]*?дубль\s*,?\s*/i,"")
-  .replace(/^(?:Сними|Снять)\s+(?:один|1)\s+дубль\s*,?\s*/i,"")
-  .trim().replace(/[.!?]+$/,"").replace(/^меняя\b/i,"Меняй");
- const sentence=direction?direction[0].toUpperCase()+direction.slice(1)+".":"";
- const takeNoun=takes===1?"дубль":takes<5?"дубля":"дублей";
- return `Сними ${takes} ${takeNoun} по ${duration} секунд.${sentence?" "+sentence:""}`;
-};
 const niceError=(error:unknown)=>{
  const message=error instanceof Error?error.message:String(error);
  if(message.includes("revision_conflict"))return "Идея обновилась. Открой её снова и попробуй ещё раз.";
@@ -53,6 +40,9 @@ export default function PersonaCreativeLoop(){
  const [roleOverride,setRoleOverride]=useState<MediaOverride>("auto");
  const [localAssets,setLocalAssets]=useState<CreativeMediaMetadata[]>([]);
  const [busy,setBusy]=useState(false);
+ const [connectionEpoch,setConnectionEpoch]=useState(0);
+ const [syncingMediaMetadata,setSyncingMediaMetadata]=useState(false);
+ const mediaReconcileRef=useRef(false);
  const [loaded,setLoaded]=useState(false);
  const [error,setError]=useState("");
  const [feedback,setFeedback]=useState("");
@@ -92,6 +82,7 @@ export default function PersonaCreativeLoop(){
  const actionable=item?.verifiedFreshness==="cached"&&!item.pending&&!!revision?.proof;
  const session=item?.session&&item.session.ideaVersion===item.currentVersion?item.session:null;
  const previous=item?.revisions.find(x=>x.version===item.currentVersion-1);
+ const pendingMedia=session&&item?pendingServerAssets(localAssets,session.assets,{projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,ideaVersion:item.currentVersion,sessionId:session.id}):[];
  const stage:Stage=!item?"idea":
   !session&&["shoot","upload","assembly"].includes(navigation.stage)?"edit":navigation.stage;
  const stepIndex=STAGES.findIndex(x=>x.id===stage);
@@ -141,6 +132,46 @@ export default function PersonaCreativeLoop(){
    .catch(()=>{if(active)setError("Не удалось прочитать сохранённые файлы.")});
   return ()=>{active=false};
  },[session?.id]);
+ // Local binaries survive Safari reload even when their Edge manifest could not
+ // be registered while offline. Reconcile only the current approved session.
+ // No binary is transmitted, no repeated timer/network polling, no paid AI.
+ useEffect(()=>{
+  const onOnline=()=>setConnectionEpoch(x=>x+1);
+  window.addEventListener("online",onOnline);
+  return ()=>window.removeEventListener("online",onOnline);
+ },[]);
+ useEffect(()=>{
+  if(!session||!item||!revision||!actionable||busy||mediaReconcileRef.current||
+    localAssets.length===0||!navigator.onLine)return;
+  const unsynced=pendingServerAssets(localAssets,session.assets,{
+   projectId:item.projectId,contentItemId:item.contentItemId,ideaId:item.id,
+   ideaVersion:item.currentVersion,sessionId:session.id
+  });
+  if(!unsynced.length)return;
+  let active=true;
+  mediaReconcileRef.current=true;
+  setSyncingMediaMetadata(true);
+  void (async()=>{
+   let restored=0;
+   try{
+    for(const asset of unsynced){
+     if(!active)break;
+     try{
+      await personaEdgeRequest({action:"creative_register_asset",ideaId:item.id,
+       version:item.currentVersion,approvalProof:revision.proof,asset});
+      restored++;
+     }catch{break;}
+    }
+    if(active&&restored)await refresh();
+   }catch{/* Keep the durable local manifest; retry on a future connection event. */}
+   finally{
+    mediaReconcileRef.current=false;
+    if(active)setSyncingMediaMetadata(false);
+   }
+  })();
+  return ()=>{active=false;};
+ },[session?.id,session?.assets.length,item?.currentVersion,revision?.proof,
+   localAssets,busy,actionable,connectionEpoch,refresh]);
  async function act(payload:Record<string,unknown>,message=""){
   setBusy(true);setError("");setFeedback("");
   try{
@@ -232,7 +263,7 @@ export default function PersonaCreativeLoop(){
       <small>{index===0?"РЕКОМЕНДУЮ":`ВАРИАНТ ${index+1}`}</small>
       <h3>{str(concept.title)}</h3>
       <p className="creativeHook"><b>Хук</b>{str(concept.hook)}</p>
-      <p className="creativeOneLine"><b>Что за видео</b>{str(concept.angle)||str(concept.soloPlan)}</p>
+      <p className="creativeOneLine"><b>Что за видео</b>{str(concept.angle)}</p>
       <p className="creativeTime">Примерно {String(concept.estimatedMinutes||"—")} мин.</p>
       <button className="primary creativeSelect" disabled={busy||entry.verifiedFreshness!=="cached"}
        onClick={()=>choose(entry.id)}>Выбрать</button>
@@ -249,7 +280,7 @@ export default function PersonaCreativeLoop(){
    <div className="creativeStageHead"><small>ШАГ 2 · ПРАВКИ</small><h2>{str(idea?.title)}</h2></div>
    <div className="creativeDirection">
     <p><b>Что сказать</b>{str(idea?.script)}</p>
-    <p><b>Что снять</b>{str(idea?.soloPlan)||str(idea?.angle)}</p>
+    <p><b>Что за видео</b>{str(idea?.angle)}</p>
    </div>
    {item.pending?<div ref={responseRef} className="creativeProposal" role="status">
     <h3>Эрика предлагает</h3>
@@ -334,6 +365,7 @@ export default function PersonaCreativeLoop(){
     <b>✓ Загружено {localAssets.length} файлов</b>
     <p>Анализ дублей — следующий этап. Лучший дубль пока не определён.</p>
    </div>}
+   {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Сохраняю сведения о материалах…":"Файлы сохранены на этом iPhone. Сведения ещё не подтверждены сервером; при восстановлении связи отправим их автоматически."}</p>}
    <label className="creativePicker">Загрузить материалы
     <input aria-label="Загрузить материал" type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.m4a"
      disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
