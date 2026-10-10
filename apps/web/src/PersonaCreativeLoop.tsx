@@ -304,6 +304,7 @@ export default function PersonaCreativeLoop(){
      <p><b>Секунд</b>{String(shot.durationSeconds||25)}</p>
     </div>)}
    </div>
+   {session.briefVersion>1&&str(session.conditions)&&<p className="creativeAdaptedStatus" role="status">✓ Условия съёмки учтены: {str(session.conditions)}</p>}
    <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Я снял — загрузить материалы →</button>
    <details className="creativeDetails creativeShootSecondary"><summary>Подробнее</summary>
     {Array.isArray(session.brief.shots)&&session.brief.shots.map((shot:any)=>
