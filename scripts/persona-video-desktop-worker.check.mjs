@@ -75,7 +75,10 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
   assert.equal(mismatch.status,409);
   assert.equal((await call('/v1/jobs/'+jobId+'/approve','POST')).status,409);
  }finally{
-  proc.kill();await new Promise(resolve=>proc.once('exit',resolve)).catch(()=>{});
+  if(proc.exitCode===null&&!proc.killed){
+   const exited=new Promise(resolve=>proc.once('exit',resolve));
+   proc.kill();await Promise.race([exited,delay(3000)]);
+  }
   await rm(dir,{recursive:true,force:true});
  }
 });
