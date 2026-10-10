@@ -58,12 +58,23 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
   assert(online,'local worker did not start');
   const denied=await fetch(base+'/v1/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   assert.equal(denied.status,401);
+  const wrongOrigin=await fetch(base+'/v1/jobs',{method:'GET',headers:{
+   Authorization:'Bearer '+token,Origin:'https://wrong.example'}});
+  assert.equal(wrongOrigin.status,403);
+  const preflight=await fetch(base+'/v1/jobs',{method:'OPTIONS',headers:{
+   Origin:'https://persona.example','Access-Control-Request-Method':'PUT',
+   'Access-Control-Request-Private-Network':'true'}});
+  assert.equal(preflight.status,204);
+  assert.equal(preflight.headers.get('access-control-allow-private-network'),'true');
   const first=await call('/v1/jobs','POST',fixture);
   assert.equal(first.status,200);
   const jobId=first.data.id;
   assert.equal(jobId,'job-'+fixture.assetId);
-  const again=await call('/v1/jobs','POST',fixture);
+  const [again,race1,race2]=await Promise.all([
+   call('/v1/jobs','POST',fixture),call('/v1/jobs','POST',fixture),
+   call('/v1/jobs','POST',fixture)]);
   assert.equal(again.data.id,jobId);
+  assert.equal(race1.data.id,jobId);assert.equal(race2.data.id,jobId);
   assert.equal(again.data.inputReady,false);
   const bad=await call('/v1/jobs/'+jobId+'/input','PUT',bytes.subarray(0,500));
   assert.equal(bad.status,422);
@@ -77,6 +88,17 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
   assert.match(failed.error,/v11_local_adapter_not_configured/);
   const persisted=await readFile(join(dir,'jobs',jobId,'input.media'));
   assert.deepEqual(persisted,bytes);
+  // Restart desktop server; the failed processing record and original bytes
+  // must survive even though the browser tab does not stay open.
+  const stopped=new Promise(resolve=>proc.once('exit',resolve));
+  proc.kill();await Promise.race([stopped,delay(3000)]);
+  proc=spawn(process.execPath,[resolve('scripts/persona-video-desktop-worker.mjs')],{env,stdio:'ignore'});
+  let resumed=false;
+  for(let n=0;n<40;n++){try{
+   const status=await call('/v1/jobs/'+jobId);
+   if(status.status===200&&status.data.status==='failed'){resumed=true;break;}
+  }catch{}await delay(100);}
+  assert(resumed,'worker restart lost failed job');
   const repeat=await call('/v1/jobs/'+jobId+'/retry','POST');
   assert.equal(repeat.status,200);assert.equal(repeat.data.id,jobId);
   assert.equal(repeat.data.attempt,1);
