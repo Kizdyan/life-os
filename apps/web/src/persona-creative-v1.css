@@ -147,3 +147,34 @@ main:has(.creativeV1)>.mainNav>*{
 }
 .creativeV1 .creativeAdjustHint{margin:3px 0;font-size:12px;line-height:1.4;color:#5c6b5d}
 .creativeVisuallyHidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important}
+
+
+/* Final physical UX pass: post-CTA information is visibly subordinate. */
+.creativeV1 .creativeShooting>.creativeShootSecondary{
+  border:0!important;
+  border-top:1px solid #eceee8!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  padding:0 1px!important;
+  margin:0!important;
+}
+.creativeV1 .creativeShooting>.creativeShootSecondary>summary{
+  min-height:40px;
+  padding:7px 2px;
+  font-size:12px;
+  font-weight:500;
+  color:#808980;
+}
+.creativeV1 .creativeShooting>.creativeShootSecondary[open]{
+  padding-bottom:calc(var(--creative-action-clearance) + var(--creative-safe-bottom))!important;
+}
+.creativeV1 .creativeAdaptedStatus{
+  margin:0;
+  padding:9px 11px;
+  border-radius:10px;
+  background:#edf4ea;
+  color:#34573c;
+  font-size:12px;
+  line-height:1.4;
+}
