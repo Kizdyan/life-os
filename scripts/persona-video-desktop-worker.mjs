@@ -139,10 +139,10 @@ async function runPinnedEngine(job){
   await rename(temp,outputPath(job.id));
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
  const output=await stat(outputPath(job.id));
- const result=makeProcessedAsset(job,{bytes:output.size,sha256:await fileHash(outputPath(job.id)),
+ const processed=makeProcessedAsset(job,{bytes:output.size,sha256:await fileHash(outputPath(job.id)),
   width:Number(stream.width),height:Number(stream.height),codec:stream.codec_name});
- await durableJson(resultPath(job.id),result);
- return result;
+ await durableJson(resultPath(job.id),processed);
+ return processed;
 }
 async function pump(){
  if(pumping)return;pumping=true;
