@@ -1,0 +1,69 @@
+import type {CreativeMediaMetadata} from './personaMediaIntake';
+
+export type ProcessingState='queued'|'processing'|'review'|'ready'|'failed';
+export type ProcessingJob={
+ id:string;status:ProcessingState;request:{assetId:string;sessionId:string;ideaId:string;ideaVersion:number};
+ inputReady:boolean;attempt:number;error:string|null;outputAvailable:boolean;outputUrl?:string;
+};
+export type WorkerSettings={url:string;token:string};
+const SETTINGS_KEY='persona:processing:bridge:v1';
+
+export function validWorkerUrl(raw:string):string|null {
+ try{
+  const parsed=new URL(raw.trim());
+  if(parsed.username||parsed.password||parsed.search||parsed.hash||parsed.pathname!=='/')return null;
+  if(parsed.protocol!=='https:' &&
+     !(parsed.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(parsed.hostname)))return null;
+  return parsed.origin;
+ }catch{return null;}
+}
+export function getWorkerSettings():WorkerSettings{
+ try{
+  const data=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}') as Partial<WorkerSettings>;
+  return {url:typeof data.url==='string'?data.url:'',token:typeof data.token==='string'?data.token:''};
+ }catch{return {url:'',token:''};}
+}
+export function saveWorkerSettings(settings:WorkerSettings){
+ const url=validWorkerUrl(settings.url);
+ if(!url||settings.token.length<32)throw Error('Укажи защищённый адрес компьютера и его ключ доступа.');
+ localStorage.setItem(SETTINGS_KEY,JSON.stringify({url,token:settings.token}));
+}
+export function processingRequest(asset:CreativeMediaMetadata){
+ if(!asset.mime.startsWith('video/'))throw Error('Для обработки выбери видео.');
+ return {assetId:asset.id,projectId:asset.projectId,contentItemId:asset.contentItemId,
+  ideaId:asset.ideaId,ideaVersion:asset.ideaVersion,sessionId:asset.sessionId,
+  mime:asset.mime,filename:asset.filename,bytes:asset.bytes};
+}
+export function jobIdForAsset(assetId:string){
+ if(!/^[a-f0-9]{32}$/i.test(assetId))throw Error('Неверный идентификатор файла');
+ return 'job-'+assetId.toLowerCase();
+}
+export function safeOutputLink(base:string,job:ProcessingJob):string|null{
+ if(!job.outputAvailable||!job.outputUrl||job.status==='failed')return null;
+ try{
+  const url=new URL(job.outputUrl,base);
+  const expected=validWorkerUrl(base);
+  if(!expected||url.origin!==expected||
+    url.pathname!=='/v1/jobs/'+job.id+'/output'||!/^job-[a-f0-9]{32}$/.test(job.id)||
+    !/^[a-f0-9]{64}$/.test(url.searchParams.get('token')||''))return null;
+  return url.href;
+ }catch{return null;}
+}
+export async function desktopRequest(settings:WorkerSettings,path:string,
+ method:'GET'|'POST'|'PUT',body?:object|Blob):Promise<ProcessingJob>{
+ const base=validWorkerUrl(settings.url);
+ if(!base||settings.token.length<32)throw Error('Компьютер для обработки не подключён.');
+ if(!/^\/v1\/jobs(?:\/job-[a-f0-9]{32}(?:\/(?:input|retry|approve))?)?$/.test(path))
+  throw Error('Неподдерживаемое действие с файлом.');
+ const isVideo=body instanceof Blob;
+ const response=await fetch(base+path,{
+  method,headers:{Authorization:'Bearer '+settings.token,
+   ...(body&&!isVideo?{'Content-Type':'application/json'}:{}),
+   ...(isVideo?{'Content-Type':'application/octet-stream'}:{})},
+  body:body?(isVideo?body:JSON.stringify(body)):undefined,
+  signal:AbortSignal.timeout(isVideo?900000:20000),
+ });
+ const payload=await response.json() as ProcessingJob & {error?:string};
+ if(!response.ok)throw Error(payload.error||'Не удалось связаться с компьютером.');
+ return payload;
+}
