@@ -2,7 +2,7 @@ import type {CreativeMediaMetadata} from './personaMediaIntake';
 
 export type ProcessingState='queued'|'processing'|'review'|'ready'|'failed';
 export type ProcessingJob={
- id:string;status:ProcessingState;request:{assetId:string;sessionId:string;ideaId:string;ideaVersion:number};
+ id:string;status:ProcessingState;request:{id:string;assetId:string;projectId:string;contentItemId:string;sessionId:string;ideaId:string;ideaVersion:number};
  inputReady:boolean;attempt:number;error:string|null;outputAvailable:boolean;outputUrl?:string;
 };
 export type WorkerSettings={url:string;token:string};
@@ -50,6 +50,14 @@ export function processingRequest(asset:CreativeMediaMetadata){
 export function jobIdForAsset(assetId:string){
  if(!/^[a-f0-9]{32}$/i.test(assetId))throw Error('Неверный идентификатор файла');
  return 'job-'+assetId.toLowerCase();
+}
+export function jobBelongsToAsset(job:ProcessingJob|null,asset:CreativeMediaMetadata|undefined):boolean{
+ if(!job||!asset||!job.request)return false;
+ const r=job.request;
+ return job.id===jobIdForAsset(asset.id)&&r.id===job.id&&
+  r.assetId===asset.id&&r.projectId===asset.projectId&&
+  r.contentItemId===asset.contentItemId&&r.ideaId===asset.ideaId&&
+  r.ideaVersion===asset.ideaVersion&&r.sessionId===asset.sessionId;
 }
 export function safeOutputLink(base:string,job:ProcessingJob):string|null{
  if(!job.outputAvailable||!job.outputUrl||job.status==='failed')return null;
