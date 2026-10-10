@@ -135,9 +135,10 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
    </details>
    {!visibleJob&&lastForCurrent&&<p role="status" className="personaProcessorState">
     Последний известный статус: {words[lastForCurrent.status]||lastForCurrent.status}. Обновится после подключения компьютера.</p>}
-   {!visibleJob&&!lastForCurrent&&enabled?<button type="button" className="primary" disabled={busy} onClick={()=>void submit()}>
+   {!visibleJob&&!lastForCurrent&&enabled&&<button type="button" className="primary" disabled={busy} onClick={()=>void submit()}>
     {busy?'Передаю видео…':'Отправить на обработку'}
-   </button>:<>
+   </button>}
+   {visibleJob&&<>
     <p role="status" className="personaProcessorState">{connected?'Статус':'Последний известный статус'}: {words[visibleJob.status]||visibleJob.status}</p>
     {visibleJob.status==='failed'&&visibleJob.error&&<p role="alert">{message(new Error(visibleJob.error))}</p>}
     {visibleJob.status==='queued'&&!visibleJob.inputReady&&<button className="primary" disabled={busy||!connected} onClick={()=>void submit()}>
