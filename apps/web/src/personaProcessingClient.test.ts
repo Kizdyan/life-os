@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {jobIdForAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime} from './personaProcessingClient';
+import {jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime} from './personaProcessingClient';
 import type {CreativeMediaMetadata} from './personaMediaIntake';
 
 const asset:CreativeMediaMetadata={id:'f'.repeat(32),projectId:'persona:owner:project:v1',
@@ -16,6 +16,17 @@ describe('Persona desktop handoff is revision-bound and local-first',()=>{
   expect(videoMime({...asset,filename:'IMG_0030.MOV',mime:'application/octet-stream'})).toBe('video/quicktime');
   expect(processingRequest({...asset,filename:'IMG_0030.MOV',mime:'application/octet-stream'}).mime).toBe('video/quicktime');
   expect(videoMime({...asset,filename:'voice.m4a',mime:'audio/mp4'})).toBeNull();
+ });
+ it('rejects stale jobs after changing video, idea, revision or session',()=>{
+  const job={id:'job-'+asset.id,status:'ready' as const,outputAvailable:true,
+   request:{id:'job-'+asset.id,assetId:asset.id,projectId:asset.projectId,
+    contentItemId:asset.contentItemId,ideaId:asset.ideaId,
+    ideaVersion:asset.ideaVersion,sessionId:asset.sessionId}};
+  expect(jobBelongsToAsset(job as any,asset)).toBe(true);
+  expect(jobBelongsToAsset(job as any,{...asset,sessionId:'shoot:second'})).toBe(false);
+  expect(jobBelongsToAsset(job as any,{...asset,ideaVersion:3})).toBe(false);
+  expect(jobBelongsToAsset(job as any,{...asset,id:'a'.repeat(32)})).toBe(false);
+  expect(jobBelongsToAsset({...job,request:{...job.request,contentItemId:'other'}} as any,asset)).toBe(false);
  });
  it('never allows insecure LAN or cross-origin output links',()=>{
   expect(validWorkerUrl('http://192.168.1.5:8787')).toBeNull();
