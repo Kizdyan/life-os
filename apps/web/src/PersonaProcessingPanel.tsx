@@ -131,11 +131,11 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
      <input type="password" autoComplete="off" value={draft.token}
       onChange={e=>setDraft({...draft,token:e.target.value})}/>
     </label>
-    <button type="button" className="creativeSecondary" onClick={configure}>Сохранить подключение</button>
+    <button type="button" className={enabled?"creativeSecondary":"primary"} onClick={configure}>Сохранить подключение</button>
    </details>
    {!visibleJob&&lastForCurrent&&<p role="status" className="personaProcessorState">
-    Последний известный статус: {words[lastForCurrent.status]||lastForCurrent.status}. Связь с компьютером проверяется.</p>}
-   {!visibleJob&&!lastForCurrent?<button type="button" className="primary" disabled={!enabled||busy} onClick={()=>void submit()}>
+    Последний известный статус: {words[lastForCurrent.status]||lastForCurrent.status}. Обновится после подключения компьютера.</p>}
+   {!visibleJob&&!lastForCurrent&&enabled?<button type="button" className="primary" disabled={busy} onClick={()=>void submit()}>
     {busy?'Передаю видео…':'Отправить на обработку'}
    </button>:<>
     <p role="status" className="personaProcessorState">{connected?'Статус':'Последний известный статус'}: {words[visibleJob.status]||visibleJob.status}</p>
