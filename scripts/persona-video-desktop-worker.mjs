@@ -2,7 +2,7 @@
 // Transport + durable queue only. V1.1 performs all heavy work on desktop.
 import http from 'node:http';
 import https from 'node:https';
-import {readFile,writeFile,rename,mkdir,readdir,stat,copyFile,open,rm} from 'node:fs/promises';
+import {readFile,writeFile,rename,mkdir,readdir,stat,copyFile,open,rm,realpath} from 'node:fs/promises';
 import {createWriteStream,createReadStream,readFileSync,rmSync} from 'node:fs';
 import {randomBytes,timingSafeEqual,createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
@@ -88,13 +88,18 @@ async function durableJson(dest,obj){
   await rename(temp,dest);
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
 }
+const verifiedOutputs=new Map();
 async function committedOutput(job){
  try{
   const item=JSON.parse(await readFile(resultPath(job.id),'utf8'));
   if(!validProcessedAsset(job,item))return null;
   const details=await stat(outputPath(job.id));
   if(!details.isFile()||details.size!==item.bytes)return null;
-  if((await fileHash(outputPath(job.id)))!==item.sha256)return null;
+  const stamp=[job.attempt,item.sha256,details.size,details.mtimeMs].join(':');
+  if(verifiedOutputs.get(job.id)!==stamp){
+   if((await fileHash(outputPath(job.id)))!==item.sha256)return null;
+   verifiedOutputs.set(job.id,stamp);
+  }
   return item;
  }catch{return null;}
 }
@@ -169,12 +174,17 @@ async function runPinnedEngine(job){
  if(!result||typeof result.instagramPath!=='string'||!isAbsolute(result.instagramPath))
   throw Error('v11_no_instagram_output');
  const file=resolve(result.instagramPath),details=await stat(file);
- if(!file.startsWith(resolve(runDir)+sep))throw Error('v11_output_outside_attempt_directory');
+ const actual=await realpath(file),actualRunDir=await realpath(runDir);
+ if(!actual.startsWith(actualRunDir+sep))throw Error('v11_output_outside_attempt_directory');
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
  // Acceptance is a real, decodable 9:16-ish H.264 MP4, not an arbitrary path.
  const inspected=await exec('ffprobe',['-v','error','-select_streams','v:0',
   '-show_entries','stream=codec_name,width,height','-of','json',file],{timeout:15000});
  const stream=JSON.parse(inspected.stdout).streams?.[0];
+ const handle=await open(file,'r');let header;
+ try{header=Buffer.alloc(12);await handle.read(header,0,12,0);}finally{await handle.close();}
+ if(header.toString('ascii',4,8)!=='ftyp'||header.toString('ascii',8,12)==='qt  ')
+  throw Error('v11_instagram_output_not_mp4');
  const ratio=Number(stream?.height)/Number(stream?.width);
  if(stream?.codec_name!=='h264'||!Number.isFinite(ratio)||ratio<1.7||ratio>1.85)
   throw Error('v11_instagram_output_not_valid_vertical_h264');
