@@ -5,6 +5,7 @@ import { createMediaMetadata, listCapturedAssets, persistCapturedAsset, type Cre
 import { roleLabel, type MediaOverride } from "./personaMediaRoles";
 import { currentSessionAssets,mediaReconcileAttemptKey,pendingServerAssets } from "./personaMediaReconcile";
 import { shootActionOnly } from "./personaShootCopy";
+import PersonaProcessingPanel from "./PersonaProcessingPanel";
 import "./persona-creative-v1.css";
 
 type ViewItem = CreativeItem & {verifiedFreshness:"cached"|"stale"|"unverified"};
@@ -413,14 +414,9 @@ export default function PersonaCreativeLoop(){
     </select>
    </details>
   </section>}
-  {stage==="assembly"&&item&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
+  {stage==="assembly"&&item&&session&&assetScope&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
    <div className="creativeStageHead"><h2>Монтаж</h2></div>
-   <p className="creativeSimpleStatus">Монтаж ещё не собран. Анализ дублей и сборка видео появятся в следующем этапе Persona.</p>
-   <details className="creativeDetails"><summary>Как будет работать монтаж</summary>
-    <p>Persona сравнит дубли, выберет лучшие фрагменты, уберёт паузы,
-       добавит субтитры, нормализует звук и подготовит вертикальное видео.</p>
-    <p>Рекомендуемый монтаж и не более одной альтернативы. Решения: Берём / Изменить / Не берём.</p>
-   </details>
+   <PersonaProcessingPanel assets={activeAssets} scope={assetScope}/>
    <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Вернуться к материалам</button>
   </section>}
   {feedback&&<p className="creativeFeedback" role="status">{feedback}</p>}
