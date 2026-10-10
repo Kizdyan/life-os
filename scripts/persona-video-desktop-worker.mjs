@@ -168,6 +168,8 @@ async function serve(req,res){
    res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');
    res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,OPTIONS');
    res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');
+   if(req.headers['access-control-request-private-network']==='true')
+    res.setHeader('Access-Control-Allow-Private-Network','true');
   }
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   const url=new URL(req.url,'https://localhost');
