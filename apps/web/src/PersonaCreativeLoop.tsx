@@ -25,7 +25,7 @@ const niceError=(error:unknown)=>{
  if(message.includes("shooting_time_too_short"))return "Нужно хотя бы 5 минут для съёмки. Можно выбрать более короткий план позже.";
  if(message.includes("invalid_adapted_brief"))return "Не удалось подобрать безопасный план. Уточни условия съёмки.";
  if(message.includes("creative:")||message.includes("prototype_")||message.includes("asset_"))
-  return "Не удалось выполнить действие. Проверь, что нужные файлы сохранены на iPhone, и попробуй снова.";
+  return "Изменение не сохранилось. Попробуй ещё раз.";
  return "Не получилось выполнить действие. Проверь связь и попробуй снова.";
 };
 function mediaSaveError(error:unknown):string {
@@ -280,7 +280,8 @@ export default function PersonaCreativeLoop(){
    </button>)}
   </nav>
   {!loaded?<p role="status" className="creativeSimpleStatus">Готовлю идеи…</p>:null}
-  {loaded&&items.length===0?<p role="status" className="creativeSimpleStatus">Пока нет идей, которые прошли проверку.</p>:null}
+  {loaded&&items.length===0&&!error?<p role="status" className="creativeSimpleStatus">Пока нет идей, которые прошли проверку.</p>:null}
+  {loaded&&items.length===0&&error?<p role="alert" className="creativeError">{error}</p>:null}
   {stage==="idea"&&<section className="creativeStage" aria-label="Идея">
    <div className="creativeStageHead"><h2>Что снимем?</h2></div>
    <div className="creativeShortlist">
@@ -385,13 +386,13 @@ export default function PersonaCreativeLoop(){
    </details>
   </section>}
   {stage==="upload"&&item&&session&&<section className="creativeStage creativeUploadStage" aria-label="Материалы">
-   <div className="creativeStageHead"><h2>Загрузить материалы</h2>
+   <div className="creativeStageHead"><h2>Материалы для ролика</h2>
     <p>Выбери записи. Тип файлов определится автоматически; дубли пока различаются по порядку, без анализа видео.</p></div>
    {activeAssets.length>0&&<div className="creativeUploadStatus" role="status">
     <b>✓ Сохранено на iPhone: {activeAssets.length}</b>
     <p>Копии файлов сохранены здесь. Лучшие кадры пока не выбраны.</p>
    </div>}
-   {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Синхронизирую список файлов…":"Список файлов ещё не синхронизирован. Оригиналы остаются на iPhone."}</p>}
+   {pendingMedia.length>0&&<p className="creativeMediaSyncStatus" role="status">{syncingMediaMetadata?"Обновляю список файлов…":"Список пока не синхронизирован. Копии сохранены на этом iPhone."}</p>}
    <label className="creativePicker">Выбрать файлы
     <input aria-label="Загрузить материал" type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.m4a"
      disabled={busy} onChange={e=>{const picker=e.currentTarget;const files=Array.from(picker.files||[]);
@@ -423,6 +424,6 @@ export default function PersonaCreativeLoop(){
    <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Вернуться к материалам</button>
   </section>}
   {feedback&&<p className="creativeFeedback" role="status">{feedback}</p>}
-  {error&&<p className="creativeError" role="alert">{error}</p>}
+  {error&&items.length>0&&<p className="creativeError" role="alert">{error}</p>}
  </section>;
 }
