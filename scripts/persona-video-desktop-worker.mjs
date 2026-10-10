@@ -4,7 +4,7 @@ import http from 'node:http';
 import https from 'node:https';
 import {readFile,writeFile,rename,mkdir,readdir,stat,copyFile,open,rm} from 'node:fs/promises';
 import {createWriteStream,createReadStream} from 'node:fs';
-import {randomBytes,timingSafeEqual} from 'node:crypto';
+import {randomBytes,timingSafeEqual,createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {resolve,join,isAbsolute} from 'node:path';
@@ -12,6 +12,7 @@ import {pathToFileURL} from 'node:url';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {createRequest,newJob,markInputReady,transition,retry,canClaim,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
+import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 
 const exec=promisify(execFile),root=resolve(process.env.PERSONA_BRIDGE_DATA||'.persona-processing');
 const jobsDir=join(root,'jobs'),host=process.env.PERSONA_BRIDGE_HOST||'127.0.0.1';
@@ -27,7 +28,31 @@ const locks=new Map(),uploads=new Set();let pumping=false;
 const safeId=id=>/^job-[a-f0-9]{32}$/.test(id);
 const dir=id=>join(jobsDir,id),jsonPath=id=>join(dir(id),'job.json');
 const inputPath=id=>join(dir(id),'input.media'),outputDir=id=>join(dir(id),'outputs');
-const outputPath=id=>join(outputDir(id),'instagram.mp4');
+const outputPath=id=>join(outputDir(id),'instagram.mp4'),resultPath=id=>join(outputDir(id),'result.json');
+async function fileHash(path){
+ const hash=createHash('sha256');
+ for await(const chunk of createReadStream(path))hash.update(chunk);
+ return hash.digest('hex');
+}
+async function durableJson(dest,obj){
+ await mkdir(resolve(dest,'..'),{recursive:true});
+ const temp=dest+'.'+randomBytes(8).toString('hex')+'.tmp';
+ try{
+  await writeFile(temp,JSON.stringify(obj),{mode:0o600});
+  const fd=await open(temp,'r');try{await fd.sync();}finally{await fd.close();}
+  await rename(temp,dest);
+ }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
+}
+async function committedOutput(job){
+ try{
+  const item=JSON.parse(await readFile(resultPath(job.id),'utf8'));
+  if(!validProcessedAsset(job,item))return null;
+  const details=await stat(outputPath(job.id));
+  if(!details.isFile()||details.size!==item.bytes)return null;
+  if((await fileHash(outputPath(job.id)))!==item.sha256)return null;
+  return item;
+ }catch{return null;}
+}
 function equal(a,b){const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&timingSafeEqual(x,y);}
 function error(code,message){return Object.assign(new Error(message),{status:code});}
 function send(res,code,body){res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));}
@@ -113,7 +138,11 @@ async function runPinnedEngine(job){
   const fd=await open(temp,'r');try{await fd.sync();}finally{await fd.close();}
   await rename(temp,outputPath(job.id));
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
- return 'instagram.mp4';
+ const output=await stat(outputPath(job.id));
+ const result=makeProcessedAsset(job,{bytes:output.size,sha256:await fileHash(outputPath(job.id)),
+  width:Number(stream.width),height:Number(stream.height),codec:stream.codec_name});
+ await durableJson(resultPath(job.id),result);
+ return result;
 }
 async function pump(){
  if(pumping)return;pumping=true;
@@ -127,9 +156,9 @@ async function pump(){
    });
    if(!claimed)continue;
    try{
-    const instagramFile=await runPinnedEngine(claimed);
+    const processedAsset=await runPinnedEngine(claimed);
     await lock(id,async()=>{
-     const job=await readJob(id),next=transition(job,'review',{instagramFile});
+     const job=await readJob(id),next=transition(job,'review',{instagramFile:'instagram.mp4',processedAsset});
      next.outputToken=randomBytes(32).toString('hex');await save(next);
     });
    }catch(e){
@@ -146,7 +175,9 @@ async function serveVideo(req,res,id,url){
  const job=await readJob(id);
  if(!['review','ready'].includes(job.status)||!job.outputToken||!equal(job.outputToken,url.searchParams.get('token')))
   throw error(403,'video_access_denied');
- const file=outputPath(id),details=await stat(file),size=details.size;
+ const verified=await committedOutput(job);
+ if(!verified)throw error(404,'output_integrity_failed');
+ const file=outputPath(id),size=verified.bytes;
  res.setHeader('Content-Type','video/mp4');res.setHeader('Accept-Ranges','bytes');
  res.setHeader('Cache-Control','private,no-store');res.setHeader('X-Content-Type-Options','nosniff');
  res.setHeader('Content-Disposition','inline; filename="instagram.mp4"');res.setHeader('Referrer-Policy','no-referrer');
@@ -209,11 +240,9 @@ for(const id of (await readdir(jobsDir)).filter(safeId)){
   if(job.status==='processing'){
    // Crash after final atomic output promotion must not re-run the engine.
    // Recover the existing single result instead of generating a duplicate.
-   let finished=false;
-   try{const result=await stat(outputPath(id));finished=result.isFile()&&result.size>1000;}
-   catch{}
-   if(finished){
-    const next=transition(job,'review',{instagramFile:'instagram.mp4'});
+   const processedAsset=await committedOutput(job);
+   if(processedAsset){
+    const next=transition(job,'review',{instagramFile:'instagram.mp4',processedAsset});
     next.outputToken=randomBytes(32).toString('hex');await save(next);
    }else await save(transition(job,'failed',{error:'desktop_interrupted_retry_required'}));
   }
