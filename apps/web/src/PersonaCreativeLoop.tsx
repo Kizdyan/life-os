@@ -22,7 +22,11 @@ const niceError=(error:unknown)=>{
  if(message.includes("revision_conflict"))return "Идея обновилась. Открой её снова и попробуй ещё раз.";
  if(message.includes("revision_pending"))return "Сначала реши, принять ли предложенную правку.";
  if(message.includes("approval_not_current"))return "Изменённый текст нужно утвердить заново.";
- return "Не получилось выполнить действие. "+message.slice(0,130);
+ if(message.includes("shooting_time_too_short"))return "Нужно хотя бы 5 минут для съёмки. Можно выбрать более короткий план позже.";
+ if(message.includes("invalid_adapted_brief"))return "Не удалось подобрать безопасный план. Уточни условия съёмки.";
+ if(message.includes("creative:")||message.includes("prototype_")||message.includes("asset_"))
+  return "Не удалось сохранить изменение. Данные на iPhone останутся на месте; попробуй ещё раз.";
+ return "Не получилось выполнить действие. Проверь связь и попробуй снова.";
 };
 function initialNavigation():{id:string;stage:Stage}{
  try {
@@ -320,7 +324,8 @@ export default function PersonaCreativeLoop(){
     </button>}
    </>}
    <details className="creativeDetails"><summary>Подробнее · история правок</summary>
-    {item.revisions.map(r=><p key={r.version}>Редакция {r.version}: {r.reason} · {r.judge}</p>)}
+    {item.revisions.length===1?<p>Правок ещё не было.</p>:
+     item.revisions.filter(r=>r.version>1).map(r=><p key={r.version}>Что меняли: {r.reason}</p>)}
    </details>
   </section>}
   {stage==="shoot"&&item&&session&&<section className="creativeStage creativeShooting" aria-label="Съёмка">
@@ -331,8 +336,6 @@ export default function PersonaCreativeLoop(){
     {Array.isArray(session.brief.shots)&&session.brief.shots.slice(0,1).map((shot:any)=><div key={shot.id} className="creativeShootGrid">
      <p><b>Куда поставить iPhone</b>{str(shot.cameraPosition)}</p>
      <p><b>Свет</b>{str(session.brief.lighting)}</p>
-     <p><b>Дублей</b>{String(shot.takes||2)}</p>
-     <p><b>Секунд</b>{String(shot.durationSeconds||25)}</p>
     </div>)}
    </div>
    {session.briefVersion>1&&str(session.conditions)&&<p className="creativeAdaptedStatus" role="status">✓ Условия съёмки учтены: {str(session.conditions)}</p>}
@@ -381,7 +384,7 @@ export default function PersonaCreativeLoop(){
     <select id="creative-upload-kind" value={roleOverride} onChange={e=>setRoleOverride(e.target.value as MediaOverride)}>
      <option value="auto">Persona определит сама</option>
      <option value="primary_take">Основной дубль</option><option value="alternate_take">Другой дубль</option>
-     <option value="broll">B-roll</option><option value="photo">Фото</option>
+     <option value="broll">Перебивка</option><option value="photo">Фото</option>
      <option value="audio">Отдельный звук</option><option value="reference_other">Референс / другое</option>
     </select>
    </details>

@@ -286,10 +286,12 @@ for(const [name,engine] of [["chromium",chromium],["webkit",webkit]]){
   await page.getByRole("button",{name:"Подстроить съёмку"}).click();
   await page.waitForFunction(()=>document.querySelector(".creativeBrief")?.textContent?.includes("окну"),null,{timeout:30000});
   const readableBrief=await page.locator(".creativeBrief").innerText();
-  for(const label of ["Что делать","Что сказать","Куда поставить iPhone","Дублей","Секунд","Свет"]){
+  for(const label of ["Что делать","Что сказать","Куда поставить iPhone","Свет"]){
     assert(readableBrief.includes(label),"simplified brief missing "+label);
   }
   assert(readableBrief.includes("окну"),"lighting was not adapted");
+  assert((readableBrief.match(/дубл/gi)||[]).length===1,
+    "the number of takes must not be duplicated in primary shooting instructions");
   await page.locator(".creativeAdaptedStatus").waitFor({timeout:30000});
   assert((await page.locator(".creativeAdaptedStatus").innerText()).includes("нет штатива"),
     "shooting adaptation has no visible persisted explanation");

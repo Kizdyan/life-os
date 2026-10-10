@@ -31,6 +31,6 @@ export function inferMediaRole(file:Pick<File,"name"|"type">,
  return {role,kind,confidence,explanation};
 }
 export const roleLabel=(role:InferredRole)=>({
- primary_take:"Основной дубль",alternate_take:"Другой дубль",broll:"B-roll",
+ primary_take:"Основной дубль",alternate_take:"Другой дубль",broll:"Перебивка",
  photo:"Фото",audio:"Отдельный звук",reference_other:"Референс / другое"
 })[role];

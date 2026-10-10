@@ -41,6 +41,16 @@ describe("Creative Loop V1 bounded FREE_ONLY core",()=>{
   expect(String((brief.shots as Array<{cameraPosition:string}>)[0].cameraPosition)).toContain("полке");
   expect((brief.shots as Array<{takes:number}>)[0].takes).toBe(1);
   expect(()=>adaptCreativeBrief(idea,"только 2 минуты")).toThrow("shooting_time_too_short");
+  for (const words of ["нет помощника", "без оператора", "нету помощника, снимаю один"]){
+    const solo=adaptCreativeBrief(idea,words);
+    expect(validatePersonaShootingBrief(solo)).toEqual([]);
+    const shot=(solo.shots as Array<{cameraPosition:string;action:string}>)[0];
+    expect(shot.cameraPosition).not.toContain("Помощник держит");
+    expect(shot.action).toContain("Снять одному");
+  }
+  const withHelper=adaptCreativeBrief(idea,"есть помощник");
+  expect(String((withHelper.shots as Array<{cameraPosition:string}>)[0].cameraPosition))
+    .toContain("Помощник держит");
  });
  it("requires immutable asset lineage and pending future-pipeline metadata",()=>{
   const a=validateIntakeAsset({id:"aabbccddeeff0011",projectId:"project",contentItemId:"content",

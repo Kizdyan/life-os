@@ -80,6 +80,7 @@ export function creativeShortlist(now = Date.now()): CreativeIdea[] {
 
 const EDITORIAL_ENDING = "А финал оставим открытым: что бы ты сделал на его месте?";
 const EDITORIAL_JOKE = "И нет, запасного дублёра моей серьёзности не завезли.";
+const EDITORIAL_HUMOR_ENDING = "И тут я понял: моё серьёзное лицо тоже просит дублёра.";
 const EDITORIAL_SOLO = "Снять одному: iPhone на безопасной устойчивой опоре, один непрерывный дубль, без движения камеры.";
 const EDITORIAL_HOOK_PREFIX = "А что, если показать это совсем иначе? ";
 const EDITORIAL_NATURAL_PREFIX = "Покажу один простой момент: ";
@@ -87,7 +88,10 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
   {kind:string; proposal:CreativeIdea|null; critic:string; judge:string} {
   const text = request.trim().slice(0,600);
   if (!text) return {kind:"EMPTY",proposal:null,critic:"Уточни, что именно меняем.",judge:"REVISE"};
-  if (/что (ты )?думаешь|как считаешь|оцени|согласн/i.test(text)) {
+  if (/^(?:не меняй|не трогай|не изменяй)\s+(?:финал|концовку)/i.test(text))
+    return {kind:"OPINION",proposal:null,critic:"Хорошо, финал оставляем без изменений.",judge:"COMMENT_ONLY"};
+  if (/что (ты )?думаешь|как считаешь|оцени|согласн/i.test(text) &&
+      !/поменяй|измени|сделай|добавь|убери|перепиши/i.test(text)) {
     return {kind:"OPINION",proposal:null,
       critic:"Сильнее всего здесь конкретное действие и узнаваемый хук. Я бы избегала преувеличений и экспертной позы. Если цель — юмор, сохраним характер, а не добавим случайную шутку.",
       judge:"COMMENT_ONLY"};
@@ -98,17 +102,21 @@ export function editorialAssessment(idea: CreativeIdea, request: string):
   const script=String(idea.script||"").trim();
   if (/финал|концовк|в конце/i.test(text)) {
     kind="ENDING";
-    const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{12,220})$/i)?.[1]?.trim();
+    const replacement=text.match(/(?:финал|концовку|в конце)\s+(?:на|так:|—)\s*(.{3,220})$/i)?.[1]?.trim();
+    const humorEnding=!replacement&&/смешн|юмор|ирони|шуточ/i.test(text);
+    if (!replacement && /(?:финал|концовку)\s+на\s*$/i.test(text))
+      return {kind:"CLARIFY",proposal:null,critic:"Какой именно финал ты хочешь? Напиши его после «на».",judge:"REVISE"};
     // Revision means replacing the actual last thought, never appending to prior revisions.
-    if(script.split(EDITORIAL_ENDING).length-1===1 && !replacement){
+    if(!replacement && ((humorEnding&&script.endsWith(EDITORIAL_HUMOR_ENDING)) ||
+      (!humorEnding&&script.endsWith(EDITORIAL_ENDING)))){
       return {kind:"NO_CHANGE",proposal:null,critic:"Такой финал уже есть в текущей версии. Повторное применение не нужно.",judge:"COMMENT_ONLY"};
     }
     const clean=script.replace(/(?:\s*А финал оставим открытым: что бы ты сделал на его месте\?)+/g,"").trim();
     const sentences=clean.match(/[^.!?]+[.!?]*/g)?.map(x=>x.trim()).filter(Boolean)||[];
     const prefix=sentences.length>1?sentences.slice(0,-1).join(" ").trim():clean;
-    const nextEnding=replacement||EDITORIAL_ENDING;
+    const nextEnding=replacement||(humorEnding?EDITORIAL_HUMOR_ENDING:EDITORIAL_ENDING);
     next.script=(prefix?prefix+" ":"")+nextEnding;
-    critic="Изменяем финальную мысль, а не дописываем вторую концовку. Сохраняем естественный разговорный тон.";
+    critic=humorEnding?"Сделаем смешнее именно развязку, без второй концовки.":"Изменяем финальную мысль, а не дописываем вторую концовку. Сохраняем естественный разговорный тон.";
   } else if (/смешн|юмор|ирони|шуточ/i.test(text)) {
     kind="HUMOR";
     if(script.includes(EDITORIAL_JOKE))return {kind:"NO_CHANGE",proposal:null,critic:"Шутка уже есть. Ещё одно повторение ослабит финал.",judge:"COMMENT_ONLY"};
@@ -151,10 +159,13 @@ export function adaptCreativeBrief(idea:CreativeIdea, conditions:string):Record<
       shot.action=String(shot.action)+" Проверь устойчивость до записи.";}
   }
   if (/плох.*свет|темно/i.test(lower)) brief.lighting="Встать лицом к доступному окну или лампе, избегать контрового света и пересвета.";
-  if (/без помощник|один|одн[ао]/i.test(lower)) {
+  // Negation must win: «нет помощника» and «без оператора» must NOT turn
+  // the very same brief into an assistant-operated camera setup.
+  const noHelper=/(?:нет(?:у)?|без|не будет)\s+(?:помощник\w*|оператор\w*)/i.test(lower);
+  if (noHelper||/снимаю од(?:ин|на)|од(?:ин|на) снимаю|снимаю сам(?:а)?/i.test(lower)) {
     for(const shot of shots) shot.action=String(shot.action)+" Снять одному, с таймером.";
   }
-  if (/помощник|оператор/i.test(lower)&& !/без помощник/i.test(lower)) {
+  if (/помощник|оператор/i.test(lower)&& !noHelper) {
     for(const shot of shots) shot.cameraPosition="Помощник держит телефон стабильно на уровне глаз";
   }
   const mins=lower.match(/(\d{1,2})\s*мин/);
