@@ -100,6 +100,13 @@ async function runPinnedEngine(job){
   throw Error('v11_no_instagram_output');
  const file=resolve(result.instagramPath),details=await stat(file);
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
+ // Acceptance is a real, decodable 9:16-ish H.264 MP4, not an arbitrary path.
+ const inspected=await exec('ffprobe',['-v','error','-select_streams','v:0',
+  '-show_entries','stream=codec_name,width,height','-of','json',file],{timeout:15000});
+ const stream=JSON.parse(inspected.stdout).streams?.[0];
+ const ratio=Number(stream?.height)/Number(stream?.width);
+ if(stream?.codec_name!=='h264'||!Number.isFinite(ratio)||ratio<1.7||ratio>1.85)
+  throw Error('v11_instagram_output_not_valid_vertical_h264');
  const temp=join(outputDir(job.id),'publish-'+randomBytes(8).toString('hex')+'.tmp');
  try{
   await copyFile(file,temp);
