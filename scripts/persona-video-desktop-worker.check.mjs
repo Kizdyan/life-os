@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 
@@ -22,6 +22,16 @@ const fixture={
 test('desktop bridge persists real bytes, refuses unsigned requests and fails closed without exact engine',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-processing-'));
  const port=await freePort(),base='http://127.0.0.1:'+port;
+ const mp4=join(dir,'real-transport-fixture.mp4');
+ execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','lavfi',
+  '-i','color=c=blue:s=64x96:r=4','-t','1','-an','-c:v','libx264',
+  '-pix_fmt','yuv420p','-movflags','+faststart',mp4],{timeout:30000});
+ const bytes=await readFile(mp4);
+ assert(bytes.length>1000&&bytes.toString('ascii',4,8)==='ftyp','not a real MP4');
+ const probe=JSON.parse(execFileSync('ffprobe',['-v','quiet','-print_format','json',
+  '-show_streams',mp4],{encoding:'utf8',timeout:30000}));
+ assert(probe.streams.some(s=>s.codec_name==='h264'&&s.width===64&&s.height===96));
+ fixture.bytes=bytes.length;
  const token='a'.repeat(64),env={
   ...process.env,PERSONA_BRIDGE_HOST:'127.0.0.1',PERSONA_BRIDGE_PORT:String(port),
   PERSONA_BRIDGE_DATA:dir,PERSONA_BRIDGE_ORIGIN:'https://persona.example',
@@ -55,7 +65,6 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
   const again=await call('/v1/jobs','POST',fixture);
   assert.equal(again.data.id,jobId);
   assert.equal(again.data.inputReady,false);
-  const bytes=Buffer.alloc(fixture.bytes,12);
   const bad=await call('/v1/jobs/'+jobId+'/input','PUT',bytes.subarray(0,500));
   assert.equal(bad.status,422);
   const saved=await call('/v1/jobs/'+jobId+'/input','PUT',bytes);
