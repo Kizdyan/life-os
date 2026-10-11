@@ -51,12 +51,10 @@ export function transition(job,next,extra={},at=new Date().toISOString()){
   if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,150}\.mp4$/i.test(file)||file.includes('..'))
     throw Error('invalid_instagram_output');
   updated.instagramFile=file;updated.completedAt=at;
-  if(extra.processedAsset!==undefined){
-   if(!validProcessedAsset(job,extra.processedAsset))throw Error('invalid_processed_asset_lineage');
-   updated.processedAsset=extra.processedAsset;
-  }
+  if(!validProcessedAsset(job,extra.processedAsset))throw Error('invalid_processed_asset_lineage');
+  updated.processedAsset=extra.processedAsset;
  }
- if(next==='ready'&&!job.instagramFile)throw Error('missing_instagram_output');
+ if(next==='ready'&&(!job.instagramFile||!validProcessedAsset(job,job.processedAsset)))throw Error('validated_result_required');
  if(next==='failed'){updated.error=String(extra.error||'processing_failed').slice(0,300);updated.completedAt=at;}
  return updated;
 }
@@ -72,5 +70,5 @@ export function recoverMissingSource(job,at=new Date().toISOString()){
 }
 export function publicJob(job){
  const {outputToken,...safe}=job;
- return {...safe,outputAvailable:!!job.instagramFile && ['review','ready'].includes(job.status)};
+ return {...safe,outputAvailable:!!job.instagramFile&&validProcessedAsset(job,job.processedAsset) && ['review','ready'].includes(job.status)};
 }
