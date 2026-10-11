@@ -45,13 +45,13 @@ The isolated branch adds:
 - atomic Instagram output publication, crash recovery without reprocessing an already committed output, and FFprobe H.264 vertical validation;
 - a Persona iPhone panel for one source video, manual submission, status, review, retry and open-video links.
 
-Local desktop verification commands after the canonical engine becomes accessible:
+Local desktop verification commands (V1.1 remote source access resolved; execute against exact integration HEAD):
 - `node scripts/persona-processing-contract.check.mjs`
 - `node scripts/persona-video-desktop-worker.check.mjs`
 - `node scripts/persona-video-desktop-worker.mjs` with documented environment variables.
 - Validate actual V1.1 integration, browser privacy/network policies, and exact-HEAD iPhone acceptance separately.
 
-The original V1.1 dependency is resolved locally. `scripts/persona-v11-real-e2e.check.mjs` exercises a real H.264/AAC source through the authenticated worker, frozen engine, manifest, review, approval and restart recovery. Missing configuration still intentionally fails with `v11_local_adapter_not_configured` or `v11_commit_mismatch`. No GitHub Actions are required or triggered by this check.
+**V1.1 SOURCE ACCESS RESOLVED.** The pinned engine is reachable remotely and the original CLI adapter is committed. The remaining acceptance scope is the physical iPhone/trusted-LAN journey and deferred exact-HEAD CI evidence. [Operator runbook](persona-iphone-desktop-physical-acceptance.md). `scripts/persona-v11-real-e2e.check.mjs` exercises a real H.264/AAC source through the authenticated worker, frozen engine, manifest, review, approval and restart recovery. Missing configuration still intentionally fails with `v11_local_adapter_not_configured` or `v11_commit_mismatch`. No GitHub Actions are required or triggered by this check.
 
 ## Adversarial review / hardening completed in Persona 5
 
