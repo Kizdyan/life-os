@@ -16,6 +16,7 @@ const message=(e:unknown)=> {
  if(/source_changed_for_same_asset/.test(s))return 'Видео не совпадает с сохранённым исходником. Добавь файл заново.';
  if(/v11_|adapter|commit_mismatch/.test(s))return 'Движок V1.1 ещё не подключён на компьютере. Сохранённый файл можно обработать после подключения.';
  if(/fetch|network|load failed|timeout|abort/i.test(s))return 'Нет связи с компьютером. Когда он будет доступен, состояние восстановится.';
+ if(/^[a-z][a-z0-9_:-]+$/i.test(s))return 'Не получилось выполнить действие. Попробуй ещё раз.';
  return s.slice(0,240);
 };
 export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMediaMetadata[];scope:Scope}){
