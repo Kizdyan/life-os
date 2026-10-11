@@ -14,7 +14,7 @@ import {makeProcessedAsset} from '../packages/core/src/persona-processed-asset.m
 
 async function freePort(){return await new Promise((resolvePort,reject)=>{
  const server=createServer();server.once('error',reject);
- server.listen(0,'127.0.0.1',()=>server.close(()=>resolvePort(server.address()?.port||0)));
+ server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolvePort(port));});
 });}
 function jobFor(id,sha){
  const request=createRequest({assetId:id.repeat(32),projectId:'project',
@@ -48,8 +48,7 @@ test('restart recovers only fully committed, hash-verified results without invok
   if(condition!=='output_only'){
    const meta=makeProcessedAsset(job,{bytes:video.length,sha256:outputSha,
     width:360,height:640,codec:'h264',durationSec:1});
-   if(condition==='stale')meta.attempt=5;
-   await writeFile(join(out,'result.json'),JSON.stringify(meta));
+   await writeFile(join(out,'result.json'),JSON.stringify(condition==='stale'?{...meta,attempt:5}:meta));
   }
   return job;
  }
