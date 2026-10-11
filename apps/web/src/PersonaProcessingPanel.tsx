@@ -9,6 +9,9 @@ const words:Record<string,string>={queued:'В очереди',processing:'Обр
  review:'Готово к просмотру',ready:'Видео готово',failed:'Ошибка обработки'};
 const message=(e:unknown)=> {
  const s=e instanceof Error?e.message:String(e);
+ if(/worker_session_expired|invalid_worker_token/.test(s))return 'Доступ к компьютеру истёк. Обнови ключ подключения.';
+ if(/chunk_integrity_failed|asset_chunk_missing_or_corrupt/.test(s))return 'Часть видео повреждена. Попробуй передать файл ещё раз.';
+ if(/source_changed_for_same_asset/.test(s))return 'Видео не совпадает с сохранённым исходником. Добавь файл заново.';
  if(/v11_|adapter|commit_mismatch/.test(s))return 'Движок V1.1 ещё не подключён на компьютере. Сохранённый файл можно обработать после подключения.';
  if(/fetch|network|load failed|timeout|abort/i.test(s))return 'Нет связи с компьютером. Когда он будет доступен, состояние восстановится.';
  return s.slice(0,240);
@@ -112,7 +115,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
   finally{setBusy(false);}
  }
- async function action(type:'retry'|'approve'){
+ async function action(type:'retry'|'approve'|'output-access'){
   if(!visibleJob||!current||busy)return;
   const capturedScope=scopeKey,existingJob=visibleJob;
   ++fetchSerialRef.current;
@@ -160,6 +163,8 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
       Повторить обработку</button>}
     {output&&<a className="personaProcessorOutput" href={output} target="_blank" rel="noopener noreferrer">
       Открыть видео для Instagram ↗</a>}
+    {connected&&visibleJob.outputAvailable&&!output&&<button className="creativeSecondary"
+      disabled={busy} onClick={()=>void action('output-access')}>Обновить доступ к видео</button>}
     {visibleJob.status==='review'&&<button className="primary" disabled={busy||!connected} onClick={()=>void action('approve')}>
       Видео подходит — готово</button>}
    </>}
