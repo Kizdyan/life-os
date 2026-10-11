@@ -13,6 +13,7 @@ import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {once} from 'node:events';
 import {partCount,partLength,TRANSFER_CHUNK_BYTES,SHA256_RE} from '../packages/core/src/persona-transfer-contract.mjs';
+import {makeV11Invocation,verifiedAdapterReply,V11_TIMEOUT_MS} from '../packages/core/src/persona-v11-adapter-contract.mjs';
 import {createRequest,newJob,markInputReady,transition,retry,canClaim,recoverMissingSource,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
 import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
@@ -311,9 +312,18 @@ async function runPinnedEngine(job){
  // completed V1.1 processing and an atomic rename, never as a partial MP4.
  const runDir=join(outputDir(job.id),'run-'+job.attempt);
  await mkdir(runDir,{recursive:true});
- const result=await runner.process({inputPath:inputPath(job.id),outputDir:runDir,request:job.request});
- if(!result||typeof result.instagramPath!=='string'||!isAbsolute(result.instagramPath))
-  throw Error('v11_no_instagram_output');
+ // The adapter must abort and REAP its original V1.1 subprocess when asked.
+ // Do not start a second attempt while the abort acknowledgement is pending.
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(Error('v11_processing_timeout')),V11_TIMEOUT_MS);
+ let result;
+ try{
+  result=verifiedAdapterReply(await runner.process(makeV11Invocation(job,{
+   inputPath:inputPath(job.id),outputDir:runDir,signal:controller.signal
+  })));
+ }finally{clearTimeout(timer);}
+ if(controller.signal.aborted)throw Error('v11_processing_timeout');
+ if(!isAbsolute(result.instagramPath))throw Error('v11_no_instagram_output');
  const file=resolve(result.instagramPath),details=await stat(file);
  const actual=await realpath(file),actualRunDir=await realpath(runDir);
  if(!actual.startsWith(actualRunDir+sep))throw Error('v11_output_outside_attempt_directory');
