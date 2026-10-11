@@ -2,8 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install",
-  "buildCommand": "npm run web:build",
+  "buildCommand": "VITE_LIFE_OS_REMOTE_ENABLED=true npm run web:build",
   "outputDirectory": "apps/web/dist",
+  "env": {
+    "LIFE_OS_EDGE_RUNTIME_URL": "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime"
+  },
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

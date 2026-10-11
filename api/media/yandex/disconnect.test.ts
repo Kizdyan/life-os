@@ -1,4 +1,4 @@
-import{afterEach,describe,expect,it}from'vitest';import handler from'./disconnect';
+import{afterEach,describe,expect,it}from'vitest';import handler from'./disconnect.js';
 const original={...process.env};afterEach(()=>{process.env={...original}});
 
 describe('Yandex disconnect endpoint',()=>{

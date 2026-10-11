@@ -1,3 +1,296 @@
-import type{Item}from'./types';import{applyLocalOutcome,applyLocalPlan,readLocalToday}from'./localRuntime';const url=import.meta.env.VITE_SUPABASE_URL,key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;export const backendMode=url&&key?'supabase':'local';function headers(){return{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}function storage(){if(typeof localStorage==='undefined')throw Error('Локальное хранилище недоступно');return localStorage;}export async function today(date:string):Promise<Item[]>{if(backendMode==='local')return readLocalToday(storage(),date);const r=await fetch(`${url}/rest/v1/life_items?select=*&planned_start=gte.${date}T00:00:00&planned_start=lt.${date}T23:59:59&order=planned_start.asc`,{headers:headers()});if(!r.ok)throw Error(await r.text());return r.json();}export async function outcome(item:Item,command:'complete'|'not_complete'){if(backendMode==='local')return applyLocalOutcome(storage(),item,command,()=>crypto.randomUUID());const carry=command==='not_complete'&&!!item.carry_forward;const d=item.planned_start?.slice(0,10)??new Date().toISOString().slice(0,10);const next=new Date(d+'T12:00:00Z');next.setUTCDate(next.getUTCDate()+1);const r=await fetch(`${url}/rest/v1/rpc/life_set_outcome`,{method:'POST',headers:headers(),body:JSON.stringify({p_item_id:item.id,p_planned_date:d,p_command:command,p_source:'ui',p_carry_forward:carry,p_next_date:carry?next.toISOString().slice(0,10):null})});if(!r.ok)throw Error(await r.text());return r.json();}
-export type PlanInput={title:string;planned_start:string;planned_end:string;kind?:string;carry_forward?:boolean};
-export async function applyPlan(idempotencyKey:string,items:PlanInput[]){if(backendMode==='local')return applyLocalPlan(storage(),idempotencyKey,items,()=>crypto.randomUUID());const r=await fetch(`${url}/rest/v1/rpc/life_apply_plan`,{method:'POST',headers:headers(),body:JSON.stringify({p_idempotency_key:idempotencyKey,p_items:items,p_source:'erika'})});if(!r.ok)throw Error(await r.text());return r.json() as Promise<{applied:boolean;ids:string[];replayed:boolean}>}
+import type { Item } from './types';
+import {
+  applyLocalOutcome,
+  applyLocalPlan,
+  applyRemoteRuntimeRecords,
+  readAllLocalItems,
+  readLocalItemsByIds,
+  readLocalToday,
+  undoLocalOutcome,
+} from './localRuntime';
+import {
+  completeRemoteBootstrapIfAcknowledged,
+  queueLocalBootstrap,
+} from './runtimeBootstrap';
+import {
+  expectedVersionAfterPendingMutation,
+  HttpRemoteLifeOsGateway,
+  pendingMutations,
+  queueMutation,
+  resolveRuntimeConflicts as resolveQueuedRuntimeConflicts,
+  syncLocalReplica,
+  type RuntimeConflictResolution,
+  type RuntimeConflictState,
+  type RuntimeSyncMutation,
+} from './runtimeSync';
+
+const legacySupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const legacySupabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const remoteEnabled = import.meta.env.VITE_LIFE_OS_REMOTE_ENABLED === 'true';
+const remoteApiUrl = import.meta.env.VITE_LIFE_OS_API_URL ?? '';
+
+export const backendMode = remoteEnabled
+  ? 'remote'
+  : legacySupabaseUrl && legacySupabaseKey
+    ? 'legacy-supabase'
+    : 'local';
+
+export interface OutcomeSyncMeta {
+  currentMutationId: string | null;
+  successorMutationId: string | null;
+}
+
+export interface LocalOutcomeResult {
+  current: Item;
+  successor: Item | null;
+  sync: OutcomeSyncMeta;
+}
+
+export class RuntimeConflictError extends Error {
+  constructor(readonly conflicts: RuntimeConflictState[]) {
+    super('Есть конфликт синхронизации между устройствами. Изменение не перезаписано автоматически.');
+    this.name = 'RuntimeConflictError';
+  }
+}
+
+function legacyHeaders() {
+  return {
+    apikey: legacySupabaseKey,
+    Authorization: `Bearer ${legacySupabaseKey}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+function storage(): Storage {
+  if (typeof localStorage === 'undefined') throw new Error('Локальное хранилище недоступно');
+  return localStorage;
+}
+
+function itemPayload(item: Item): Record<string, unknown> {
+  return {
+    id: item.id,
+    title: item.title,
+    kind: item.kind,
+    status: item.status,
+    planned_start: item.planned_start,
+    planned_end: item.planned_end,
+    carry_forward: item.carry_forward === true,
+  };
+}
+
+function queueItemMutation(
+  item: Item,
+  mutationId: string,
+  expectedVersion: number | null,
+  deleted = false,
+): void {
+  const mutation: RuntimeSyncMutation = {
+    mutationId,
+    userId: 'self',
+    recordId: item.id,
+    kind: 'life_item',
+    expectedVersion,
+    payload: itemPayload(item),
+    deleted,
+    clientUpdatedAt: new Date().toISOString(),
+  };
+  queueMutation(storage(), mutation);
+}
+
+async function tryRemoteSync(): Promise<void> {
+  if (!remoteEnabled) return;
+  const local = storage();
+
+  // One-time cutover: existing purely-local items enter the same durable,
+  // idempotent outbox. Records already known to the remote store (versioned)
+  // or already represented by a pending mutation are not duplicated.
+  queueLocalBootstrap(local, readAllLocalItems(local));
+
+  const gateway = new HttpRemoteLifeOsGateway(remoteApiUrl);
+  const result = await syncLocalReplica(local, gateway, (records) => applyRemoteRuntimeRecords(local, records));
+  completeRemoteBootstrapIfAcknowledged(local);
+  notifyRuntimeSyncState();
+  if (result.conflicts.length) throw new RuntimeConflictError(result.conflicts);
+}
+
+function notifyRuntimeSyncState(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event('lifeos-runtime-sync'));
+  }
+}
+
+export async function resolveSyncConflicts(resolution: RuntimeConflictResolution): Promise<number> {
+  if (backendMode !== 'remote') return 0;
+  const local = storage();
+  const resolved = resolveQueuedRuntimeConflicts(local, resolution);
+  notifyRuntimeSyncState();
+
+  if (resolution === 'retry_local' && resolved > 0) {
+    try {
+      await tryRemoteSync();
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: the rebased mutation stays queued and will retry
+      // later; explicit user intent is not lost just because connectivity is.
+    }
+  }
+
+  return resolved;
+}
+
+export async function today(date: string): Promise<Item[]> {
+  if (backendMode === 'remote') {
+    try {
+      await tryRemoteSync();
+    } catch {
+      // Offline-first: Today remains usable from the local replica. A persisted
+      // conflict is shown separately by RuntimeSyncCard and is never discarded.
+    }
+    return readLocalToday(storage(), date);
+  }
+
+  if (backendMode === 'local') return readLocalToday(storage(), date);
+
+  const response = await fetch(
+    `${legacySupabaseUrl}/rest/v1/life_items?select=*&planned_start=gte.${date}T00:00:00&planned_start=lt.${date}T23:59:59&order=planned_start.asc`,
+    { headers: legacyHeaders() },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function outcome(item: Item, command: 'complete' | 'not_complete') {
+  if (backendMode === 'remote') {
+    const previousVersion = item.version ?? null;
+    const result = applyLocalOutcome(storage(), item, command, () => crypto.randomUUID());
+    const currentMutationId = crypto.randomUUID();
+    let successorMutationId: string | null = null;
+    queueItemMutation(result.current, currentMutationId, previousVersion);
+    if (result.successor) {
+      successorMutationId = crypto.randomUUID();
+      queueItemMutation(result.successor, successorMutationId, null);
+    }
+    try {
+      await tryRemoteSync();
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: mutation remains in durable outbox for retry.
+    }
+    return {
+      ...result,
+      sync: { currentMutationId, successorMutationId },
+    } satisfies LocalOutcomeResult;
+  }
+
+  if (backendMode === 'local') {
+    const result = applyLocalOutcome(storage(), item, command, () => crypto.randomUUID());
+    return {
+      ...result,
+      sync: { currentMutationId: null, successorMutationId: null },
+    } satisfies LocalOutcomeResult;
+  }
+
+  const carry = command === 'not_complete' && !!item.carry_forward;
+  const date = item.planned_start?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const response = await fetch(`${legacySupabaseUrl}/rest/v1/rpc/life_set_outcome`, {
+    method: 'POST',
+    headers: legacyHeaders(),
+    body: JSON.stringify({
+      p_item_id: item.id,
+      p_planned_date: date,
+      p_command: command,
+      p_source: 'ui',
+      p_carry_forward: carry,
+      p_next_date: carry ? next.toISOString().slice(0, 10) : null,
+    }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function undoOutcome(
+  previous: Item,
+  successorId: string | null,
+  syncMeta: OutcomeSyncMeta,
+): Promise<void> {
+  if (backendMode === 'local') {
+    undoLocalOutcome(storage(), previous, successorId);
+    return;
+  }
+
+  if (backendMode !== 'remote') {
+    throw new Error('Undo для legacy backend не поддерживается; обнови Life OS до автономного runtime.');
+  }
+
+  const local = storage();
+  const beforeUndoOutbox = pendingMutations(local);
+  const currentPending = syncMeta.currentMutationId
+    ? beforeUndoOutbox.find((mutation) => mutation.mutationId === syncMeta.currentMutationId)
+    : undefined;
+  const successorPending = syncMeta.successorMutationId
+    ? beforeUndoOutbox.find((mutation) => mutation.mutationId === syncMeta.successorMutationId)
+    : undefined;
+
+  const undone = undoLocalOutcome(local, previous, successorId);
+  const restoreExpectedVersion = expectedVersionAfterPendingMutation(currentPending, undone.currentVersion);
+  queueItemMutation(undone.restored, crypto.randomUUID(), restoreExpectedVersion);
+
+  if (undone.removedSuccessor) {
+    const successorVersion = typeof undone.removedSuccessor.version === 'number'
+      ? undone.removedSuccessor.version
+      : null;
+    const deleteExpectedVersion = expectedVersionAfterPendingMutation(successorPending, successorVersion);
+    queueItemMutation(undone.removedSuccessor, crypto.randomUUID(), deleteExpectedVersion, true);
+  }
+
+  notifyRuntimeSyncState();
+  try {
+    await tryRemoteSync();
+  } catch (cause) {
+    if (cause instanceof RuntimeConflictError) throw cause;
+    // Compensation remains in the durable outbox. This is deliberate: even if
+    // the original request was partially applied before a network failure, the
+    // queued inverse mutation preserves the user's explicit undo intent.
+  }
+}
+
+export type PlanInput = {
+  title: string;
+  planned_start: string;
+  planned_end: string;
+  kind?: string;
+  carry_forward?: boolean;
+};
+
+export async function applyPlan(idempotencyKey: string, items: PlanInput[]) {
+  if (backendMode === 'remote') {
+    const result = applyLocalPlan(storage(), idempotencyKey, items, () => crypto.randomUUID());
+    if (result.applied) {
+      const created = readLocalItemsByIds(storage(), result.ids);
+      for (const item of created) {
+        queueItemMutation(item, `${idempotencyKey}:${item.id}`, null);
+      }
+    }
+    try {
+      await tryRemoteSync();
+    } catch (cause) {
+      if (cause instanceof RuntimeConflictError) throw cause;
+      // Network/server outage: plan remains usable locally and queued for retry.
+    }
+    return result;
+  }
+
+  if (backendMode === 'local') {
+    return applyLocalPlan(storage(), idempotencyKey, items, () => crypto.randomUUID());
+  }
+
+  const response = await fetch(`${legacySupabaseUrl}/rest/v1/rpc/life_apply_plan`, {
+    method: 'POST',
+    headers: legacyHeaders(),
+    body: JSON.stringify({ p_idempotency_key: idempotencyKey, p_items: items, p_source: 'erika' }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{ applied: boolean; ids: string[]; replayed: boolean }>;
+}

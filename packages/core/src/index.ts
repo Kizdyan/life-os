@@ -64,6 +64,7 @@ export * from './recovery-planner';
 export * from './attention-load';
 export * from './productivity-digest';
 export * from './behavior-experiment';
+export * from './runtime-storage';
 
 export * from './media-brain';
 export * from './reference-evidence';

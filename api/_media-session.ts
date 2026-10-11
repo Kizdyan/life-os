@@ -8,7 +8,7 @@ export function randomUrlSafe(bytes=32):string{const data=crypto.getRandomValues
 
 export async function seal(value:unknown,secret:string):Promise<string>{if(secret.length<24)throw new Error('MEDIA_COOKIE_SECRET must be at least 24 characters');const iv=crypto.getRandomValues(new Uint8Array(12)),key=await aesKey(secret),plain=encoder.encode(JSON.stringify(value)),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv:asArrayBuffer(iv)},key,asArrayBuffer(plain));return`${b64(iv)}.${b64(new Uint8Array(cipher))}`}
 export async function unseal<T>(token:string,secret:string):Promise<T>{const[a,b]=token.split('.');if(!a||!b)throw new Error('Invalid sealed session');const iv=unb64(a),cipher=unb64(b),key=await aesKey(secret),plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:asArrayBuffer(iv)},key,asArrayBuffer(cipher));return JSON.parse(decoder.decode(plain)) as T}
-export function json(data:unknown,status=200,headers:HeadersInit={}):Response{return Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}})}
+export function json(data:unknown,status=200,headers:HeadersInit={}):Response{const responseHeaders=new Headers(headers);if(!responseHeaders.has('Cache-Control'))responseHeaders.set('Cache-Control','no-store');return Response.json(data,{status,headers:responseHeaders})}
 export function sameOriginRedirect(request:Request,path='/'):Response{const url=new URL(request.url);return Response.redirect(new URL(path,url.origin),302)}
 
 async function aesKey(secret:string):Promise<CryptoKey>{const digest=await crypto.subtle.digest('SHA-256',asArrayBuffer(encoder.encode(secret)));return crypto.subtle.importKey('raw',digest,{name:'AES-GCM'},false,['encrypt','decrypt'])}

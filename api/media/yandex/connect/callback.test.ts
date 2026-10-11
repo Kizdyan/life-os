@@ -1,4 +1,4 @@
-import{afterEach,describe,expect,it,vi}from'vitest';import handler from'./callback';import{seal}from'../../../_media-session';
+import{afterEach,describe,expect,it,vi}from'vitest';import handler from'./callback.js';import{seal}from'../../../_media-session.js';
 const original={...process.env};afterEach(()=>{process.env={...original};vi.unstubAllGlobals()});
 
 describe('Yandex OAuth callback',()=>{

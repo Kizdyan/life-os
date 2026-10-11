@@ -1,4 +1,4 @@
-import{cookie,env,json,unseal,clearCookie}from'../_media-session';
+import{cookie,env,json,unseal,clearCookie}from'../_media-session.js';
 
 type TokenSession={accessToken?:string;refreshToken?:string|null;createdAt?:number};
 

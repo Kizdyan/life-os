@@ -5,6 +5,9 @@ on:
     paths:
       - "apps/web/**"
       - "api/**"
+      - "packages/core/src/yandex-oauth.ts"
+      - "scripts/api-smoke.mjs"
+      - "tsconfig.json"
       - "vercel.json"
       - "package.json"
       - ".github/workflows/deploy-readiness.yml"
@@ -13,6 +16,9 @@ on:
     paths:
       - "apps/web/**"
       - "api/**"
+      - "packages/core/src/yandex-oauth.ts"
+      - "scripts/api-smoke.mjs"
+      - "tsconfig.json"
       - "vercel.json"
       - "package.json"
 
@@ -23,9 +29,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - run: npm install
       - run: npm run api:typecheck
+      - run: npm run api:smoke
       - run: npm run web:build
       - name: Verify deploy artifact
         run: test -f apps/web/dist/index.html
