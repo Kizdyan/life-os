@@ -102,7 +102,7 @@ async function durableJson(dest,obj){
  const temp=dest+'.'+randomBytes(8).toString('hex')+'.tmp';
  try{
   await writeFile(temp,JSON.stringify(obj),{mode:0o600});
-  const fd=await open(temp,'r');try{await fd.sync();}finally{await fd.close();}
+  const fd=await open(temp,'r+');try{await fd.sync();}finally{await fd.close();}
   await rename(temp,dest);
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
 }
@@ -216,7 +216,7 @@ async function receivePart(req,id,index){
     sha.update(chunk);cb(null,chunk);
    }}),createWriteStream(tmp,{flags:'wx',mode:0o600}));
    if(total!==bytes||sha.digest('hex')!==expected)throw error(422,'chunk_integrity_failed');
-   const fd=await open(tmp,'r');try{await fd.sync();}finally{await fd.close();}
+   const fd=await open(tmp,'r+');try{await fd.sync();}finally{await fd.close();}
    await rename(tmp,partFile(id,index));
    receipts[index]={bytes,sha256:expected};
    await durableJson(receiptsFile(id),receipts);
@@ -256,7 +256,7 @@ async function commitTransfer(id){
    }
    writer.end();await once(writer,'finish');
    if(totalBytes!==job.request.bytes)throw error(422,'transfer_size_mismatch');
-   const fd=await open(tmp,'r');try{await fd.sync();}finally{await fd.close();}
+   const fd=await open(tmp,'r+');try{await fd.sync();}finally{await fd.close();}
    const completedSha=sha.digest('hex');
    if(job.sourceSha256&&job.sourceSha256!==completedSha)throw error(409,'source_changed_for_same_asset');
    await rename(tmp,inputPath(id));
@@ -295,7 +295,7 @@ async function receive(req,id){
     count+=chunk.length;cb(count>size?error(413,'media_too_large'):null,chunk);
    }}),createWriteStream(temp,{flags:'wx',mode:0o600}));
    if(count!==size)throw error(422,'media_incomplete');
-   const file=await open(temp,'r');try{await file.sync();}finally{await file.close();}
+   const file=await open(temp,'r+');try{await file.sync();}finally{await file.close();}
    const completedSha=await fileHash(temp);
    if(job.sourceSha256&&job.sourceSha256!==completedSha)throw error(409,'source_changed_for_same_asset');
    await rename(temp,inputPath(id));
@@ -355,7 +355,7 @@ async function runPinnedEngine(job){
  const temp=join(outputDir(job.id),'publish-'+randomBytes(8).toString('hex')+'.tmp');
  try{
   await copyFile(file,temp);
-  const fd=await open(temp,'r');try{await fd.sync();}finally{await fd.close();}
+  const fd=await open(temp,'r+');try{await fd.sync();}finally{await fd.close();}
   await rename(temp,outputPath(job.id));
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
  const output=await stat(outputPath(job.id));
