@@ -54,6 +54,9 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  const currentScopeRef=useRef(scopeKey);
  currentScopeRef.current=scopeKey;
  const fetchSerialRef=useRef(0);
+ const failedGetRef=useRef(0);
+ const activeOperationRef=useRef(0);
+ const busyGateRef=useRef(false);
  const visibleJob=jobBelongsToAsset(job,current)?job:null;
  const lastForCurrent=lastKnown&&current&&lastKnown.assetId===current.id&&
   lastKnown.projectId===current.projectId&&lastKnown.contentItemId===current.contentItemId&&
@@ -63,25 +66,36 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   if(!current||!enabled)return;
   const expectedScope=scopeKey;
   const serial=++fetchSerialRef.current;
+  let phase:'get'|'renew'='get';
+  let renewed=false;
   try{
    let updated=await desktopRequest(settings,'/v1/jobs/'+jobId,'GET');
-   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
+   if(!aliveRef.current||currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
    if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
    // A result token expires after 24h. Renew safely with the desktop bearer
    // when reconnecting, not by asking the iPhone user to debug the link.
    if(updated.outputAvailable&&!safeOutputLink(settings.url,updated)){
+    phase='renew';
     try{
      const refreshed=await desktopRequest(settings,'/v1/jobs/'+jobId+'/output-access','POST');
      if(!jobBelongsToAsset(refreshed,current))throw Error('Неверная версия материалов.');
      updated=refreshed;
+     renewed=true;
     }catch{/* Keep the real job state; a manual renewal action remains available. */}
    }
-   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
+   // A newer GET that fails before changing the token must not hide an older,
+   // successfully renewed capability. Never use this fallback for a failed POST.
+   const newerReadFailed=renewed&&fetchSerialRef.current>serial&&
+    failedGetRef.current===fetchSerialRef.current&&!!safeOutputLink(settings.url,updated);
+   if(!aliveRef.current||currentScopeRef.current!==expectedScope||
+    (fetchSerialRef.current!==serial&&!newerReadFailed))return;
    setJob(updated);setConnected(true);
    setLastKnown(saveProcessingSnapshot(updated,current,localStorage));
    setError('');
   }catch(e){
-   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
+   if(!aliveRef.current||currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
+   if(phase==='get'&&e instanceof Error&&/fetch|network|timeout|abort/i.test(e.message))
+    failedGetRef.current=serial;
    if(e instanceof Error&&e.message==='job_not_found'){
     setConnected(true);setJob(null);setLastKnown(null);clearProcessingSnapshot(current,localStorage);setError('');
    }
@@ -89,6 +103,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   }
  },[current?.id,jobId,enabled,settings.url,settings.token,scopeKey]);
  useEffect(()=>{
+  ++activeOperationRef.current;busyGateRef.current=false;setBusy(false);
   setJob(null);setConnected(false);setError('');setLastKnown(readProcessingSnapshot(current,localStorage));
   if(enabled)void sync();
  },[sync,enabled]);
@@ -107,7 +122,9 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   }catch(e){setError(message(e));}
  };
  async function submit(){
-  if(!current||busy||!enabled)return;
+  if(!current||busyGateRef.current||!enabled)return;
+  const operation=++activeOperationRef.current;
+  busyGateRef.current=true;
   setBusy(true);setError('');
   const capturedScope=scopeKey;
   ++fetchSerialRef.current;
@@ -115,7 +132,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
    // Registration is idempotent; no media bytes are sent until locally committed.
    let updated=await desktopRequest(settings,'/v1/jobs','POST',processingRequest(current));
    if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
-   if(currentScopeRef.current===capturedScope){setJob(updated);setConnected(true);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
+   if(currentScopeRef.current===capturedScope&&aliveRef.current){setJob(updated);setConnected(true);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
    if(updated.status==='failed')throw Error('Предыдущая обработка не завершилась. Используй «Повторить».');
    if(!updated.inputReady&&updated.status==='queued'){
     // Bounded memory: only one 2 MiB IndexedDB chunk is in Safari at a time.
@@ -133,26 +150,29 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
      if(currentScopeRef.current!==capturedScope||!aliveRef.current)return;
      updated=await finishTransfer(settings,updated.id);
      if(!jobBelongsToAsset(updated,current))throw Error('Некорректная версия обработки.');
+     if(currentScopeRef.current!==capturedScope||!aliveRef.current)return;
      setJob(updated);setConnected(true);
      setLastKnown(saveProcessingSnapshot(updated,current,localStorage));
     }
    }
-   if(currentScopeRef.current===capturedScope)await sync();
-  }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
-  finally{setBusy(false);}
+   if(currentScopeRef.current===capturedScope&&aliveRef.current)await sync();
+  }catch(e){if(currentScopeRef.current===capturedScope&&aliveRef.current)setError(message(e));}
+  finally{if(activeOperationRef.current===operation){busyGateRef.current=false;setBusy(false);}}
  }
  async function action(type:'retry'|'approve'|'output-access'){
-  if(!visibleJob||!current||busy)return;
+  if(!visibleJob||!current||busyGateRef.current)return;
+  const operation=++activeOperationRef.current;
+  busyGateRef.current=true;
   const capturedScope=scopeKey,existingJob=visibleJob;
   ++fetchSerialRef.current;
   setBusy(true);setError('');
   try{
    const result=await desktopRequest(settings,'/v1/jobs/'+existingJob.id+'/'+type,'POST');
-   if(currentScopeRef.current===capturedScope&&jobBelongsToAsset(result,current)){
+   if(currentScopeRef.current===capturedScope&&aliveRef.current&&jobBelongsToAsset(result,current)){
     setJob(result);setConnected(true);setLastKnown(saveProcessingSnapshot(result,current,localStorage));
    }
-  }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
-  finally{setBusy(false);}
+  }catch(e){if(currentScopeRef.current===capturedScope&&aliveRef.current)setError(message(e));}
+  finally{if(activeOperationRef.current===operation){busyGateRef.current=false;setBusy(false);}}
  }
  const output=connected&&visibleJob?safeOutputLink(settings.url,visibleJob):null;
  return <section className="personaProcessor" aria-label="Обработка видео на компьютере">
