@@ -6,7 +6,7 @@ const request=createRequest({assetId:'d'.repeat(32),projectId:'persona:owner:pro
  ideaId:'idea',ideaVersion:4,sessionId:'shoot:id',mime:'video/mp4',filename:'video.mp4',bytes:8192});
 test('a processed video is pinned to exact original asset, session, version and attempt',()=>{
  const job=transition(markInputReady(newJob(request),8192),'processing');
- const meta=makeProcessedAsset(job,{bytes:2048,sha256:'f'.repeat(64),width:720,height:1280,codec:'h264'});
+ const meta=makeProcessedAsset(job,{bytes:2048,sha256:'f'.repeat(64),width:720,height:1280,codec:'h264',durationSec:12.5});
  assert.equal(meta.engineCommit,PINNED_VIDEO_ENGINE);
  assert.equal(meta.sourceAssetId,request.assetId);
  assert.equal(meta.processingRequestId,request.id);
@@ -19,9 +19,11 @@ test('a processed video is pinned to exact original asset, session, version and 
 });
 test('output manifest rejects fake video, wrong aspect, empty data and bad hash',()=>{
  const job=transition(markInputReady(newJob(request),8192),'processing');
- const info={bytes:2048,sha256:'f'.repeat(64),width:720,height:1280,codec:'h264'};
+ const info={bytes:2048,sha256:'f'.repeat(64),width:720,height:1280,codec:'h264',durationSec:12.5};
  assert.throws(()=>makeProcessedAsset(job,{...info,codec:'none'}));
  assert.throws(()=>makeProcessedAsset(job,{...info,width:1280,height:720}));
  assert.throws(()=>makeProcessedAsset(job,{...info,sha256:'NaN'}));
  assert.throws(()=>makeProcessedAsset(job,{...info,bytes:1}));
+ assert.throws(()=>makeProcessedAsset(job,{...info,durationSec:0}));
+ assert.throws(()=>makeProcessedAsset(job,{...info,width:16,height:28}));
 });
