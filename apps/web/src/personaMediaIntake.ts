@@ -139,6 +139,16 @@ export async function readCapturedAsset(assetId:string):Promise<Blob|null>{
  }finally{db.close();}
 }
 
+export type StoredCapturePart={id:string;assetId:string;index:number;bytes:ArrayBuffer;savedAt?:number};
+export function validCapturePart(part:StoredCapturePart|null,assetId:string,index:number,expected:number):boolean{
+ return !!part&&part.id===assetId+":"+index&&part.assetId===assetId&&
+  part.index===index&&part.bytes instanceof ArrayBuffer&&part.bytes.byteLength===expected;
+}
+export function isAbandonedCapturePart(part:{assetId:string;savedAt?:number}|null,
+ committed:Set<string>,now=Date.now()):boolean{
+ return !!part&&!committed.has(part.assetId)&&
+  (!Number.isFinite(part.savedAt)||Number(part.savedAt)<now-24*60*60*1000);
+}
 /** Read exactly one durable Safari IndexedDB chunk; never build an entire video Blob. */
 export async function readCapturedAssetChunk(assetId:string,index:number):Promise<{bytes:Blob;totalParts:number;totalBytes:number}|null>{
  if(!/^[a-f0-9]{32}$/i.test(assetId)||!Number.isSafeInteger(index)||index<0)throw Error("invalid_media_chunk");
@@ -154,8 +164,7 @@ export async function readCapturedAssetChunk(assetId:string,index:number):Promis
    request.onerror=()=>reject(request.error||Error("asset_chunk_read_failed"));
   });
   const expected=Math.min(CHUNK_BYTES,manifest.bytes-index*CHUNK_BYTES);
-  if(!part||part.id!==assetId+":"+index||part.assetId!==assetId||part.index!==index||
-   !(part.bytes instanceof ArrayBuffer)||part.bytes.byteLength!==expected)throw Error("asset_chunk_missing_or_corrupt");
+  if(!validCapturePart(part,assetId,index,expected))throw Error("asset_chunk_missing_or_corrupt");
   return {bytes:new Blob([part.bytes],{type:"application/octet-stream"}),
    totalParts:count,totalBytes:manifest.bytes};
  }finally{db.close();}
@@ -171,7 +180,6 @@ export async function cleanupAbandonedCaptureChunks():Promise<number>{
    req.onsuccess=()=>resolve((req.result as string[])||[]);
    req.onerror=()=>reject(req.error||Error("media_gc_manifest_failed"));
   }));
-  const threshold=Date.now()-24*60*60*1000;
   return await new Promise<number>((resolve,reject)=>{
    let removed=0;
    const tx=db.transaction(CHUNKS,"readwrite");
@@ -188,7 +196,7 @@ export async function cleanupAbandonedCaptureChunks():Promise<number>{
     const get=store.get(cursor.key);
     get.onerror=()=>reject(get.error||Error("media_gc_read_failed"));
     get.onsuccess=()=>{
-     if(!Number.isFinite(get.result?.savedAt)||get.result.savedAt<threshold){
+     if(isAbandonedCapturePart(get.result,validIds,Date.now())){
       cursor.delete();removed++;
      }
      cursor.continue();
