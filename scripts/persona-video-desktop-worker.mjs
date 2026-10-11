@@ -124,7 +124,17 @@ async function committedOutput(job){
 function equal(a,b){const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&timingSafeEqual(x,y);}
 function error(code,message){return Object.assign(new Error(message),{status:code});}
 function send(res,code,body){res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));}
-function fail(res,e){const code=e.status||500;if(code===500)console.error(e);send(res,code,{error:code===500?'worker_error':e.message});}
+function fail(res,e){
+ const code=Number.isInteger(e?.status)?e.status:500;
+ if(code>=500)console.error('Persona desktop endpoint error:',String(e?.code||'internal'));
+ send(res,code,{error:code>=500?'worker_error':String(e?.message||'request_failed').slice(0,100)});
+}
+function safeProcessingError(e){
+ const msg=String(e?.message||e||'');
+ if(/^(?:v11_[a-z_]+|desktop_interrupted_retry_required)$/.test(msg))return msg;
+ if(/(?:timeout|ABORT_ERR)/i.test(msg))return 'v11_processing_timeout';
+ return 'processing_failed';
+}
 async function readJob(id){
  if(!safeId(id))throw error(400,'invalid_job_id');
  try{return JSON.parse(await readFile(jsonPath(id),'utf8'));}
@@ -390,11 +400,11 @@ const pump=createCoalescedDrain(async()=>{
    }catch(e){
     await lock(id,async()=>{
      const job=await readJob(id);
-     if(job.status==='processing')await save(transition(job,'failed',{error:String(e.message||e)}));
+     if(job.status==='processing')await save(transition(job,'failed',{error:safeProcessingError(e)}));
     });
    }
   }
- }catch(e){console.error('Persona queue error',e);}
+ }catch(e){console.error('Persona queue error:',String(e?.code||'queue_iteration_failed'));}
 });
 async function serveVideo(req,res,id,url){
  const job=await readJob(id);
