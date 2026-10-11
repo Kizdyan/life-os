@@ -14,7 +14,7 @@ const message=(e:unknown)=> {
  if(/worker_session_expired|invalid_worker_token/.test(s))return 'Доступ к компьютеру истёк. Обнови ключ подключения.';
  if(/chunk_integrity_failed|asset_chunk_missing_or_corrupt/.test(s))return 'Часть видео повреждена. Попробуй передать файл ещё раз.';
  if(/source_changed_for_same_asset/.test(s))return 'Видео не совпадает с сохранённым исходником. Добавь файл заново.';
- if(/v11_|adapter|commit_mismatch/.test(s))return 'Движок V1.1 ещё не подключён на компьютере. Сохранённый файл можно обработать после подключения.';
+ if(/v11_|adapter|commit_mismatch/.test(s))return 'Обработка на компьютере не завершилась. Попробуй повторить позже.';
  if(/fetch|network|load failed|timeout|abort/i.test(s))return 'Нет связи с компьютером. Когда он будет доступен, состояние восстановится.';
  if(/^[a-z][a-z0-9_:-]+$/i.test(s))return 'Не получилось выполнить действие. Попробуй ещё раз.';
  return s.slice(0,240);
