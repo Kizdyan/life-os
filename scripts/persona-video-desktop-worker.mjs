@@ -307,14 +307,16 @@ async function runPinnedEngine(job){
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
  // Acceptance is a real, decodable 9:16-ish H.264 MP4, not an arbitrary path.
  const inspected=await exec('ffprobe',['-v','error','-select_streams','v:0',
-  '-show_entries','stream=codec_name,width,height','-of','json',file],{timeout:15000});
+  '-show_entries','stream=codec_name,width,height:format=duration','-of','json',file],{timeout:15000});
  const stream=JSON.parse(inspected.stdout).streams?.[0];
  const handle=await open(file,'r');let header;
  try{header=Buffer.alloc(12);await handle.read(header,0,12,0);}finally{await handle.close();}
  if(header.toString('ascii',4,8)!=='ftyp'||header.toString('ascii',8,12)==='qt  ')
   throw Error('v11_instagram_output_not_mp4');
  const ratio=Number(stream?.height)/Number(stream?.width);
- if(stream?.codec_name!=='h264'||!Number.isFinite(ratio)||ratio<1.7||ratio>1.85)
+ const durationSec=Number(JSON.parse(inspected.stdout).format?.duration);
+ if(stream?.codec_name!=='h264'||!Number.isFinite(ratio)||ratio<1.7||ratio>1.85||
+   !Number.isFinite(durationSec)||durationSec<=0.1||durationSec>21600)
   throw Error('v11_instagram_output_not_valid_vertical_h264');
  // This is validation, not re-encoding: decode entire video on desktop.
  await exec('ffmpeg',['-v','error','-xerror','-i',file,'-f','null','-'],{timeout:180_000});
@@ -326,7 +328,7 @@ async function runPinnedEngine(job){
  }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
  const output=await stat(outputPath(job.id));
  const processed=makeProcessedAsset(job,{bytes:output.size,sha256:await fileHash(outputPath(job.id)),
-  width:Number(stream.width),height:Number(stream.height),codec:stream.codec_name});
+  width:Number(stream.width),height:Number(stream.height),codec:stream.codec_name,durationSec});
  await durableJson(resultPath(job.id),processed);
  return processed;
 }
