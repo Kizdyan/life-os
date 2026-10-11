@@ -75,7 +75,7 @@ export async function desktopRequest(settings:WorkerSettings,path:string,
  method:'GET'|'POST'|'PUT',body?:object|Blob):Promise<ProcessingJob>{
  const base=validWorkerUrl(settings.url);
  if(!base||settings.token.length<32)throw Error('Компьютер для обработки не подключён.');
- if(!/^\/v1\/jobs(?:\/job-[a-f0-9]{32}(?:\/(?:input|retry|approve))?)?$/.test(path))
+ if(!/^\/v1\/jobs(?:\/job-[a-f0-9]{32}(?:\/(?:input|retry|approve|output-access))?)?$/.test(path))
   throw Error('Неподдерживаемое действие с файлом.');
  const isVideo=body instanceof Blob;
  const response=await fetch(base+path,{
