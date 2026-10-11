@@ -71,6 +71,7 @@ node --test scripts/persona-processing-contract.check.mjs
 node --test scripts/persona-processed-asset.check.mjs
 node --test scripts/persona-processing-drain.check.mjs
 node --test scripts/persona-video-desktop-worker.check.mjs
+node --test scripts/persona-desktop-crash-recovery.check.mjs
 node --test scripts/persona-transfer-contract.check.mjs
 node --test scripts/persona-v11-adapter-contract.check.mjs
 npm run typecheck
