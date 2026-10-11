@@ -38,7 +38,7 @@ function mediaSaveError(error:unknown):string {
 }
 function initialNavigation():{id:string;stage:Stage}{
  try {
-  const saved=JSON.parse(sessionStorage.getItem(NAV_KEY)||"{}");
+  const saved=JSON.parse(localStorage.getItem(NAV_KEY)||sessionStorage.getItem(NAV_KEY)||"{}");
   const stage=STAGES.find(x=>x.id===saved.stage)?.id||"idea";
   return {id:typeof saved.id==="string"?saved.id:"",stage};
  } catch {return {id:"",stage:"idea"};}
@@ -89,6 +89,7 @@ export default function PersonaCreativeLoop(){
   return ()=>{active=false};
  },[refresh]);
  useEffect(()=>{
+  try{localStorage.setItem(NAV_KEY,JSON.stringify(navigation));}catch{/* private browsing */}
   try{sessionStorage.setItem(NAV_KEY,JSON.stringify(navigation));}catch{/* private browsing */}
  },[navigation]);
  const item=items.find(x=>x.id===navigation.id);
