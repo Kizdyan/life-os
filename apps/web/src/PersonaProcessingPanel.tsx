@@ -6,9 +6,11 @@ import {readProcessingSnapshot,saveProcessingSnapshot,clearProcessingSnapshot,ty
 
 type Scope={projectId:string;contentItemId:string;ideaId:string;ideaVersion:number;sessionId:string};
 const words:Record<string,string>={queued:'В очереди',processing:'Обрабатывается',
- review:'Готово к просмотру',ready:'Видео готово',failed:'Ошибка обработки'};
+ review:'Нужна проверка',ready:'Готово',failed:'Ошибка'};
 const message=(e:unknown)=> {
  const s=e instanceof Error?e.message:String(e);
+ if(/invalid_transfer|chunk_size|transfer_|missing_transfer_chunk|chunk_receipt|asset_manifest_invalid/.test(s))
+  return 'Передача не завершилась. Повтори отправку видео.';
  if(/worker_session_expired|invalid_worker_token/.test(s))return 'Доступ к компьютеру истёк. Обнови ключ подключения.';
  if(/chunk_integrity_failed|asset_chunk_missing_or_corrupt/.test(s))return 'Часть видео повреждена. Попробуй передать файл ещё раз.';
  if(/source_changed_for_same_asset/.test(s))return 'Видео не совпадает с сохранённым исходником. Добавь файл заново.';
@@ -35,6 +37,8 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  // Ignore out-of-order replies from an earlier selection, session or request.
  const scopeKey=[scope.projectId,scope.contentItemId,scope.ideaId,scope.ideaVersion,
    scope.sessionId,current?.id,settings.url,settings.token].join('|');
+ const aliveRef=useRef(true);
+ useEffect(()=>{aliveRef.current=true;return ()=>{aliveRef.current=false;};},[]);
  const currentScopeRef=useRef(scopeKey);
  currentScopeRef.current=scopeKey;
  const fetchSerialRef=useRef(0);
@@ -97,14 +101,14 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
     if(!transfer.inputReady){
      const received=new Set(transfer.received);
      for(let index=0;index<transfer.totalParts;index++){
-      if(currentScopeRef.current!==capturedScope)return;
+      if(currentScopeRef.current!==capturedScope||!aliveRef.current)return;
       if(received.has(index))continue;
       const chunk=await readCapturedAssetChunk(current.id,index);
       if(!chunk||chunk.totalBytes!==current.bytes||chunk.totalParts!==transfer.totalParts)
        throw Error('Файл на iPhone повреждён или отсутствует.');
       await sendChunk(settings,updated.id,index,current.bytes,chunk.bytes);
      }
-     if(currentScopeRef.current!==capturedScope)return;
+     if(currentScopeRef.current!==capturedScope||!aliveRef.current)return;
      updated=await finishTransfer(settings,updated.id);
      if(!jobBelongsToAsset(updated,current))throw Error('Некорректная версия обработки.');
      setJob(updated);setConnected(true);
