@@ -1,6 +1,7 @@
 import {spawn} from 'node:child_process';
 import {readFile, realpath, stat} from 'node:fs/promises';
 import {isAbsolute, join, relative, resolve} from 'node:path';
+import {createEngineIntent,publishEnginePid,removeEngineLease} from './persona-v11-engine-lease.mjs';
 
 const MAX_DIAGNOSTIC_BYTES=64*1024;
 
@@ -35,13 +36,27 @@ function validateInput(input){
   input.outputProfile?.aspectRatio!=='9:16')throw Error('invalid_v11_invocation');
 }
 
-function runOriginalCli({entry,worktree,input}){
- return new Promise((resolveRun,reject)=>{
-  let stdout='',stderr='',cancelled=false,timedOut=false,settled=false;
-  const child=spawn(globalThis.process.execPath,[entry,input.inputPath,'--output',input.outputDir],{
+async function runOriginalCli({entry,worktree,input}){
+ if(input.signal.aborted)return {exitCode:1,stdout:'',stderr:'',cancelled:true,timedOut:false};
+ const lease=await createEngineIntent(input.outputDir,input);
+ let child,completion;
+ try{
+  child=spawn(globalThis.process.execPath,[entry,input.inputPath,'--output',input.outputDir],{
    cwd:worktree,env:globalThis.process.env,shell:false,windowsHide:true,
    detached:globalThis.process.platform!=='win32',stdio:['ignore','pipe','pipe']
   });
+  completion=observeChild(child,input);
+  await publishEnginePid(lease,child.pid);
+  return await completion;
+ }catch(error){
+  if(child&&child.exitCode===null){terminateTree(child);try{await completion;}catch{}}
+  throw error;
+ }finally{await removeEngineLease(lease);}
+}
+
+function observeChild(child,input){
+ return new Promise((resolveRun,reject)=>{
+  let stdout='',stderr='',cancelled=false,timedOut=false,settled=false;
   const append=(current,chunk)=>(current+chunk.toString('utf8')).slice(-MAX_DIAGNOSTIC_BYTES);
   child.stdout.on('data',chunk=>{stdout=append(stdout,chunk)});
   child.stderr.on('data',chunk=>{stderr=append(stderr,chunk)});

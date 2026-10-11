@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -67,8 +67,12 @@ test('adapter aborts and reaps the original CLI before rejecting',async()=>{
   process.env.PERSONA_V11_WORKTREE=f.root;process.env.TEST_V11_MODE='slow';
   const {process:run}=await import(adapterUrl+'?abort='+Date.now());
   const pending=run(invocation(f,controller.signal));
+  const owner=join(f.output,'..','.v11-engine-owner','running.json');
+  for(let i=0;i<30;i++){try{await stat(owner);break;}catch{await new Promise(resolve=>setTimeout(resolve,20));}}
+  assert.equal((await stat(owner)).isFile(),true);
   setTimeout(()=>controller.abort(),100);
   await assert.rejects(pending,/v11_engine_cancelled/);
+  await assert.rejects(stat(owner),error=>error.code==='ENOENT');
  }finally{delete process.env.PERSONA_V11_WORKTREE;delete process.env.TEST_V11_MODE;await rm(f.root,{recursive:true,force:true});}
 });
 

@@ -12,11 +12,14 @@ import {pathToFileURL} from 'node:url';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import {partCount,partLength,TRANSFER_CHUNK_BYTES,SHA256_RE} from '../packages/core/src/persona-transfer-contract.mjs';
 import {makeV11Invocation,verifiedAdapterReply,V11_TIMEOUT_MS} from '../packages/core/src/persona-v11-adapter-contract.mjs';
 import {createRequest,newJob,markInputReady,transition,retry,canClaim,recoverMissingSource,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
 import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
+import {verifyPinnedWorktree} from './persona-v11-worktree-guard.mjs';
+import {engineLeaseDir,readEngineLease} from './persona-v11-engine-lease.mjs';
 
 const exec=promisify(execFile),root=resolve(process.env.PERSONA_BRIDGE_DATA||'.persona-processing');
 const jobsDir=join(root,'jobs'),ownerFile=join(root,'.desktop-worker-owner.json');
@@ -313,8 +316,7 @@ async function runPinnedEngine(job){
  const adapter=process.env.PERSONA_V11_ADAPTER;
  if(!worktree||!adapter||!isAbsolute(worktree)||!isAbsolute(adapter))
   throw Error('v11_local_adapter_not_configured');
- const {stdout}=await exec('git',['-C',worktree,'rev-parse','HEAD'],{timeout:8000});
- if(stdout.trim()!==PIN)throw Error('v11_commit_mismatch');
+ await verifyPinnedWorktree(worktree,PIN);
  const runner=await import(pathToFileURL(adapter).href);
  if(typeof runner.process!=='function')throw Error('v11_adapter_invalid');
  // Stage each attempt separately. The published output appears only after
@@ -363,6 +365,33 @@ async function runPinnedEngine(job){
   width:Number(stream.width),height:Number(stream.height),codec:stream.codec_name,durationSec});
  await durableJson(resultPath(job.id),processed);
  return processed;
+}
+async function readEngineOwner(id){
+ return readEngineLease(join(outputDir(id),'run-0'),id);
+}
+async function clearFinishedEngine(id){
+ const owner=await readEngineOwner(id);if(!owner)return;
+ if(owner.state==='prelaunch'){
+  await rm(engineLeaseDir(join(outputDir(id),'run-0')),{recursive:true,force:true});return;
+ }
+ if(owner.state==='launching')throw error(409,'v11_engine_launch_unresolved');
+ if(pidAlive(owner.pid))throw error(409,'v11_engine_still_running');
+ await rm(engineLeaseDir(join(outputDir(id),'run-0')),{recursive:true,force:true});
+}
+async function waitForDetachedEngine(id){
+ const owner=await readEngineOwner(id);if(!owner)return;
+ if(owner.state==='prelaunch'){
+  await rm(engineLeaseDir(join(outputDir(id),'run-0')),{recursive:true,force:true});return;
+ }
+ if(owner.state==='launching')throw Error('v11_engine_launch_unresolved');
+ const deadline=Date.now()+V11_TIMEOUT_MS;
+ while(pidAlive(owner.pid)){
+  if(Date.now()>=deadline)throw Error('v11_orphan_engine_timeout');
+  await delay(250);
+ }
+ const current=await readEngineOwner(id);
+ if(current&&current.pid===owner.pid&&current.attempt===owner.attempt)
+  await rm(engineLeaseDir(join(outputDir(id),'run-0')),{recursive:true,force:true});
 }
 async function sourceExists(job){
  try{
@@ -462,6 +491,7 @@ async function serve(req,res){
   }
   if(match?.[2]==='commit'&&req.method==='POST'){send(res,200,await commitTransfer(match[1]));return;}
   if(match?.[2]==='retry'&&req.method==='POST'){
+   await clearFinishedEngine(match[1]);
    const job=await lock(match[1],async()=>{const x=retry(await readJob(match[1]));await save(x);return x;});
    setImmediate(()=>void pump());send(res,200,publicView(job));return;
   }
@@ -503,6 +533,8 @@ for(const id of (await readdir(jobsDir)).filter(safeId)){
   if(/^upload\.[a-f0-9]{16}\.tmp$/.test(name)||/^job\.[a-f0-9]{16}\.tmp$/.test(name)||/^merged\.[a-f0-9]{16}\.tmp$/.test(name))
    await rm(join(dir(id),name),{force:true});
  }
+ const beforeRecovery=await readJob(id);
+ if(beforeRecovery.status==='processing')await waitForDetachedEngine(id);
  await lock(id,async()=>{
   const job=await readJob(id);
   // Crash after atomic final input promotion but before the commit marker.

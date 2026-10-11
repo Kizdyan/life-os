@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomBytes} from 'node:crypto';
 import {execFileSync,spawn} from 'node:child_process';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,stat} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -60,21 +60,39 @@ test('real immutable MediaAsset reaches ready through the exact original V1.1 en
   assert.equal(created.data.request.sessionId,'shoot:real-v11');
   const uploaded=await call('/v1/jobs/'+jobId+'/input','PUT',bytes);
   assert.equal(uploaded.status,200);assert.equal(uploaded.data.inputReady,true);
-  const states=[];let completed;
-  for(let i=0;i<600;i++){
+  const states=[];
+  for(let i=0;i<120;i++){
    const current=(await call('/v1/jobs/'+jobId)).data;
    if(states.at(-1)!==current.status)states.push(current.status);
+   if(current.status==='processing')break;
+   await delay(100);
+  }
+  assert(states.includes('processing'),'worker never exposed durable processing state');
+  const ownerDir=join(root,'jobs',jobId,'outputs','.v11-engine-owner');
+  const ownerPath=join(ownerDir,'running.json');
+  for(let i=0;i<50;i++){try{await stat(ownerPath);break;}catch{await delay(20);}}
+  const owner=JSON.parse(await readFile(ownerPath,'utf8'));
+  assert(Number.isInteger(owner.pid)&&owner.pid>0,'engine ownership was not persisted');
+  await stop(worker);worker=start();
+  let interrupted;
+  for(let i=0;i<300;i++){try{const response=await call('/v1/jobs/'+jobId);interrupted=response.data;
+    if(interrupted.status==='failed')break;}catch{}await delay(100);}
+  assert.equal(interrupted?.status,'failed','restart did not wait for and recover the orphan engine');
+  await assert.rejects(stat(ownerDir),error=>error.code==='ENOENT');
+  const retried=await call('/v1/jobs/'+jobId+'/retry','POST');assert.equal(retried.status,200);
+  let completed;
+  for(let i=0;i<600;i++){
+   const current=(await call('/v1/jobs/'+jobId)).data;
    if(current.status==='review'||current.status==='failed'){completed=current;break;}
    await delay(500);
   }
   assert.equal(completed?.status,'review','real V1.1 failed: '+JSON.stringify(completed)+' '+workerErrors);
-  assert(states.includes('processing'),'worker never exposed durable processing state');
   const manifestPath=join(root,'jobs',jobId,'outputs','result.json');
   const outputPath=join(root,'jobs',jobId,'outputs','instagram.mp4');
   const manifest=JSON.parse(await readFile(manifestPath,'utf8')),output=await readFile(outputPath);
   assert.equal(manifest.processingRequestId,jobId);assert.equal(manifest.sourceAssetId,assetId);
   assert.equal(manifest.ideaVersion,7);assert.equal(manifest.sessionId,'shoot:real-v11');
-  assert.equal(manifest.attempt,0);
+  assert.equal(manifest.attempt,1);
   assert.equal(manifest.engineCommit,'646f0708508c0fc603a43c555b771efe1176ee14');
   assert.equal(manifest.sha256,createHash('sha256').update(output).digest('hex'));
   const probe=JSON.parse(execFileSync(ffprobe,['-v','error','-select_streams','v:0',
