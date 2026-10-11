@@ -23,7 +23,18 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
  const videos=assets.filter(x=>!!videoMime(x)&&
   x.projectId===scope.projectId&&x.contentItemId===scope.contentItemId&&
   x.ideaId===scope.ideaId&&x.ideaVersion===scope.ideaVersion&&x.sessionId===scope.sessionId);
- const [selected,setSelected]=useState('');
+ const selectionKey=['persona:processing:selected',scope.projectId,scope.contentItemId,
+  scope.ideaId,scope.ideaVersion,scope.sessionId].join(':');
+ const [selected,setSelected]=useState(()=>{
+  try{return localStorage.getItem(selectionKey)||'';}catch{return '';}
+ });
+ useEffect(()=>{
+  try{setSelected(localStorage.getItem(selectionKey)||'');}catch{setSelected('');}
+ },[selectionKey]);
+ const chooseVideo=(assetId:string)=>{
+  setSelected(assetId);
+  try{localStorage.setItem(selectionKey,assetId);}catch{/* storage restricted */}
+ };
  const current=videos.find(x=>x.id===selected)||videos[0];
  const [settings,setSettings]=useState<WorkerSettings>(getWorkerSettings);
  const [draft,setDraft]=useState<WorkerSettings>(getWorkerSettings);
@@ -53,9 +64,19 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   const expectedScope=scopeKey;
   const serial=++fetchSerialRef.current;
   try{
-   const updated=await desktopRequest(settings,'/v1/jobs/'+jobId,'GET');
+   let updated=await desktopRequest(settings,'/v1/jobs/'+jobId,'GET');
    if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
    if(!jobBelongsToAsset(updated,current))throw Error('Неверная версия материалов.');
+   // A result token expires after 24h. Renew safely with the desktop bearer
+   // when reconnecting, not by asking the iPhone user to debug the link.
+   if(updated.outputAvailable&&!safeOutputLink(settings.url,updated)){
+    try{
+     const refreshed=await desktopRequest(settings,'/v1/jobs/'+jobId+'/output-access','POST');
+     if(!jobBelongsToAsset(refreshed,current))throw Error('Неверная версия материалов.');
+     updated=refreshed;
+    }catch{/* Keep the real job state; a manual renewal action remains available. */}
+   }
+   if(currentScopeRef.current!==expectedScope||fetchSerialRef.current!==serial)return;
    setJob(updated);setConnected(true);
    setLastKnown(saveProcessingSnapshot(updated,current,localStorage));
    setError('');
@@ -138,7 +159,7 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
   <h3>Обработка на компьютере</h3>
   {videos.length===0?<p>Сначала добавь видео на шаге «Материалы».</p>:<>
    {videos.length>1&&<label>Видео для обработки
-    <select disabled={busy} value={current?.id||''} onChange={e=>setSelected(e.target.value)}>
+    <select disabled={busy} value={current?.id||''} onChange={e=>chooseVideo(e.target.value)}>
      {videos.map(x=><option key={x.id} value={x.id}>{x.filename}</option>)}
     </select></label>}
    <p className="personaProcessorFile">{current?.filename} · исходник на iPhone</p>
@@ -166,12 +187,16 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
      {busy?'Передаю видео…':'Продолжить передачу видео'}</button>}
     {visibleJob.status==='failed'&&<button className="primary" disabled={busy||!connected} onClick={()=>void action('retry')}>
       Повторить обработку</button>}
-    {output&&<a className="personaProcessorOutput" href={output} target="_blank" rel="noopener noreferrer">
-      Открыть видео для Instagram ↗</a>}
+    {output&&<>
+     <video className="personaProcessorPreview" controls playsInline preload="metadata"
+      src={output} aria-label="Посмотреть обработанное видео для Instagram"/>
+     <a className="personaProcessorOutput" href={output} target="_blank" rel="noopener noreferrer">
+      Открыть видео для Instagram ↗</a>
+    </>}
     {connected&&visibleJob.outputAvailable&&!output&&<button className="creativeSecondary"
       disabled={busy} onClick={()=>void action('output-access')}>Обновить доступ к видео</button>}
     {visibleJob.status==='review'&&<button className="primary" disabled={busy||!connected} onClick={()=>void action('approve')}>
-      Видео подходит — готово</button>}
+      Подтвердить — готово</button>}
    </>}
   </>}
   {error&&<p role="alert" className="creativeError">{error}</p>}
