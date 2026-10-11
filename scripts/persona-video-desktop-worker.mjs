@@ -425,7 +425,7 @@ async function serve(req,res){
   if(req.headers.origin===origin){
    res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');
    res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,OPTIONS');
-   res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');
+   res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type,X-Chunk-SHA256');
    if(req.headers['access-control-request-private-network']==='true')
     res.setHeader('Access-Control-Allow-Private-Network','true');
   }
