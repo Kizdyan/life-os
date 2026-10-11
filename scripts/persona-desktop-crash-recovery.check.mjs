@@ -2,7 +2,7 @@
 // not a replacement for the original Persona Video Engine V1.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rename,rm,utimes} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createHash,randomBytes} from 'node:crypto';
@@ -78,6 +78,15 @@ test('restart recovers only fully committed, hash-verified results without invok
   assert.equal(approved.body.status,'ready');
   const oldOutput=approved.body.outputUrl;
   assert(oldOutput?.startsWith('/v1/jobs/'));
+  const published=join(root,'jobs',committed.id,'outputs','instagram.mp4');
+  const missing=published+'.missing';
+  await rename(published,missing);
+  assert.equal((await fetch(endpoint+oldOutput)).status,404,'missing approved output must fail closed');
+  await rename(missing,published);
+  const corrupted=Buffer.from(video);corrupted[0]^=255;
+  await writeFile(published,corrupted);await utimes(published,new Date(0),new Date(Date.now()+60_000));
+  assert.equal((await fetch(endpoint+oldOutput)).status,404,'manifest SHA mismatch must fail closed');
+  await writeFile(published,video);await utimes(published,new Date(0),new Date(Date.now()+120_000));
   const videoResponse=await fetch(endpoint+oldOutput,{headers:{Range:'bytes=0-99'}});
   assert.equal(videoResponse.status,206);assert.equal((await videoResponse.arrayBuffer()).byteLength,100);
   const renewed=await request('/v1/jobs/'+committed.id+'/output-access','POST');

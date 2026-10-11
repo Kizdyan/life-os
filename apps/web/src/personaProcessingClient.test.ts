@@ -1,5 +1,6 @@
 import {describe,it,expect,vi,afterEach} from 'vitest';
 import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {desktopRequest,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime,transferStatus,sendChunk} from './personaProcessingClient';
 import type {CreativeMediaMetadata} from './personaMediaIntake';
 
@@ -84,5 +85,11 @@ describe('resumable browser-to-desktop video transfer',()=>{
   expect(request.body).toBe(input);
   expect(request.headers['X-Chunk-SHA256']).toBe(createHash('sha256').update(Buffer.from([1,2,3])).digest('hex'));
   expect(request.method).toBe('PUT');
+ });
+ it('processing upload never reconstructs the whole captured file in browser memory',()=>{
+  const source=readFileSync(new URL('./PersonaProcessingPanel.tsx',import.meta.url),'utf8');
+  expect(source).toContain('readCapturedAssetChunk');
+  expect(source).not.toMatch(/\breadCapturedAsset\s*\(/);
+  expect(source).not.toMatch(/FileReader|readAsDataURL|base64|\.arrayBuffer\(\).*current\.bytes/s);
  });
 });

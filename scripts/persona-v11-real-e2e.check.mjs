@@ -11,6 +11,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 const engine=process.env.PERSONA_V11_WORKTREE;
 const ffmpeg=process.env.FFMPEG_PATH||'ffmpeg';
 const ffprobe=process.env.FFPROBE_PATH||'ffprobe';
+const fixtureFfmpeg=process.env.PERSONA_FIXTURE_FFMPEG_PATH||ffmpeg;
+const expectToolFailure=process.env.PERSONA_EXPECT_TOOL_FAILURE==='1';
 
 async function freePort(){return await new Promise((accept,reject)=>{
  const server=createServer();server.once('error',reject);
@@ -23,9 +25,9 @@ async function stop(proc){
 
 test('real immutable MediaAsset reaches ready through the exact original V1.1 engine',
  {skip:!engine},async()=>{
- const root=await mkdtemp(join(tmpdir(),'persona-v11-real-e2e-'));
+ const root=await mkdtemp(join(resolve(process.env.PERSONA_E2E_ROOT||tmpdir()),'persona-v11-real-e2e-'));
  const source=join(root,'real-source.mp4');
- execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',
+ execFileSync(fixtureFfmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',
   'testsrc2=size=640x360:rate=30:duration=3','-f','lavfi','-i',
   'sine=frequency=440:sample_rate=48000:duration=3','-c:v','libx264','-pix_fmt','yuv420p',
   '-c:a','aac','-shortest','-movflags','+faststart',source],{timeout:60000});
@@ -85,6 +87,13 @@ test('real immutable MediaAsset reaches ready through the exact original V1.1 en
    const current=(await call('/v1/jobs/'+jobId)).data;
    if(current.status==='review'||current.status==='failed'){completed=current;break;}
    await delay(500);
+  }
+  if(expectToolFailure){
+   assert.equal(completed?.status,'failed','invalid configured tool must fail closed');
+   assert.equal(completed?.error,'processing_failed');
+   assert(!JSON.stringify(completed).includes(ffmpeg)&&!JSON.stringify(completed).includes(ffprobe),
+    'public diagnostics exposed a configured executable path');
+   return;
   }
   assert.equal(completed?.status,'review','real V1.1 failed: '+JSON.stringify(completed)+' '+workerErrors);
   const manifestPath=join(root,'jobs',jobId,'outputs','result.json');
