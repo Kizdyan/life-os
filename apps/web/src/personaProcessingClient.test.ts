@@ -1,6 +1,6 @@
 import {describe,it,expect,vi,afterEach} from 'vitest';
 import {createHash} from 'node:crypto';
-import {jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime,transferStatus,sendChunk} from './personaProcessingClient';
+import {desktopRequest,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime,transferStatus,sendChunk} from './personaProcessingClient';
 import type {CreativeMediaMetadata} from './personaMediaIntake';
 
 const asset:CreativeMediaMetadata={id:'f'.repeat(32),projectId:'persona:owner:project:v1',
@@ -60,6 +60,20 @@ describe('resumable browser-to-desktop video transfer',()=>{
    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>remote}));
    await expect(transferStatus(settings,job,5*1024*1024)).rejects.toThrow();
   }
+ });
+ it('renews video access only through authenticated same-origin desktop action',async()=>{
+  const payload={id:job,status:'review',request:{id:job,assetId:asset.id,
+   projectId:asset.projectId,contentItemId:asset.contentItemId,ideaId:asset.ideaId,
+   ideaVersion:asset.ideaVersion,sessionId:asset.sessionId},outputAvailable:true,
+   outputUrl:'/v1/jobs/'+job+'/output?token='+'b'.repeat(64)};
+  const mock=vi.fn().mockResolvedValue({ok:true,json:async()=>payload});
+  vi.stubGlobal('fetch',mock);
+  expect(safeOutputLink(settings.url,{...payload,outputUrl:undefined} as any)).toBeNull();
+  const refreshed=await desktopRequest(settings,'/v1/jobs/'+job+'/output-access','POST');
+  expect(safeOutputLink(settings.url,refreshed)).toContain('/output?token=');
+  expect(mock.mock.calls[0][0]).toBe(settings.url+'/v1/jobs/'+job+'/output-access');
+  expect(mock.mock.calls[0][1].headers.Authorization).toBe('Bearer '+settings.token);
+  await expect(desktopRequest(settings,'https://evil.example/v1/jobs/'+job,'POST')).rejects.toThrow();
  });
  it('sends exactly one bounded Blob with SHA256, no base64 or whole video',async()=>{
   const input=new Blob([new Uint8Array([1,2,3])]);
