@@ -421,7 +421,7 @@ export default function PersonaCreativeLoop(){
   {stage==="assembly"&&item&&session&&assetScope&&<section className="creativeStage creativeAssembly" aria-label="Монтаж">
    <div className="creativeStageHead"><h2>Монтаж</h2></div>
    <PersonaProcessingPanel assets={activeAssets} scope={assetScope}/>
-   <button className="primary creativeTake" onClick={()=>changeStage("upload")}>Вернуться к материалам</button>
+   <button className="creativeSecondary creativeTake" onClick={()=>changeStage("upload")}>Не подходит? Выбрать другое видео</button>
   </section>}
   {feedback&&<p className="creativeFeedback" role="status">{feedback}</p>}
   {error&&items.length>0&&<p className="creativeError" role="alert">{error}</p>}
