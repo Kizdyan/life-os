@@ -389,7 +389,7 @@ const pump=createCoalescedDrain(async()=>{
 async function serveVideo(req,res,id,url){
  const job=await readJob(id);
  if(!['review','ready'].includes(job.status)||!job.outputToken||
-    Date.parse(job.outputTokenExpiresAt||'')<=Date.now()||
+    !(Date.parse(job.outputTokenExpiresAt||'')>Date.now())||
     !equal(job.outputToken,url.searchParams.get('token')))
   throw error(403,'video_access_denied');
  const verified=await committedOutput(job);
