@@ -19,6 +19,7 @@ import {createCoalescedDrain} from '../packages/core/src/persona-processing-drai
 
 const exec=promisify(execFile),root=resolve(process.env.PERSONA_BRIDGE_DATA||'.persona-processing');
 const jobsDir=join(root,'jobs'),ownerFile=join(root,'.desktop-worker-owner.json');
+const authFile=join(root,'.desktop-worker-token-lease.json');
 const host=process.env.PERSONA_BRIDGE_HOST||'127.0.0.1';
 const port=Number(process.env.PERSONA_BRIDGE_PORT||8787),bearer=process.env.PERSONA_BRIDGE_TOKEN||'';
 const origin=process.env.PERSONA_BRIDGE_ORIGIN||'';
@@ -71,6 +72,18 @@ process.on('exit',()=>{
   if(owner.pid===process.pid&&owner.nonce===ownerNonce)rmSync(ownerFile,{force:true});
  }catch{}
 });
+let tokenExpiresAt=0;
+async function setAuthLease(){
+ const fingerprint=createHash('sha256').update(bearer).digest('hex');
+ let previous=null;
+ try{previous=JSON.parse(await readFile(authFile,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+ const issuedAt=previous?.fingerprint===fingerprint&&Number.isFinite(previous?.issuedAt)?
+  previous.issuedAt:Date.now();
+ const ttl=Number(process.env.PERSONA_BRIDGE_TOKEN_TTL_HOURS||168);
+ if(!Number.isInteger(ttl)||ttl<1||ttl>720)throw Error('invalid_token_ttl');
+ tokenExpiresAt=issuedAt+ttl*3600000;
+ await durableJson(authFile,{fingerprint,issuedAt,expiresAt:tokenExpiresAt});
+}
 const locks=new Map(),uploads=new Set();
 const safeId=id=>/^job-[a-f0-9]{32}$/.test(id);
 const dir=id=>join(jobsDir,id),jsonPath=id=>join(dir(id),'job.json');
@@ -132,7 +145,7 @@ async function parseJson(req){
 }
 function publicView(job){
  const view=publicJob(job);
- if(view.outputAvailable&&job.outputToken)
+ if(view.outputAvailable&&job.outputToken&&Date.parse(job.outputTokenExpiresAt||'')>Date.now())
   view.outputUrl='/v1/jobs/'+job.id+'/output?token='+encodeURIComponent(job.outputToken);
  return view;
 }
@@ -361,7 +374,8 @@ const pump=createCoalescedDrain(async()=>{
     const processedAsset=await runPinnedEngine(claimed);
     await lock(id,async()=>{
      const job=await readJob(id),next=transition(job,'review',{instagramFile:'instagram.mp4',processedAsset});
-     next.outputToken=randomBytes(32).toString('hex');await save(next);
+     next.outputToken=randomBytes(32).toString('hex');
+     next.outputTokenExpiresAt=new Date(Date.now()+24*3600000).toISOString();await save(next);
     });
    }catch(e){
     await lock(id,async()=>{
@@ -374,7 +388,9 @@ const pump=createCoalescedDrain(async()=>{
 });
 async function serveVideo(req,res,id,url){
  const job=await readJob(id);
- if(!['review','ready'].includes(job.status)||!job.outputToken||!equal(job.outputToken,url.searchParams.get('token')))
+ if(!['review','ready'].includes(job.status)||!job.outputToken||
+    Date.parse(job.outputTokenExpiresAt||'')<=Date.now()||
+    !equal(job.outputToken,url.searchParams.get('token')))
   throw error(403,'video_access_denied');
  const verified=await committedOutput(job);
  if(!verified)throw error(404,'output_integrity_failed');
@@ -405,9 +421,10 @@ async function serve(req,res){
   }
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   const url=new URL(req.url,'https://localhost');
-  const match=/^\/v1\/jobs\/(job-[a-f0-9]{32})(?:\/(input|retry|approve|output|transfer|commit|chunks\/\d{1,4}))?$/.exec(url.pathname);
+  const match=/^\/v1\/jobs\/(job-[a-f0-9]{32})(?:\/(input|retry|approve|output|output-access|transfer|commit|chunks\/\d{1,4}))?$/.exec(url.pathname);
   if(match?.[2]==='output'&&req.method==='GET'){await serveVideo(req,res,match[1],url);return;}
   const presented=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
+  if(Date.now()>=tokenExpiresAt)throw error(401,'worker_session_expired');
   if(!equal(presented,bearer))throw error(401,'invalid_worker_token');
   if(url.pathname==='/v1/jobs'&&req.method==='POST'){
    const request=createRequest(await parseJson(req));
@@ -429,6 +446,17 @@ async function serve(req,res){
    const job=await lock(match[1],async()=>{const x=retry(await readJob(match[1]));await save(x);return x;});
    setImmediate(()=>void pump());send(res,200,publicView(job));return;
   }
+  if(match?.[2]==='output-access'&&req.method==='POST'){
+   const job=await lock(match[1],async()=>{
+    const previous=await readJob(match[1]);
+    if(!['review','ready'].includes(previous.status)||!(await committedOutput(previous)))
+     throw error(409,'validated_output_unavailable');
+    const next={...previous,outputToken:randomBytes(32).toString('hex'),
+     outputTokenExpiresAt:new Date(Date.now()+24*3600000).toISOString()};
+    await save(next);return next;
+   });
+   send(res,200,publicView(job));return;
+  }
   if(match?.[2]==='approve'&&req.method==='POST'){
    const job=await lock(match[1],async()=>{
     const x=await readJob(match[1]);if(x.status!=='review')throw error(409,'review_not_ready');
@@ -441,9 +469,17 @@ async function serve(req,res){
  }catch(e){fail(res,e);}
 }
 await acquireOwnership();
+await setAuthLease();
 await mkdir(jobsDir,{recursive:true});
 for(const id of (await readdir(jobsDir)).filter(safeId)){
  // A desktop crash may strand temporary uploads before manifest promotion.
+ // A killed upload leaves temporary pieces; never discard committed receipts.
+ const receipts=await transferReceipts(id);
+ try{for(const name of await readdir(chunksDir(id))){
+  if(/^part\.[a-f0-9]{16}\.tmp$/.test(name)||
+    (/^\d+\.chunk$/.test(name)&&!receipts[Number(name.slice(0,-6))]))
+    await rm(join(chunksDir(id),name),{force:true});
+ }}catch(e){if(e.code!=='ENOENT')throw e;}
  for(const name of await readdir(dir(id))){
   if(/^upload\.[a-f0-9]{16}\.tmp$/.test(name)||/^job\.[a-f0-9]{16}\.tmp$/.test(name)||/^merged\.[a-f0-9]{16}\.tmp$/.test(name))
    await rm(join(dir(id),name),{force:true});
@@ -465,7 +501,8 @@ for(const id of (await readdir(jobsDir)).filter(safeId)){
    const processedAsset=await committedOutput(job);
    if(processedAsset){
     const next=transition(job,'review',{instagramFile:'instagram.mp4',processedAsset});
-    next.outputToken=randomBytes(32).toString('hex');await save(next);
+    next.outputToken=randomBytes(32).toString('hex');
+    next.outputTokenExpiresAt=new Date(Date.now()+24*3600000).toISOString();await save(next);
    }else await save(transition(job,'failed',{error:'desktop_interrupted_retry_required'}));
   }
  });
