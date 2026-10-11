@@ -97,7 +97,12 @@ function getSavedManifest(db:IDBDatabase,id:string):Promise<Manifest|null>{
   request.onerror=()=>reject(request.error||new Error("Локальный материал недоступен"));
  });
 }
+let mediaGarbageCollectionRequested=false;
 export async function listCapturedAssets(sessionId:string):Promise<CreativeMediaMetadata[]>{
+ if(!mediaGarbageCollectionRequested){
+  mediaGarbageCollectionRequested=true;
+  void cleanupAbandonedCaptureChunks().catch(()=>{});
+ }
  const db=await openMediaDb();
  try{return await new Promise((resolve,reject)=>{
   const request=db.transaction(META,"readonly").objectStore(META).getAll();
