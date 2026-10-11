@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {readCapturedAsset,type CreativeMediaMetadata} from './personaMediaIntake';
-import {desktopRequest,getWorkerSettings,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,videoMime,
+import {readCapturedAssetChunk,type CreativeMediaMetadata} from './personaMediaIntake';
+import {desktopRequest,getWorkerSettings,jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,videoMime,transferStatus,sendChunk,finishTransfer,
  saveWorkerSettings,type ProcessingJob,type WorkerSettings} from './personaProcessingClient';
 import {readProcessingSnapshot,saveProcessingSnapshot,clearProcessingSnapshot,type ProcessingSnapshot} from './personaProcessingSnapshot';
 
@@ -89,11 +89,24 @@ export default function PersonaProcessingPanel({assets,scope}:{assets:CreativeMe
    if(currentScopeRef.current===capturedScope){setJob(updated);setConnected(true);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
    if(updated.status==='failed')throw Error('Предыдущая обработка не завершилась. Используй «Повторить».');
    if(!updated.inputReady&&updated.status==='queued'){
-    // IndexedDB holds source media on the iPhone. Safari does no codec work.
-    const blob=await readCapturedAsset(current.id);
-    if(!blob||blob.size!==current.bytes)throw Error('Файл на iPhone повреждён или отсутствует.');
-    updated=await desktopRequest(settings,'/v1/jobs/'+updated.id+'/input','PUT',blob);
-    if(currentScopeRef.current===capturedScope){setJob(updated);setConnected(true);setLastKnown(saveProcessingSnapshot(updated,current,localStorage));}
+    // Bounded memory: only one 2 MiB IndexedDB chunk is in Safari at a time.
+    const transfer=await transferStatus(settings,updated.id,current.bytes);
+    if(!transfer.inputReady){
+     const received=new Set(transfer.received);
+     for(let index=0;index<transfer.totalParts;index++){
+      if(currentScopeRef.current!==capturedScope)return;
+      if(received.has(index))continue;
+      const chunk=await readCapturedAssetChunk(current.id,index);
+      if(!chunk||chunk.totalBytes!==current.bytes||chunk.totalParts!==transfer.totalParts)
+       throw Error('Файл на iPhone повреждён или отсутствует.');
+      await sendChunk(settings,updated.id,index,current.bytes,chunk.bytes);
+     }
+     if(currentScopeRef.current!==capturedScope)return;
+     updated=await finishTransfer(settings,updated.id);
+     if(!jobBelongsToAsset(updated,current))throw Error('Некорректная версия обработки.');
+     setJob(updated);setConnected(true);
+     setLastKnown(saveProcessingSnapshot(updated,current,localStorage));
+    }
    }
    if(currentScopeRef.current===capturedScope)await sync();
   }catch(e){if(currentScopeRef.current===capturedScope)setError(message(e));}
