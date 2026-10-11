@@ -8,9 +8,10 @@ This runbook is for the developer/operator. **The user is not QA.** Carry out al
 
 Use the integration branch HEAD and the separate immutable V1.1 checkout. For the worker you need Node.js, Git, FFmpeg/FFprobe, and the current repository dependencies. Use the existing Windows worktree if verified; do not overwrite a working clone.
 
-In PowerShell, from the **integration branch worktree**, verify:
+Set the existing original-engine worktree path before preflight (the path below is a placeholder), then from the **integration branch worktree** verify:
 
 ```powershell
+$env:PERSONA_V11_WORKTREE = "C:\\PATH\\TO\\EXISTING\\V11\\WORKTREE"
 git rev-parse HEAD
 git -C "$env:PERSONA_V11_WORKTREE" rev-parse HEAD
 git -C "$env:PERSONA_V11_WORKTREE" status --porcelain=v1 --untracked-files=no
@@ -27,7 +28,16 @@ The second HEAD must be **exactly** `646f0708508c0fc603a43c555b771efe1176ee14`. 
 
 A PWA at an HTTPS origin cannot call arbitrary HTTP on a LAN. The desktop worker refuses non-loopback HTTP by design. Use a **LAN-only HTTPS endpoint** with a certificate whose **Subject Alternative Name covers the desktop's actual LAN IP/DNS name** and whose CA is trusted by the iPhone. There is **no paid tunnel, hosted backend, port-forwarding or public Internet exposure**.
 
-A zero-cost option for a dedicated test network is `mkcert`. On the desktop, use a trusted local CA, create a certificate for the actual LAN IPv4/DNS name and configure the worker with paths to its cert and private key. On the iPhone, install the local CA certificate through the approved device process and explicitly enable full trust in Settings → General → About → Certificate Trust Settings. Keep the CA private key on the desktop **only**; never transfer the key file to the phone.
+A zero-cost option for a dedicated test network is `mkcert`. Once the operator has installed that utility on Windows, from an operator-controlled private folder run:
+
+```powershell
+# Replace 192.168.X.Y with the Windows desktop's actual LAN IPv4 address.
+mkcert -install
+mkcert -cert-file .\\persona-lan.pem -key-file .\\persona-lan-key.pem 192.168.X.Y
+mkcert -CAROOT
+```
+
+The last command prints the location of the local CA. Transfer **only** `rootCA.pem` to the iPhone using the approved local provisioning method; **never** transfer `rootCA-key.pem` or `persona-lan-key.pem`. Use `persona-lan.pem` and `persona-lan-key.pem` as the worker TLS certificate/key. The cert must contain the actual LAN IP/DNS name, not the placeholder. On the iPhone, install the local CA certificate through the approved device process and explicitly enable full trust in Settings → General → About → Certificate Trust Settings. Keep the CA private key on the desktop **only**; never transfer the key file to the phone.
 
 The certificate must be valid for the exact address typed in Persona; do not use `https://localhost` from the phone (that would address the iPhone). Confirm that local-network permission is granted to Safari/the PWA when prompted. If a local-network HTTPS or Private Network Access preflight fails, solve it on the operator's test devices; do not ask the user to troubleshoot.
 
