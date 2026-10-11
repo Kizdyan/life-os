@@ -38,7 +38,10 @@ function mediaSaveError(error:unknown):string {
 }
 function initialNavigation():{id:string;stage:Stage}{
  try {
-  const saved=JSON.parse(localStorage.getItem(NAV_KEY)||sessionStorage.getItem(NAV_KEY)||"{}");
+  let raw="{}";
+  try{raw=localStorage.getItem(NAV_KEY)||raw;}catch{/* restricted storage */}
+  if(raw==="{}"){try{raw=sessionStorage.getItem(NAV_KEY)||raw;}catch{/* restricted storage */}}
+  const saved=JSON.parse(raw);
   const stage=STAGES.find(x=>x.id===saved.stage)?.id||"idea";
   return {id:typeof saved.id==="string"?saved.id:"",stage};
  } catch {return {id:"",stage:"idea"};}
