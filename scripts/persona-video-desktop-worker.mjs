@@ -234,12 +234,14 @@ async function commitTransfer(id){
    writer.end();await once(writer,'finish');
    if(totalBytes!==job.request.bytes)throw error(422,'transfer_size_mismatch');
    const fd=await open(tmp,'r');try{await fd.sync();}finally{await fd.close();}
+   const completedSha=sha.digest('hex');
+   if(job.sourceSha256&&job.sourceSha256!==completedSha)throw error(409,'source_changed_for_same_asset');
    await rename(tmp,inputPath(id));
    const next=await lock(id,async()=>{
     const current=await readJob(id);
     if(current.status!=='queued')throw error(409,'transfer_not_queued');
     const updated=markInputReady(current,totalBytes);
-    updated.sourceSha256=sha.digest('hex');
+    updated.sourceSha256=completedSha;
     await save(updated);return updated;
    });
    await rm(chunksDir(id),{recursive:true,force:true});
@@ -271,11 +273,13 @@ async function receive(req,id){
    }}),createWriteStream(temp,{flags:'wx',mode:0o600}));
    if(count!==size)throw error(422,'media_incomplete');
    const file=await open(temp,'r');try{await file.sync();}finally{await file.close();}
+   const completedSha=await fileHash(temp);
+   if(job.sourceSha256&&job.sourceSha256!==completedSha)throw error(409,'source_changed_for_same_asset');
    await rename(temp,inputPath(id));
    const updated=await lock(id,async()=>{
     const current=await readJob(id);
     if(current.status!=='queued')throw error(409,'job_already_processing');
-    const next=markInputReady(current,size);await save(next);return next;
+    const next=markInputReady(current,size);next.sourceSha256=completedSha;await save(next);return next;
    });
    setImmediate(()=>void pump());return publicView(updated);
   }catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
@@ -328,8 +332,10 @@ async function runPinnedEngine(job){
 }
 async function sourceExists(job){
  try{
-  const s=await stat(inputPath(job.id));
-  return s.isFile()&&s.size===job.request.bytes;
+  const info=await stat(inputPath(job.id));
+  if(!info.isFile()||info.size!==job.request.bytes)return false;
+  // Identity is content-addressed after the first successful transfer.
+  return !job.sourceSha256||await fileHash(inputPath(job.id))===job.sourceSha256;
  }catch{return false;}
 }
 const pump=createCoalescedDrain(async()=>{
@@ -424,6 +430,7 @@ async function serve(req,res){
   if(match?.[2]==='approve'&&req.method==='POST'){
    const job=await lock(match[1],async()=>{
     const x=await readJob(match[1]);if(x.status!=='review')throw error(409,'review_not_ready');
+    if(!(await committedOutput(x)))throw error(409,'validated_output_unavailable');
     const next=transition(x,'ready');await save(next);return next;
    });
    send(res,200,publicView(job));return;
@@ -443,7 +450,7 @@ for(const id of (await readdir(jobsDir)).filter(safeId)){
   const job=await readJob(id);
   // Crash after atomic final input promotion but before the commit marker.
   if(job.status==='queued'&&!job.inputReady&&await sourceExists(job)){
-   const updated=markInputReady(job,job.request.bytes);updated.sourceSha256=await fileHash(inputPath(id));
+   const updated=markInputReady(job,job.request.bytes);updated.sourceSha256=job.sourceSha256||await fileHash(inputPath(id));
    await save(updated);return;
   }
   if(job.inputReady){await rm(chunksDir(id),{recursive:true,force:true});await rm(receiptsFile(id),{force:true});}
