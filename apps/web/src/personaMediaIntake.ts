@@ -61,11 +61,12 @@ export function createMediaMetadata(file:File,params:{
  filename:file.name.slice(0,255),mime:(file.type||"application/octet-stream").slice(0,150),
  bytes:file.size,storage:"device_local",state:"INTAKE_LOCAL",createdAt:new Date().toISOString()};
 }
-async function clearPartial(db:IDBDatabase,id:string,parts:number){
- for(let i=0;i<parts;i++){
-  try{await txn(db,CHUNKS,"readwrite",s=>{s.delete(id+":"+i);});}catch{/* best effort */}
- }
- try{await txn(db,META,"readwrite",s=>{s.delete(id);});}catch{/* best effort */}
+async function clearPartial(db:IDBDatabase,id:string,_parts:number){
+ // One bounded IDB range deletion, not thousands of transactions for long clips.
+ try{await txn(db,CHUNKS,"readwrite",store=>{
+  store.delete(IDBKeyRange.bound(id+":",id+":\uffff"));
+ });}catch{/* best effort */}
+ try{await txn(db,META,"readwrite",store=>{store.delete(id);});}catch{/* best effort */}
 }
 export async function persistCapturedAsset(meta:CreativeMediaMetadata,file:File):Promise<void>{
  if(file.size!==meta.bytes||file.size<1||file.size>MAX_FILE_BYTES)throw Error("asset_size_mismatch");
@@ -78,7 +79,7 @@ export async function persistCapturedAsset(meta:CreativeMediaMetadata,file:File)
    const offset=i*CHUNK_BYTES;
    const bytes=await file.slice(offset,Math.min(offset+CHUNK_BYTES,file.size)).arrayBuffer();
    if(bytes.byteLength===0)throw Error("empty_media_chunk");
-   await txn(db,CHUNKS,"readwrite",s=>{s.put({id:meta.id+":"+i,assetId:meta.id,index:i,bytes});});
+   await txn(db,CHUNKS,"readwrite",s=>{s.put({id:meta.id+":"+i,assetId:meta.id,index:i,bytes,savedAt:Date.now()});});
   }
   // This is the COMMIT marker: listCapturedAssets never exposes partial uploads.
   await txn(db,META,"readwrite",s=>{s.put({id:meta.id,meta,parts:count,bytes:meta.bytes,storageKind:"arraybuffer-chunks-v2"});});
@@ -152,5 +153,42 @@ export async function readCapturedAssetChunk(assetId:string,index:number):Promis
    !(part.bytes instanceof ArrayBuffer)||part.bytes.byteLength!==expected)throw Error("asset_chunk_missing_or_corrupt");
   return {bytes:new Blob([part.bytes],{type:"application/octet-stream"}),
    totalParts:count,totalBytes:manifest.bytes};
+ }finally{db.close();}
+}
+
+/** Collect stranded chunks left by a terminated Safari capture, without
+ * loading valid video's bytes into JS memory. Fresh uploads get 24h grace. */
+export async function cleanupAbandonedCaptureChunks():Promise<number>{
+ const db=await openMediaDb();
+ try{
+  const validIds=new Set<string>(await new Promise((resolve,reject)=>{
+   const req=db.transaction(META,"readonly").objectStore(META).getAllKeys();
+   req.onsuccess=()=>resolve((req.result as string[])||[]);
+   req.onerror=()=>reject(req.error||Error("media_gc_manifest_failed"));
+  }));
+  const threshold=Date.now()-24*60*60*1000;
+  return await new Promise<number>((resolve,reject)=>{
+   let removed=0;
+   const tx=db.transaction(CHUNKS,"readwrite");
+   tx.oncomplete=()=>resolve(removed);
+   tx.onerror=()=>reject(tx.error||Error("media_gc_failed"));
+   tx.onabort=()=>reject(tx.error||Error("media_gc_failed"));
+   const store=tx.objectStore(CHUNKS),cursorReq=store.openKeyCursor();
+   cursorReq.onerror=()=>reject(cursorReq.error||Error("media_gc_cursor_failed"));
+   cursorReq.onsuccess=()=>{
+    const cursor=cursorReq.result;
+    if(!cursor)return;
+    const key=String(cursor.key),id=key.slice(0,key.indexOf(":"));
+    if(validIds.has(id)){cursor.continue();return;}
+    const get=store.get(cursor.key);
+    get.onerror=()=>reject(get.error||Error("media_gc_read_failed"));
+    get.onsuccess=()=>{
+     if(!Number.isFinite(get.result?.savedAt)||get.result.savedAt<threshold){
+      cursor.delete();removed++;
+     }
+     cursor.continue();
+    };
+   };
+  });
  }finally{db.close();}
 }
