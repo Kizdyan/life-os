@@ -13,7 +13,8 @@ const DB_NAME="persona-creative-media-v1";
 const META="blobs";
 const CHUNKS="chunks";
 const VERSION=2;
-const CHUNK_BYTES=2*1024*1024;
+export const MEDIA_CHUNK_BYTES=2*1024*1024;
+const CHUNK_BYTES=MEDIA_CHUNK_BYTES;
 const MAX_FILE_BYTES=5*1024*1024*1024;
 function openMediaDb():Promise<IDBDatabase>{
  return new Promise((resolve,reject)=>{
@@ -129,5 +130,27 @@ export async function readCapturedAsset(assetId:string):Promise<Blob|null>{
   const blob=new Blob(chunks,{type:manifest.meta.mime});
   if(blob.size!==manifest.bytes)throw Error("asset_byte_integrity_failed");
   return blob;
+ }finally{db.close();}
+}
+
+/** Read exactly one durable Safari IndexedDB chunk; never build an entire video Blob. */
+export async function readCapturedAssetChunk(assetId:string,index:number):Promise<{bytes:Blob;totalParts:number;totalBytes:number}|null>{
+ if(!/^[a-f0-9]{32}$/i.test(assetId)||!Number.isSafeInteger(index)||index<0)throw Error("invalid_media_chunk");
+ const db=await openMediaDb();
+ try{
+  const manifest=await getSavedManifest(db,assetId);
+  if(!manifest||manifest.storageKind!=="arraybuffer-chunks-v2")return null;
+  const count=Math.ceil(manifest.bytes/CHUNK_BYTES);
+  if(manifest.parts!==count||index>=count)throw Error("asset_manifest_invalid");
+  const part=await new Promise<{id:string;assetId:string;index:number;bytes:ArrayBuffer}|null>((resolve,reject)=>{
+   const request=db.transaction(CHUNKS,"readonly").objectStore(CHUNKS).get(assetId+":"+index);
+   request.onsuccess=()=>resolve(request.result||null);
+   request.onerror=()=>reject(request.error||Error("asset_chunk_read_failed"));
+  });
+  const expected=Math.min(CHUNK_BYTES,manifest.bytes-index*CHUNK_BYTES);
+  if(!part||part.id!==assetId+":"+index||part.assetId!==assetId||part.index!==index||
+   !(part.bytes instanceof ArrayBuffer)||part.bytes.byteLength!==expected)throw Error("asset_chunk_missing_or_corrupt");
+  return {bytes:new Blob([part.bytes],{type:"application/octet-stream"}),
+   totalParts:count,totalBytes:manifest.bytes};
  }finally{db.close();}
 }
