@@ -5,6 +5,8 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn,execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 
@@ -111,6 +113,56 @@ test('desktop bridge persists real bytes, refuses unsigned requests and fails cl
   const repeat=await call('/v1/jobs/'+jobId+'/retry','POST');
   assert.equal(repeat.status,200);assert.equal(repeat.data.id,jobId);
   assert.equal(repeat.data.attempt,1);
+
+  // A second, larger transfer uses bounded chunks, is resumable and retains ID.
+  const largeBytes=Buffer.concat([bytes,Buffer.alloc(2*1024*1024+19-bytes.length)]);
+  const large={...fixture,assetId:'c'.repeat(32),bytes:largeBytes.length};
+  const largeJob=(await call('/v1/jobs','POST',large)).data;
+  const status=(await call('/v1/jobs/'+largeJob.id+'/transfer')).data;
+  assert.equal(status.totalParts,2);
+  assert.deepEqual(status.received,[]);
+  assert.equal((await call('/v1/jobs/'+largeJob.id+'/commit','POST')).status,409);
+  async function putPart(index,block,hash){
+   const response=await fetch(base+'/v1/jobs/'+largeJob.id+'/chunks/'+index,{
+    method:'PUT',headers:{Authorization:'Bearer '+token,
+     'X-Chunk-SHA256':hash||createHash('sha256').update(block).digest('hex')},
+    body:block});
+   return {status:response.status,data:await response.json()};
+  }
+  const firstChunk=largeBytes.subarray(0,2*1024*1024);
+  const lastChunk=largeBytes.subarray(2*1024*1024);
+  assert.equal((await putPart(0,firstChunk,'0'.repeat(64))).status,422);
+  assert.equal((await putPart(0,firstChunk)).status,200);
+  assert.equal((await putPart(0,firstChunk)).data.alreadyReceived,true);
+  assert.equal((await putPart(0,Buffer.alloc(firstChunk.length,1))).status,409);
+  assert.deepEqual((await call('/v1/jobs/'+largeJob.id+'/transfer')).data.received,[0]);
+  // Force desktop restart after an interrupted partial transfer. Its receipt
+  // must remain durably resumable, without re-creating the job.
+  const shutdown=new Promise(resolve=>proc.once('exit',resolve));
+  proc.kill();await Promise.race([shutdown,delay(3000)]);
+  proc=spawn(process.execPath,[resolve('scripts/persona-video-desktop-worker.mjs')],{env,stdio:'ignore'});
+  let reconnected=false;
+  for(let n=0;n<45;n++){
+   try{const p=await call('/v1/jobs/'+largeJob.id+'/transfer');
+    if(p.status===200&&p.data.received.join(',')==='0'){reconnected=true;break;}}
+   catch{}await delay(100);
+  }
+  assert(reconnected,'chunk receipt lost on restart');
+  assert.equal((await putPart(1,lastChunk)).status,200);
+  // Deliberately corrupt a committed part on disk; commit must not publish it.
+  await writeFile(join(dir,'jobs',largeJob.id,'transfer','1.chunk'),Buffer.alloc(lastChunk.length,255));
+  assert.equal((await call('/v1/jobs/'+largeJob.id+'/commit','POST')).status,422);
+  assert.deepEqual((await call('/v1/jobs/'+largeJob.id+'/transfer')).data.received,[0]);
+  assert.equal((await putPart(1,lastChunk)).status,200);
+  const committed=(await call('/v1/jobs/'+largeJob.id+'/commit','POST'));
+  assert.equal(committed.status,200);
+  assert.equal(committed.data.inputReady,true);
+  assert.deepEqual(await readFile(join(dir,'jobs',largeJob.id,'input.media')),largeBytes);
+  const future={...fixture,assetId:'e'.repeat(32),bytes:5*1024*1024*1024};
+  const futureJob=await call('/v1/jobs','POST',future);
+  assert.equal(futureJob.status,200);
+  const futureTransfer=await call('/v1/jobs/'+futureJob.data.id+'/transfer');
+  assert.equal(futureTransfer.data.totalParts,2560);
   const mismatch=await call('/v1/jobs','POST',{...fixture,ideaVersion:3});
   assert.equal(mismatch.status,409);
   assert.equal((await call('/v1/jobs/'+jobId+'/approve','POST')).status,409);
