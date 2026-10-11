@@ -29,6 +29,7 @@ const port=Number(process.env.PERSONA_BRIDGE_PORT||8787),bearer=process.env.PERS
 const origin=process.env.PERSONA_BRIDGE_ORIGIN||'';
 const cert=process.env.PERSONA_TLS_CERT,key=process.env.PERSONA_TLS_KEY;
 const PIN='646f0708508c0fc603a43c555b771efe1176ee14';
+const ffmpeg=process.env.FFMPEG_PATH||'ffmpeg',ffprobe=process.env.FFPROBE_PATH||'ffprobe';
 if(bearer.length<32||!origin.startsWith('https://')||!Number.isInteger(port)||port<1||port>65535)
  throw Error('Configure long PERSONA_BRIDGE_TOKEN, exact HTTPS PERSONA_BRIDGE_ORIGIN, valid port');
 if(Boolean(cert)!==Boolean(key)||(!cert&&!['127.0.0.1','::1','localhost'].includes(host)))
@@ -340,7 +341,7 @@ async function runPinnedEngine(job){
  if(!actual.startsWith(actualRunDir+sep))throw Error('v11_output_outside_attempt_directory');
  if(!details.isFile()||details.size<1000)throw Error('v11_output_invalid');
  // Acceptance is a real, decodable 9:16-ish H.264 MP4, not an arbitrary path.
- const inspected=await exec('ffprobe',['-v','error','-select_streams','v:0',
+ const inspected=await exec(ffprobe,['-v','error','-select_streams','v:0',
   '-show_entries','stream=codec_name,width,height:format=duration','-of','json',file],{timeout:15000});
  const stream=JSON.parse(inspected.stdout).streams?.[0];
  const handle=await open(file,'r');let header;
@@ -353,7 +354,7 @@ async function runPinnedEngine(job){
    !Number.isFinite(durationSec)||durationSec<=0.1||durationSec>21600)
   throw Error('v11_instagram_output_not_valid_vertical_h264');
  // This is validation, not re-encoding: decode entire video on desktop.
- await exec('ffmpeg',['-v','error','-xerror','-i',file,'-f','null','-'],{timeout:180_000});
+ await exec(ffmpeg,['-v','error','-xerror','-i',file,'-f','null','-'],{timeout:180_000});
  const temp=join(outputDir(job.id),'publish-'+randomBytes(8).toString('hex')+'.tmp');
  try{
   await copyFile(file,temp);
