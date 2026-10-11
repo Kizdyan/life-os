@@ -11,6 +11,8 @@ import {resolve,join,isAbsolute,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
+import {once} from 'node:events';
+import {partCount,partLength,TRANSFER_CHUNK_BYTES,SHA256_RE} from '../packages/core/src/persona-transfer-contract.mjs';
 import {createRequest,newJob,markInputReady,transition,retry,canClaim,recoverMissingSource,publicJob,sameRequest} from '../packages/core/src/persona-processing-contract.mjs';
 import {makeProcessedAsset,validProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 import {createCoalescedDrain} from '../packages/core/src/persona-processing-drain.mjs';
@@ -74,6 +76,8 @@ const safeId=id=>/^job-[a-f0-9]{32}$/.test(id);
 const dir=id=>join(jobsDir,id),jsonPath=id=>join(dir(id),'job.json');
 const inputPath=id=>join(dir(id),'input.media'),outputDir=id=>join(dir(id),'outputs');
 const outputPath=id=>join(outputDir(id),'instagram.mp4'),resultPath=id=>join(outputDir(id),'result.json');
+const chunksDir=id=>join(dir(id),'transfer'),receiptsFile=id=>join(dir(id),'transfer-receipts.json');
+const partFile=(id,index)=>join(chunksDir(id),index+'.chunk');
 async function fileHash(path){
  const hash=createHash('sha256');
  for await(const chunk of createReadStream(path))hash.update(chunk);
@@ -132,6 +136,124 @@ function publicView(job){
   view.outputUrl='/v1/jobs/'+job.id+'/output?token='+encodeURIComponent(job.outputToken);
  return view;
 }
+
+async function transferReceipts(id){
+ try{
+  const data=JSON.parse(await readFile(receiptsFile(id),'utf8'));
+  return data&&typeof data==='object'&&!Array.isArray(data)?data:{};
+ }catch(e){if(e.code==='ENOENT')return {};throw e;}
+}
+async function transferState(id){
+ const job=await readJob(id),all=await transferReceipts(id);
+ const received=[];
+ if(job.inputReady)return {id,chunkBytes:TRANSFER_CHUNK_BYTES,totalParts:partCount(job.request.bytes),
+  received:[],inputReady:true};
+ for(let i=0;i<partCount(job.request.bytes);i++){
+  const row=all[i];
+  if(!row||!SHA256_RE.test(String(row.sha256||''))||row.bytes!==partLength(job.request.bytes,i))continue;
+  try{const part=await stat(partFile(id,i));if(part.isFile()&&part.size===row.bytes)received.push(i);}
+  catch{}
+ }
+ return {id,chunkBytes:TRANSFER_CHUNK_BYTES,totalParts:partCount(job.request.bytes),
+  received,inputReady:false};
+}
+async function receivePart(req,id,index){
+ if(uploads.has(id))throw error(409,'transfer_busy');
+ uploads.add(id);
+ try{
+  const job=await readJob(id);
+  if(job.status!=='queued'||job.inputReady)throw error(409,'transfer_not_queued');
+  const bytes=partLength(job.request.bytes,index),length=Number(req.headers['content-length']);
+  const expected=String(req.headers['x-chunk-sha256']||'').toLowerCase();
+  if(!SHA256_RE.test(expected))throw error(422,'invalid_chunk_hash');
+  if(!Number.isSafeInteger(length)||length!==bytes)throw error(422,'chunk_size_mismatch');
+  await mkdir(chunksDir(id),{recursive:true});
+  const receipts=await transferReceipts(id);
+  if(receipts[index]){
+   try{
+    const old=await stat(partFile(id,index));
+    if(old.isFile()&&old.size===bytes){
+     const sha=await fileHash(partFile(id,index));
+     if(sha===expected&&receipts[index].sha256===expected){
+      req.resume();return {id,index,alreadyReceived:true};
+     }
+     if(sha===receipts[index].sha256)throw error(409,'different_chunk_for_same_job');
+     // Stored part is corrupt: discard only this part, keep job + other parts.
+    }
+   }catch(e){if(e.status===409)throw e;if(e.code!=='ENOENT')throw e;}
+   delete receipts[index];
+   await rm(partFile(id,index),{force:true});
+   await durableJson(receiptsFile(id),receipts);
+  }
+  const tmp=join(chunksDir(id),'part.'+randomBytes(8).toString('hex')+'.tmp');
+  let total=0;const sha=createHash('sha256');
+  try{
+   await pipeline(req,new Transform({transform(chunk,enc,cb){
+    total+=chunk.length;if(total>bytes)return cb(error(413,'chunk_too_large'));
+    sha.update(chunk);cb(null,chunk);
+   }}),createWriteStream(tmp,{flags:'wx',mode:0o600}));
+   if(total!==bytes||sha.digest('hex')!==expected)throw error(422,'chunk_integrity_failed');
+   const fd=await open(tmp,'r');try{await fd.sync();}finally{await fd.close();}
+   await rename(tmp,partFile(id,index));
+   receipts[index]={bytes,sha256:expected};
+   await durableJson(receiptsFile(id),receipts);
+   return {id,index,alreadyReceived:false};
+  }catch(e){await rm(tmp,{force:true}).catch(()=>{});throw e;}
+ }finally{uploads.delete(id);}
+}
+async function commitTransfer(id){
+ if(uploads.has(id))throw error(409,'transfer_busy');
+ uploads.add(id);
+ try{
+  const job=await readJob(id);
+  if(job.status!=='queued')throw error(409,'transfer_not_queued');
+  if(job.inputReady)return publicView(job);
+  const receipts=await transferReceipts(id);
+  const total=partCount(job.request.bytes);
+  if(Object.keys(receipts).length!==total)throw error(409,'transfer_incomplete');
+  const tmp=join(dir(id),'merged.'+randomBytes(8).toString('hex')+'.tmp');
+  let writer,totalBytes=0;const sha=createHash('sha256');
+  try{
+   writer=createWriteStream(tmp,{flags:'wx',mode:0o600});
+   for(let i=0;i<total;i++){
+    const row=receipts[i],expected=partLength(job.request.bytes,i);
+    if(!row||row.bytes!==expected||!SHA256_RE.test(String(row.sha256||'')))throw error(422,'chunk_receipt_invalid');
+    const current=createHash('sha256');let got=0;
+    for await(const data of createReadStream(partFile(id,i))){
+     got+=data.length;current.update(data);sha.update(data);
+     if(!writer.write(data))await once(writer,'drain');
+    }
+    if(got!==expected||current.digest('hex')!==row.sha256){
+     // Force re-upload of only this corrupted part on the next attempt.
+     delete receipts[i];await durableJson(receiptsFile(id),receipts);
+     await rm(partFile(id,i),{force:true});
+     throw error(422,'chunk_integrity_failed');
+    }
+    totalBytes+=got;
+   }
+   writer.end();await once(writer,'finish');
+   if(totalBytes!==job.request.bytes)throw error(422,'transfer_size_mismatch');
+   const fd=await open(tmp,'r');try{await fd.sync();}finally{await fd.close();}
+   await rename(tmp,inputPath(id));
+   const next=await lock(id,async()=>{
+    const current=await readJob(id);
+    if(current.status!=='queued')throw error(409,'transfer_not_queued');
+    const updated=markInputReady(current,totalBytes);
+    updated.sourceSha256=sha.digest('hex');
+    await save(updated);return updated;
+   });
+   await rm(chunksDir(id),{recursive:true,force:true});
+   await rm(receiptsFile(id),{force:true});
+   setImmediate(()=>void pump());
+   return publicView(next);
+  }catch(e){
+   if(writer&&!writer.destroyed)writer.destroy();
+   await rm(tmp,{force:true}).catch(()=>{});
+   if(e.code==='ENOENT')throw error(422,'missing_transfer_chunk');
+   throw e;
+  }
+ }finally{uploads.delete(id);}
+}
 async function receive(req,id){
  if(uploads.has(id))throw error(409,'upload_in_progress');uploads.add(id);
  try{
@@ -139,6 +261,8 @@ async function receive(req,id){
   if(job.status!=='queued')throw error(409,'job_already_processing');
   if(job.inputReady){req.resume();return publicView(job);}
   const size=Number(req.headers['content-length']);
+  // Backward-compatible small-file endpoint; Safari uses bounded chunks instead.
+  if(job.request.bytes>16*1024*1024)throw error(413,'use_chunked_transfer');
   if(!Number.isSafeInteger(size)||size!==job.request.bytes)throw error(422,'media_size_mismatch');
   const temp=join(dir(id),'upload.'+randomBytes(8).toString('hex')+'.tmp');let count=0;
   try{
@@ -273,7 +397,7 @@ async function serve(req,res){
   }
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   const url=new URL(req.url,'https://localhost');
-  const match=/^\/v1\/jobs\/(job-[a-f0-9]{32})(?:\/(input|retry|approve|output))?$/.exec(url.pathname);
+  const match=/^\/v1\/jobs\/(job-[a-f0-9]{32})(?:\/(input|retry|approve|output|transfer|commit|chunks\/\d{1,4}))?$/.exec(url.pathname);
   if(match?.[2]==='output'&&req.method==='GET'){await serveVideo(req,res,match[1],url);return;}
   const presented=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   if(!equal(presented,bearer))throw error(401,'invalid_worker_token');
@@ -288,6 +412,11 @@ async function serve(req,res){
   }
   if(match&&req.method==='GET'&&!match[2]){send(res,200,publicView(await readJob(match[1])));return;}
   if(match?.[2]==='input'&&req.method==='PUT'){send(res,200,await receive(req,match[1]));return;}
+  if(match?.[2]==='transfer'&&req.method==='GET'){send(res,200,await transferState(match[1]));return;}
+  if(match?.[2]?.startsWith('chunks/')&&req.method==='PUT'){
+   send(res,200,await receivePart(req,match[1],Number(match[2].slice(7))));return;
+  }
+  if(match?.[2]==='commit'&&req.method==='POST'){send(res,200,await commitTransfer(match[1]));return;}
   if(match?.[2]==='retry'&&req.method==='POST'){
    const job=await lock(match[1],async()=>{const x=retry(await readJob(match[1]));await save(x);return x;});
    setImmediate(()=>void pump());send(res,200,publicView(job));return;
@@ -307,11 +436,17 @@ await mkdir(jobsDir,{recursive:true});
 for(const id of (await readdir(jobsDir)).filter(safeId)){
  // A desktop crash may strand temporary uploads before manifest promotion.
  for(const name of await readdir(dir(id))){
-  if(/^upload\.[a-f0-9]{16}\.tmp$/.test(name)||/^job\.[a-f0-9]{16}\.tmp$/.test(name))
+  if(/^upload\.[a-f0-9]{16}\.tmp$/.test(name)||/^job\.[a-f0-9]{16}\.tmp$/.test(name)||/^merged\.[a-f0-9]{16}\.tmp$/.test(name))
    await rm(join(dir(id),name),{force:true});
  }
  await lock(id,async()=>{
   const job=await readJob(id);
+  // Crash after atomic final input promotion but before the commit marker.
+  if(job.status==='queued'&&!job.inputReady&&await sourceExists(job)){
+   const updated=markInputReady(job,job.request.bytes);updated.sourceSha256=await fileHash(inputPath(id));
+   await save(updated);return;
+  }
+  if(job.inputReady){await rm(chunksDir(id),{recursive:true,force:true});await rm(receiptsFile(id),{force:true});}
   if(['queued','failed'].includes(job.status)&&job.inputReady&&!(await sourceExists(job))){
    await save(recoverMissingSource(job));return;
   }
