@@ -1,5 +1,6 @@
-import {describe,it,expect} from 'vitest';
-import {jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime} from './personaProcessingClient';
+import {describe,it,expect,vi,afterEach} from 'vitest';
+import {createHash} from 'node:crypto';
+import {jobIdForAsset,jobBelongsToAsset,processingRequest,safeOutputLink,validWorkerUrl,videoMime,transferStatus,sendChunk} from './personaProcessingClient';
 import type {CreativeMediaMetadata} from './personaMediaIntake';
 
 const asset:CreativeMediaMetadata={id:'f'.repeat(32),projectId:'persona:owner:project:v1',
@@ -36,5 +37,38 @@ describe('Persona desktop handoff is revision-bound and local-first',()=>{
    outputUrl:'/v1/jobs/job-'+asset.id+'/output?token='+'a'.repeat(64)};
   expect(safeOutputLink('https://workstation.lan:8787',job as any)).toContain('/output?token=');
   expect(safeOutputLink('https://workstation.lan:8787',{...job,outputUrl:'https://evil.example/video.mp4'} as any)).toBeNull();
+ });
+});
+
+describe('resumable browser-to-desktop video transfer',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const settings={url:'https://desktop.example:8787',token:'x'.repeat(64)};
+ const job='job-'+'f'.repeat(32);
+ it('accepts durable remote chunks and resumes only missing indexes',async()=>{
+  const remote={id:job,chunkBytes:2*1024*1024,totalParts:3,received:[0,2],inputReady:false};
+  const mock=vi.fn().mockResolvedValue({ok:true,json:async()=>remote});
+  vi.stubGlobal('fetch',mock);
+  expect((await transferStatus(settings,job,5*1024*1024)).received).toEqual([0,2]);
+  expect(mock.mock.calls[0][0]).toContain('/transfer');
+ });
+ it('rejects duplicate receipt indexes, wrong totals and other job IDs',async()=>{
+  for(const remote of [
+   {id:job,chunkBytes:2*1024*1024,totalParts:3,received:[0,0],inputReady:false},
+   {id:job,chunkBytes:2*1024*1024,totalParts:4,received:[],inputReady:false},
+   {id:'job-'+'a'.repeat(32),chunkBytes:2*1024*1024,totalParts:3,received:[],inputReady:false}
+  ]){
+   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>remote}));
+   await expect(transferStatus(settings,job,5*1024*1024)).rejects.toThrow();
+  }
+ });
+ it('sends exactly one bounded Blob with SHA256, no base64 or whole video',async()=>{
+  const input=new Blob([new Uint8Array([1,2,3])]);
+  const mock=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:job,index:0})});
+  vi.stubGlobal('fetch',mock);
+  await sendChunk(settings,job,0,3,input);
+  const request=mock.mock.calls[0][1];
+  expect(request.body).toBe(input);
+  expect(request.headers['X-Chunk-SHA256']).toBe(createHash('sha256').update(Buffer.from([1,2,3])).digest('hex'));
+  expect(request.method).toBe('PUT');
  });
 });
