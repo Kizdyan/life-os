@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequest, newJob, transition, canClaim, retry, recoverMissingSource, markInputReady, publicJob, JOB_STATES } from '../packages/core/src/persona-processing-contract.mjs';
+import {makeProcessedAsset} from '../packages/core/src/persona-processed-asset.mjs';
 
 const input={assetId:'a'.repeat(32),projectId:'persona:owner:project:v1',contentItemId:'content:idea',ideaId:'idea',ideaVersion:2,sessionId:'shoot:id',mime:'video/mp4',filename:'one.mp4',bytes:5500};
 
@@ -21,7 +22,8 @@ test('five status contract with human review gate',()=>{
  job=markInputReady(job,5500);
  assert.equal(canClaim(job),true);
  job=transition(job,'processing');
- job=transition(job,'review',{instagramFile:'instagram.mp4'});
+ const result=makeProcessedAsset(job,{bytes:2000,sha256:'f'.repeat(64),width:720,height:1280,codec:'h264',durationSec:3});
+ job=transition(job,'review',{instagramFile:'instagram.mp4',processedAsset:result});
  assert.equal(job.status,'review');
  job=transition(job,'ready');
  assert.equal(job.status,'ready');
@@ -64,4 +66,10 @@ test('missing source after desktop restart returns same job to queued transfer s
  assert.equal(restored.inputReady,false);
  assert.equal(canClaim(restored),false);
  assert.equal(markInputReady(restored,input.bytes).inputReady,true);
+});
+
+test('ready cannot be forged using a filename without manifest and source validation',()=>{
+ const job=transition(markInputReady(newJob(createRequest(input)),input.bytes),'processing');
+ assert.throws(()=>transition(job,'review',{instagramFile:'instagram.mp4'}));
+ assert.throws(()=>transition({...job,status:'review',instagramFile:'instagram.mp4'},'ready'));
 });
