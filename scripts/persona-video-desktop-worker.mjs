@@ -141,9 +141,8 @@ async function readJob(id){
  catch(e){if(e.code==='ENOENT')throw error(404,'job_not_found');throw e;}
 }
 async function save(job){
- await mkdir(dir(job.id),{recursive:true});
- const temp=join(dir(job.id),'job.'+randomBytes(8).toString('hex')+'.tmp');
- await writeFile(temp,JSON.stringify(job),{mode:0o600});await rename(temp,jsonPath(job.id));
+ // A durable state transition must survive an OS crash, not just Node exit.
+ await durableJson(jsonPath(job.id),job);
 }
 async function lock(id,fn){
  const prev=locks.get(id)||Promise.resolve(),task=prev.catch(()=>{}).then(fn);
