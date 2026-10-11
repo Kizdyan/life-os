@@ -1,4 +1,5 @@
 import type {CreativeMediaMetadata} from './personaMediaIntake';
+import {partCount,partLength,TRANSFER_CHUNK_BYTES,missingParts} from '../../../packages/core/src/persona-transfer-contract.mjs';
 
 export type ProcessingState='queued'|'processing'|'review'|'ready'|'failed';
 export type ProcessingJob={
@@ -87,4 +88,40 @@ export async function desktopRequest(settings:WorkerSettings,path:string,
  const payload=await response.json() as ProcessingJob & {error?:string};
  if(!response.ok)throw Error(payload.error||'Не удалось связаться с компьютером.');
  return payload;
+}
+
+export type TransferState={id:string;chunkBytes:number;totalParts:number;received:number[];inputReady:boolean};
+async function desktopTransferFetch(settings:WorkerSettings,path:string,method:'GET'|'POST'|'PUT',bytes?:Blob,sha?:string){
+ const base=validWorkerUrl(settings.url);
+ if(!base||settings.token.length<32)throw Error('Компьютер для обработки не подключён.');
+ if(!/^\/v1\/jobs\/job-[a-f0-9]{32}\/(?:transfer|commit|chunks\/\d{1,4})$/.test(path))
+  throw Error('Неподдерживаемая передача видео');
+ const response=await fetch(base+path,{
+  method,
+  headers:{Authorization:'Bearer '+settings.token,
+   ...(sha?{'X-Chunk-SHA256':sha}:{}),
+   ...(bytes?{'Content-Type':'application/octet-stream'}:{})},
+  body:bytes,signal:AbortSignal.timeout(bytes?120000:20000)
+ });
+ const body=await response.json();
+ if(!response.ok)throw Error(typeof body.error==='string'?body.error:'Не удалось передать видео.');
+ return body;
+}
+export async function transferStatus(settings:WorkerSettings,id:string,bytes:number):Promise<TransferState>{
+ const result=await desktopTransferFetch(settings,'/v1/jobs/'+id+'/transfer','GET') as TransferState;
+ if(result.id!==id||result.chunkBytes!==TRANSFER_CHUNK_BYTES||result.totalParts!==partCount(bytes)||
+    !Array.isArray(result.received))throw Error('Некорректный ответ компьютера.');
+ missingParts(bytes,result.received);
+ return result;
+}
+export async function sendChunk(settings:WorkerSettings,id:string,index:number,bytes:number,blob:Blob):Promise<void>{
+ if(blob.size!==partLength(bytes,index))throw Error('Повреждён фрагмент видео на iPhone.');
+ // Hash one 2 MiB slice only. There is no full-file memory copy or base64.
+ const digest=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());
+ const sha=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+ const result=await desktopTransferFetch(settings,'/v1/jobs/'+id+'/chunks/'+index,'PUT',blob,sha);
+ if(result.id!==id||result.index!==index)throw Error('Компьютер подтвердил другой фрагмент.');
+}
+export async function finishTransfer(settings:WorkerSettings,id:string):Promise<ProcessingJob>{
+ return await desktopTransferFetch(settings,'/v1/jobs/'+id+'/commit','POST') as ProcessingJob;
 }
