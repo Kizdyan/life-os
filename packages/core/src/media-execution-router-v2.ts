@@ -132,6 +132,7 @@ function rejectionReasons(
   if (item.sourceAssets.some((asset) => asset.bytes > executor.maxAssetBytes)) reasons.push("asset_too_large");
   if (item.sourceAssets.reduce((sum, asset) => sum + asset.bytes, 0) > executor.maxAggregateBytes) reasons.push("aggregate_too_large");
   if (item.sourceAssets.some((asset) => asset.width > executor.maxWidth || asset.height > executor.maxHeight)) reasons.push("resolution_unsupported");
+  if (plan.canvas.width > executor.maxWidth || plan.canvas.height > executor.maxHeight) reasons.push("resolution_unsupported");
   const requiredCompositionModes = plan.kind === "video_timeline"
     ? [...new Set(plan.clips.map((clip) => clip.composition.mode))]
     : [];

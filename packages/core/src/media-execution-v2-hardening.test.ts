@@ -149,6 +149,34 @@ describe("Media Execution V2 adversarial invariants", () => {
     expect(decision.rejectedCandidates.find((entry) => entry.executorId === "aggregate-only")?.reasons).toContain("composition_mode_unsupported");
   });
 
+  it("rejects an executor that can decode the source but cannot render the planned canvas", () => {
+    const item = content([asset("horizontal", { width: 1920, height: 1080 })]);
+    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1 });
+    const decision = routeMediaExecutionV2({
+      contentItem: item,
+      plan,
+      executors: [executor({ maxWidth: 1920, maxHeight: 1500 })],
+      now: "2026-10-12T12:01:00.000Z",
+    });
+    expect(decision.status).toBe("no_eligible_executor");
+    if (decision.status !== "no_eligible_executor") throw new Error("expected rejection");
+    expect(decision.rejections[0].reasons).toContain("resolution_unsupported");
+  });
+
+  it("marks low-resolution photo and carousel plans non-actionable instead of fake-upscaling", () => {
+    const tinyPhoto = asset("tiny", { kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null, width: 100, height: 100 });
+    const photoPlan = buildCanonicalMediaPlanV2(content([tinyPhoto]), { timelineVersion: 1 });
+    expect(photoPlan.kind).toBe("photo_plan");
+    expect(photoPlan.preflight.qualityGate).toBe("QUALITY_DEGRADED");
+    expect(photoPlan.preflight.reasons).toContain("resolution_below_platform_minimum");
+
+    const normalPhoto = asset("normal", { kind: "photo", contentHash: "b".repeat(64), mimeType: "image/jpeg", videoCodec: null, durationMs: null, width: 1080, height: 1350 });
+    const carouselPlan = buildCanonicalMediaPlanV2(content([normalPhoto, tinyPhoto]), { timelineVersion: 1 });
+    expect(carouselPlan.kind).toBe("carousel_plan");
+    expect(carouselPlan.preflight.actionable).toBe(false);
+    expect(carouselPlan.preflight.reasons).toContain("resolution_below_platform_minimum");
+  });
+
   it("deep-freezes plans and detects source-reference or timeline-hash drift", () => {
     const item = content([asset("asset-1")]);
     const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1 });

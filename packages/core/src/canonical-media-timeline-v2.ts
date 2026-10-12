@@ -79,7 +79,7 @@ function canvasFor(type: TargetPublicationType): BaseMediaPlanV2["canvas"] {
   return type === "reel" || type === "story" ? { width: 1080, height: 1920, displayAspectRatio: "9:16" } : { width: 1080, height: 1350, displayAspectRatio: "4:5" };
 }
 
-function videoCanvasFor(item: CanonicalContentItemV2): BaseMediaPlanV2["canvas"] {
+function adaptiveCanvasFor(item: CanonicalContentItemV2): BaseMediaPlanV2["canvas"] {
   const standard = canvasFor(item.targetPublicationType);
   let factor = 1;
   for (const source of item.sourceAssets) {
@@ -88,9 +88,17 @@ function videoCanvasFor(item: CanonicalContentItemV2): BaseMediaPlanV2["canvas"]
     if (renderScale > 1) factor = Math.min(factor, 1 / renderScale);
   }
   if (factor === 1) return standard;
-  const width = Math.max(18, Math.floor(standard.width * factor / 18) * 18);
-  const height = width * 16 / 9;
+  const videoShape = item.targetPublicationType === "reel" || item.targetPublicationType === "story";
+  const widthUnit = videoShape ? 18 : 8;
+  const width = Math.max(widthUnit, Math.floor(standard.width * factor / widthUnit) * widthUnit);
+  const height = width * (videoShape ? 16 / 9 : 5 / 4);
   return { width, height, displayAspectRatio: standard.displayAspectRatio };
+}
+
+function applyResolutionGate(preflight: MediaPreflightV2, canvas: BaseMediaPlanV2["canvas"], type: TargetPublicationType): MediaPreflightV2 {
+  const minimum = type === "reel" || type === "story" ? { width: 360, height: 640 } : { width: 320, height: 400 };
+  if (canvas.width >= minimum.width && canvas.height >= minimum.height) return preflight;
+  return { ...preflight, actionable: false, qualityGate: "QUALITY_DEGRADED", reasons: [...preflight.reasons, "resolution_below_platform_minimum"] };
 }
 
 function lineage(item: CanonicalContentItemV2, timelineVersion: number): MediaPlanLineageV2 {
@@ -174,7 +182,7 @@ export function buildCanonicalMediaPlanV2(
   options: { timelineVersion: number; timelineHash?: string; compositionDecision?: CompositionDecisionV2; compositionDecisions?: Record<string, CompositionDecisionV2> },
 ): CanonicalMediaPlanV2 {
   if (item.sourceAssets.length === 0) throw new Error("Captured source assets are required to build a media plan");
-  const canvas = item.targetPublicationType === "reel" || item.targetPublicationType === "story" ? videoCanvasFor(item) : canvasFor(item.targetPublicationType);
+  const canvas = adaptiveCanvasFor(item);
   const base = {
     schemaVersion: 2 as const,
     lineage: lineage(item, options.timelineVersion),
@@ -184,11 +192,11 @@ export function buildCanonicalMediaPlanV2(
   };
   if (item.targetPublicationType === "photo_post") {
     if (item.sourceAssets.length !== 1 || item.sourceAssets[0].kind !== "photo") throw new Error("photo_post requires exactly one photo asset");
-    return finalizePlan({ ...base, kind: "photo_plan", requiredOperations: ["still_image"], outputProfile: { codec: "jpeg", platformSafeAreaProfile: "feed-4x5-v1" }, photo: { mediaAssetId: item.sourceAssets[0].mediaAssetId, fit: "contain" }, preflight: cropPreflight(undefined, canvas, { mode: "contain_background" }) }, options.timelineHash);
+    return finalizePlan({ ...base, kind: "photo_plan", requiredOperations: ["still_image"], outputProfile: { codec: "jpeg", platformSafeAreaProfile: "feed-4x5-v1" }, photo: { mediaAssetId: item.sourceAssets[0].mediaAssetId, fit: "contain" }, preflight: applyResolutionGate(cropPreflight(undefined, canvas, { mode: "contain_background" }), canvas, item.targetPublicationType) }, options.timelineHash);
   }
   if (item.targetPublicationType === "carousel_post") {
     if (item.sourceAssets.some((asset) => asset.kind === "video")) throw new Error("carousel_post cannot use a video timeline");
-    return finalizePlan({ ...base, kind: "carousel_plan", requiredOperations: ["slide_layout"], outputProfile: { codec: "png", platformSafeAreaProfile: "carousel-feed-v1" }, slides: item.sourceAssets.map((asset, order) => ({ mediaAssetId: asset.mediaAssetId, order, fit: "contain" as const })), preflight: cropPreflight(undefined, canvas, { mode: "contain_background" }) }, options.timelineHash);
+    return finalizePlan({ ...base, kind: "carousel_plan", requiredOperations: ["slide_layout"], outputProfile: { codec: "png", platformSafeAreaProfile: "carousel-feed-v1" }, slides: item.sourceAssets.map((asset, order) => ({ mediaAssetId: asset.mediaAssetId, order, fit: "contain" as const })), preflight: applyResolutionGate(cropPreflight(undefined, canvas, { mode: "contain_background" }), canvas, item.targetPublicationType) }, options.timelineHash);
   }
   if (item.sourceAssets.some((asset) => asset.kind === "text_slide")) throw new Error(`${item.targetPublicationType} video timeline cannot contain text_slide assets`);
 
@@ -210,11 +218,7 @@ export function buildCanonicalMediaPlanV2(
     preflight.qualityGate = "QUALITY_DEGRADED";
     preflight.reasons.push(totalDurationMs > durationLimitMs ? "duration_exceeds_platform_limit" : "duration_below_platform_minimum");
   }
-  if (canvas.width < 360 || canvas.height < 640) {
-    preflight.actionable = false;
-    preflight.qualityGate = "QUALITY_DEGRADED";
-    preflight.reasons.push("resolution_below_platform_minimum");
-  }
+  const resolutionPreflight = applyResolutionGate(preflight, canvas, item.targetPublicationType);
   const commonMode = decisions.every((decision) => decision.mode === decisions[0].mode) ? decisions[0].mode : "layout_composite";
   return finalizePlan({
     ...base,
@@ -227,7 +231,7 @@ export function buildCanonicalMediaPlanV2(
     composition: { mode: commonMode, coordinateSpace: "normalized_after_rotation_and_sar" },
     audio: { normalizeSpeech: item.audioIntent.normalizeSpeech, music: item.audioIntent.music ?? "optional" },
     subtitles: { ...item.subtitleIntent },
-    preflight,
+    preflight: resolutionPreflight,
   }, options.timelineHash);
 }
 
@@ -258,9 +262,8 @@ export function validateCanonicalMediaPlanV2(item: CanonicalContentItemV2, plan:
       recomputed.actionable = false; recomputed.qualityGate = "QUALITY_DEGRADED";
       recomputed.reasons.push(plan.targetDurationMs > validationDurationLimitMs ? "duration_exceeds_platform_limit" : "duration_below_platform_minimum");
     }
-    if (plan.canvas.width < 360 || plan.canvas.height < 640) {
-      recomputed.actionable = false; recomputed.qualityGate = "QUALITY_DEGRADED"; recomputed.reasons.push("resolution_below_platform_minimum");
-    }
+    const resolutionChecked = applyResolutionGate(recomputed, plan.canvas, item.targetPublicationType);
+    recomputed.actionable = resolutionChecked.actionable; recomputed.qualityGate = resolutionChecked.qualityGate; recomputed.reasons = resolutionChecked.reasons;
     if (JSON.stringify(recomputed) !== JSON.stringify(plan.preflight)) throw new Error("Plan preflight drift detected");
   }
   if (canonicalHashV2(planHashPayload(plan)) !== plan.lineage.timelineHash) throw new Error("Timeline hash mismatch");

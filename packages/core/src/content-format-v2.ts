@@ -59,6 +59,7 @@ function requiredText(value: string, name: string): void {
 }
 
 function validateAsset(asset: AssetDescriptorV2): void {
+  if (!["video", "photo", "text_slide"].includes(asset.kind)) throw new Error("asset kind is invalid");
   requiredText(asset.mediaAssetId, "mediaAssetId");
   requiredText(asset.mimeType, "mimeType");
   if (!HASH_PATTERN.test(asset.contentHash)) throw new Error("contentHash must be a 64-character hex digest");
@@ -105,6 +106,9 @@ function createContentItemSnapshotV2(
   requiredText(input.contentItemId, "contentItemId");
   requiredText(input.publicationObjective, "publicationObjective");
   requiredText(input.approvedIdea.ideaId, "approvedIdea.ideaId");
+  if (input.explicitTargetPublicationType !== undefined && !["reel", "photo_post", "carousel_post", "story"].includes(input.explicitTargetPublicationType)) throw new Error("targetPublicationType is invalid");
+  if (!["low", "normal", "high", "deadline_critical"].includes(input.priority)) throw new Error("priority is invalid");
+  if (!["planned", "captured", "editing", "review", "ready", "published", "blocked"].includes(input.publicationStatus)) throw new Error("publicationStatus is invalid");
   if (!Number.isSafeInteger(input.revision) || input.revision < 1) throw new Error("revision must be a positive integer");
   if (!Number.isSafeInteger(input.approvedIdea.version) || input.approvedIdea.version < 1) {
     throw new Error("approvedIdea.version must be a positive integer");

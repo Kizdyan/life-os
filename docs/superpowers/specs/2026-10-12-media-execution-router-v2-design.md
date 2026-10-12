@@ -144,12 +144,13 @@ count, duration, full decode, crop percentage, and lineage are QA evidence.
 The first slice models these requirements and preflight decisions; post-render
 measurement arrives with executor adapters.
 
-Preflight chooses a lower platform-aspect canvas when the source cannot fill
-the nominal 1080x1920 canvas without upscaling. Outputs below the configured
-minimum useful resolution and Reel/Story timelines outside platform duration
-bounds are non-actionable. Crop ROIs must be normalized, in bounds, and match
-the target display aspect ratio; discard is measured from the exact persisted
-ROI.
+Preflight chooses a lower platform-aspect canvas when video, photo, or carousel
+sources cannot fill the nominal canvas without upscaling. Outputs below the
+configured minimum useful resolution and Reel/Story timelines outside platform
+duration bounds are non-actionable. Crop ROIs must be normalized, in bounds,
+and match the target display aspect ratio; discard is measured from the exact
+persisted ROI. Executor eligibility checks both decoded sources and the planned
+output canvas.
 
 ## Executor contract and routing
 
