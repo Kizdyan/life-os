@@ -96,3 +96,5 @@ export * from './media-execution-router-v2';
 export * from './media-execution-v2';
 export * from './media-execution-job-v2';
 export * from './media-executor-v2';
+export * from './media-execution-queue-v2';
+export * from './media-execution-orchestrator-v2';

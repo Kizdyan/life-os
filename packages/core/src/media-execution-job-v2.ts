@@ -24,7 +24,7 @@ export interface ReadyMasterV2 {
   lineage: MediaPlanLineageV2; quality: QualityResultV2; readyAt: string;
 }
 export interface MediaExecutionJobV2 {
-  schemaVersion: 2; jobId: string; executionId: string; lineage: MediaPlanLineageV2; state: MediaExecutionStateV2;
+  schemaVersion: 2; version: number; jobId: string; executionId: string; lineage: MediaPlanLineageV2; state: MediaExecutionStateV2;
   createdAt: string; updatedAt: string; deadline: PublicationDeadlineV2; fallbackPolicy: FallbackPolicyV2;
   attempts: ExecutionAttemptV2[]; currentAttemptNumber: number | null; readyMaster: ReadyMasterV2 | null;
 }
@@ -60,7 +60,7 @@ function assertOwnership(job: MediaExecutionJobV2, attemptNumber: number, leaseI
   return attempt;
 }
 function replaceAttempt(job: MediaExecutionJobV2, replacement: ExecutionAttemptV2, state: MediaExecutionStateV2, now: string): MediaExecutionJobV2 {
-  return deepFreezeV2({ ...job, state, updatedAt: now, attempts: job.attempts.map((attempt) => attempt.attemptNumber === replacement.attemptNumber ? replacement : attempt) });
+  return deepFreezeV2({ ...job, version: job.version + 1, state, updatedAt: now, attempts: job.attempts.map((attempt) => attempt.attemptNumber === replacement.attemptNumber ? replacement : attempt) });
 }
 function sameLineage(expected: MediaPlanLineageV2, actual: MediaPlanLineageV2): boolean { return JSON.stringify(expected) === JSON.stringify(actual); }
 function validateRenderedAsset(job: MediaExecutionJobV2, asset: RenderedAssetV2): void {
@@ -78,7 +78,7 @@ export function createMediaExecutionJobV2(input: JobInputV2): MediaExecutionJobV
   const publishAt = timestamp(input.deadline.publishAt, "deadline.publishAt");
   if (escalationAt < createdAt || escalationAt >= readyRequiredAt || readyRequiredAt > publishAt) throw new Error("Publication deadline checkpoints are invalid");
   if (!Number.isSafeInteger(input.fallbackPolicy.maxAttempts) || input.fallbackPolicy.maxAttempts < 1) throw new Error("fallbackPolicy.maxAttempts must be a positive integer");
-  return deepFreezeV2({ schemaVersion: 2 as const, jobId: input.jobId, executionId: input.executionId, lineage: input.lineage, state: "QUEUED" as const,
+  return deepFreezeV2({ schemaVersion: 2 as const, version: 1, jobId: input.jobId, executionId: input.executionId, lineage: input.lineage, state: "QUEUED" as const,
     createdAt: input.createdAt, updatedAt: input.createdAt, deadline: { ...input.deadline },
     fallbackPolicy: { ...input.fallbackPolicy, approvedFallbackAssetIds: [...input.fallbackPolicy.approvedFallbackAssetIds] },
     attempts: [], currentAttemptNumber: null, readyMaster: null });
@@ -94,7 +94,7 @@ export function claimMediaExecutionJobV2(job: MediaExecutionJobV2, input: { exec
   const attempt: ExecutionAttemptV2 = { attemptNumber, attemptId: `${job.jobId}:attempt:${attemptNumber}`, executorId: input.executorId,
     executorKind: input.executorKind, status: "CLAIMED", claimedAt: input.now, startedAt: null, endedAt: null, failureCode: null,
     lease: { leaseId: input.leaseId, issuedAt: input.now, heartbeatAt: input.now, expiresAt: new Date(now + input.leaseDurationMs).toISOString() }, renderedAsset: null, quality: null };
-  return deepFreezeV2({ ...job, state: "CLAIMED" as const, updatedAt: input.now, currentAttemptNumber: attemptNumber, attempts: [...job.attempts, attempt] });
+  return deepFreezeV2({ ...job, version: job.version + 1, state: "CLAIMED" as const, updatedAt: input.now, currentAttemptNumber: attemptNumber, attempts: [...job.attempts, attempt] });
 }
 
 export function startExecutionAttemptV2(job: MediaExecutionJobV2, input: { attemptNumber: number; leaseId: string; now: string }): MediaExecutionJobV2 {
@@ -120,11 +120,27 @@ export function expireExecutionLeaseV2(job: MediaExecutionJobV2, nowText: string
   return replaceAttempt(job, { ...attempt, status: "FAILED", endedAt: nowText, failureCode }, "RETRYABLE_FAILED", nowText);
 }
 
+export function failExecutionAttemptV2(job: MediaExecutionJobV2, input: {
+  attemptNumber: number;
+  leaseId: string;
+  now: string;
+  failureCode: string;
+  retryable?: boolean;
+}): MediaExecutionJobV2 {
+  eventTime(job, input.now);
+  const attempt = assertOwnership(job, input.attemptNumber, input.leaseId);
+  if (!activeAttemptStatuses.has(attempt.status)) throw new Error("Only an active attempt can fail");
+  required(input.failureCode, "failureCode");
+  const canRetry = (input.retryable ?? true) && job.attempts.length < job.fallbackPolicy.maxAttempts;
+  const failed = replaceAttempt(job, { ...attempt, status: "FAILED", endedAt: input.now, failureCode: input.failureCode }, canRetry ? "RETRYABLE_FAILED" : "FAILED", input.now);
+  return canRetry ? failed : deepFreezeV2({ ...failed, currentAttemptNumber: null });
+}
+
 export function retryMediaExecutionJobV2(job: MediaExecutionJobV2, now: string): MediaExecutionJobV2 {
   eventTime(job, now);
   if (job.state !== "RETRYABLE_FAILED") throw new Error("Only a retryable job can be queued again");
-  if (job.attempts.length >= job.fallbackPolicy.maxAttempts) return deepFreezeV2({ ...job, state: "FAILED" as const, updatedAt: now, currentAttemptNumber: null });
-  return deepFreezeV2({ ...job, state: "QUEUED" as const, updatedAt: now, currentAttemptNumber: null });
+  if (job.attempts.length >= job.fallbackPolicy.maxAttempts) return deepFreezeV2({ ...job, version: job.version + 1, state: "FAILED" as const, updatedAt: now, currentAttemptNumber: null });
+  return deepFreezeV2({ ...job, version: job.version + 1, state: "QUEUED" as const, updatedAt: now, currentAttemptNumber: null });
 }
 
 export function submitRenderedAssetV2(job: MediaExecutionJobV2, input: { attemptNumber: number; leaseId: string; now: string; asset: RenderedAssetV2 }): MediaExecutionJobV2 {
@@ -148,7 +164,7 @@ export function promoteValidatedMasterV2(job: MediaExecutionJobV2, input: { atte
   const completed: ExecutionAttemptV2 = { ...attempt, status: "SUCCEEDED", endedAt: input.now, quality: input.quality };
   const readyMaster: ReadyMasterV2 = { executionId: job.executionId, attemptNumber: attempt.attemptNumber, executorId: attempt.executorId,
     renderedAssetId: attempt.renderedAsset.renderedAssetId, resultHash: attempt.renderedAsset.resultHash, lineage: job.lineage, quality: input.quality, readyAt: input.now };
-  return deepFreezeV2({ ...job, state: "READY" as const, updatedAt: input.now,
+  return deepFreezeV2({ ...job, version: job.version + 1, state: "READY" as const, updatedAt: input.now,
     attempts: job.attempts.map((entry) => entry.attemptNumber === completed.attemptNumber ? completed : entry), readyMaster });
 }
 
