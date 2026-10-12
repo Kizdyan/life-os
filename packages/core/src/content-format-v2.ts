@@ -20,12 +20,14 @@ export interface AssetDescriptorV2 {
   height: number;
   rotationDegrees: 0 | 90 | 180 | 270;
   videoCodec: string | null;
+  durationMs: number | null;
+  sampleAspectRatio: { numerator: number; denominator: number };
 }
 
 export interface ContentItemV2Input {
   contentItemId: string;
   revision: number;
-  revisionHash: string;
+  revisionHash?: string;
   explicitTargetPublicationType?: TargetPublicationType;
   plannedSourceKinds: MediaSourceKindV2[];
   sourceAssets: AssetDescriptorV2[];
@@ -43,8 +45,9 @@ export interface ContentItemV2Input {
   publicationStatus: PublicationStatusV2;
 }
 
-export interface CanonicalContentItemV2 extends Omit<ContentItemV2Input, "explicitTargetPublicationType"> {
+export interface CanonicalContentItemV2 extends Omit<ContentItemV2Input, "explicitTargetPublicationType" | "revisionHash"> {
   schemaVersion: 2;
+  revisionHash: string;
   targetPublicationType: TargetPublicationType;
   targetPublicationTypeSource: "editorial" | "inferred";
 }
@@ -60,14 +63,25 @@ function validateAsset(asset: AssetDescriptorV2): void {
   requiredText(asset.mimeType, "mimeType");
   if (!HASH_PATTERN.test(asset.contentHash)) throw new Error("contentHash must be a 64-character hex digest");
   if (!Number.isSafeInteger(asset.bytes) || asset.bytes <= 0) throw new Error("bytes must be a positive integer");
-  if (!Number.isFinite(asset.width) || asset.width <= 0) throw new Error("width must be positive");
-  if (!Number.isFinite(asset.height) || asset.height <= 0) throw new Error("height must be positive");
+  if (!Number.isSafeInteger(asset.width) || asset.width <= 0) throw new Error("width must be a positive integer");
+  if (!Number.isSafeInteger(asset.height) || asset.height <= 0) throw new Error("height must be a positive integer");
+  if (![0, 90, 180, 270].includes(asset.rotationDegrees)) throw new Error("rotationDegrees is invalid");
+  if (!Number.isSafeInteger(asset.sampleAspectRatio.numerator) || asset.sampleAspectRatio.numerator <= 0
+    || !Number.isSafeInteger(asset.sampleAspectRatio.denominator) || asset.sampleAspectRatio.denominator <= 0) {
+    throw new Error("sampleAspectRatio must contain positive integers");
+  }
   if (asset.kind === "video" && !asset.videoCodec?.trim()) {
     throw new Error("videoCodec is required for video assets");
+  }
+  if (asset.kind === "video" && (!Number.isSafeInteger(asset.durationMs) || (asset.durationMs ?? 0) <= 0)) {
+    throw new Error("durationMs must be a positive integer for video assets");
   }
   if (asset.kind !== "video" && asset.videoCodec !== null) {
     throw new Error("videoCodec must be null for non-video assets");
   }
+  if (asset.kind !== "video" && asset.durationMs !== null) throw new Error("durationMs must be null for non-video assets");
+  if (asset.kind === "video" && !asset.mimeType.startsWith("video/")) throw new Error("video MIME type is required");
+  if (asset.kind !== "video" && !asset.mimeType.startsWith("image/")) throw new Error("image MIME type is required");
 }
 
 export function inferTargetPublicationTypeV2(
@@ -84,7 +98,10 @@ export function inferTargetPublicationTypeV2(
   return kinds.length === 1 ? "photo_post" : "carousel_post";
 }
 
-export function createContentItemV2(input: ContentItemV2Input): CanonicalContentItemV2 {
+function createContentItemSnapshotV2(
+  input: ContentItemV2Input,
+  preservedTypeSource?: CanonicalContentItemV2["targetPublicationTypeSource"],
+): CanonicalContentItemV2 {
   requiredText(input.contentItemId, "contentItemId");
   requiredText(input.publicationObjective, "publicationObjective");
   requiredText(input.approvedIdea.ideaId, "approvedIdea.ideaId");
@@ -92,11 +109,17 @@ export function createContentItemV2(input: ContentItemV2Input): CanonicalContent
   if (!Number.isSafeInteger(input.approvedIdea.version) || input.approvedIdea.version < 1) {
     throw new Error("approvedIdea.version must be a positive integer");
   }
-  if (!HASH_PATTERN.test(input.revisionHash)) throw new Error("revisionHash must be a 64-character hex digest");
+  if (input.revisionHash !== undefined && !HASH_PATTERN.test(input.revisionHash)) throw new Error("revisionHash must be a 64-character hex digest");
   if (input.targetPlatforms.length === 0 || input.targetPlatforms.some((platform) => !platform.trim())) {
     throw new Error("targetPlatforms must contain at least one valid platform");
   }
   input.sourceAssets.forEach(validateAsset);
+  if (new Set(input.sourceAssets.map((asset) => asset.mediaAssetId)).size !== input.sourceAssets.length) {
+    throw new Error("Duplicate mediaAssetId values are not allowed");
+  }
+  for (const [name, value] of [["scheduledPublicationTime", input.scheduledPublicationTime], ["deadline", input.deadline]] as const) {
+    if (value !== null && !Number.isFinite(Date.parse(value))) throw new Error(`${name} must be a valid timestamp`);
+  }
 
   const sourceKinds = input.sourceAssets.length > 0
     ? input.sourceAssets.map((asset) => asset.kind)
@@ -104,33 +127,75 @@ export function createContentItemV2(input: ContentItemV2Input): CanonicalContent
   const targetPublicationType = input.explicitTargetPublicationType
     ?? inferTargetPublicationTypeV2(sourceKinds);
 
-  return Object.freeze({
-    ...input,
+  const expectedRevisionHash = input.revisionHash;
+  const canonicalInput = {
+    contentItemId: input.contentItemId,
+    revision: input.revision,
+    plannedSourceKinds: [...input.plannedSourceKinds],
+    sourceAssets: input.sourceAssets.map((asset) => ({ ...asset, sampleAspectRatio: { ...asset.sampleAspectRatio } })),
+    targetPlatforms: [...input.targetPlatforms],
+    approvedIdea: { ...input.approvedIdea },
+    shootingSessionId: input.shootingSessionId,
+    publicationObjective: input.publicationObjective,
+    scheduledPublicationTime: input.scheduledPublicationTime,
+    priority: input.priority,
+    deadline: input.deadline,
+    compositionIntent: { ...input.compositionIntent },
+    audioIntent: { ...input.audioIntent },
+    subtitleIntent: { ...input.subtitleIntent },
+    captionCopyId: input.captionCopyId,
+    publicationStatus: input.publicationStatus,
+  };
+  const targetPublicationTypeSource = preservedTypeSource ?? (input.explicitTargetPublicationType ? "editorial" : "inferred");
+  const revisionHash = canonicalHashV2({ ...canonicalInput, targetPublicationType, targetPublicationTypeSource });
+  if (expectedRevisionHash && expectedRevisionHash !== revisionHash) throw new Error("revisionHash does not match canonical content");
+  return deepFreezeV2({
+    ...canonicalInput,
     schemaVersion: 2 as const,
-    plannedSourceKinds: Object.freeze([...input.plannedSourceKinds]) as unknown as MediaSourceKindV2[],
-    sourceAssets: Object.freeze(input.sourceAssets.map((asset) => Object.freeze({ ...asset }))) as unknown as AssetDescriptorV2[],
-    targetPlatforms: Object.freeze([...input.targetPlatforms]) as unknown as string[],
-    approvedIdea: Object.freeze({ ...input.approvedIdea }),
-    compositionIntent: Object.freeze({ ...input.compositionIntent }),
-    audioIntent: Object.freeze({ ...input.audioIntent }),
-    subtitleIntent: Object.freeze({ ...input.subtitleIntent }),
+    revisionHash,
+    plannedSourceKinds: [...input.plannedSourceKinds],
+    sourceAssets: input.sourceAssets.map((asset) => ({ ...asset, sampleAspectRatio: { ...asset.sampleAspectRatio } })),
+    targetPlatforms: [...input.targetPlatforms],
+    approvedIdea: { ...input.approvedIdea },
+    compositionIntent: { ...input.compositionIntent },
+    audioIntent: { ...input.audioIntent },
+    subtitleIntent: { ...input.subtitleIntent },
     targetPublicationType,
-    targetPublicationTypeSource: input.explicitTargetPublicationType ? "editorial" : "inferred",
+    targetPublicationTypeSource,
   });
+}
+
+export function createContentItemV2(input: ContentItemV2Input): CanonicalContentItemV2 {
+  return createContentItemSnapshotV2(input);
 }
 
 export function reviseContentItemWithCapturedAssets(
   previous: CanonicalContentItemV2,
-  update: { revision: number; revisionHash: string; sourceAssets: AssetDescriptorV2[] },
+  update: { revision: number; revisionHash?: string; sourceAssets: AssetDescriptorV2[] },
 ): CanonicalContentItemV2 {
   if (update.revision <= previous.revision) throw new Error("A new content revision must increase revision");
   update.sourceAssets.forEach(validateAsset);
-  if (!HASH_PATTERN.test(update.revisionHash)) throw new Error("revisionHash must be a 64-character hex digest");
-
-  return Object.freeze({
-    ...previous,
+  const nextInput: ContentItemV2Input = {
+    contentItemId: previous.contentItemId,
     revision: update.revision,
     revisionHash: update.revisionHash,
-    sourceAssets: Object.freeze(update.sourceAssets.map((asset) => Object.freeze({ ...asset }))) as unknown as AssetDescriptorV2[],
-  });
+    explicitTargetPublicationType: previous.targetPublicationType,
+    plannedSourceKinds: [...previous.plannedSourceKinds],
+    sourceAssets: update.sourceAssets,
+    targetPlatforms: [...previous.targetPlatforms],
+    approvedIdea: { ...previous.approvedIdea },
+    shootingSessionId: previous.shootingSessionId,
+    publicationObjective: previous.publicationObjective,
+    scheduledPublicationTime: previous.scheduledPublicationTime,
+    priority: previous.priority,
+    deadline: previous.deadline,
+    compositionIntent: { ...previous.compositionIntent },
+    audioIntent: { ...previous.audioIntent },
+    subtitleIntent: { ...previous.subtitleIntent },
+    captionCopyId: previous.captionCopyId,
+    publicationStatus: previous.publicationStatus,
+  };
+  return createContentItemSnapshotV2(nextInput, previous.targetPublicationTypeSource);
 }
+import { canonicalHashV2, deepFreezeV2 } from "./canonical-hash-v2";
+

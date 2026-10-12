@@ -12,7 +12,6 @@ import {
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);
-const C = "c".repeat(64);
 
 function asset(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
   return {
@@ -25,6 +24,8 @@ function asset(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
     height: 1920,
     rotationDegrees: 0,
     videoCodec: "h264",
+    durationMs: 30_000,
+    sampleAspectRatio: { numerator: 1, denominator: 1 },
     ...overrides,
   };
 }
@@ -33,7 +34,6 @@ function item(source = asset(), overrides: Partial<Parameters<typeof createConte
   return createContentItemV2({
     contentItemId: "content-1",
     revision: 1,
-    revisionHash: B,
     plannedSourceKinds: [source.kind],
     sourceAssets: [source],
     targetPlatforms: ["instagram"],
@@ -53,7 +53,7 @@ function item(source = asset(), overrides: Partial<Parameters<typeof createConte
 }
 
 function plan(content = item()): CanonicalMediaPlanV2 {
-  return buildCanonicalMediaPlanV2(content, { timelineVersion: 1, timelineHash: C });
+  return buildCanonicalMediaPlanV2(content, { timelineVersion: 1 });
 }
 
 function executor(overrides: Partial<ExecutorCapabilitiesV2> = {}): ExecutorCapabilitiesV2 {
@@ -69,7 +69,7 @@ function executor(overrides: Partial<ExecutorCapabilitiesV2> = {}): ExecutorCapa
     maxHeight: 4096,
     compositionModes: ["crop", "contain_background", "layout_composite", "subject_reframe"],
     encodeGenerations: 1,
-    semanticFeatures: ["subtitles", "audio_normalization", "photo_timeline", "still_image", "slide_layout"],
+    semanticFeatures: ["video_timeline", "subtitles", "audio_normalization", "photo_timeline", "still_image", "slide_layout"],
     availability: "available",
     observedAt: "2026-10-12T12:00:00.000Z",
     heartbeatAt: "2026-10-12T12:00:00.000Z",
@@ -95,8 +95,8 @@ describe("Media Execution Router V2", () => {
       now: "2026-10-12T12:01:00.000Z",
     });
 
-    expect(decision.status).toBe("selected");
-    if (decision.status !== "selected") throw new Error("expected selection");
+    expect(decision.status).toBe("selected_pending_claim");
+    if (decision.status !== "selected_pending_claim") throw new Error("expected selection");
     expect(decision.executorId).toBe("owned");
     expect(decision.budgetPolicy).toEqual({ mode: "FREE_ONLY" });
   });
@@ -114,8 +114,8 @@ describe("Media Execution Router V2", () => {
       now: "2026-10-12T12:01:00.000Z",
     });
 
-    expect(decision.status).toBe("selected");
-    if (decision.status !== "selected") throw new Error("expected selection");
+    expect(decision.status).toBe("selected_pending_claim");
+    if (decision.status !== "selected_pending_claim") throw new Error("expected selection");
     expect(decision.executorId).toBe("iphone");
   });
 
@@ -128,7 +128,7 @@ describe("Media Execution Router V2", () => {
       now: "2026-10-12T12:01:00.000Z",
     });
 
-    expect(decision.status === "selected" && decision.executorId).toBe("a-executor");
+    expect(decision.status === "selected_pending_claim" && decision.executorId).toBe("a-executor");
   });
 
   it("rejects Desktop V1 for a square Reel that needs contain-background and one encode", () => {
@@ -167,8 +167,8 @@ describe("Media Execution Router V2", () => {
 
   it("creates distinct V2 execution identities for content and timeline revisions", () => {
     const first = plan(item());
-    const secondContent = item(asset(), { revision: 2, revisionHash: "d".repeat(64) });
-    const second = buildCanonicalMediaPlanV2(secondContent, { timelineVersion: 2, timelineHash: "e".repeat(64) });
+    const secondContent = item(asset(), { revision: 2 });
+    const second = buildCanonicalMediaPlanV2(secondContent, { timelineVersion: 2 });
 
     expect(createExecutionIdentityV2(first, "instagram-reel-h264")).not.toBe(
       createExecutionIdentityV2(second, "instagram-reel-h264"),
@@ -188,7 +188,7 @@ describe("Media Execution Router V2", () => {
       qaPolicyVersion: mediaPlan.lineage.qaPolicyVersion,
     };
 
-    expect(() => validateExecutorResultV2(mediaPlan, identity, 1, result)).toThrow(/lineage/i);
+    expect(() => validateExecutorResultV2(mediaPlan, { executionId: identity, attempt: 1, executorId: "owned" }, result)).toThrow(/lineage/i);
     expect(() => validateApprovedMasterV2({
       executionId: identity,
       resultHash: B,

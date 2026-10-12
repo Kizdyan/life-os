@@ -8,8 +8,6 @@ import {
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
-const REV_1 = "1".repeat(64);
-const REV_2 = "2".repeat(64);
 
 function asset(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
   return {
@@ -22,6 +20,8 @@ function asset(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
     height: 1080,
     rotationDegrees: 0,
     videoCodec: "h264",
+    durationMs: 30_000,
+    sampleAspectRatio: { numerator: 1, denominator: 1 },
     ...overrides,
   };
 }
@@ -30,7 +30,6 @@ function input(overrides: Partial<ContentItemV2Input> = {}): ContentItemV2Input 
   return {
     contentItemId: "content-1",
     revision: 1,
-    revisionHash: REV_1,
     plannedSourceKinds: ["video"],
     sourceAssets: [asset()],
     targetPlatforms: ["instagram"],
@@ -52,12 +51,12 @@ function input(overrides: Partial<ContentItemV2Input> = {}): ContentItemV2Input 
 describe("Content Format Contract V2", () => {
   it.each([
     [[asset()], "reel"],
-    [[asset({ kind: "photo", mimeType: "image/jpeg", videoCodec: null })], "photo_post"],
+    [[asset({ kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null })], "photo_post"],
     [[
-      asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null }),
-      asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null }),
+      asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+      asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
     ], "carousel_post"],
-    [[asset({ kind: "text_slide", mimeType: "image/png", videoCodec: null })], "carousel_post"],
+    [[asset({ kind: "text_slide", mimeType: "image/png", videoCodec: null, durationMs: null })], "carousel_post"],
   ] as const)("infers publication type from validated assets", (sourceAssets, expected) => {
     const item = createContentItemV2(input({
       plannedSourceKinds: sourceAssets.map((entry) => entry.kind),
@@ -73,8 +72,8 @@ describe("Content Format Contract V2", () => {
       explicitTargetPublicationType: "reel",
       plannedSourceKinds: ["photo", "photo"],
       sourceAssets: [
-        asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null }),
-        asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null }),
+        asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+        asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
       ],
     }));
 
@@ -97,10 +96,9 @@ describe("Content Format Contract V2", () => {
 
     const captured = reviseContentItemWithCapturedAssets(planned, {
       revision: 2,
-      revisionHash: REV_2,
       sourceAssets: [
-        asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null }),
-        asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null }),
+        asset({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+        asset({ mediaAssetId: "photo-2", kind: "photo", contentHash: HASH_B, mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
       ],
     });
 
@@ -108,6 +106,7 @@ describe("Content Format Contract V2", () => {
     expect(captured.targetPublicationTypeSource).toBe("editorial");
     expect(captured.approvedIdea).toEqual(planned.approvedIdea);
     expect(captured.revision).toBe(2);
-    expect(captured.revisionHash).toBe(REV_2);
+    expect(captured.revisionHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(captured.revisionHash).not.toBe(planned.revisionHash);
   });
 });

@@ -7,8 +7,6 @@ import {
 } from "./canonical-media-timeline-v2";
 
 const ASSET_HASH = "a".repeat(64);
-const REVISION_HASH = "b".repeat(64);
-const TIMELINE_HASH = "c".repeat(64);
 
 function descriptor(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
   return {
@@ -21,6 +19,8 @@ function descriptor(overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptor
     height: 1920,
     rotationDegrees: 0,
     videoCodec: "h264",
+    durationMs: 30_000,
+    sampleAspectRatio: { numerator: 1, denominator: 1 },
     ...overrides,
   };
 }
@@ -29,7 +29,6 @@ function itemFor(assets: AssetDescriptorV2[], explicit?: "reel" | "photo_post" |
   return createContentItemV2({
     contentItemId: "content-1",
     revision: 2,
-    revisionHash: REVISION_HASH,
     explicitTargetPublicationType: explicit,
     plannedSourceKinds: assets.map((asset) => asset.kind),
     sourceAssets: assets,
@@ -50,14 +49,14 @@ function itemFor(assets: AssetDescriptorV2[], explicit?: "reel" | "photo_post" |
 
 describe("Canonical media plan V2", () => {
   it("uses discriminated plan kinds for video, photo, and carousel work", () => {
-    const video = buildCanonicalMediaPlanV2(itemFor([descriptor()]), { timelineVersion: 1, timelineHash: TIMELINE_HASH });
+    const video = buildCanonicalMediaPlanV2(itemFor([descriptor()]), { timelineVersion: 1 });
     const photo = buildCanonicalMediaPlanV2(itemFor([
-      descriptor({ kind: "photo", mimeType: "image/jpeg", videoCodec: null }),
-    ]), { timelineVersion: 1, timelineHash: TIMELINE_HASH });
+      descriptor({ kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+    ]), { timelineVersion: 1 });
     const carousel = buildCanonicalMediaPlanV2(itemFor([
-      descriptor({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null }),
-      descriptor({ mediaAssetId: "photo-2", kind: "photo", contentHash: "d".repeat(64), mimeType: "image/jpeg", videoCodec: null }),
-    ]), { timelineVersion: 1, timelineHash: TIMELINE_HASH });
+      descriptor({ mediaAssetId: "photo-1", kind: "photo", mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+      descriptor({ mediaAssetId: "photo-2", kind: "photo", contentHash: "d".repeat(64), mimeType: "image/jpeg", videoCodec: null, durationMs: null }),
+    ]), { timelineVersion: 1 });
 
     expect(video.kind).toBe("video_timeline");
     expect(photo.kind).toBe("photo_plan");
@@ -66,7 +65,7 @@ describe("Canonical media plan V2", () => {
 
   it("selects contain-background for a square Reel rather than destructive center crop", () => {
     const item = itemFor([descriptor({ width: 400, height: 400 })]);
-    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1, timelineHash: TIMELINE_HASH });
+    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1 });
 
     expect(plan.kind).toBe("video_timeline");
     if (plan.kind !== "video_timeline") throw new Error("expected video timeline");
@@ -87,7 +86,6 @@ describe("Canonical media plan V2", () => {
     const item = itemFor([descriptor({ width: 400, height: 400 })]);
     const plan = buildCanonicalMediaPlanV2(item, {
       timelineVersion: 1,
-      timelineHash: TIMELINE_HASH,
       compositionDecision: { mode: "crop" },
     });
 
@@ -109,7 +107,6 @@ describe("Canonical media plan V2", () => {
   it("rejects clipping evidence even when crop confidence is high", () => {
     const plan = buildCanonicalMediaPlanV2(itemFor([descriptor({ width: 400, height: 400 })]), {
       timelineVersion: 1,
-      timelineHash: TIMELINE_HASH,
       compositionDecision: {
         mode: "crop",
         evidence: {
@@ -130,17 +127,17 @@ describe("Canonical media plan V2", () => {
 
   it("pins content, idea, source, timeline, and QA lineage and rejects drift", () => {
     const item = itemFor([descriptor()]);
-    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 3, timelineHash: TIMELINE_HASH });
+    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 3 });
 
     expect(plan.lineage).toMatchObject({
       contentItemId: "content-1",
       contentRevision: 2,
-      contentRevisionHash: REVISION_HASH,
+      contentRevisionHash: item.revisionHash,
       targetPublicationType: "reel",
       approvedIdeaId: "idea-1",
       approvedIdeaVersion: 4,
       timelineVersion: 3,
-      timelineHash: TIMELINE_HASH,
+      timelineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       qaPolicyVersion: "media-v2.1",
     });
     expect(() => validateCanonicalMediaPlanV2(item, {

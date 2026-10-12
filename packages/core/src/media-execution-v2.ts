@@ -17,8 +17,9 @@ import {
   type MediaBudgetPolicyV2,
   type MediaRoutingDecisionV2,
 } from "./media-execution-router-v2";
+import { deepFreezeV2 } from "./canonical-hash-v2";
 
-export interface FrozenMediaExecutionRequestV2 {
+export interface FrozenMediaClaimRequestV2 {
   schemaVersion: 2;
   executionId: string;
   attempt: 1;
@@ -39,10 +40,10 @@ interface PreparedMediaBaseV2 {
 
 export type PreparedMediaExecutionV2 =
   | (PreparedMediaBaseV2 & {
-    status: "READY_FOR_EXECUTION";
-    actionable: true;
-    routing: Extract<MediaRoutingDecisionV2, { status: "selected" }>;
-    executionRequest: FrozenMediaExecutionRequestV2;
+    status: "SELECTED_PENDING_CLAIM";
+    actionable: false;
+    routing: Extract<MediaRoutingDecisionV2, { status: "selected_pending_claim" }>;
+    claimRequest: FrozenMediaClaimRequestV2;
   })
   | (PreparedMediaBaseV2 & {
     status: "REVISE_COMPOSITION";
@@ -58,7 +59,7 @@ export type PreparedMediaExecutionV2 =
 export function prepareMediaExecutionV2(input: {
   contentItem: ContentItemV2Input;
   timelineVersion: number;
-  timelineHash: string;
+  timelineHash?: string;
   outputProfile: string;
   compositionDecision?: CompositionDecisionV2;
   executors: ExecutorCapabilitiesV2[];
@@ -93,7 +94,7 @@ export function prepareMediaExecutionV2(input: {
     return { status: "NO_EXECUTOR", actionable: false, contentItem, plan, routing };
   }
 
-  const executionRequest: FrozenMediaExecutionRequestV2 = Object.freeze({
+  const claimRequest: FrozenMediaClaimRequestV2 = deepFreezeV2({
     schemaVersion: 2,
     executionId: createExecutionIdentityV2(plan, input.outputProfile),
     attempt: 1,
@@ -108,11 +109,11 @@ export function prepareMediaExecutionV2(input: {
   });
 
   return {
-    status: "READY_FOR_EXECUTION",
-    actionable: true,
+    status: "SELECTED_PENDING_CLAIM",
+    actionable: false,
     contentItem,
     plan,
     routing,
-    executionRequest,
+    claimRequest,
   };
 }

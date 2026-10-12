@@ -63,6 +63,10 @@ timeline version/hash, and QA policy version. Constructors validate equality.
 A renderer response with different lineage or type is invalid rather than
 silently accepted.
 
+Content revision and timeline hashes are derived from canonical serialization
+of their immutable payloads with SHA-256. Caller-supplied expected hashes are
+verification assertions; they are never accepted as the identity source.
+
 ### Inference
 
 Explicit approved editorial intent always wins. Without it:
@@ -161,9 +165,9 @@ Ranking then uses:
 4. higher quality tier
 5. completion before deadline, then earliest completion
 
-Ties resolve by stable executor ID. Selection is provisional until an atomic
-lease claim succeeds; claim failure triggers deterministic rerouting over a
-fresh snapshot.
+Ties resolve by stable executor ID. Selection returns a non-actionable
+`selected_pending_claim` decision until an atomic lease claim succeeds; claim
+failure triggers deterministic rerouting over a fresh snapshot.
 
 The default budget policy is typed `FREE_ONLY`. The user does not choose
 routine infrastructure. If no candidate qualifies,

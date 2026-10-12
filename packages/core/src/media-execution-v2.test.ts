@@ -3,10 +3,6 @@ import type { AssetDescriptorV2, ContentItemV2Input, TargetPublicationType } fro
 import { prepareMediaExecutionV2 } from "./media-execution-v2";
 import type { ExecutorCapabilitiesV2 } from "./media-execution-router-v2";
 
-const A = "a".repeat(64);
-const B = "b".repeat(64);
-const C = "c".repeat(64);
-
 function asset(kind: AssetDescriptorV2["kind"], id: string, overrides: Partial<AssetDescriptorV2> = {}): AssetDescriptorV2 {
   return {
     mediaAssetId: id,
@@ -18,6 +14,8 @@ function asset(kind: AssetDescriptorV2["kind"], id: string, overrides: Partial<A
     height: 1920,
     rotationDegrees: 0,
     videoCodec: kind === "video" ? "h264" : null,
+    durationMs: kind === "video" ? 30_000 : null,
+    sampleAspectRatio: { numerator: 1, denominator: 1 },
     ...overrides,
   };
 }
@@ -26,7 +24,6 @@ function content(sourceAssets: AssetDescriptorV2[], explicitTargetPublicationTyp
   return {
     contentItemId: "content-vertical-slice",
     revision: 1,
-    revisionHash: A,
     explicitTargetPublicationType,
     plannedSourceKinds: sourceAssets.map((entry) => entry.kind),
     sourceAssets,
@@ -58,7 +55,7 @@ function capableExecutor(): ExecutorCapabilitiesV2 {
     maxHeight: 4096,
     compositionModes: ["crop", "contain_background", "layout_composite"],
     encodeGenerations: 1,
-    semanticFeatures: ["subtitles", "audio_normalization", "photo_timeline", "still_image", "slide_layout"],
+    semanticFeatures: ["video_timeline", "subtitles", "audio_normalization", "photo_timeline", "still_image", "slide_layout"],
     availability: "available",
     observedAt: "2026-10-12T12:00:00.000Z",
     heartbeatAt: "2026-10-12T12:00:00.000Z",
@@ -81,32 +78,30 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem,
       timelineVersion: 1,
-      timelineHash: B,
       outputProfile: "canonical-v2",
       executors: [capableExecutor()],
       now: "2026-10-12T12:01:00.000Z",
     });
 
-    expect(result.status).toBe("READY_FOR_EXECUTION");
+    expect(result.status).toBe("SELECTED_PENDING_CLAIM");
     expect(result.contentItem.targetPublicationType).toBe(type);
     expect(result.plan.kind).toBe(planKind);
     expect(result.plan.lineage.targetPublicationType).toBe(type);
-    if (result.status !== "READY_FOR_EXECUTION") throw new Error("expected ready result");
-    expect(result.executionRequest.lineage.targetPublicationType).toBe(type);
-    expect(result.executionRequest.executorId).toBe("owned-format-aware");
+    if (result.status !== "SELECTED_PENDING_CLAIM") throw new Error("expected selected result");
+    expect(result.claimRequest.lineage.targetPublicationType).toBe(type);
+    expect(result.claimRequest.executorId).toBe("owned-format-aware");
   });
 
   it("keeps a square Reel composition safe and routes only to a compatible executor", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1", { width: 400, height: 400 })]),
       timelineVersion: 1,
-      timelineHash: B,
       outputProfile: "instagram-reel-h264",
       executors: [capableExecutor()],
       now: "2026-10-12T12:01:00.000Z",
     });
 
-    expect(result.status).toBe("READY_FOR_EXECUTION");
+    expect(result.status).toBe("SELECTED_PENDING_CLAIM");
     expect(result.plan.kind).toBe("video_timeline");
     if (result.plan.kind !== "video_timeline") throw new Error("expected video plan");
     expect(result.plan.composition.mode).toBe("contain_background");
@@ -117,7 +112,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1", { width: 400, height: 400 })]),
       timelineVersion: 1,
-      timelineHash: B,
       outputProfile: "instagram-reel-h264",
       compositionDecision: { mode: "crop" },
       executors: [capableExecutor()],
@@ -133,7 +127,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1")]),
       timelineVersion: 1,
-      timelineHash: C,
       outputProfile: "canonical-v2",
       executors: [],
       now: "2026-10-12T12:01:00.000Z",
@@ -142,6 +135,6 @@ describe("Media Execution V2 first vertical slice", () => {
     expect(result.status).toBe("NO_EXECUTOR");
     expect(result.actionable).toBe(false);
     expect(result.contentItem.targetPublicationType).toBe("reel");
-    expect(result.plan.lineage.timelineHash).toBe(C);
+    expect(result.plan.lineage.timelineHash).toMatch(/^[a-f0-9]{64}$/);
   });
 });
