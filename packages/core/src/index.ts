@@ -93,3 +93,4 @@ export * from './persona-learning';
 export * from './content-format-v2';
 export * from './canonical-media-timeline-v2';
 export * from './media-execution-router-v2';
+export * from './media-execution-v2';
