@@ -11,7 +11,7 @@ const lineage: MediaPlanLineageV2 = {
 
 function queued() {
   return createMediaExecutionJobV2({
-    jobId: "job-1", executionId: "execution-1", lineage, createdAt: "2026-10-12T12:00:00.000Z",
+    jobId: "job-1", lineage, outputProfile: { codec: "h264", platformSafeAreaProfile: "short-video-v1" }, createdAt: "2026-10-12T12:00:00.000Z",
     deadline: { escalationAt: "2026-10-13T06:00:00.000Z", readyRequiredAt: "2026-10-13T11:00:00.000Z", publishAt: "2026-10-13T12:00:00.000Z" },
     fallbackPolicy: { maxAttempts: 3, allowPaidFallback: false, approvedFallbackAssetIds: [] },
   });
@@ -53,5 +53,12 @@ describe("Media Execution V2 durable queue semantics", () => {
     const stale = claimMediaExecutionJobV2(initial, { executorId: "cloud", executorKind: "cloud", leaseId: "lease-2", now: "2026-10-12T12:01:01.000Z", leaseDurationMs: 60_000 });
     expect(await queue.compareAndSwap(initial.jobId, initial.version, stale)).toBe(false);
     expect((await queue.read(initial.jobId))?.attempts[0].executorId).toBe("desktop");
+  });
+
+  it("rejects a forged state transition even when the version is incremented", async () => {
+    const initial = queued();
+    const queue = createInMemoryMediaExecutionQueueV2([initial]);
+    const forged = { ...initial, version: initial.version + 1, state: "READY" as const, readyMaster: null };
+    await expect(queue.compareAndSwap(initial.jobId, initial.version, forged)).rejects.toThrow(/invariant|transition/i);
   });
 });

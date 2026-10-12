@@ -32,8 +32,8 @@ const lineage: MediaPlanLineageV2 = {
 function job(): MediaExecutionJobV2 {
   return createMediaExecutionJobV2({
     jobId: "media-job-1",
-    executionId: "execution-1",
     lineage,
+    outputProfile: { codec: "h264", platformSafeAreaProfile: "short-video-v1" },
     createdAt: "2026-10-12T12:00:00.000Z",
     deadline: {
       publishAt: "2026-10-13T12:00:00.000Z",
@@ -72,7 +72,7 @@ describe("MediaExecutionJob V2 durable lease state machine", () => {
     });
 
     expect(second.jobId).toBe("media-job-1");
-    expect(second.executionId).toBe("execution-1");
+    expect(second.executionId).toBe(job().executionId);
     expect(second.attempts.map((attempt) => attempt.attemptNumber)).toEqual([1, 2]);
     expect(second.currentAttemptNumber).toBe(2);
   });
@@ -141,7 +141,7 @@ describe("MediaExecutionJob V2 durable lease state machine", () => {
         width: 1080,
         height: 1920,
         durationMs: 20_000,
-        fullDecodePassed: true,
+        fullDecodePassed: true, encodeGenerations: 1,
         lineage,
       },
     })).toThrow(/stale attempt/i);
@@ -165,7 +165,7 @@ describe("MediaExecutionJob V2 durable lease state machine", () => {
         width: 1080,
         height: 1920,
         durationMs: 20_000,
-        fullDecodePassed: true,
+        fullDecodePassed: true, encodeGenerations: 1,
         lineage,
       },
     });
@@ -203,6 +203,47 @@ describe("MediaExecutionJob V2 durable lease state machine", () => {
     const recovered = recoverMediaExecutionJobV2(snapshot, "2026-10-12T12:02:01.000Z");
     expect(recovered.state).toBe("RETRYABLE_FAILED");
     expect(recovered.attempts[0].failureCode).toBe("lease_expired_after_restart");
-    expect(recovered.executionId).toBe("execution-1");
+    expect(recovered.executionId).toBe(job().executionId);
+  });
+
+  it("rejects promotion when the lease expires during validation", () => {
+    const claimed = claimMediaExecutionJobV2(job(), { executorId: "desktop-1", executorKind: "desktop", leaseId: "lease-short", now: "2026-10-12T12:01:00.000Z", leaseDurationMs: 1_000 });
+    const processing = startExecutionAttemptV2(claimed, { attemptNumber: 1, leaseId: "lease-short", now: "2026-10-12T12:01:00.100Z" });
+    const validating = submitRenderedAssetV2(processing, { attemptNumber: 1, leaseId: "lease-short", now: "2026-10-12T12:01:00.900Z", asset: {
+      renderedAssetId: "result-1", resultHash: HASH_A, bytes: 10_000, codec: "h264", width: 1080, height: 1920,
+      durationMs: 20_000, fullDecodePassed: true, encodeGenerations: 1, lineage,
+    } });
+
+    expect(() => promoteValidatedMasterV2(validating, { attemptNumber: 1, leaseId: "lease-short", now: "2026-10-12T12:01:01.100Z", quality: {
+      status: "QUALITY_PASS", reasons: [], checkedAt: "2026-10-12T12:01:01.050Z",
+    } })).toThrow(/lease expired/i);
+  });
+
+  it("rejects non-causal QA timestamps", () => {
+    const processing = startExecutionAttemptV2(claim(), { attemptNumber: 1, leaseId: "lease-1", now: "2026-10-12T12:01:01.000Z" });
+    const validating = submitRenderedAssetV2(processing, { attemptNumber: 1, leaseId: "lease-1", now: "2026-10-12T12:01:20.000Z", asset: {
+      renderedAssetId: "result-1", resultHash: HASH_A, bytes: 10_000, codec: "h264", width: 1080, height: 1920,
+      durationMs: 20_000, fullDecodePassed: true, encodeGenerations: 1, lineage,
+    } });
+    expect(() => promoteValidatedMasterV2(validating, { attemptNumber: 1, leaseId: "lease-1", now: "2026-10-12T12:01:21.000Z", quality: {
+      status: "QUALITY_PASS", reasons: [], checkedAt: "2026-10-12T12:01:10.000Z",
+    } })).toThrow(/quality timestamp/i);
+  });
+
+  it("fails closed when a restored READY snapshot violates master invariants", () => {
+    const forged = { ...job(), state: "READY", readyMaster: null };
+    expect(() => recoverMediaExecutionJobV2(forged, "2026-10-12T12:01:00.000Z")).toThrow(/snapshot|invariant/i);
+  });
+
+  it("makes final-attempt lease expiry terminal in one transition", () => {
+    const oneAttempt = createMediaExecutionJobV2({
+      jobId: "media-job-final", lineage, outputProfile: { codec: "h264", platformSafeAreaProfile: "short-video-v1" }, createdAt: "2026-10-12T12:00:00.000Z",
+      deadline: { publishAt: "2026-10-13T12:00:00.000Z", escalationAt: "2026-10-13T06:00:00.000Z", readyRequiredAt: "2026-10-13T11:00:00.000Z" },
+      fallbackPolicy: { maxAttempts: 1, allowPaidFallback: false, approvedFallbackAssetIds: [] },
+    });
+    const claimed = claimMediaExecutionJobV2(oneAttempt, { executorId: "desktop-1", executorKind: "desktop", leaseId: "lease-final", now: "2026-10-12T12:01:00.000Z", leaseDurationMs: 1_000 });
+    const expired = expireExecutionLeaseV2(claimed, "2026-10-12T12:01:01.000Z", "heartbeat_lost");
+    expect(expired.state).toBe("FAILED");
+    expect(expired.currentAttemptNumber).toBeNull();
   });
 });

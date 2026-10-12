@@ -235,8 +235,14 @@ export function createDesktopV1CapabilitySnapshot(input: { observedAt: string; e
 }
 
 export function createExecutionIdentityV2(plan: CanonicalMediaPlanV2): string {
-  const lineage = plan.lineage;
-  const outputProfile = `${plan.outputProfile.codec}@${plan.outputProfile.platformSafeAreaProfile}`;
+  return createExecutionIdentityFromLineageV2(plan.lineage, plan.outputProfile);
+}
+
+export function createExecutionIdentityFromLineageV2(
+  lineage: MediaPlanLineageV2,
+  outputProfile: CanonicalMediaPlanV2["outputProfile"],
+): string {
+  const profile = `${outputProfile.codec}@${outputProfile.platformSafeAreaProfile}`;
   return [
     "media-v2",
     lineage.contentItemId,
@@ -244,7 +250,7 @@ export function createExecutionIdentityV2(plan: CanonicalMediaPlanV2): string {
     lineage.contentRevisionHash,
     lineage.timelineVersion,
     lineage.timelineHash,
-    outputProfile,
+    profile,
   ].map(encodeURIComponent).join(":");
 }
 

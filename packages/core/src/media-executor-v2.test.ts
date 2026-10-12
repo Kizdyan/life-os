@@ -6,7 +6,7 @@ import {
   createDeterministicAlternateExecutorV2,
   type ExecutorWorkRequestV2,
 } from "./media-executor-v2";
-import { createDesktopV1CapabilitySnapshot, type ExecutorCapabilitiesV2 } from "./media-execution-router-v2";
+import type { ExecutorCapabilitiesV2 } from "./media-execution-router-v2";
 
 const SOURCE_HASH = "a".repeat(64);
 const RESULT_HASH = "f".repeat(64);
@@ -62,9 +62,8 @@ describe("MediaExecutor V2 contract", () => {
   });
 
   it("keeps frozen Desktop V1 behind a narrow adapter and rejects unsafe square Reel work", () => {
-    const capability = createDesktopV1CapabilitySnapshot({ observedAt: "2026-10-12T12:00:00.000Z", expiresAt: "2026-10-12T12:10:00.000Z" });
     const adapter = createDesktopV1ExecutorAdapterV2({
-      capabilities: capability,
+      observedAt: "2026-10-12T12:00:00.000Z", expiresAt: "2026-10-12T12:10:00.000Z",
       transport: {
         claim: async () => ({ accepted: true }), heartbeat: async () => ({ accepted: true }),
         execute: async () => { throw new Error("not invoked"); }, cancel: async () => ({ accepted: true }),
@@ -98,5 +97,15 @@ describe("MediaExecutor V2 contract", () => {
       expect(quality.status).toBe("OUTPUT_INVALID");
       expect(quality.reasons.length).toBeGreaterThan(0);
     }
+  });
+
+  it("binds result ownership, duration and generation evidence to the selected executor and plan", async () => {
+    const request = work();
+    const executor = createDeterministicAlternateExecutorV2({ capabilities: alternateCapabilities(), resultHash: RESULT_HASH });
+    await executor.claim(request);
+    const result = await executor.execute(request);
+    expect(executor.validate(request, { ...result, executorId: "different" }, "2026-10-12T12:02:00.000Z").reasons).toContain("execution_ownership_mismatch");
+    expect(executor.validate(request, { ...result, asset: { ...result.asset, durationMs: result.asset.durationMs + 2_000 } }, "2026-10-12T12:02:00.000Z").reasons).toContain("output_duration_mismatch");
+    expect(executor.validate(request, { ...result, asset: { ...result.asset, encodeGenerations: 2 } }, "2026-10-12T12:02:00.000Z").reasons).toContain("encode_generation_limit_exceeded");
   });
 });

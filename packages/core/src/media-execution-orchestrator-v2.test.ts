@@ -10,6 +10,7 @@ import {
 } from "./media-execution-job-v2";
 import { createDeterministicAlternateExecutorV2, type MediaExecutorV2 } from "./media-executor-v2";
 import { orchestrateMediaExecutionV2 } from "./media-execution-orchestrator-v2";
+import { createInMemoryMediaExecutionQueueV2, type MediaExecutionQueueV2 } from "./media-execution-queue-v2";
 import type { ExecutorCapabilitiesV2 } from "./media-execution-router-v2";
 
 const SOURCE_HASH = "a".repeat(64);
@@ -27,9 +28,10 @@ function fixture(deadline = "2026-10-13T11:00:00.000Z") {
   });
   const plan = buildCanonicalMediaPlanV2(contentItem, { timelineVersion: 1 });
   const job = createMediaExecutionJobV2({
-    jobId: "media-job-1", executionId: "execution-1", lineage: plan.lineage, createdAt: "2026-10-12T12:00:00.000Z",
+    jobId: "media-job-1", lineage: plan.lineage, outputProfile: plan.outputProfile, createdAt: "2026-10-12T12:00:00.000Z",
     deadline: { escalationAt: "2026-10-13T06:00:00.000Z", readyRequiredAt: "2026-10-13T11:00:00.000Z", publishAt: "2026-10-13T12:00:00.000Z" },
     fallbackPolicy: { maxAttempts: 3, allowPaidFallback: true, approvedFallbackAssetIds: [] },
+    budgetPolicy: { mode: "BOUNDED_PAID", maxCostCents: 20 },
   });
   return { contentItem, plan, job };
 }
@@ -55,17 +57,18 @@ function deterministicClock(start = Date.parse("2026-10-12T12:01:00.000Z")) {
   return () => new Date(current++ * 1).toISOString();
 }
 
-async function run(input: { job?: MediaExecutionJobV2; contentItem?: CanonicalContentItemV2; executors: MediaExecutorV2[]; now?: () => string; paidBudgetCents?: number }) {
+async function run(input: { job?: MediaExecutionJobV2; queue?: MediaExecutionQueueV2; contentItem?: CanonicalContentItemV2; executors: MediaExecutorV2[]; now?: () => string }) {
   const base = fixture();
+  const job = input.job ?? base.job;
   return orchestrateMediaExecutionV2({
-    job: input.job ?? base.job,
+    job,
+    queue: input.queue ?? createInMemoryMediaExecutionQueueV2([job]),
     contentItem: input.contentItem ?? base.contentItem,
     plan: base.plan,
     executors: input.executors,
     now: input.now ?? deterministicClock(),
     leaseDurationMs: 60_000,
     leaseId: (attempt, executorId) => `lease-${attempt}-${executorId}`,
-    paidBudgetCents: input.paidBudgetCents,
   });
 }
 
@@ -140,14 +143,14 @@ describe("Media Execution Router V2 autonomous orchestration", () => {
     const before = await run({ executors: [
       executor("paid", { executorKind: "cloud", costClass: "paid", estimatedCostCents: 10, qualityTier: 5 }),
       executor("owned"),
-    ], paidBudgetCents: 20 });
+    ] });
     expect(before.job.readyMaster?.executorId).toBe("owned");
 
     const afterClock = deterministicClock(Date.parse("2026-10-13T06:30:00.000Z"));
     const after = await run({ executors: [
       executor("desktop", { availability: "offline", observedAt: "2026-10-13T06:29:00.000Z", heartbeatAt: "2026-10-13T06:29:00.000Z", expiresAt: "2026-10-13T12:00:00.000Z" }),
       executor("paid", { executorKind: "cloud", costClass: "paid", estimatedCostCents: 10, observedAt: "2026-10-13T06:29:00.000Z", heartbeatAt: "2026-10-13T06:29:00.000Z", expiresAt: "2026-10-13T12:00:00.000Z" }),
-    ], now: afterClock, paidBudgetCents: 20 });
+    ], now: afterClock });
     expect(after.status).toBe("READY");
     expect(after.job.readyMaster?.executorId).toBe("paid");
   });
@@ -168,5 +171,71 @@ describe("Media Execution Router V2 autonomous orchestration", () => {
     expect(result.status).toBe("ATTEMPTS_EXHAUSTED");
     expect(result.job.state).toBe("FAILED");
     expect(result.job.attempts).toHaveLength(3);
+  });
+
+  it("allows only one concurrent orchestrator to claim and execute a shared durable job", async () => {
+    const base = fixture();
+    const queue = createInMemoryMediaExecutionQueueV2([base.job]);
+    let claims = 0;
+    const shared = executor("shared");
+    const originalClaim = shared.claim;
+    shared.claim = async (request) => { claims += 1; return originalClaim(request); };
+    const [left, right] = await Promise.all([
+      run({ job: base.job, queue, executors: [shared] }),
+      run({ job: base.job, queue, executors: [shared] }),
+    ]);
+    expect(claims).toBe(1);
+    expect([left.status, right.status]).toContain("READY");
+    expect((await queue.read(base.job.jobId))?.state).toBe("READY");
+  });
+
+  it("keeps a persisted READY result when executor release cleanup fails", async () => {
+    const flakyRelease = executor("release-fails");
+    flakyRelease.release = async () => { throw new Error("cleanup unavailable"); };
+    const result = await run({ executors: [flakyRelease] });
+    expect(result.status).toBe("READY");
+    expect(result.job.state).toBe("READY");
+  });
+
+  it("blocks execution at the hard ready deadline", async () => {
+    const result = await run({ executors: [executor("late")], now: deterministicClock(Date.parse("2026-10-13T11:00:00.000Z")) });
+    expect(result.status).toBe("DEADLINE_BLOCKED");
+    expect(result.job.attempts).toHaveLength(0);
+  });
+
+  it("persists cumulative paid spend and refuses a fallback that exceeds the remaining budget", async () => {
+    const clock = deterministicClock(Date.parse("2026-10-13T06:30:00.000Z"));
+    const first = executor("paid-a", { executorKind: "cloud", costClass: "paid", estimatedCostCents: 15, observedAt: "2026-10-13T06:29:00.000Z", heartbeatAt: "2026-10-13T06:29:00.000Z", expiresAt: "2026-10-13T12:00:00.000Z" });
+    first.claim = async () => ({ accepted: false });
+    const second = executor("paid-b", { executorKind: "cloud", costClass: "paid", estimatedCostCents: 15, observedAt: "2026-10-13T06:29:00.000Z", heartbeatAt: "2026-10-13T06:29:00.000Z", expiresAt: "2026-10-13T12:00:00.000Z" });
+    const result = await run({ executors: [first, second], now: clock });
+    expect(result.status).toBe("NO_EXECUTOR");
+    expect(result.job.budget.spentCostCents).toBe(15);
+    expect(result.job.attempts).toHaveLength(1);
+  });
+
+  it("retries one transient executor error once before failing over", async () => {
+    const transient = executor("transient");
+    const execute = transient.execute;
+    let calls = 0;
+    transient.execute = async (request, control) => {
+      calls += 1;
+      if (calls === 1) throw new Error("temporary outage");
+      return execute(request, control);
+    };
+    const result = await run({ executors: [transient] });
+    expect(result.status).toBe("READY");
+    expect(calls).toBe(2);
+    expect(result.job.attempts.map((attempt) => attempt.executorId)).toEqual(["transient", "transient"]);
+  });
+
+  it("rechecks capability freshness immediately before durable claim", async () => {
+    const expiring = executor("expiring", { expiresAt: "2026-10-12T12:01:00.002Z" });
+    let claims = 0;
+    expiring.claim = async () => { claims += 1; return { accepted: true }; };
+    const result = await run({ executors: [expiring], now: deterministicClock(Date.parse("2026-10-12T12:01:00.000Z")) });
+    expect(result.status).toBe("NO_EXECUTOR");
+    expect(claims).toBe(0);
+    expect(result.job.attempts).toHaveLength(0);
   });
 });
