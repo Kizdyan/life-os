@@ -87,6 +87,20 @@ describe("Content Format Contract V2", () => {
     }))).toThrow(/width/i);
   });
 
+  it("fails closed for empty or unknown planned source kinds even with explicit format intent", () => {
+    expect(() => createContentItemV2(input({
+      explicitTargetPublicationType: "reel",
+      plannedSourceKinds: [],
+      sourceAssets: [],
+    }))).toThrow(/plannedSourceKinds/i);
+
+    expect(() => createContentItemV2(input({
+      explicitTargetPublicationType: "reel",
+      plannedSourceKinds: ["document" as never],
+      sourceAssets: [],
+    }))).toThrow(/plannedSourceKinds/i);
+  });
+
   it("preserves publication intent and idea lineage when capture creates a revision", () => {
     const planned = createContentItemV2(input({
       explicitTargetPublicationType: "reel",

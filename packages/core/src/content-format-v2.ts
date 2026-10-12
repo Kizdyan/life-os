@@ -113,6 +113,10 @@ function createContentItemSnapshotV2(
   if (!Number.isSafeInteger(input.approvedIdea.version) || input.approvedIdea.version < 1) {
     throw new Error("approvedIdea.version must be a positive integer");
   }
+  if (input.plannedSourceKinds.length === 0
+    || input.plannedSourceKinds.some((kind) => !["video", "photo", "text_slide"].includes(kind))) {
+    throw new Error("plannedSourceKinds must contain at least one valid source kind");
+  }
   if (input.revisionHash !== undefined && !HASH_PATTERN.test(input.revisionHash)) throw new Error("revisionHash must be a 64-character hex digest");
   if (input.targetPlatforms.length === 0 || input.targetPlatforms.some((platform) => !platform.trim())) {
     throw new Error("targetPlatforms must contain at least one valid platform");
