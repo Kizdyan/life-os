@@ -246,4 +246,15 @@ describe("MediaExecutionJob V2 durable lease state machine", () => {
     expect(expired.state).toBe("FAILED");
     expect(expired.currentAttemptNumber).toBeNull();
   });
+
+  it("never extends a heartbeat lease beyond the hard ready deadline", () => {
+    const nearDeadline = claimMediaExecutionJobV2(job(), {
+      executorId: "desktop-1", executorKind: "desktop", leaseId: "lease-deadline",
+      now: "2026-10-13T10:59:00.000Z", leaseDurationMs: 300_000,
+    });
+    const renewed = heartbeatExecutionAttemptV2(nearDeadline, {
+      attemptNumber: 1, leaseId: "lease-deadline", now: "2026-10-13T10:59:30.000Z", leaseDurationMs: 300_000,
+    });
+    expect(renewed.attempts[0].lease.expiresAt).toBe("2026-10-13T11:00:00.000Z");
+  });
 });

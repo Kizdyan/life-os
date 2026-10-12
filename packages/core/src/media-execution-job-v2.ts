@@ -121,7 +121,7 @@ export function heartbeatExecutionAttemptV2(job: MediaExecutionJobV2, input: { a
   if (!activeAttemptStatuses.has(attempt.status)) throw new Error("Inactive attempt cannot heartbeat");
   if (now >= timestamp(attempt.lease.expiresAt, "lease.expiresAt")) throw new Error("Expired lease cannot heartbeat");
   if (!Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs <= 0) throw new Error("leaseDurationMs must be a positive integer");
-  return replaceAttempt(job, { ...attempt, lease: { ...attempt.lease, heartbeatAt: input.now, expiresAt: new Date(now + input.leaseDurationMs).toISOString() } }, job.state, input.now);
+  return replaceAttempt(job, { ...attempt, lease: { ...attempt.lease, heartbeatAt: input.now, expiresAt: new Date(Math.min(now + input.leaseDurationMs, timestamp(job.deadline.readyRequiredAt, "deadline.readyRequiredAt"))).toISOString() } }, job.state, input.now);
 }
 
 export function expireExecutionLeaseV2(job: MediaExecutionJobV2, nowText: string, failureCode: string): MediaExecutionJobV2 {
