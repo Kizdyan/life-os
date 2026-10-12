@@ -132,7 +132,10 @@ function rejectionReasons(
   if (item.sourceAssets.some((asset) => asset.bytes > executor.maxAssetBytes)) reasons.push("asset_too_large");
   if (item.sourceAssets.reduce((sum, asset) => sum + asset.bytes, 0) > executor.maxAggregateBytes) reasons.push("aggregate_too_large");
   if (item.sourceAssets.some((asset) => asset.width > executor.maxWidth || asset.height > executor.maxHeight)) reasons.push("resolution_unsupported");
-  if (plan.kind === "video_timeline" && !executor.compositionModes.includes(plan.composition.mode)) {
+  const requiredCompositionModes = plan.kind === "video_timeline"
+    ? [...new Set(plan.clips.map((clip) => clip.composition.mode))]
+    : [];
+  if (requiredCompositionModes.some((mode) => !executor.compositionModes.includes(mode))) {
     reasons.push("composition_mode_unsupported");
   }
   if (executor.encodeGenerations > plan.outputIntent.maxEncodeGenerations) reasons.push("encode_generation_limit_exceeded");
@@ -230,9 +233,9 @@ export function createDesktopV1CapabilitySnapshot(input: { observedAt: string; e
   };
 }
 
-export function createExecutionIdentityV2(plan: CanonicalMediaPlanV2, outputProfile: string): string {
-  if (!outputProfile.trim()) throw new Error("outputProfile is required");
+export function createExecutionIdentityV2(plan: CanonicalMediaPlanV2): string {
   const lineage = plan.lineage;
+  const outputProfile = `${plan.outputProfile.codec}@${plan.outputProfile.platformSafeAreaProfile}`;
   return [
     "media-v2",
     lineage.contentItemId,

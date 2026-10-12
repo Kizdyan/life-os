@@ -112,6 +112,8 @@ Square or horizontal video intended as a Reel defaults to
 `contain_background` unless an upstream composition decision explicitly
 provides a crop region and confidence that satisfies policy. The V1 behavior
 that discarded 43.75% of a square frame is therefore not reproduced.
+Composition requirements remain per clip; routing requires every clip mode
+rather than treating a synthetic aggregate layout label as sufficient.
 
 Photo posts and carousels use still-image/slide instructions and never route
 through a video-only renderer. Story remains a distinct output intent with its
@@ -141,6 +143,13 @@ resolution, output resolution, codec/profile, FPS, bitrate, audio, generation
 count, duration, full decode, crop percentage, and lineage are QA evidence.
 The first slice models these requirements and preflight decisions; post-render
 measurement arrives with executor adapters.
+
+Preflight chooses a lower platform-aspect canvas when the source cannot fill
+the nominal 1080x1920 canvas without upscaling. Outputs below the configured
+minimum useful resolution and Reel/Story timelines outside platform duration
+bounds are non-actionable. Crop ROIs must be normalized, in bounds, and match
+the target display aspect ratio; discard is measured from the exact persisted
+ROI.
 
 ## Executor contract and routing
 
@@ -227,7 +236,8 @@ non-actionable.
 
 V2 execution identity is independent from V1 `job-${assetId}`. Its idempotency
 key includes content item ID, content revision/hash, timeline hash, and output
-profile; attempt ownership is a separate field. Reusing one asset in multiple
+profile derived from the canonical plan; attempt ownership is a separate
+field. Reusing one asset in multiple
 content items therefore cannot collide. Frozen V1 identity is not retrofitted.
 
 ## First vertical slice

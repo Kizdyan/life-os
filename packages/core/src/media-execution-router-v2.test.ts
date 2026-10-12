@@ -170,15 +170,15 @@ describe("Media Execution Router V2", () => {
     const secondContent = item(asset(), { revision: 2 });
     const second = buildCanonicalMediaPlanV2(secondContent, { timelineVersion: 2 });
 
-    expect(createExecutionIdentityV2(first, "instagram-reel-h264")).not.toBe(
-      createExecutionIdentityV2(second, "instagram-reel-h264"),
+    expect(createExecutionIdentityV2(first)).not.toBe(
+      createExecutionIdentityV2(second),
     );
   });
 
   it("rejects stale result lineage and approval for another master hash", () => {
     const content = item();
     const mediaPlan = plan(content);
-    const identity = createExecutionIdentityV2(mediaPlan, "instagram-reel-h264");
+    const identity = createExecutionIdentityV2(mediaPlan);
     const result = {
       executionId: identity,
       attempt: 1,

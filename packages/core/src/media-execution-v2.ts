@@ -29,7 +29,7 @@ export interface FrozenMediaClaimRequestV2 {
   targetPublicationType: TargetPublicationType;
   timelineVersion: number;
   timelineHash: string;
-  outputProfile: string;
+  outputProfile: CanonicalMediaPlanV2["outputProfile"];
   lineage: MediaPlanLineageV2;
 }
 
@@ -60,7 +60,6 @@ export function prepareMediaExecutionV2(input: {
   contentItem: ContentItemV2Input;
   timelineVersion: number;
   timelineHash?: string;
-  outputProfile: string;
   compositionDecision?: CompositionDecisionV2;
   executors: ExecutorCapabilitiesV2[];
   now: string;
@@ -96,7 +95,7 @@ export function prepareMediaExecutionV2(input: {
 
   const claimRequest: FrozenMediaClaimRequestV2 = deepFreezeV2({
     schemaVersion: 2,
-    executionId: createExecutionIdentityV2(plan, input.outputProfile),
+    executionId: createExecutionIdentityV2(plan),
     attempt: 1,
     executorId: routing.executorId,
     contentItemId: contentItem.contentItemId,
@@ -104,7 +103,7 @@ export function prepareMediaExecutionV2(input: {
     targetPublicationType: contentItem.targetPublicationType,
     timelineVersion: plan.lineage.timelineVersion,
     timelineHash: plan.lineage.timelineHash,
-    outputProfile: input.outputProfile,
+    outputProfile: plan.outputProfile,
     lineage: plan.lineage,
   });
 

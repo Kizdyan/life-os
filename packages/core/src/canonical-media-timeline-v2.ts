@@ -79,6 +79,20 @@ function canvasFor(type: TargetPublicationType): BaseMediaPlanV2["canvas"] {
   return type === "reel" || type === "story" ? { width: 1080, height: 1920, displayAspectRatio: "9:16" } : { width: 1080, height: 1350, displayAspectRatio: "4:5" };
 }
 
+function videoCanvasFor(item: CanonicalContentItemV2): BaseMediaPlanV2["canvas"] {
+  const standard = canvasFor(item.targetPublicationType);
+  let factor = 1;
+  for (const source of item.sourceAssets) {
+    const display = rotatedSize(source);
+    const renderScale = Math.min(standard.width / display.width, standard.height / display.height);
+    if (renderScale > 1) factor = Math.min(factor, 1 / renderScale);
+  }
+  if (factor === 1) return standard;
+  const width = Math.max(18, Math.floor(standard.width * factor / 18) * 18);
+  const height = width * 16 / 9;
+  return { width, height, displayAspectRatio: standard.displayAspectRatio };
+}
+
 function lineage(item: CanonicalContentItemV2, timelineVersion: number): MediaPlanLineageV2 {
   if (!Number.isSafeInteger(timelineVersion) || timelineVersion < 1) throw new Error("timelineVersion must be positive");
   return {
@@ -108,13 +122,22 @@ function cropPreflight(source: AssetDescriptorV2 | undefined, canvas: BaseMediaP
   validateEvidence(decision, reasons);
   let measuredDiscard = EMPTY_CROP;
   if (source && decision.mode === "crop") {
-    measuredDiscard = measureCoverCropV2(source, canvas);
+    const coverCrop = measureCoverCropV2(source, canvas);
+    measuredDiscard = decision.cropRegion
+      ? { horizontal: 1 - decision.cropRegion.width, vertical: 1 - decision.cropRegion.height, area: 1 - decision.cropRegion.width * decision.cropRegion.height }
+      : coverCrop;
     const destructive = measuredDiscard.horizontal > 0.2 || measuredDiscard.vertical > 0.2 || measuredDiscard.area > 0.3;
     if (measuredDiscard.area > 0 && !decision.evidence) reasons.push("subject_evidence_missing");
     if (measuredDiscard.area > 0 && !decision.cropRegion) reasons.push("crop_region_missing");
     if (decision.cropRegion) {
       const { x, y, width, height } = decision.cropRegion;
       if (![x, y, width, height].every(Number.isFinite) || x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) reasons.push("crop_region_invalid");
+      else {
+        const display = rotatedSize(source);
+        const roiRatio = width * display.width / (height * display.height);
+        const targetRatio = canvas.width / canvas.height;
+        if (Math.abs(roiRatio - targetRatio) / targetRatio > 0.01) reasons.push("crop_region_aspect_mismatch");
+      }
     }
     if (destructive && (!decision.evidence || decision.evidence.confidence < 0.9)) reasons.push("destructive_crop_unverified");
   }
@@ -151,7 +174,7 @@ export function buildCanonicalMediaPlanV2(
   options: { timelineVersion: number; timelineHash?: string; compositionDecision?: CompositionDecisionV2; compositionDecisions?: Record<string, CompositionDecisionV2> },
 ): CanonicalMediaPlanV2 {
   if (item.sourceAssets.length === 0) throw new Error("Captured source assets are required to build a media plan");
-  const canvas = canvasFor(item.targetPublicationType);
+  const canvas = item.targetPublicationType === "reel" || item.targetPublicationType === "story" ? videoCanvasFor(item) : canvasFor(item.targetPublicationType);
   const base = {
     schemaVersion: 2 as const,
     lineage: lineage(item, options.timelineVersion),
@@ -171,7 +194,7 @@ export function buildCanonicalMediaPlanV2(
 
   const decisions = item.sourceAssets.map((source) => {
     const crop = measureCoverCropV2(source, canvas);
-    const safeForAutomaticCrop = crop.horizontal <= 0.2 && crop.vertical <= 0.2 && crop.area <= 0.3;
+    const safeForAutomaticCrop = crop.area === 0;
     return options.compositionDecisions?.[source.mediaAssetId] ?? options.compositionDecision ?? { mode: safeForAutomaticCrop ? "crop" as const : "contain_background" as const };
   });
   const requiredOperations: RequiredMediaOperationV2[] = ["video_timeline"];
@@ -180,6 +203,18 @@ export function buildCanonicalMediaPlanV2(
   if (item.sourceAssets.some((asset) => asset.kind === "photo")) requiredOperations.push("photo_timeline");
   const clips = item.sourceAssets.map((source, order) => ({ mediaAssetId: source.mediaAssetId, sourceKind: source.kind as "video" | "photo", inMs: 0, outMs: source.kind === "video" ? source.durationMs! : 3_000, speed: 1, order, composition: decisions[order] }));
   const preflight = aggregatePreflight(item.sourceAssets.map((source, index) => cropPreflight(source, canvas, decisions[index])));
+  const totalDurationMs = clips.reduce((sum, clip) => sum + (clip.outMs - clip.inMs) / clip.speed, 0);
+  const durationLimitMs = item.targetPublicationType === "story" ? 60_000 : 90_000;
+  if (totalDurationMs > durationLimitMs || totalDurationMs < 1_000) {
+    preflight.actionable = false;
+    preflight.qualityGate = "QUALITY_DEGRADED";
+    preflight.reasons.push(totalDurationMs > durationLimitMs ? "duration_exceeds_platform_limit" : "duration_below_platform_minimum");
+  }
+  if (canvas.width < 360 || canvas.height < 640) {
+    preflight.actionable = false;
+    preflight.qualityGate = "QUALITY_DEGRADED";
+    preflight.reasons.push("resolution_below_platform_minimum");
+  }
   const commonMode = decisions.every((decision) => decision.mode === decisions[0].mode) ? decisions[0].mode : "layout_composite";
   return finalizePlan({
     ...base,
@@ -187,7 +222,7 @@ export function buildCanonicalMediaPlanV2(
     requiredOperations,
     outputProfile: { codec: "h264", platformSafeAreaProfile: item.targetPublicationType === "story" ? "story-v1" : "short-video-v1" },
     timebase: "milliseconds",
-    targetDurationMs: clips.reduce((sum, clip) => sum + (clip.outMs - clip.inMs) / clip.speed, 0),
+    targetDurationMs: totalDurationMs,
     clips,
     composition: { mode: commonMode, coordinateSpace: "normalized_after_rotation_and_sar" },
     audio: { normalizeSpeech: item.audioIntent.normalizeSpeech, music: item.audioIntent.music ?? "optional" },
@@ -214,8 +249,26 @@ export function validateCanonicalMediaPlanV2(item: CanonicalContentItemV2, plan:
       const maximum = source.kind === "video" ? source.durationMs! : 3_000;
       if (!Number.isSafeInteger(clip.inMs) || !Number.isSafeInteger(clip.outMs) || clip.inMs < 0 || clip.outMs <= clip.inMs || clip.outMs > maximum || !Number.isFinite(clip.speed) || clip.speed <= 0) throw new Error("Video clip bounds are invalid");
     }
-    const recomputed = aggregatePreflight(item.sourceAssets.map((source, index) => cropPreflight(source, plan.canvas, plan.clips[index].composition)));
+    const recomputed = aggregatePreflight(item.sourceAssets.map((source) => {
+      const clip = plan.clips.find((entry) => entry.mediaAssetId === source.mediaAssetId)!;
+      return cropPreflight(source, plan.canvas, clip.composition);
+    }));
+    const validationDurationLimitMs = item.targetPublicationType === "story" ? 60_000 : 90_000;
+    if (plan.targetDurationMs > validationDurationLimitMs || plan.targetDurationMs < 1_000) {
+      recomputed.actionable = false; recomputed.qualityGate = "QUALITY_DEGRADED";
+      recomputed.reasons.push(plan.targetDurationMs > validationDurationLimitMs ? "duration_exceeds_platform_limit" : "duration_below_platform_minimum");
+    }
+    if (plan.canvas.width < 360 || plan.canvas.height < 640) {
+      recomputed.actionable = false; recomputed.qualityGate = "QUALITY_DEGRADED"; recomputed.reasons.push("resolution_below_platform_minimum");
+    }
     if (JSON.stringify(recomputed) !== JSON.stringify(plan.preflight)) throw new Error("Plan preflight drift detected");
   }
   if (canonicalHashV2(planHashPayload(plan)) !== plan.lineage.timelineHash) throw new Error("Timeline hash mismatch");
+  const rebuilt = buildCanonicalMediaPlanV2(item, {
+    timelineVersion: plan.lineage.timelineVersion,
+    compositionDecisions: plan.kind === "video_timeline"
+      ? Object.fromEntries(plan.clips.map((clip) => [clip.mediaAssetId, clip.composition]))
+      : undefined,
+  });
+  if (rebuilt.lineage.timelineHash !== plan.lineage.timelineHash) throw new Error("Canonical media plan drift detected");
 }

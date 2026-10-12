@@ -103,6 +103,52 @@ describe("Media Execution V2 adversarial invariants", () => {
     expect(plan.preflight.reasons).toContain("subject_clipped");
   });
 
+  it("rejects crop ROI that does not match the target display aspect ratio", () => {
+    const item = content([asset("square", { width: 400, height: 400 })]);
+    const plan = buildCanonicalMediaPlanV2(item, {
+      timelineVersion: 1,
+      compositionDecision: {
+        mode: "crop",
+        cropRegion: { x: 0, y: 0, width: 1, height: 1 },
+        evidence: { producer: "subject", version: "1", confidence: 0.99, subjectClipped: false, safeZoneClipped: false },
+      },
+    });
+    expect(plan.preflight.actionable).toBe(false);
+    expect(plan.preflight.reasons).toContain("crop_region_aspect_mismatch");
+  });
+
+  it("adapts low-resolution canvas without upscaling and rejects overlong Reel input", () => {
+    const square = content([asset("square", { width: 400, height: 400 })]);
+    const safePlan = buildCanonicalMediaPlanV2(square, { timelineVersion: 1 });
+    expect(safePlan.canvas.width).toBeLessThanOrEqual(400);
+    expect(safePlan.canvas.height).toBeLessThan(1920);
+    expect(safePlan.preflight.qualityGate).toBe("QUALITY_PASS");
+
+    const long = content([asset("long", { durationMs: 91_000 })]);
+    const longPlan = buildCanonicalMediaPlanV2(long, { timelineVersion: 1 });
+    expect(longPlan.preflight.actionable).toBe(false);
+    expect(longPlan.preflight.reasons).toContain("duration_exceeds_platform_limit");
+  });
+
+  it("routes against every per-clip composition mode instead of a synthetic aggregate", () => {
+    const item = content([asset("vertical"), asset("square", { contentHash: "b".repeat(64), width: 400, height: 400 })]);
+    const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1 });
+    expect(plan.kind === "video_timeline" && plan.composition.mode).toBe("layout_composite");
+    const decision = routeMediaExecutionV2({
+      contentItem: item,
+      plan,
+      executors: [
+        executor({ executorId: "aggregate-only", compositionModes: ["layout_composite"] }),
+        executor({ executorId: "clip-capable", compositionModes: ["crop", "contain_background"] }),
+      ],
+      now: "2026-10-12T12:01:00.000Z",
+    });
+    expect(decision.status).toBe("selected_pending_claim");
+    if (decision.status !== "selected_pending_claim") throw new Error("expected selection");
+    expect(decision.executorId).toBe("clip-capable");
+    expect(decision.rejectedCandidates.find((entry) => entry.executorId === "aggregate-only")?.reasons).toContain("composition_mode_unsupported");
+  });
+
   it("deep-freezes plans and detects source-reference or timeline-hash drift", () => {
     const item = content([asset("asset-1")]);
     const plan = buildCanonicalMediaPlanV2(item, { timelineVersion: 1 });

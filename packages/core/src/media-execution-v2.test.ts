@@ -78,7 +78,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem,
       timelineVersion: 1,
-      outputProfile: "canonical-v2",
       executors: [capableExecutor()],
       now: "2026-10-12T12:01:00.000Z",
     });
@@ -96,7 +95,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1", { width: 400, height: 400 })]),
       timelineVersion: 1,
-      outputProfile: "instagram-reel-h264",
       executors: [capableExecutor()],
       now: "2026-10-12T12:01:00.000Z",
     });
@@ -112,7 +110,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1", { width: 400, height: 400 })]),
       timelineVersion: 1,
-      outputProfile: "instagram-reel-h264",
       compositionDecision: { mode: "crop" },
       executors: [capableExecutor()],
       now: "2026-10-12T12:01:00.000Z",
@@ -127,7 +124,6 @@ describe("Media Execution V2 first vertical slice", () => {
     const result = prepareMediaExecutionV2({
       contentItem: content([asset("video", "asset-1")]),
       timelineVersion: 1,
-      outputProfile: "canonical-v2",
       executors: [],
       now: "2026-10-12T12:01:00.000Z",
     });
