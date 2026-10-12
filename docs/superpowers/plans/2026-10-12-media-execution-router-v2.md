@@ -116,3 +116,112 @@
 - Cloud Executor: replaceable provider adapter plus explicit bounded budget/deadline policy.
 - Publisher: shared ready-master storage, exact-hash approval binding, platform variants, scheduling, and failsafe content.
 - V1 physical follow-up: large-video Safari chunk/resume/quota remains separately deferred.
+
+---
+
+## Continuation: autonomous multi-executor proof
+
+The first four tasks proved format inference and pre-execution routing. The
+continuation keeps those contracts and adds the minimum stateful execution
+slice required to prove that one logical job survives executor failure without
+allowing a stale attempt to win.
+
+### Task 5: Close content-input validation gaps
+
+**Files:**
+- Modify: `packages/core/src/content-format-v2.test.ts`
+- Modify: `packages/core/src/content-format-v2.ts`
+
+**RED tests:**
+- Unknown or empty `plannedSourceKinds` fail closed before they can influence
+  format inference or revision identity.
+
+**Implementation:**
+- Validate every planned source kind at the canonical content boundary.
+
+**Verification:** targeted Vitest file, commit.
+
+### Task 6: Durable execution job and lease state machine
+
+**Files:**
+- Create: `packages/core/src/media-execution-job-v2.ts`
+- Create: `packages/core/src/media-execution-job-v2.test.ts`
+- Modify: `packages/core/src/index.ts`
+
+**RED tests:**
+- A stable logical job creates monotonically numbered attempts.
+- Only one unexpired lease may own the current attempt.
+- Heartbeats extend only the matching active lease.
+- Lease expiry makes the attempt recoverable without changing the logical job.
+- A stale attempt cannot validate or promote a result after failover.
+- Duplicate completion is idempotent for the same immutable result and rejects
+  conflicting results.
+- A serialized snapshot restores safely after orchestrator restart.
+
+**Implementation:**
+- Add immutable `MediaExecutionJobV2`, `ExecutionAttemptV2`, `ExecutorLeaseV2`,
+  `RenderedAssetV2`, and `QualityResultV2` contracts.
+- Add pure transition functions driven by caller-supplied timestamps. No sleeps,
+  ambient clock, storage implementation, or network transport in this slice.
+
+**Verification:** targeted Vitest file, TypeScript, commit.
+
+### Task 7: Executor interface and deterministic adapters
+
+**Files:**
+- Create: `packages/core/src/media-executor-v2.ts`
+- Create: `packages/core/src/media-executor-v2.test.ts`
+- Modify: `packages/core/src/index.ts`
+
+**RED tests:**
+- The typed executor lifecycle exposes claim, execute, heartbeat, validate,
+  cancel, and release/fail operations.
+- Desktop V1 adapter rejects plans outside the frozen V1 capability envelope.
+- The deterministic alternate executor returns lineage-bound output evidence.
+- Invalid/corrupt output fails objective validation.
+
+**Implementation:**
+- Define provider-neutral executor commands/results and two deterministic
+  adapters: a narrow Desktop V1 contract adapter and an in-memory alternate
+  executor used to prove failover. Do not invoke or modify frozen V1.
+
+**Verification:** targeted Vitest file, TypeScript, commit.
+
+### Task 8: Autonomous failover orchestrator
+
+**Files:**
+- Create: `packages/core/src/media-execution-orchestrator-v2.ts`
+- Create: `packages/core/src/media-execution-orchestrator-v2.test.ts`
+- Modify: `packages/core/src/index.ts`
+
+**RED tests:**
+- Unavailable Desktop at creation routes to the alternate executor.
+- Desktop claim failure selects the next compatible executor.
+- Lost heartbeat expires the lease and starts one newer attempt.
+- A stale Desktop result arriving after failover cannot win.
+- Invalid output triggers bounded failover; no executor loops forever.
+- Executor race yields one READY master and rejects duplicate/conflicting
+  completion.
+- Deadline escalation skips a path that cannot finish in time while FREE_ONLY
+  remains the default when time permits.
+- Restart from a durable snapshot resumes recovery deterministically.
+- No capable executor ends in a typed non-ready state.
+
+**Implementation:**
+- Compose existing capability routing with the pure job state machine and
+  injected executors. Persist candidate/rejection/failure evidence in the job.
+- Bound attempts by policy and require deterministic timestamps from the caller.
+- Promote exactly one validated immutable master.
+
+**Verification:** targeted tests, all V2 tests, commit.
+
+### Task 9: Review and branch verification
+
+**Verification:**
+- Full repository regression.
+- Application and API TypeScript checks.
+- Production Vite build.
+- `git diff --check`.
+- Frozen V1 and immutable V1.1 HEAD/clean checks.
+- Independent contract review and adversarial race review; Critical and
+  Important findings receive RED-to-GREEN fixes before the final commit.

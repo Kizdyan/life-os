@@ -262,6 +262,30 @@ executor exclusion, deterministic tie-breaking, V1 capability rejection,
 crop boundary/rotation cases, malformed cross-format plans, and revision/hash
 lineage preservation.
 
+The autonomous continuation adds a pure durable execution state machine on top
+of this prepared request. A `MediaExecutionJob` keeps one stable logical job ID
+while attempts increase monotonically. Each attempt has at most one lease with
+an executor ID, attempt number, ownership token, issued/heartbeat/expiry times,
+and terminal outcome. All transitions require caller-supplied timestamps so
+race and recovery behavior is deterministic in tests and durable storage can
+replay the same state after restart.
+
+An executor result may be promoted only when its execution ID, attempt,
+executor, lease ownership, timeline lineage, QA policy, and result hash match
+the current active attempt. Lease expiry makes the attempt recoverable; it does
+not mutate the canonical timeline or logical job identity. A later attempt
+permanently fences every earlier attempt. Duplicate completion with the same
+immutable result is idempotent, while a conflicting completion is rejected.
+
+The first executable proof uses two adapters: the frozen Desktop V1 capability
+adapter and a deterministic alternate adapter. These adapters prove contract
+shape and failover semantics without pretending to provide remote desktop,
+native iOS, or cloud rendering. The orchestrator filters candidates through the
+existing router, claims atomically through the job state machine, validates
+output evidence, and promotes exactly one READY master. Attempts and candidate
+failures are bounded; exhaustion produces a typed non-ready outcome instead of
+an infinite retry loop.
+
 The first slice models approval binding as a contract: approval references the
 exact master hash, content/timeline lineage, and QA policy version. Actual
 publication remains deferred. Decision Court has a deterministic/local critic
