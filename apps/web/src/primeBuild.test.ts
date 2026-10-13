@@ -105,6 +105,13 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     await logPrimeFromErika('Я написал девушке из Instagram', s, day);
     expect(primeWeeklySummary(readPrimeSettings(s)!, day, [], readPrimeJournal(s).events)?.outreach).toBe(1);
   });
+  it('never marks negated or future actions as completed, and never counts a non-message', () => {
+    expect(classifyPrimeUtterance('Я не написал девушке')?.event).not.toBe('new_outreach');
+    expect(classifyPrimeUtterance('Сегодня не тренировался')?.category).toBeUndefined();
+    expect(classifyPrimeUtterance('Завтра планирую тренировку')?.category).toBeUndefined();
+    expect(classifyPrimeUtterance('Хочу сделать фотосессию')?.category).toBeUndefined();
+    expect(classifyPrimeUtterance('Сегодня не репетировал')?.category).toBeUndefined();
+  });
   it('classifies user example logs without forcing special syntax', () => {
     expect(classifyPrimeUtterance('Я сходил на тренировку')?.category).toBe('body');
     expect(classifyPrimeUtterance('Сегодня репетировал три часа')?.category).toBe('strong');
