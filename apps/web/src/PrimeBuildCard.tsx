@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { allItems, outcome, undoOutcome, type OutcomeSyncMeta } from './api';
+import { readAllLocalItems } from './localRuntime';
 import type { Item } from './types';
 import {
-  PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, addPrimeDays, beginPrimeBuild,
+  PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, beginPrimeBuild,
   completePrimeReflectionTask, ensurePrimeWeek, logPrimeEvent, primeActionId,
   primeDate, primeWeek, primeWeeklySummary, readPrimeJournal, readPrimeSettings,
   savePrimeReflection, setPrimeOutreachLimit,
@@ -26,10 +27,10 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   const [selfRespect, setSelfRespect] = useState('');
   const [alignment, setAlignment] = useState('');
   const d = today();
-  const refresh = async () => {
+  const refresh = () => {
     setEvents(readPrimeJournal(localStorage).events);
     setSettings(readPrimeSettings(localStorage));
-    setItems(await allItems());
+    setItems(readAllLocalItems(localStorage));
   };
   useEffect(() => {
     let alive = true;
