@@ -152,9 +152,14 @@ function task(id: string, title: string, date?: string): Item {
     planned_end: date ? date + 'T21:32:00' : null, project_id: PRIME_PROJECT_ID, goal_id: PRIME_GOAL_ID,
     priority: 'normal', carry_forward: false, notes: 'Prime Build · 30 дней' };
 }
-export async function ensurePrimeWeek(settings: PrimeSettings, date: string) {
+const primeSeedInFlight = new Map<string, Promise<void>>();
+export async function ensurePrimeWeek(settings: PrimeSettings, date: string): Promise<void> {
   const week = primeWeek(settings, date);
   if (!week) return;
+  const key = settings.startDate + ':' + date;
+  const running = primeSeedInFlight.get(key);
+  if (running) return running;
+  const pending = (async () => {
   const gs = await goals();
   if (!gs.some(g => g.id === PRIME_GOAL_ID))
     await saveGoal({ id: PRIME_GOAL_ID, title: 'Строить самостоятельную, насыщенную жизнь', status: 'active' });
@@ -168,6 +173,9 @@ export async function ensurePrimeWeek(settings: PrimeSettings, date: string) {
   }
   const checkin = primeCheckinId(date);
   if (!existing.has(checkin)) await saveItem(task(checkin, 'Prime · Вечерние 2 минуты', date));
+  })();
+  primeSeedInFlight.set(key, pending);
+  try { await pending; } finally { primeSeedInFlight.delete(key); }
 }
 export async function completePrimeCategory(settings: PrimeSettings, date: string, category: PrimeCategory): Promise<boolean> {
   const week = primeWeek(settings, date);
