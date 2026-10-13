@@ -18,11 +18,28 @@ const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 1));
 export function createFileKnowledgeStateStore(options: FileStoreOptions): KnowledgeStateStore {
   if (!options.path || !options.integrityKey) throw new Error("durable knowledge path and integrity key are required");
   const lockPath = `${options.path}.lock`;
+  const reclaimPath = `${lockPath}.reclaim`;
   const initializedPath = `${options.path}.initialized`;
   const attempts = options.lockAttempts ?? 500;
 
   const withLock = async <T>(work: () => Promise<T>): Promise<T> => {
     await mkdir(dirname(options.path), { recursive: true });
+    const reclaimIfExpired = async (): Promise<void> => {
+      let reclaim: Awaited<ReturnType<typeof open>>;
+      try { reclaim = await open(reclaimPath, "wx"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return; throw error; }
+      try {
+        let remove = false;
+        try {
+          const raw = await readFile(lockPath, "utf8");
+          const lock = JSON.parse(raw) as { pid?: unknown; createdAt?: unknown; nonce?: unknown };
+          const wellFormed = typeof lock.pid === "number" && typeof lock.createdAt === "number" && typeof lock.nonce === "string" && lock.nonce.length > 0;
+          if (!wellFormed) remove = Date.now() - (await stat(lockPath)).mtimeMs > 30_000;
+          else { const pid = lock.pid as number, createdAt = lock.createdAt as number; if (Date.now() - createdAt > 30_000) { let alive = true; try { process.kill(pid, 0); } catch { alive = false; } remove = !alive; } }
+        } catch { try { remove = Date.now() - (await stat(lockPath)).mtimeMs > 30_000; } catch { remove = false; } }
+        if (remove) await unlink(lockPath).catch(() => undefined);
+      } finally { await reclaim.close(); await unlink(reclaimPath).catch(() => undefined); }
+    };
     let handle: Awaited<ReturnType<typeof open>> | undefined;
     let ownerNonce: string | undefined;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -35,16 +52,7 @@ export function createFileKnowledgeStateStore(options: FileStoreOptions): Knowle
       }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        try {
-          const lock = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown; createdAt?: unknown };
-          const stale = typeof lock.createdAt === "number" && Date.now() - lock.createdAt > 30_000;
-          let alive = true;
-          if (typeof lock.pid === "number") try { process.kill(lock.pid, 0); } catch { alive = false; }
-          if (stale && !alive) { await unlink(lockPath); continue; }
-        } catch {
-          try { if (Date.now() - (await stat(lockPath)).mtimeMs > 30_000) { await unlink(lockPath); continue; } }
-          catch { continue; }
-        }
+        await reclaimIfExpired();
         await pause();
       }
     }

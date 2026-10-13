@@ -192,12 +192,13 @@ const containsSensitiveMaterial = (value: unknown): boolean => {
 const containsSecret = (input: KnowledgeInput): boolean => containsSensitiveMaterial(input);
 const publicEpistemicAllowed = new Set<KnowledgeEpistemic>(["user-stated", "observed", "externally-verified", "derived"]);
 const isEffective = (record: KnowledgeRecord, at: string) => record.status !== "erased" && record.status !== "rejected" && record.validFrom <= at && (!record.validTo || record.validTo > at);
-const isPublicEpistemicallySafe = (record: KnowledgeRecord, records: KnowledgeRecord[], seen = new Set<string>()): boolean => {
+const isPublicEpistemicallySafe = (record: KnowledgeRecord, records: KnowledgeRecord[], at: string, seen = new Set<string>()): boolean => {
+  if (!isEffective(record, at) || record.sensitivity === "sensitive" || record.personaExposure !== "allowed" || restrictedPublicDomains.has(normalizedDomain(record.domain))) return false;
   if (!publicEpistemicAllowed.has(record.epistemic)) return false;
   if (record.epistemic !== "derived") return true;
   if (record.derivedFrom.length === 0 || seen.has(record.recordId)) return false;
   const nextSeen = new Set(seen).add(record.recordId);
-  return record.derivedFrom.every((id) => { const source = records.find((candidate) => candidate.recordId === id); return Boolean(source && source.tenantId === record.tenantId && source.ownerUserId === record.ownerUserId && isPublicEpistemicallySafe(source, records, nextSeen)); });
+  return record.derivedFrom.every((id) => { const source = records.find((candidate) => candidate.recordId === id); return Boolean(source && source.tenantId === record.tenantId && source.ownerUserId === record.ownerUserId && isPublicEpistemicallySafe(source, records, at, nextSeen)); });
 };
 
 export class CanonicalKnowledgeAuthority {
@@ -274,7 +275,7 @@ export class CanonicalKnowledgeAuthority {
     this.authorize(principal, scope);
     const state = await this.store.read();
     const visible = state.records.filter((record) => record.tenantId === principal.tenantId && record.ownerUserId === principal.userId).filter((record) => {
-      if (scope.agent === "persona_public" || scope.purpose === "public_content") return isPublicEpistemicallySafe(record, state.records) && record.sensitivity !== "sensitive" && record.personaExposure === "allowed" && !restrictedPublicDomains.has(normalizedDomain(record.domain));
+      if (scope.agent === "persona_public" || scope.purpose === "public_content") return isPublicEpistemicallySafe(record, state.records, scope.validAt ?? this.now());
       return true;
     }).filter((record) => {
       const effectiveAt = scope.validAt ?? this.now();
@@ -289,7 +290,7 @@ export class CanonicalKnowledgeAuthority {
     const record = state.records.find((item) => item.recordId === recordId);
     if (!record) return undefined;
     this.owns(principal, record);
-    if ((scope.agent === "persona_public" || scope.purpose === "public_content") && (!isEffective(record, this.now()) || !isPublicEpistemicallySafe(record, state.records) || record.sensitivity === "sensitive" || record.personaExposure !== "allowed" || restrictedPublicDomains.has(normalizedDomain(record.domain)))) return undefined;
+    if ((scope.agent === "persona_public" || scope.purpose === "public_content") && !isPublicEpistemicallySafe(record, state.records, this.now())) return undefined;
     return clone(record);
   }
 

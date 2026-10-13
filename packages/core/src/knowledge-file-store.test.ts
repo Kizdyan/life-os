@@ -55,14 +55,14 @@ describe("durable canonical knowledge state", () => {
 
   it("recovers an expired lock whose owner process is gone", async () => {
     const options = await fixture();
-    await writeFile(`${options.path}.lock`, JSON.stringify({ pid: 2_147_483_647, createdAt: Date.now() - 60_000 }), "utf8");
+    await writeFile(`${options.path}.lock`, JSON.stringify({ pid: 2_147_483_647, createdAt: Date.now() - 60_000, nonce: "dead" }), "utf8");
     expect((await createFileKnowledgeStateStore(options).read()).revision).toBe(0);
   });
 
   it("recovers an expired malformed crash lock by file age", async () => {
     const options = await fixture();
     const lockPath = `${options.path}.lock`;
-    await writeFile(lockPath, "", "utf8");
+    await writeFile(lockPath, "{}", "utf8");
     const old = new Date(Date.now() - 60_000); await utimes(lockPath, old, old);
     expect((await createFileKnowledgeStateStore(options).read()).revision).toBe(0);
   });
