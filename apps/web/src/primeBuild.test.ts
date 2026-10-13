@@ -165,6 +165,16 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     expect(readPrimeJournal(s).events).toHaveLength(1);
     expect(JSON.stringify(readPrimeJournal(s))).not.toContain(phrase);
   });
+  it('explicit Erika correction voids the old outreach with provenance, not another event', async () => {
+    const store = new Store(), cfg = beginPrimeBuild(store, day);
+    await logPrimeFromErika('Я написал девушке из Instagram', store, day);
+    expect(primeWeeklySummary(cfg, day, [], readPrimeJournal(store).events)?.outreach).toBe(1);
+    await logPrimeFromErika('Нет, я не написал девушке', store, day);
+    expect(primeWeeklySummary(cfg, day, [], readPrimeJournal(store).events)?.outreach).toBe(0);
+    expect(readPrimeJournal(store).events).toHaveLength(1);
+    expect(readPrimeJournal(store).events[0].voided).toBe(true);
+    expect(readPrimeJournal(store).audit.length).toBe(2);
+  });
   it('week-over-week boundaries count separate categories without inflating achievement', async () => {
     const s = new Store(), cfg = beginPrimeBuild(s, day);
     await ensurePrimeWeek(cfg, day);
