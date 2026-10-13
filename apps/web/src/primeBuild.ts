@@ -117,6 +117,12 @@ export function undoPrimeJournalLast(store: PrimeStorage, now = new Date().toISO
   persistJournal(store, journal);
   return true;
 }
+export function voidPrimeEvent(store: PrimeStorage, eventId: string, now = new Date().toISOString()): boolean {
+  const existing = readPrimeJournal(store).events.find(e => e.id === eventId && !e.voided);
+  if (!existing) return false;
+  putEvent(store, { ...existing, voided: true, updatedAt: now }, now);
+  return true;
+}
 export function logPrimeEvent(store: PrimeStorage, input: Omit<PrimeEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, now = new Date().toISOString()): PrimeEvent {
   if (!validDate(input.date)) throw Error('Invalid event date');
   const old = readPrimeJournal(store).events.find(e => e.id === input.id || (input.fingerprint && e.fingerprint === input.fingerprint && e.date === input.date));
@@ -197,7 +203,7 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
   if (/(захотел|хотелось|хочется|тянет|собираюсь|импульс).*(написать|писать|познаком|девушк)/.test(s))
     return { event: 'impulse', message: 'Можешь взять 10 минут: тебе интересна именно она или сейчас хочется подтверждения?' };
   if (/(?:^|\s)не\s+(?:написал|познакомился|пригласил|позвал)(?:\s|$)/.test(s))
-    return { event: 'pause', outcome: 'skip', message: 'Новая инициатива не записана: ты сообщил, что не отправлял её.' };
+    return { message: 'Новая инициатива не записана: ты сообщил, что не отправлял её.' };
   if (/(ответил|ответила|продолжил разговор|переписк|общались)/.test(s))
     return { message: 'Это продолжение общения, лимит новых инициатив не меняется.' };
   if (/(написал|познакомился|пригласил|позвал).*(девушк|свидан|романтич|instagram|инстаграм)/.test(s))
@@ -226,6 +232,20 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
 export async function logPrimeFromErika(text: string, store: PrimeStorage, date = primeDate()): Promise<string | null> {
   const settings = readPrimeSettings(store);
   if (!settings || !primeWeek(settings, date)) return null;
+  const normalizedText = text.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
+  // Correct the last explicitly misreported outreach; never create a second active truth.
+  const explicitCorrection = /(?:^|[\s,.:])(?:нет|неа)(?:[\s,.:]|$)|ошибся|исправь|на самом деле/.test(normalizedText);
+  const deniedOutreach = /(?:^|\s)не\s+(?:написал|познакомился|пригласил|позвал)(?:\s|$)/.test(normalizedText);
+  if (explicitCorrection && deniedOutreach) {
+    const previous = readPrimeJournal(store).events
+      .filter(e => !e.voided && e.type === 'new_outreach' && e.date === date)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+    if (previous) {
+      voidPrimeEvent(store, previous.id);
+      return 'Исправила последнюю новую инициативу: она не считается, но история изменения сохранена.';
+    }
+    return 'Не отмечаю новую инициативу: подтверждённой записи для исправления не нашла.';
+  }
   const result = classifyPrimeUtterance(text);
   if (!result) return null;
   if (result.category) {
