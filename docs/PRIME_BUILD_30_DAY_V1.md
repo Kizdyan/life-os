@@ -35,8 +35,9 @@ The raw/private romantic initiative context, impulse and validation notes, refle
 
 - Source-exact deterministic JS verification of pure \`primeBuild.ts\` logic after erasing TypeScript-only type annotations: **20/20 PASS** (dates, week boundaries, soft guardrail, private event dedupe, audit/undo, reflection correction).
 - Source-exact deterministic JS classifier verification: **17/17 PASS** for six user examples and targeted negative/overlap/future-intent cases, after two discovered classifier bugs were fixed.
+- Source-exact Erika correction flow with deterministic storage: **PASS** — a mistakenly claimed outreach is voided, active count becomes zero, and two audit entries remain.
 - Source-exact weekly seeding concurrency test, with existing API substituted by a deterministic in-memory adapter: **PASS** (3 concurrent initializers, exactly 1 Goal + 1 Project + 6 Item writes).
-- \`apps/web/src/primeBuild.test.ts\`: **18 Vitest test cases authored, execution DEFERRED** — no authenticated GitHub working-copy package/dependency environment was available in this chat container. Their existence is not a PASS.
+- \`apps/web/src/primeBuild.test.ts\`: **19 Vitest test cases authored, execution DEFERRED** — no authenticated GitHub working-copy package/dependency environment was available in this chat container. Their existence is not a PASS.
 - Full app regression, React UI test, app/API typecheck and production Vite build: **NOT EXECUTED** in this environment; required before merge/release.
 - iPhone physical behavior and production sync: **NOT TESTED**, no user QA requested.
 
@@ -45,7 +46,7 @@ Suggested independent follow-up in an isolated developer workspace:
 
 ## Scope and known V1 limitations
 
-No second habit system. No Media/Persona source edits. No complete Hero Identity migration. No guaranteed universal conversational parsing beyond current deterministic intents. Corrections of same dated private entries and reflection updates are idempotent; ambiguous cross-category/retroactive verbal corrections still need explicit context or a future Erika NLP layer. Private notes are same-device only. No cross-device sensitive journal sync, and no production guarantee is made.
+No second habit system. No Media/Persona source edits. No complete Hero Identity migration. No guaranteed universal conversational parsing beyond current deterministic intents. Corrections of same dated private entries and reflection updates are idempotent; an explicit 'Нет, я не написал' reverses the most recent same-day outreach with audit. Ambiguous cross-category/retroactive verbal corrections still need explicit context or a future Erika NLP layer. Private notes are same-device only. No cross-device sensitive journal sync, and no production guarantee is made.
 
 ## Protected boundaries
 
