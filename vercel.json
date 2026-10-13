@@ -1,3 +1,28 @@
 {
-  "$schema":"https://openapi.vercel.sh/vercel.json","framework":"vite","installCommand":"npm install","buildCommand":"VITE_LIFE_OS_REMOTE_ENABLED=true npm run web:build","outputDirectory":"apps/web/dist","env":{"LIFE_OS_EDGE_RUNTIME_URL":"https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime"},"rewrites":[{"source":"/api/media/transcribe","destination":"/api/media/persona"},{"source":"/api/media/status","destination":"/api/media/persona-runtime"},{"source":"/api/persona","destination":"/api/media/persona-runtime"},{"source":"/((?!api/).*)","destination":"/index.html"}]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm install",
+  "buildCommand": "VITE_LIFE_OS_REMOTE_ENABLED=true npm run web:build",
+  "outputDirectory": "dist",
+  "env": {
+    "LIFE_OS_EDGE_RUNTIME_URL": "https://zhehdbhpkcucgcjwuhxm.supabase.co/functions/v1/life-os-runtime"
+  },
+  "rewrites": [
+    {
+      "source": "/api/media/transcribe",
+      "destination": "/api/media/persona"
+    },
+    {
+      "source": "/api/media/status",
+      "destination": "/api/media/persona-runtime"
+    },
+    {
+      "source": "/api/persona",
+      "destination": "/api/media/persona-runtime"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
