@@ -22,6 +22,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   const [events, setEvents] = useState<PrimeEvent[]>(() => readPrimeJournal(localStorage).events);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [outreachContext, setOutreachContext] = useState('');
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [answers, setAnswers] = useState<[string, string, string]>(() => readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.answers ?? ['', '', '']);
   const [selfRespect, setSelfRespect] = useState(() => String(readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.selfRespect ?? ''));
@@ -89,7 +90,10 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     finally { setBusy(false); }
   }
   function log(type: PrimeEvent['type'], options?: { outcome?: PauseOutcome; id?: string }) {
-    logPrimeEvent(localStorage, { type, date: d, ...options });
+    logPrimeEvent(localStorage, { type, date: d,
+      ...(type === 'new_outreach' && outreachContext.trim() ? { detail: outreachContext.trim().slice(0, 500) } : {}),
+      ...options });
+    if (type === 'new_outreach') setOutreachContext('');
     setEvents(readPrimeJournal(localStorage).events);
     window.dispatchEvent(new Event('prime-build-updated'));
   }
@@ -143,6 +147,10 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
         </select>
       </label>
       {wk.outreach >= settings.outreachLimit && <p>Ориентир достигнут. Это не запрет — решение остаётся за тобой.</p>}
+      <label>Контекст новой инициативы (необязательно, только на этом устройстве)
+        <input aria-label="Контекст инициативы — приватно" value={outreachContext} maxLength={500}
+          onChange={e => setOutreachContext(e.target.value)} placeholder="Например: познакомился на мероприятии" />
+      </label>
       <div className="primeButtonRow">
         <button type="button" onClick={() => log('new_outreach')}>+ Новая инициатива</button>
         <button type="button" onClick={() => log('pause')}>Пауза 10 минут</button>
