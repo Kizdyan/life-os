@@ -6,9 +6,11 @@ import {
   PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, addPrimeDays, beginPrimeBuild,
   completePrimeReflectionTask, ensurePrimeWeek, logPrimeEvent, primeActionId,
   primeDate, primeWeek, primeWeeklySummary, readPrimeJournal, readPrimeSettings,
-  savePrimeReflection, setPrimeOutreachLimit, undoPrimeJournalLast,
+  setPrimeOutreachLimit, undoPrimeJournalLast, voidPrimeEvent,
   type PrimeCategory, type PrimeEvent, type PrimeSettings, type PauseOutcome,
 } from './primeBuild';
+import { makePrimeDailyReflection, readPrimeDailyReflection, readPrimeDailyReflections } from './dailyCheckin';
+import { persistPrimeDailyReflection } from './checkinRuntime';
 import './prime-build.css';
 
 type UndoState = { item: Item; successorId: string | null; sync: OutcomeSyncMeta };
@@ -20,17 +22,19 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   const [settings, setSettings] = useState<PrimeSettings | null>(() => readPrimeSettings(localStorage));
   const [items, setItems] = useState<Item[]>([]);
   const [events, setEvents] = useState<PrimeEvent[]>(() => readPrimeJournal(localStorage).events);
+  const [reflections, setReflections] = useState(() => readPrimeDailyReflections(localStorage));
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [error, setError] = useState('');
   const [outreachContext, setOutreachContext] = useState('');
   const [undo, setUndo] = useState<UndoState | null>(null);
-  const [answers, setAnswers] = useState<[string, string, string]>(() => readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.answers ?? ['', '', '']);
-  const [selfRespect, setSelfRespect] = useState(() => String(readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.selfRespect ?? ''));
-  const [alignment, setAlignment] = useState(() => String(readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.alignment ?? ''));
+  const [answers, setAnswers] = useState<[string, string, string]>(() => readPrimeDailyReflection(localStorage, primeDate())?.answers ?? readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.answers ?? ['', '', '']);
+  const [selfRespect, setSelfRespect] = useState(() => String(readPrimeDailyReflection(localStorage, primeDate())?.selfDirection ?? ''));
+  const [alignment, setAlignment] = useState(() => String(readPrimeDailyReflection(localStorage, primeDate())?.alignment ?? ''));
   const d = today();
   const refresh = () => {
     setEvents(readPrimeJournal(localStorage).events);
+    setReflections(readPrimeDailyReflections(localStorage));
     setSettings(readPrimeSettings(localStorage));
     setItems(readAllLocalItems(localStorage));
   };
@@ -51,13 +55,37 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     if (!settings || !primeWeek(settings, d)) return;
     void ensurePrimeWeek(settings, d).then(refresh).catch(() => setError('Не удалось восстановить задачи Prime Build.'));
   }, [settings?.startDate, d]);
-  const wk = useMemo(() => settings ? primeWeeklySummary(settings, d, items, events) : null, [settings, d, items, events]);
+  useEffect(() => {
+    // Idempotent lazy migration of legacy private journal reflections into
+    // dated canonical Check-in facets. Keep legacy audit/provenance, void active duplicate.
+    if (!settings) return;
+    let active = true;
+    void (async () => {
+      const legacy = readPrimeJournal(localStorage).events.filter(e => e.type === 'reflection' && !e.voided && e.answers);
+      for (const item of legacy) {
+        if (!active) return;
+        if (!readPrimeDailyReflection(localStorage, item.date)) {
+          await persistPrimeDailyReflection(makePrimeDailyReflection(item.date, item.answers!, item.selfRespect, item.alignment));
+        }
+        voidPrimeEvent(localStorage, item.id);
+      }
+      if (active) refresh();
+    })().catch(() => setError('Перенос прежних вечерних записей не завершён; оригиналы сохранены.'));
+    return () => { active = false; };
+  }, [settings?.startDate]);
+  // Source-of-truth nightly reflections are Check-in facets, not journal events.
+  const weeklyEvents = useMemo(() => [
+    ...events.filter(e => e.type !== 'reflection'),
+    ...reflections.map(x => ({ id:x.id, type:'reflection' as const, date:x.date,
+      createdAt:x.updatedAt, updatedAt:x.updatedAt })),
+  ], [events, reflections]);
+  const wk = useMemo(() => settings ? primeWeeklySummary(settings, d, items, weeklyEvents) : null, [settings, d, items, weeklyEvents]);
   const previousWeeks = useMemo(() => {
     if (!settings || !wk || wk.index < 2) return null;
-    const previous = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 1) * 7), items, events);
-    const earlier = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 2) * 7), items, events);
+    const previous = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 1) * 7), items, weeklyEvents);
+    const earlier = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 2) * 7), items, weeklyEvents);
     return previous && earlier ? { previous, earlier } : null;
-  }, [settings, wk, items, events]);
+  }, [settings, wk, items, weeklyEvents]);
   const activePause = useMemo(() => events.filter(e => !e.voided && e.type === 'pause' && !e.outcome).at(-1), [events]);
   const isActive = Boolean(settings && wk);
   async function start() {
@@ -110,8 +138,8 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     if (!answers.some(x => x.trim())) { setError('Напиши хотя бы одну короткую мысль.'); return; }
     setBusy(true);
     try {
-      savePrimeReflection(localStorage, d, answers,
-        selfRespect ? Number(selfRespect) : undefined, alignment ? Number(alignment) : undefined);
+      await persistPrimeDailyReflection(makePrimeDailyReflection(d, answers,
+        selfRespect ? Number(selfRespect) : undefined, alignment ? Number(alignment) : undefined));
       await completePrimeReflectionTask(d);
       setError('');
       await refresh();
@@ -131,7 +159,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   if (!isActive || !wk) return <section className="primeCard">
     <small>PRIME BUILD</small><h2>30 дней пройдены</h2><p>Проект остаётся в истории Life OS. Твои выполненные действия сохранены в задачах.</p>
   </section>;
-  const saved = events.find(e => e.type === 'reflection' && !e.voided && e.date === d);
+  const saved = reflections.find(e => e.date === d);
   const reflected = Boolean(saved);
   const elapsed = activePause ? Math.max(0, Math.floor((clock - new Date(activePause.createdAt).getTime()) / 60000)) : 0;
   return <section className="primeCard" aria-label={PRIME_TITLE}>
@@ -187,7 +215,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
         <textarea rows={2} value={answers[2]} onChange={e => setAnswers(a => [a[0], a[1], e.target.value])} />
       </label>
       <div className="primeScores">
-        <label>Самоуважение
+        <label>Самостоятельность
           <select value={selfRespect} onChange={e => setSelfRespect(e.target.value)}>
             <option value="">—</option>{Array.from({ length: 10 }, (_, i) => <option key={i} value={i + 1}>{i + 1}/10</option>)}
           </select>
