@@ -18,9 +18,9 @@ export interface HeroIdentityProfile {
   interview: { answered: 76; total: 76; visualVerified: false };
   core: { values: string[]; source: 'self_report'; questionRefs: number[] };
   prime: { priorities: string[]; activation: string[]; boundaries: string[]; source: 'aspiration' };
-  publicBrand: { workingName: string; direction: string; distanceFromEveryday: 7; verified: false };
+  publicBrand: { workingName: string; direction: string; distanceFromEveryday: number; verified: false };
   style: { colors: string[]; garments: string[]; hair: 'unresolved'; glasses: 'to_test' };
-  actor: { freedom: 10; independentFromPublicBrand: true; modes: { id: HeroModeId; status: EvidenceLevel }[] };
+  actor: { freedom: number; independentFromPublicBrand: true; modes: { id: HeroModeId; status: EvidenceLevel }[] };
   exercises: HeroExercise[];
 }
 const KEY = 'life-os:hero-identity:v1';
@@ -44,18 +44,18 @@ export function seedHeroIdentity(): HeroIdentityProfile {
     },
     publicBrand: {
       workingName: 'Архетип и бренд',
-      direction: 'Современный джентльмен с хулиганской ноткой',
-      distanceFromEveryday: 7,
+      direction: 'Персональный профиль ожидает защищённой синхронизации',
+      distanceFromEveryday: 0,
       verified: false,
     },
     style: {
-      colors: ['Молочный', 'Графит', 'Песочный', 'Оливковый'],
-      garments: ['Пиджак', 'Костюм', 'Пальто', 'Кожаная куртка', 'Лоферы'],
+      colors: [],
+      garments: [],
       hair: 'unresolved',
       glasses: 'to_test',
     },
     actor: {
-      freedom: 10,
+      freedom: 0,
       independentFromPublicBrand: true,
       modes: [
         { id: 'gentleman', status: 'hypothesis' },
