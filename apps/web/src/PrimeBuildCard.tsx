@@ -6,12 +6,13 @@ import {
   PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, addPrimeDays, beginPrimeBuild,
   completePrimeReflectionTask, ensurePrimeWeek, logPrimeEvent, primeActionId,
   primeDate, primeWeek, primeWeeklySummary, readPrimeJournal, readPrimeSettings,
-  setPrimeOutreachLimit, undoPrimeJournalLast, voidPrimeEvent,
+  setPrimeOutreachLimit, undoPrimeJournalLast,
   type PrimeCategory, type PrimeEvent, type PrimeSettings, type PauseOutcome,
 } from './primeBuild';
 import { makePrimeDailyReflection, readPrimeDailyReflection, readPrimeDailyReflections } from './dailyCheckin';
 import { persistPrimeDailyReflection } from './checkinRuntime';
 import { persistPrimePrivateJournal } from './primePrivateRuntime';
+import { migrateLegacyPrimeReflections } from './primeCheckinMigration';
 import './prime-build.css';
 
 type UndoState = { item: Item; successorId: string | null; sync: OutcomeSyncMeta };
@@ -61,18 +62,12 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     // dated canonical Check-in facets. Keep legacy audit/provenance, void active duplicate.
     if (!settings) return;
     let active = true;
-    void (async () => {
-      const legacy = readPrimeJournal(localStorage).events.filter(e => e.type === 'reflection' && !e.voided && e.answers);
-      for (const item of legacy) {
-        if (!active) return;
-        if (!readPrimeDailyReflection(localStorage, item.date)) {
-          await persistPrimeDailyReflection(makePrimeDailyReflection(item.date, item.answers!, item.selfRespect, item.alignment));
-        }
-        voidPrimeEvent(localStorage, item.id);
+    void migrateLegacyPrimeReflections(localStorage, persistPrimeDailyReflection)
+      .then(async () => {
         await persistPrimePrivateJournal();
-      }
-      if (active) refresh();
-    })().catch(() => setError('Перенос прежних вечерних записей не завершён; оригиналы сохранены.'));
+        if (active) refresh();
+      })
+      .catch(() => { if (active) setError('Перенос прежних вечерних записей не завершён; оригиналы сохранены.'); });
     return () => { active = false; };
   }, [settings?.startDate]);
   // Source-of-truth nightly reflections are Check-in facets, not journal events.
