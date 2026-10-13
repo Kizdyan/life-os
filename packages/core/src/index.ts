@@ -88,5 +88,6 @@ export * from './erika-discourse';
 export * from './persona-state';
 export * from './persona-approval';
 export * from './persona-publication';
+export * from './publisher-v1';
 export * from './persona-shooting';
 export * from './persona-learning';
