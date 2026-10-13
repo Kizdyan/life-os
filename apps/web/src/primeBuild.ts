@@ -8,7 +8,7 @@ export const PRIME_PRINCIPLE = 'Интерес — сразу. Значимос�
 const SETTINGS_KEY = 'life-os:prime-build:settings:v1';
 const PRIVATE_KEY = 'life-os:prime-build:private:v1';
 export type PrimeCategory = 'body' | 'style' | 'strong' | 'social' | 'capture';
-export type PrimeEventType = 'new_outreach' | 'pause' | 'validation' | 'reflection' | 'self_direction';
+export type PrimeEventType = 'new_outreach' | 'impulse' | 'pause' | 'validation' | 'reflection' | 'self_direction';
 export type PauseOutcome = 'interested' | 'skip' | 'postpone';
 export interface PrimeEvent {
   id: string;
@@ -159,7 +159,7 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
   if (/(не стал|не стала|не буду|воздержал|выдержал|передумал).*(писать|написать|сообщен|пауз)/.test(s) || /(пауз).*(выдержал|не написал|не стал)/.test(s))
     return { event: 'pause', outcome: 'skip', message: 'Пауза отмечена. Выбор за тобой.' };
   if (/(захотел|хочется|тянет|собираюсь|импульс).*(написать|писать|познаком|девушк)/.test(s))
-    return { event: 'pause', message: 'Можешь взять 10 минут: тебе интересна именно она или сейчас хочется подтверждения?' };
+    return { event: 'impulse', message: 'Можешь взять 10 минут: тебе интересна именно она или сейчас хочется подтверждения?' };
   if (/(ответил|ответила|продолжил разговор|переписк|общались)/.test(s))
     return { message: 'Это продолжение общения, лимит новых инициатив не меняется.' };
   if (/(написал|познакомился|пригласил|позвал).*(девушк|свидан|романтич|instagram|инстаграм)/.test(s))
@@ -170,10 +170,10 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
     return { category: 'style', message: 'Стиль / уход — действие зачтено.' };
   if (/(фото|видео|снимал|фотосесси).*(себя|образ|портрет|prime)/.test(s))
     return { category: 'capture', message: 'Визуальная съёмка — действие зачтено.' };
-  if (/(репетир|спектак|театр|снимал|съемк|сьемк|аранжир|сочинил|музык|проект|работал над сцен)/.test(s) && !/(не делал|не ходил)/.test(s))
-    return { category: 'strong', message: 'Сильный контекст — действие зачтено.' };
   if (/(ходил|побывал|встретился|сходил).*(друз|выставк|концерт|мероприяти|премьер|встреч)/.test(s))
     return { category: 'social', message: 'Социальная активность — действие зачтено.' };
+  if (/(репетир|спектак|театр|снимал|съемк|сьемк|аранжир|сочинил|музык|проект|работал над сцен)/.test(s) && !/(не делал|не ходил)/.test(s))
+    return { category: 'strong', message: 'Сильный контекст — действие зачтено.' };
   if (/(ничего не сделал для себя|искал подтвержден|нужн.*одобрен)/.test(s))
     return { event: 'self_direction', message: 'Записала наблюдение без оценки и осуждения. Завтра можно выбрать маленькое действие для себя.' };
   return null;
