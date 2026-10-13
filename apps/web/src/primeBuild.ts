@@ -226,7 +226,10 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
     return done ? result.message : 'Это действие уже отмечено на этой неделе — второй записи не создаю.';
   }
   if (result.event) {
-    const fingerprint = 'erika:' + date + ':' + text.toLocaleLowerCase('ru-RU').replace(/\s+/g, ' ').trim();
+    const normalized = text.toLocaleLowerCase('ru-RU').replace(/\s+/g, ' ').trim();
+    let hash = 2166136261;
+    for (const char of normalized) { hash ^= char.codePointAt(0)!; hash = Math.imul(hash, 16777619); }
+    const fingerprint = 'erika:' + date + ':' + (hash >>> 0).toString(16);
     logPrimeEvent(store, { type: result.event, date, outcome: result.outcome, fingerprint });
   }
   return result.message;
