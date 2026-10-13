@@ -66,8 +66,8 @@ export default function HeroIdentityPanel() {
       <p><strong>{profile.publicBrand.direction}</strong> — пока рабочая гипотеза, а не подтверждённый экранный типаж.</p>
     </div>
     <div className="heroIdentityColumns">
-      <div><strong>Основа личности</strong><p>{profile.core.values.join(' · ')}</p></div>
-      <div><strong>Prime Mode</strong><p>{profile.prime.priorities.join(' · ')}</p></div>
+      <div><strong>Основа личности</strong><p>{profile.core.values.length ? profile.core.values.join(' · ') : 'Личные ответы ещё не загружены из защищённой памяти.'}</p></div>
+      <div><strong>Prime Mode</strong><p>{profile.prime.priorities.length ? profile.prime.priorities.join(' · ') : 'Персональные настройки пока не синхронизированы.'}</p></div>
       <div><strong>Стиль</strong><p>{profile.style.colors.join(' · ')}. Причёска пока не определена.</p></div>
       <div><strong>Актёрский диапазон</strong><p>Свобода перевоплощения {profile.actor.freedom}/10. Амплуа независимы от публичного образа.</p></div>
     </div>
