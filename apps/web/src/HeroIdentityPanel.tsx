@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { addHeroExercise, heroIdentityPayload, HERO_IDENTITY_RECORD_ID, readHeroIdentity, saveHeroIdentity, type HeroModeId } from './heroIdentity';
+import { useEffect, useState } from 'react';
+import { addHeroExercise, applyRemoteHeroIdentity, heroIdentityPayload, HERO_IDENTITY_RECORD_ID, readHeroIdentity, saveHeroIdentity, type HeroModeId } from './heroIdentity';
 import { queueMutation, syncLocalReplica } from './runtimeSync';
 import { createRuntimeGateway } from './runtimeTransport';
 import { applyRemoteRuntimeRecords } from './localRuntime';
@@ -20,8 +20,47 @@ export default function HeroIdentityPanel() {
   const [note, setNote] = useState('');
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(() => Boolean(readHeroIdentity(localStorage).version));
+  useEffect(() => {
+    if (import.meta.env.VITE_LIFE_OS_REMOTE_ENABLED !== 'true') {
+      setStatus('Локальный режим. Для загрузки личного профиля нужна защищённая синхронизация.');
+      return;
+    }
+    let active = true;
+    async function hydrate() {
+      try {
+        const gateway = createRuntimeGateway({
+          edgeUrl: import.meta.env.VITE_LIFE_OS_EDGE_RUNTIME_URL ?? '',
+          apiUrl: import.meta.env.VITE_LIFE_OS_API_URL ?? '', storage: localStorage,
+        });
+        await syncLocalReplica(localStorage, gateway, records => applyRemoteRuntimeRecords(localStorage, records));
+        let current = readHeroIdentity(localStorage);
+        // Clients may already be at the latest revision without this newly added profile.
+        // Backfill once from the authenticated canonical snapshot, never from public JS.
+        if (!current.version) {
+          const snapshot = await gateway.sync({ mutations: [], sinceRevision: 0 });
+          applyRemoteHeroIdentity(localStorage, snapshot.records);
+          current = readHeroIdentity(localStorage);
+        }
+        if (!active) return;
+        setProfile(current);
+        setReady(Boolean(current.version));
+        setStatus(current.version ? 'Защищённый профиль загружен.' : 'Профиль ещё не найден в защищённой памяти.');
+      } catch {
+        if (!active) return;
+        const cached = readHeroIdentity(localStorage);
+        setProfile(cached);
+        setReady(Boolean(cached.version));
+        setStatus(cached.version
+          ? 'Офлайн: используется сохранённая копия профиля.'
+          : 'Не удалось загрузить личный профиль. Проверь подключение Эрики и повторно открой раздел.');
+      }
+    }
+    void hydrate();
+    return () => { active = false; };
+  }, []);
   async function record() {
-    if (busy) return;
+    if (busy || !ready) return;
     setBusy(true);
     const time = new Date().toISOString();
     const next = addHeroExercise(profile, {
@@ -68,8 +107,8 @@ export default function HeroIdentityPanel() {
     <div className="heroIdentityColumns">
       <div><strong>Основа личности</strong><p>{profile.core.values.length ? profile.core.values.join(' · ') : 'Личные ответы ещё не загружены из защищённой памяти.'}</p></div>
       <div><strong>Prime Mode</strong><p>{profile.prime.priorities.length ? profile.prime.priorities.join(' · ') : 'Персональные настройки пока не синхронизированы.'}</p></div>
-      <div><strong>Стиль</strong><p>{profile.style.colors.join(' · ')}. Причёска пока не определена.</p></div>
-      <div><strong>Актёрский диапазон</strong><p>Свобода перевоплощения {profile.actor.freedom}/10. Амплуа независимы от публичного образа.</p></div>
+      <div><strong>Стиль</strong><p>{profile.style.colors.length ? profile.style.colors.join(' · ') : 'Палитра ожидает загрузки.'} Причёска пока не определена.</p></div>
+      <div><strong>Актёрский диапазон</strong><p>{profile.actor.freedom ? `Свобода перевоплощения ${profile.actor.freedom}/10.` : 'Профиль актёра ожидает загрузки.'} Амплуа независимы от публичного образа.</p></div>
     </div>
     <div className="heroIdentityPractice">
       <h4>Практика · наблюдение</h4>
@@ -88,7 +127,7 @@ export default function HeroIdentityPanel() {
       <label>Короткое наблюдение
         <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Что получилось? Что было наигранным?"/>
       </label>
-      <button type="button" disabled={busy} onClick={() => void record()}>{busy ? 'Сохраняю…' : 'Сохранить наблюдение'}</button>
+      <button type="button" disabled={busy || !ready} onClick={() => void record()}>{busy ? 'Сохраняю…' : ready ? 'Сохранить наблюдение' : 'Сначала загрузить защищённый профиль'}</button>
       <small role="status">{status || 'Записей пока: ' + profile.exercises.length}</small>
     </div>
     {profile.exercises.length > 0 && <details className="heroIdentityHistory">
