@@ -22,6 +22,12 @@ export interface HeroIdentityProfile {
   style: { colors: string[]; garments: string[]; hair: 'unresolved'; glasses: 'to_test' };
   actor: { freedom: number; independentFromPublicBrand: true; modes: { id: HeroModeId; status: EvidenceLevel }[] };
   exercises: HeroExercise[];
+  questionnaireArchive?: {
+    completeness: string;
+    verbatim: boolean;
+    answers: { question: number; summary: string; source: string; evidence: string }[];
+  };
+  exerciseArchive?: { kind: string; note: string; status: string }[];
 }
 const KEY = 'life-os:hero-identity:v1';
 const RECORD_ID = 'persona:hero-identity';
