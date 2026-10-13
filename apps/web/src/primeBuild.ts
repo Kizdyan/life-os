@@ -25,7 +25,7 @@ export interface PrimeEvent {
   voided?: boolean;
 }
 export interface PrimeSettings { startDate: string; outreachLimit: number; }
-export interface PrimeAuditEntry { eventId: string; at: string; before: PrimeEvent | null; after: PrimeEvent; reason: 'write' | 'undo'; }
+export interface PrimeAuditEntry { eventId: string; at: string; before: PrimeEvent | null; after: PrimeEvent; reason: 'write' | 'undo'; operationId?: string; }
 export interface PrimeJournal { events: PrimeEvent[]; audit: PrimeAuditEntry[]; }
 export interface PrimeStorage { getItem(key: string): string | null; setItem(key: string, v: string): void; }
 export const PRIME_CATEGORIES: Readonly<Record<PrimeCategory, string>> = {
@@ -96,11 +96,11 @@ export function readPrimeJournal(store: PrimeStorage): PrimeJournal {
 function persistJournal(store: PrimeStorage, journal: PrimeJournal) {
   store.setItem(PRIVATE_KEY, JSON.stringify(journal));
 }
-function putEvent(store: PrimeStorage, event: PrimeEvent, now: string): PrimeEvent {
+function putEvent(store: PrimeStorage, event: PrimeEvent, now: string, operationId?: string): PrimeEvent {
   const journal = readPrimeJournal(store);
   const old = journal.events.find(e => e.id === event.id) ?? null;
   journal.events = [...journal.events.filter(e => e.id !== event.id), event];
-  journal.audit.push({ eventId: event.id, at: now, before: old, after: event, reason: 'write' });
+  journal.audit.push({ eventId: event.id, at: now, before: old, after: event, reason: 'write', operationId });
   persistJournal(store, journal);
   return event;
 }
@@ -117,15 +117,18 @@ export function undoPrimeJournalLast(store: PrimeStorage, now = new Date().toISO
   persistJournal(store, journal);
   return true;
 }
-export function voidPrimeEvent(store: PrimeStorage, eventId: string, now = new Date().toISOString()): boolean {
+export function voidPrimeEvent(store: PrimeStorage, eventId: string, now = new Date().toISOString(), operationId?: string): boolean {
+  if (operationId && readPrimeJournal(store).audit.some(a => a.operationId === operationId)) return false;
   const existing = readPrimeJournal(store).events.find(e => e.id === eventId && !e.voided);
   if (!existing) return false;
-  putEvent(store, { ...existing, voided: true, updatedAt: now }, now);
+  putEvent(store, { ...existing, voided: true, updatedAt: now }, now, operationId);
   return true;
 }
 export function logPrimeEvent(store: PrimeStorage, input: Omit<PrimeEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, now = new Date().toISOString()): PrimeEvent {
   if (!validDate(input.date)) throw Error('Invalid event date');
   const old = readPrimeJournal(store).events.find(e => e.id === input.id || (input.fingerprint && e.fingerprint === input.fingerprint && e.date === input.date));
+  // Retry after an explicit correction must never resurrect a voided event.
+  if (old?.voided && input.fingerprint && old.fingerprint === input.fingerprint) return old;
   const id = old?.id || input.id || 'prime:event:' + crypto.randomUUID();
   const event: PrimeEvent = { ...old, ...input, id, voided: false, createdAt: old?.createdAt || now, updatedAt: now };
   if (old && !old.voided) {
@@ -236,12 +239,14 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
   // Correct the last explicitly misreported outreach; never create a second active truth.
   const explicitCorrection = /(?:^|[\s,.:])(?:нет|неа)(?:[\s,.:]|$)|ошибся|исправь|на самом деле/.test(normalizedText);
   const deniedOutreach = /(?:^|\s)не\s+(?:написал|познакомился|пригласил|позвал)(?:\s|$)/.test(normalizedText);
+  if (operationId && readPrimeJournal(store).audit.some(a => a.operationId === operationId))
+    return 'Исправление этой операции уже применено, повтор не создаю.';
   if (explicitCorrection && deniedOutreach) {
     const previous = readPrimeJournal(store).events
       .filter(e => !e.voided && e.type === 'new_outreach' && e.date === date)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
     if (previous) {
-      voidPrimeEvent(store, previous.id);
+      voidPrimeEvent(store, previous.id, undefined, operationId);
       return 'Исправила последнюю новую инициативу: она не считается, но история изменения сохранена.';
     }
     return 'Не отмечаю новую инициативу: подтверждённой записи для исправления не нашла.';
@@ -250,7 +255,7 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
     const previous = readPrimeJournal(store).events.filter(e => !e.voided && e.type === 'new_outreach' && e.date === date)
       .sort((x, y) => x.updatedAt.localeCompare(y.updatedAt)).at(-1);
     if (!previous) return 'Повтор не найден: количество новых инициатив не меняю.';
-    voidPrimeEvent(store, previous.id);
+    voidPrimeEvent(store, previous.id, undefined, operationId);
     return 'Повторная запись отменена. История сохранена.';
   }
   if (explicitCorrection && /(исправь|ту же девушк|тот же разговор)/u.test(normalizedText) && !deniedOutreach) {
