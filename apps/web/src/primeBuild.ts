@@ -246,7 +246,7 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
     }
     return 'Не отмечаю новую инициативу: подтверждённой записи для исправления не нашла.';
   }
-  if (/(?:случайн\w*\s+повтор|повторил\w*\s+сообщен|это\s+(?:дубль|повтор))/u.test(normalizedText)) {
+  if (/(?:случайн[а-яё]*\s+повтор|повторил[а-яё]*\s+сообщен|это\s+(?:дубль|повтор))/u.test(normalizedText)) {
     const previous = readPrimeJournal(store).events.filter(e => !e.voided && e.type === 'new_outreach' && e.date === date)
       .sort((x, y) => x.updatedAt.localeCompare(y.updatedAt)).at(-1);
     if (!previous) return 'Повтор не найден: количество новых инициатив не меняю.';
