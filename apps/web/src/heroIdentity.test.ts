@@ -34,6 +34,8 @@ describe('hero identity profile', () => {
   it('hydrates only explicitly typed remote records and keeps their version', () => {
     const s = storage();
     const p = seedHeroIdentity();
+    p.publicBrand.direction = 'Test archetype';
+    p.questionnaireArchive = { completeness: '76_of_76_summarized', verbatim: false, answers: [{ question: 76, summary: 'Test answer', source: 'user_interview', evidence: 'self_report' }] };
     const record: RuntimeSyncRecord = {
       id: 'persona:hero-identity', userId: 'self', kind: 'memory', version: 3,
       deleted: false, updatedAt: '2026-10-13T12:00:00.000Z',
@@ -41,6 +43,7 @@ describe('hero identity profile', () => {
     };
     applyRemoteHeroIdentity(s, [{ ...record, id: 'other:profile' }, record]);
     expect(readHeroIdentity(s).version).toBe(3);
-    expect(readHeroIdentity(s).publicBrand.direction).toContain('джентльмен');
+    expect(readHeroIdentity(s).publicBrand.direction).toBe('Test archetype');
+    expect(readHeroIdentity(s).questionnaireArchive?.answers[0].question).toBe(76);
   });
 });
