@@ -229,7 +229,7 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
     return { event: 'self_direction', message: 'Записала наблюдение без оценки и осуждения. Завтра можно выбрать маленькое действие для себя.' };
   return null;
 }
-export async function logPrimeFromErika(text: string, store: PrimeStorage, date = primeDate()): Promise<string | null> {
+export async function logPrimeFromErika(text: string, store: PrimeStorage, date = primeDate(), operationId?: string): Promise<string | null> {
   const settings = readPrimeSettings(store);
   if (!settings || !primeWeek(settings, date)) return null;
   const normalizedText = text.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
@@ -246,6 +246,16 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
     }
     return 'Не отмечаю новую инициативу: подтверждённой записи для исправления не нашла.';
   }
+  if (/(?:случайн\w*\s+повтор|повторил\w*\s+сообщен|это\s+(?:дубль|повтор))/u.test(normalizedText)) {
+    const previous = readPrimeJournal(store).events.filter(e => !e.voided && e.type === 'new_outreach' && e.date === date)
+      .sort((x, y) => x.updatedAt.localeCompare(y.updatedAt)).at(-1);
+    if (!previous) return 'Повтор не найден: количество новых инициатив не меняю.';
+    voidPrimeEvent(store, previous.id);
+    return 'Повторная запись отменена. История сохранена.';
+  }
+  if (explicitCorrection && /(исправь|ту же девушк|тот же разговор)/u.test(normalizedText) && !deniedOutreach) {
+    return 'Запись не дублирую. Уточни, какое событие нужно исправить и что именно изменить.';
+  }
   const result = classifyPrimeUtterance(text);
   if (!result) return null;
   if (result.category) {
@@ -253,10 +263,9 @@ export async function logPrimeFromErika(text: string, store: PrimeStorage, date 
     return done ? result.message : 'Это действие уже отмечено на этой неделе — второй записи не создаю.';
   }
   if (result.event) {
-    const normalized = text.toLocaleLowerCase('ru-RU').replace(/\s+/g, ' ').trim();
-    let hash = 2166136261;
-    for (const char of normalized) { hash ^= char.codePointAt(0)!; hash = Math.imul(hash, 16777619); }
-    const fingerprint = 'erika:' + date + ':' + (hash >>> 0).toString(16);
+    // Dedupe network/voice retries by explicit operation identity, NOT by sentence text.
+    // Two distinct submissions of the same phrase may describe two genuine events.
+    const fingerprint = operationId ? 'erika:operation:' + operationId : undefined;
     logPrimeEvent(store, { type: result.event, date, outcome: result.outcome, fingerprint });
   }
   return result.message;
