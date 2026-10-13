@@ -32,14 +32,14 @@ export function seedHeroIdentity(): HeroIdentityProfile {
     updatedAt: '',
     interview: { answered: 76, total: 76, visualVerified: false },
     core: {
-      values: ['Вдумчивость', 'Доброта', 'Любознательность', 'Творческое мышление', 'Юмор', 'Эмпатия', 'Нежность'],
+      values: [], // private questionnaire values arrive through authenticated runtime memory
       source: 'self_report',
       questionRefs: [4, 24, 72],
     },
     prime: {
-      priorities: ['Уверенность', 'Харизма', 'Сексуальная уверенность', 'Статусность', 'Лидерство'],
-      activation: ['Осанка и движение', 'Музыка', 'Парфюм'],
-      boundaries: ['Без жестокости', 'Без высокомерия', 'Без агрессии', 'Без фальши'],
+      priorities: [], // keep private interview data out of public frontend bundle
+      activation: [],
+      boundaries: [],
       source: 'aspiration',
     },
     publicBrand: {
