@@ -168,14 +168,14 @@ export function classifyPrimeUtterance(text: string): { category?: PrimeCategory
     return { category: 'body', message: 'Тело / осанка — действие зачтено.' };
   if (/(подстриг|парикмах|одежд|гардероб|ухож|стрижк|барбер|образ)/.test(s) && !/(не делал|не ходил)/.test(s))
     return { category: 'style', message: 'Стиль / уход — действие зачтено.' };
-  if (/(репетир|спектак|театр|снимал|съемк|сьемк|аранжир|сочинил|музык|проект|работал над сцен)/.test(s) && !/(не делал|не ходил)/.test(s))
-    return { category: 'strong', message: 'Сильный контекст — действие зачтено.' };
   if (/(фото|видео|снимал|фотосесси).*(себя|образ|портрет|prime)/.test(s))
     return { category: 'capture', message: 'Визуальная съёмка — действие зачтено.' };
+  if (/(репетир|спектак|театр|снимал|съемк|сьемк|аранжир|сочинил|музык|проект|работал над сцен)/.test(s) && !/(не делал|не ходил)/.test(s))
+    return { category: 'strong', message: 'Сильный контекст — действие зачтено.' };
   if (/(ходил|побывал|встретился|сходил).*(друз|выставк|концерт|мероприяти|премьер|встреч)/.test(s))
     return { category: 'social', message: 'Социальная активность — действие зачтено.' };
   if (/(ничего не сделал для себя|искал подтвержден|нужн.*одобрен)/.test(s))
-    return { event: 'validation', message: 'Отметила момент без оценки и осуждения. Завтра можно выбрать маленькое действие для себя.' };
+    return { event: 'self_direction', message: 'Записала наблюдение без оценки и осуждения. Завтра можно выбрать маленькое действие для себя.' };
   return null;
 }
 export async function logPrimeFromErika(text: string, store: PrimeStorage, date = primeDate()): Promise<string | null> {
