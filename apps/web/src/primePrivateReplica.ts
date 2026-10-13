@@ -1,4 +1,4 @@
-import type { RuntimeSyncRecord, SyncStorage } from './runtimeSync';
+import { pendingMutations, type RuntimeSyncRecord, type SyncStorage } from './runtimeSync';
 
 // Offline copy of the authenticated, owner-scoped canonical setting record.
 // NEVER expose these records through Persona/public-context projections.
@@ -30,9 +30,11 @@ export function applyRemotePrimePrivateRecords(store: SyncStorage, records: Runt
     if (!p.journal || typeof p.journal !== 'object' || Array.isArray(p.journal)) continue;
     const j = p.journal as Record<string, unknown>;
     if (!Array.isArray(j.events) || !Array.isArray(j.audit)) continue;
-    // The existing sync gateway authenticates the owner before supplying records.
-    store.setItem(LOCAL_KEY, JSON.stringify(j));
+    // Preserve unsent offline edits until the shared outbox acknowledges them.
+    const hasPending = pendingMutations(store).some(x => x.recordId === PRIME_PRIVATE_JOURNAL_ID);
     store.setItem(VERSION_KEY, String(record.version));
+    if (hasPending) continue;
+    store.setItem(LOCAL_KEY, JSON.stringify(j));
     markPrimePrivateQueued(store, fingerprintPrimePrivate(JSON.stringify(j)));
   }
 }
