@@ -22,9 +22,11 @@ export interface PrimeEvent {
   selfRespect?: number;
   alignment?: number;
   fingerprint?: string;
+  voided?: boolean;
 }
 export interface PrimeSettings { startDate: string; outreachLimit: number; }
-export interface PrimeJournal { events: PrimeEvent[]; }
+export interface PrimeAuditEntry { eventId: string; at: string; before: PrimeEvent | null; after: PrimeEvent; reason: 'write' | 'undo'; }
+export interface PrimeJournal { events: PrimeEvent[]; audit: PrimeAuditEntry[]; }
 export interface PrimeStorage { getItem(key: string): string | null; setItem(key: string, v: string): void; }
 export const PRIME_CATEGORIES: Readonly<Record<PrimeCategory, string>> = {
   body: 'Тело / осанка', style: 'Стиль / уход',
@@ -84,21 +86,47 @@ export function readPrimeJournal(store: PrimeStorage): PrimeJournal {
   try {
     const p = JSON.parse(store.getItem(PRIVATE_KEY) || 'null');
     if (p && Array.isArray(p.events))
-      return { events: p.events.filter((e: PrimeEvent) => typeof e?.id === 'string' && validDate(e.date) && typeof e.type === 'string') };
+      return {
+        events: p.events.filter((e: PrimeEvent) => typeof e?.id === 'string' && validDate(e.date) && typeof e.type === 'string'),
+        audit: Array.isArray(p.audit) ? p.audit : [],
+      };
   } catch { /* never reinterpret broken private content as facts */ }
-  return { events: [] };
+  return { events: [], audit: [] };
 }
-function putEvent(store: PrimeStorage, event: PrimeEvent): PrimeEvent {
-  const journal = readPrimeJournal(store);
-  journal.events = [...journal.events.filter(e => e.id !== event.id), event];
+function persistJournal(store: PrimeStorage, journal: PrimeJournal) {
   store.setItem(PRIVATE_KEY, JSON.stringify(journal));
+}
+function putEvent(store: PrimeStorage, event: PrimeEvent, now: string): PrimeEvent {
+  const journal = readPrimeJournal(store);
+  const old = journal.events.find(e => e.id === event.id) ?? null;
+  journal.events = [...journal.events.filter(e => e.id !== event.id), event];
+  journal.audit.push({ eventId: event.id, at: now, before: old, after: event, reason: 'write' });
+  persistJournal(store, journal);
   return event;
+}
+export function undoPrimeJournalLast(store: PrimeStorage, now = new Date().toISOString()): boolean {
+  const journal = readPrimeJournal(store);
+  const last = journal.audit.at(-1);
+  if (!last) return false;
+  const current = journal.events.find(e => e.id === last.eventId);
+  if (!current) return false;
+  const restored = last.before ? { ...last.before, updatedAt: now }
+    : { ...current, voided: true, updatedAt: now };
+  journal.events = [...journal.events.filter(e => e.id !== last.eventId), restored];
+  journal.audit.push({ eventId: last.eventId, at: now, before: current, after: restored, reason: 'undo' });
+  persistJournal(store, journal);
+  return true;
 }
 export function logPrimeEvent(store: PrimeStorage, input: Omit<PrimeEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, now = new Date().toISOString()): PrimeEvent {
   if (!validDate(input.date)) throw Error('Invalid event date');
   const old = readPrimeJournal(store).events.find(e => e.id === input.id || (input.fingerprint && e.fingerprint === input.fingerprint && e.date === input.date));
   const id = old?.id || input.id || 'prime:event:' + crypto.randomUUID();
-  return putEvent(store, { ...old, ...input, id, createdAt: old?.createdAt || now, updatedAt: now });
+  const event: PrimeEvent = { ...old, ...input, id, voided: false, createdAt: old?.createdAt || now, updatedAt: now };
+  if (old && !old.voided) {
+    const comparable = (x: PrimeEvent) => JSON.stringify([x.type, x.date, x.detail, x.outcome, x.answers, x.selfRespect, x.alignment, x.fingerprint]);
+    if (comparable(old) === comparable(event)) return old;
+  }
+  return putEvent(store, event, now);
 }
 export function savePrimeReflection(store: PrimeStorage, date: string, answers: [string, string, string], selfRespect?: number, alignment?: number): PrimeEvent {
   for (const score of [selfRespect, alignment])
@@ -110,7 +138,7 @@ export function primeWeeklySummary(settings: PrimeSettings, date: string, items:
   const week = primeWeek(settings, date);
   if (!week) return null;
   const flags = Object.fromEntries(cat.map(c => [c, items.some(i => i.id === primeActionId(settings, week.index, c) && i.status === 'completed')])) as Record<PrimeCategory, boolean>;
-  const scoped = events.filter(e => e.date >= week.from && e.date <= week.to);
+  const scoped = events.filter(e => !e.voided && e.date >= week.from && e.date <= week.to);
   const outreach = scoped.filter(e => e.type === 'new_outreach').length;
   const complete = cat.filter(c => flags[c]).length;
   return { ...week, flags, complete, outreach, remaining: Math.max(0, settings.outreachLimit - outreach),
