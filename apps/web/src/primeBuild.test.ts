@@ -14,6 +14,8 @@ vi.mock('./api', () => ({
   saveItem: async (i: Item) => { state.writes++; const n = state.items.findIndex(x => x.id === i.id); if (n >= 0) state.items[n] = i; else state.items.push(i); },
   outcome: async (i: Item) => { state.outcomes++; state.items = state.items.map(x => x.id === i.id ? { ...x, status: 'completed' } : x); },
 }));
+import { migrateLegacyPrimeReflections } from './primeCheckinMigration';
+import { savePrimeDailyReflection, readPrimeDailyReflection } from './dailyCheckin';
 import {
   PRIME_GOAL_ID, PRIME_PROJECT_ID, addPrimeDays, beginPrimeBuild,
   classifyPrimeUtterance, completePrimeCategory, dayDistance, ensurePrimeWeek,
@@ -65,6 +67,17 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     await ensurePrimeWeek(cfg, day);
     expect(state.items).toHaveLength(6);
     expect(state.writes).toBe(6);
+  });
+  it('migrates legacy nightly reflections to the existing Check-in domain idempotently', async () => {
+    const s = new Store();
+    savePrimeReflection(s,day,['Сделал для себя','Искал реакцию','Завтра работа'],8,7);
+    const persist = async (v: import('./dailyCheckin').PrimeDailyReflection) => { savePrimeDailyReflection(s,v); };
+    expect(await migrateLegacyPrimeReflections(s,persist)).toBe(1);
+    expect(await migrateLegacyPrimeReflections(s,persist)).toBe(0);
+    expect(readPrimeDailyReflection(s,day)?.answers[2]).toBe('Завтра работа');
+    expect(readPrimeDailyReflection(s,day)?.selfDirection).toBe(8);
+    expect(readPrimeJournal(s).events.filter(e => e.type === 'reflection' && !e.voided)).toHaveLength(0);
+    expect(readPrimeJournal(s).audit).toHaveLength(2);
   });
   it('one weekly category completion does not double-count', async () => {
     const s = new Store(), cfg = beginPrimeBuild(s, day);
