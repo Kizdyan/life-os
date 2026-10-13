@@ -19,7 +19,7 @@ import {
   classifyPrimeUtterance, completePrimeCategory, dayDistance, ensurePrimeWeek,
   logPrimeEvent, logPrimeFromErika, primeActionId, primeCheckinId,
   primeWeeklySummary, primeWeek, readPrimeJournal, readPrimeSettings,
-  savePrimeReflection, setPrimeOutreachLimit,
+  savePrimeReflection, setPrimeOutreachLimit, undoPrimeJournalLast,
 } from './primeBuild';
 
 class Store {
@@ -128,6 +128,35 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     const serialized = JSON.stringify([state.items, state.goals, state.projects]);
     expect(serialized).not.toContain('PRIVATE_EXAMPLE');
     expect(s.keys().some(k => k.includes('private'))).toBe(true);
+  });
+  it('concurrent initializers use one task set, without duplicate writes', async () => {
+    const s = new Store(), cfg = beginPrimeBuild(s, day);
+    await Promise.all([ensurePrimeWeek(cfg, day), ensurePrimeWeek(cfg, day), ensurePrimeWeek(cfg, day)]);
+    expect(state.goals).toHaveLength(1);
+    expect(state.projects).toHaveLength(1);
+    expect(state.items).toHaveLength(6);
+    expect(state.writes).toBe(6);
+  });
+  it('private journal supports auditable undo without silently deleting the event', () => {
+    const s = new Store(), cfg = beginPrimeBuild(s, day);
+    logPrimeEvent(s, { type: 'new_outreach', date: day });
+    expect(primeWeeklySummary(cfg, day, [], readPrimeJournal(s).events)?.outreach).toBe(1);
+    expect(undoPrimeJournalLast(s)).toBe(true);
+    expect(readPrimeJournal(s).events).toHaveLength(1);
+    expect(readPrimeJournal(s).events[0].voided).toBe(true);
+    expect(readPrimeJournal(s).audit.map(x => x.reason)).toEqual(['write', 'undo']);
+    expect(primeWeeklySummary(cfg, day, [], readPrimeJournal(s).events)?.outreach).toBe(0);
+  });
+  it('Erika impulse remains a thought, not a completed pause or new outreach', async () => {
+    const s = new Store(), cfg = beginPrimeBuild(s, day);
+    const phrase = 'Мне опять захотелось написать девушке из Instagram';
+    await logPrimeFromErika(phrase, s, day);
+    await logPrimeFromErika(phrase, s, day);
+    const summary = primeWeeklySummary(cfg, day, [], readPrimeJournal(s).events);
+    expect(summary?.pauses).toBe(0);
+    expect(summary?.outreach).toBe(0);
+    expect(readPrimeJournal(s).events).toHaveLength(1);
+    expect(JSON.stringify(readPrimeJournal(s))).not.toContain(phrase);
   });
   it('week-over-week boundaries count separate categories without inflating achievement', async () => {
     const s = new Store(), cfg = beginPrimeBuild(s, day);
