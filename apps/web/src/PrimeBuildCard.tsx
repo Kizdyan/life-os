@@ -11,6 +11,7 @@ import {
 } from './primeBuild';
 import { makePrimeDailyReflection, readPrimeDailyReflection, readPrimeDailyReflections } from './dailyCheckin';
 import { persistPrimeDailyReflection } from './checkinRuntime';
+import { persistPrimePrivateJournal } from './primePrivateRuntime';
 import './prime-build.css';
 
 type UndoState = { item: Item; successorId: string | null; sync: OutcomeSyncMeta };
@@ -68,6 +69,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
           await persistPrimeDailyReflection(makePrimeDailyReflection(item.date, item.answers!, item.selfRespect, item.alignment));
         }
         voidPrimeEvent(localStorage, item.id);
+        await persistPrimePrivateJournal();
       }
       if (active) refresh();
     })().catch(() => setError('Перенос прежних вечерних записей не завершён; оригиналы сохранены.'));
@@ -129,6 +131,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     logPrimeEvent(localStorage, { type, date: d,
       ...(type === 'new_outreach' && outreachContext.trim() ? { detail: outreachContext.trim().slice(0, 500) } : {}),
       ...options });
+    void persistPrimePrivateJournal().catch(() => setError('Приватная запись сохранена локально; синхронизация ожидает подключения.'));
     if (type === 'new_outreach') setOutreachContext('');
     setEvents(readPrimeJournal(localStorage).events);
     window.dispatchEvent(new Event('prime-build-updated'));
@@ -201,7 +204,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
         </div>
       </div>}
       <button type="button" className="primeLink" onClick={() => log('validation')}>Отметить поиск подтверждения без осуждения</button>
-      <button type="button" className="primeLink" onClick={() => { if (undoPrimeJournalLast(localStorage)) { setEvents(readPrimeJournal(localStorage).events); window.dispatchEvent(new Event('prime-build-updated')); } }}>Отменить последнюю приватную запись</button>
+      <button type="button" className="primeLink" onClick={() => { if (undoPrimeJournalLast(localStorage)) { void persistPrimePrivateJournal(); setEvents(readPrimeJournal(localStorage).events); window.dispatchEvent(new Event('prime-build-updated')); } }}>Отменить последнюю приватную запись</button>
       <small>Паузы: {wk.pauses} · моменты внешнего подтверждения: {wk.validationMoments}. Эти записи остаются только на этом устройстве.</small>
     </details>
     <details className="primeDetails" open={!reflected}><summary>Вечерние 2 минуты {reflected ? '✓' : ''}</summary>
