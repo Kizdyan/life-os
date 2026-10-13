@@ -34,9 +34,9 @@ The raw/private romantic initiative context, impulse and validation notes, refle
 ## Acceptance evidence and remaining checks
 
 - Source-exact deterministic JS verification of pure \`primeBuild.ts\` logic after erasing TypeScript-only type annotations: **20/20 PASS** (dates, week boundaries, soft guardrail, private event dedupe, audit/undo, reflection correction).
-- Source-exact deterministic JS classifier verification: **10/10 PASS** for six user examples and targeted negative/overlap cases, after two discovered classifier bugs were fixed.
+- Source-exact deterministic JS classifier verification: **17/17 PASS** for six user examples and targeted negative/overlap/future-intent cases, after two discovered classifier bugs were fixed.
 - Source-exact weekly seeding concurrency test, with existing API substituted by a deterministic in-memory adapter: **PASS** (3 concurrent initializers, exactly 1 Goal + 1 Project + 6 Item writes).
-- \`apps/web/src/primeBuild.test.ts\`: **17 Vitest test cases authored, execution DEFERRED** — no authenticated GitHub working-copy package/dependency environment was available in this chat container. Their existence is not a PASS.
+- \`apps/web/src/primeBuild.test.ts\`: **18 Vitest test cases authored, execution DEFERRED** — no authenticated GitHub working-copy package/dependency environment was available in this chat container. Their existence is not a PASS.
 - Full app regression, React UI test, app/API typecheck and production Vite build: **NOT EXECUTED** in this environment; required before merge/release.
 - iPhone physical behavior and production sync: **NOT TESTED**, no user QA requested.
 
