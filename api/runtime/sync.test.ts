@@ -175,6 +175,33 @@ describe('POST /api/runtime/sync', () => {
     expect(await response.json()).toMatchObject({ storeRevision: 2 });
   });
 
+  it('rejects an unclassified or spoofed-private Prime mutation before store access', async () => {
+    const store = new FakeStore();
+    for (const recordId of ['prime:private:journal:v1', 'checkin:prime:2026-10-13']) {
+      const type = recordId.startsWith('checkin') ? 'prime_daily_checkin' : 'prime_private_journal';
+      const unsafe = await handleRuntimeSync(request({mutations:[{
+        ...mutation, mutationId:'private-unsafe',recordId,kind:'setting',
+        payload:{entityType:type,privacyClass:'PUBLIC_SAFE',personaExposure:'allowed'},
+      }],sinceRevision:0}),context(store));
+      expect(unsafe.status).toBe(400);
+      expect(store.applied).toHaveLength(0);
+    }
+  });
+
+  it('derives private Prime ownership from authenticated session, not client userId', async () => {
+    const store = new FakeStore();
+    const response = await handleRuntimeSync(request({mutations:[{
+      ...mutation,mutationId:'prime-private-1',userId:'foreign-user',
+      recordId:'prime:private:journal:v1',kind:'setting',
+      payload:{entityType:'prime_private_journal',privacyClass:'PRIVATE',
+        personaExposure:'blocked',scope:'life_os_private',journal:{events:[],audit:[]}},
+    }],sinceRevision:0}),context(store,'real-owner'));
+    expect(response.status).toBe(200);
+    expect(store.principals.every(p => p === 'real-owner')).toBe(true);
+    expect(store.applied[0]).not.toHaveProperty('userId');
+    expect(store.applied[0].payload.personaExposure).toBe('blocked');
+  });
+
   it('rejects malformed or oversized mutation batches', async () => {
     const store = new FakeStore();
     const malformed = await handleRuntimeSync(
