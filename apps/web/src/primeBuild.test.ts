@@ -88,7 +88,7 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     expect(classifyPrimeUtterance('Я поговорил с коллегой')?.event).toBeUndefined();
   });
   it('distinguishes impulse from outreach and never blocks voluntary action', () => {
-    expect(classifyPrimeUtterance('Мне опять захотелось написать девушке из Instagram')?.event).toBe('pause');
+    expect(classifyPrimeUtterance('Мне опять захотелось написать девушке из Instagram')?.event).toBe('impulse');
     expect(classifyPrimeUtterance('Я написал девушке из Instagram')?.event).toBe('new_outreach');
     expect(classifyPrimeUtterance('Я выдержал паузу и не стал писать')?.outcome).toBe('skip');
   });
@@ -110,6 +110,7 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     expect(classifyPrimeUtterance('Сегодня репетировал три часа')?.category).toBe('strong');
     expect(classifyPrimeUtterance('Снимал фото себя для образа')?.category).toBe('capture');
     expect(classifyPrimeUtterance('Сегодня ничего не сделал для себя')?.event).toBe('self_direction');
+    expect(classifyPrimeUtterance('Я ходил в театр с друзьями')?.category).toBe('social');
   });
   it('reflection has one stable record per date and optional validated scores', () => {
     const s = new Store();
