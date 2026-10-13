@@ -6,7 +6,7 @@ import {
   PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, beginPrimeBuild,
   completePrimeReflectionTask, ensurePrimeWeek, logPrimeEvent, primeActionId,
   primeDate, primeWeek, primeWeeklySummary, readPrimeJournal, readPrimeSettings,
-  savePrimeReflection, setPrimeOutreachLimit,
+  savePrimeReflection, setPrimeOutreachLimit, undoPrimeJournalLast,
   type PrimeCategory, type PrimeEvent, type PrimeSettings, type PauseOutcome,
 } from './primeBuild';
 import './prime-build.css';
@@ -23,9 +23,9 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [undo, setUndo] = useState<UndoState | null>(null);
-  const [answers, setAnswers] = useState<[string, string, string]>(['', '', '']);
-  const [selfRespect, setSelfRespect] = useState('');
-  const [alignment, setAlignment] = useState('');
+  const [answers, setAnswers] = useState<[string, string, string]>(() => readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.answers ?? ['', '', '']);
+  const [selfRespect, setSelfRespect] = useState(() => String(readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.selfRespect ?? ''));
+  const [alignment, setAlignment] = useState(() => String(readPrimeJournal(localStorage).events.find(e => e.type === 'reflection' && !e.voided && e.date === primeDate())?.alignment ?? ''));
   const d = today();
   const refresh = () => {
     setEvents(readPrimeJournal(localStorage).events);
@@ -49,7 +49,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     void ensurePrimeWeek(settings, d).then(refresh).catch(() => setError('Не удалось восстановить задачи Prime Build.'));
   }, [settings?.startDate, d]);
   const wk = useMemo(() => settings ? primeWeeklySummary(settings, d, items, events) : null, [settings, d, items, events]);
-  const activePause = useMemo(() => events.filter(e => e.type === 'pause' && !e.outcome).at(-1), [events]);
+  const activePause = useMemo(() => events.filter(e => !e.voided && e.type === 'pause' && !e.outcome).at(-1), [events]);
   const isActive = Boolean(settings && wk);
   async function start() {
     if (busy) return;
@@ -119,7 +119,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   if (!isActive || !wk) return <section className="primeCard">
     <small>PRIME BUILD</small><h2>30 дней пройдены</h2><p>Проект остаётся в истории Life OS. Твои выполненные действия сохранены в задачах.</p>
   </section>;
-  const saved = events.find(e => e.type === 'reflection' && e.date === d);
+  const saved = events.find(e => e.type === 'reflection' && !e.voided && e.date === d);
   const reflected = Boolean(saved);
   const elapsed = activePause ? Math.max(0, Math.floor((Date.now() - new Date(activePause.createdAt).getTime()) / 60000)) : 0;
   return <section className="primeCard" aria-label={PRIME_TITLE}>
@@ -157,6 +157,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
         </div>
       </div>}
       <button type="button" className="primeLink" onClick={() => log('validation')}>Отметить поиск подтверждения без осуждения</button>
+      <button type="button" className="primeLink" onClick={() => { if (undoPrimeJournalLast(localStorage)) { setEvents(readPrimeJournal(localStorage).events); window.dispatchEvent(new Event('prime-build-updated')); } }}>Отменить последнюю приватную запись</button>
       <small>Паузы: {wk.pauses} · моменты внешнего подтверждения: {wk.validationMoments}. Эти записи остаются только на этом устройстве.</small>
     </details>
     <details className="primeDetails" open={!reflected}><summary>Вечерние 2 минуты {reflected ? '✓' : ''}</summary>
