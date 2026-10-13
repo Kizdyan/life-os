@@ -130,6 +130,11 @@ export default function HeroIdentityPanel() {
       <button type="button" disabled={busy || !ready} onClick={() => void record()}>{busy ? 'Сохраняю…' : ready ? 'Сохранить наблюдение' : 'Сначала загрузить защищённый профиль'}</button>
       <small role="status">{status || 'Записей пока: ' + profile.exercises.length}</small>
     </div>
+    {profile.questionnaireArchive?.answers?.length ? <details className="heroIdentityHistory">
+      <summary>Опрос · {profile.questionnaireArchive.answers.length} ответов (краткий конспект)</summary>
+      <p>Формулировки пересказаны, это не дословная стенограмма. Гипотезы не являются установленными свойствами.</p>
+      <ol>{profile.questionnaireArchive.answers.map(a => <li key={a.question}><b>Вопрос {a.question}</b>: {a.summary}</li>)}</ol>
+    </details> : null}
     {profile.exercises.length > 0 && <details className="heroIdentityHistory">
       <summary>История наблюдений · {profile.exercises.length}</summary>
       <ol>{[...profile.exercises].reverse().slice(0,10).map(e =>
