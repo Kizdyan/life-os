@@ -21,6 +21,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   const [items, setItems] = useState<Item[]>([]);
   const [events, setEvents] = useState<PrimeEvent[]>(() => readPrimeJournal(localStorage).events);
   const [busy, setBusy] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [error, setError] = useState('');
   const [outreachContext, setOutreachContext] = useState('');
   const [undo, setUndo] = useState<UndoState | null>(null);
@@ -33,6 +34,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     setSettings(readPrimeSettings(localStorage));
     setItems(readAllLocalItems(localStorage));
   };
+  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 10_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     let alive = true;
     void allItems().then(xs => { if (alive) setItems(xs); });
@@ -125,7 +127,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
   </section>;
   const saved = events.find(e => e.type === 'reflection' && !e.voided && e.date === d);
   const reflected = Boolean(saved);
-  const elapsed = activePause ? Math.max(0, Math.floor((Date.now() - new Date(activePause.createdAt).getTime()) / 60000)) : 0;
+  const elapsed = activePause ? Math.max(0, Math.floor((clock - new Date(activePause.createdAt).getTime()) / 60000)) : 0;
   return <section className="primeCard" aria-label={PRIME_TITLE}>
     <small>PRIME BUILD · ДЕНЬ {Math.min(30, dayNumber(settings.startDate, d))} / 30</small>
     <h2>Интерес — сразу. Значимость — после взаимности.</h2>
@@ -157,7 +159,7 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
       </div>
       {activePause && <div className="primePause">
         <p>Мне интересна именно она или сейчас нужно подтверждение, что я могу понравиться?</p>
-        <small>Прошло {elapsed} мин · пауза добровольная, без блокировок</small>
+        <small>{elapsed >= 10 ? '10 минут прошли. Решение остаётся за тобой.' : `Прошло ${elapsed} мин из 10`} · пауза добровольная</small>
         <div className="primeButtonRow">
           <button type="button" onClick={() => log('pause', { id: activePause.id, outcome: 'interested' })}>Интерес остался</button>
           <button type="button" onClick={() => log('pause', { id: activePause.id, outcome: 'skip' })}>Пропущу</button>
