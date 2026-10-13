@@ -13,7 +13,7 @@ export function createPersonaPublicationJobs(approval:PersonaApprovalRecord|null
 export async function publishPersonaJob(job:PersonaPublicationJob,variant:PersonaPlatformVariant,publisher:PersonaPublisher,now:string):Promise<PersonaPublicationJob>{
  if(job.platform!==variant.platform||publisher.platform!==job.platform)throw new Error('Persona publication platform mismatch');
  if(job.candidateId!==variant.candidateId)throw new Error('Persona publication candidate mismatch');
- if(job.state==='verified'||job.state==='blocked')return job;
+ if(job.state==='verified'||(job.state==='blocked'&&!job.externalId))return job;
  const verified=await publisher.verify(job,variant);
  if(verified.found)return{...job,state:'verified',externalId:verified.externalId,externalUrl:verified.externalUrl,lastError:null,updatedAt:now};
  try{
