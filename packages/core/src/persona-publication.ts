@@ -13,13 +13,14 @@ export function createPersonaPublicationJobs(approval:PersonaApprovalRecord|null
 export async function publishPersonaJob(job:PersonaPublicationJob,variant:PersonaPlatformVariant,publisher:PersonaPublisher,now:string):Promise<PersonaPublicationJob>{
  if(job.platform!==variant.platform||publisher.platform!==job.platform)throw new Error('Persona publication platform mismatch');
  if(job.candidateId!==variant.candidateId)throw new Error('Persona publication candidate mismatch');
- if(job.state==='verified')return job;
+ if(job.state==='verified'||job.state==='blocked')return job;
  const verified=await publisher.verify(job,variant);
  if(verified.found)return{...job,state:'verified',externalId:verified.externalId,externalUrl:verified.externalUrl,lastError:null,updatedAt:now};
  try{
   const published=await publisher.publish({...job,state:'publishing',updatedAt:now},variant);
   return{...job,state:'published',externalId:published.externalId,externalUrl:published.externalUrl,attempts:job.attempts+1,lastError:null,updatedAt:now};
  }catch(error){
-  return{...job,state:'retry_wait',attempts:job.attempts+1,lastError:error instanceof Error?error.message:String(error),updatedAt:now};
+  const uncertain=error instanceof Error&&error.message==='publication_outcome_unknown_manual_reconciliation_required';
+  return{...job,state:uncertain?'blocked':'retry_wait',attempts:job.attempts+1,lastError:error instanceof Error?error.message:String(error),updatedAt:now};
  }
 }
