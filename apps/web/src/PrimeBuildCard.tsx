@@ -3,7 +3,7 @@ import { allItems, outcome, undoOutcome, type OutcomeSyncMeta } from './api';
 import { readAllLocalItems } from './localRuntime';
 import type { Item } from './types';
 import {
-  PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, beginPrimeBuild,
+  PRIME_CATEGORIES, PRIME_PRINCIPLE, PRIME_TITLE, addPrimeDays, beginPrimeBuild,
   completePrimeReflectionTask, ensurePrimeWeek, logPrimeEvent, primeActionId,
   primeDate, primeWeek, primeWeeklySummary, readPrimeJournal, readPrimeSettings,
   savePrimeReflection, setPrimeOutreachLimit, undoPrimeJournalLast,
@@ -52,6 +52,12 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
     void ensurePrimeWeek(settings, d).then(refresh).catch(() => setError('Не удалось восстановить задачи Prime Build.'));
   }, [settings?.startDate, d]);
   const wk = useMemo(() => settings ? primeWeeklySummary(settings, d, items, events) : null, [settings, d, items, events]);
+  const previousWeeks = useMemo(() => {
+    if (!settings || !wk || wk.index < 2) return null;
+    const previous = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 1) * 7), items, events);
+    const earlier = primeWeeklySummary(settings, addPrimeDays(settings.startDate, (wk.index - 2) * 7), items, events);
+    return previous && earlier ? { previous, earlier } : null;
+  }, [settings, wk, items, events]);
   const activePause = useMemo(() => events.filter(e => !e.voided && e.type === 'pause' && !e.outcome).at(-1), [events]);
   const isActive = Boolean(settings && wk);
   async function start() {
@@ -199,7 +205,9 @@ export default function PrimeBuildCard({ onChanged }: { onChanged: () => void })
       <p>Сильный контекст {wk.flags.strong ? '✓' : '○'} · Социальная жизнь {wk.flags.social ? '✓' : '○'}</p>
       <p>Съёмка {wk.flags.capture ? '✓' : '○'} · Рефлексии: {wk.checkins}</p>
       <b>На этой неделе я больше строил свою жизнь или ждал подтверждения извне?</b>
-      {wk.index > 0 && <small>Сравнения и выводы появятся только после накопления сопоставимых недель.</small>}
+      {previousWeeks
+        ? <p>Сравнение завершённых недель: {previousWeeks.earlier.complete}/5 → {previousWeeks.previous.complete}/5 действий. Это динамика, не доказательство причинности.</p>
+        : <small>Сравнение недель появится после двух завершённых недель.</small>}
     </details>
     {error && <p role="alert">{error}</p>}
   </section>;
