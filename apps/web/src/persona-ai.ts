@@ -28,7 +28,7 @@ export function existingFirstPostDraft(topic: { id: string; title: string }): Pe
   const slides = template.slides.map(slide => ({
     ...slide, eyebrow: slide.eyebrow.replace(/^(?:PERSONA|ПЕРСОНА)\s*[·•—:-]*\s*/iu, ''),
   }));
-  const caption = template.caption + '\\n\\nИнтересно продолжение этой темы — с реальными фрагментами работы?';
+  const caption = template.caption + '\n\nИнтересно продолжение этой темы — с реальными фрагментами работы?';
   return { ...template, topicId: topic.id, slides, caption };
 }
 function localQuality(draft: PersonaCarouselDraft) {
