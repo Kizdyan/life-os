@@ -128,6 +128,17 @@ function parseMutation(value: unknown): RuntimeMutationInput | null {
         || input.expectedVersion < 1)) return null;
   if (!input.payload || typeof input.payload !== 'object' || Array.isArray(input.payload)) return null;
   if (typeof input.deleted !== 'boolean') return null;
+  // Private Prime data is accepted only under the authenticated owner's
+  // canonical setting namespace with explicit deny-by-default Persona exposure.
+  // Authentication/tenant identity is derived from the sealed session, not payload.
+  if (input.recordId === 'prime:private:journal:v1' || input.recordId.startsWith('checkin:prime:')) {
+    const p = input.payload as Record<string, unknown>;
+    const expectedType = input.recordId === 'prime:private:journal:v1' ? 'prime_private_journal' : 'prime_daily_checkin';
+    if (input.kind !== 'setting' || p.entityType !== expectedType ||
+        p.privacyClass !== 'PRIVATE' || p.personaExposure !== 'blocked')
+      return null;
+  }
+
 
   return {
     mutationId: input.mutationId,
