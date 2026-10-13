@@ -21,8 +21,8 @@ function publicJpeg(url: string): boolean {
     const u=new URL(url);
     if(u.protocol!=='https:'||!u.hostname||u.username||u.password||u.hash)return false;
     if(u.hostname==='localhost'||u.hostname.endsWith('.local')||u.hostname.endsWith('.internal'))return false;
-    if(/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(u.hostname))return false;
-    return /\\.jpe?g$/i.test(u.pathname);
+    if(/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname))return false;
+    return /\.jpe?g$/i.test(u.pathname);
   } catch {return false;}
 }
 export class InstagramPhotoPublisher implements PersonaPublisher {
@@ -30,7 +30,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
   private readonly fetchImpl: typeof fetch;
   private readonly base:string;
   constructor(private readonly config:InstagramPublisherConfig){
-    if(!/^\\d{5,25}$/.test(config.accountId))throw Error('A verified Instagram professional account ID is required');
+    if(!/^\d{5,25}$/.test(config.accountId))throw Error('A verified Instagram professional account ID is required');
     if(!config.accessToken.trim())throw Error('Instagram publisher requires a server-only access token');
     this.fetchImpl=config.fetchImpl??fetch;
     const origin=config.graphOrigin??'https://graph.facebook.com';
@@ -38,7 +38,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
     if(root.protocol!=='https:'||!['graph.facebook.com','graph.instagram.com'].includes(root.hostname))
       throw Error('Unexpected Instagram Graph API origin');
     const version=config.graphVersion??'v25.0';
-    if(!/^v\\d{1,3}\\.0$/.test(version))throw Error('Invalid Meta Graph API version');
+    if(!/^v\d{1,3}\.0$/.test(version))throw Error('Invalid Meta Graph API version');
     this.base=root.origin+'/'+version+'/';
   }
   async verify(job:PersonaPublicationJob,_variant:PersonaPlatformVariant):Promise<PersonaPublishVerification>{
@@ -68,7 +68,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
       const children:string[]=[];
       for(const image_url of links){
         const result=await this.graphPost(this.config.accountId+'/media',{image_url,is_carousel_item:'true'});
-        if(!/^\\d+$/.test(String(result.id||'')))throw Error('Instagram child container was not created');
+        if(!/^\d+$/.test(String(result.id||'')))throw Error('Instagram child container was not created');
         children.push(String(result.id));
       }
       const result=await this.graphPost(this.config.accountId+'/media',{
@@ -76,7 +76,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
       });
       containerId=String(result.id||'');
     }
-    if(!/^\\d+$/.test(containerId))throw Error('Instagram container was not created');
+    if(!/^\d+$/.test(containerId))throw Error('Instagram container was not created');
     const ready=await this.graphGet(containerId,'status_code');
     if(ready.status_code!=='FINISHED')throw Error('instagram_media_container_not_ready');
     // Treat any lost/ambiguous publish response as UNKNOWN, not safely retryable.
@@ -85,7 +85,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
       const result=await this.graphPost(this.config.accountId+'/media_publish',{creation_id:containerId});
       mediaId=String(result.id||'');
     }catch{throw new InstagramPublicationUncertain();}
-    if(!/^\\d+$/.test(mediaId))throw new InstagramPublicationUncertain();
+    if(!/^\d+$/.test(mediaId))throw new InstagramPublicationUncertain();
     // Real external media ID, but 'verified' requires a separate media read.
     return {externalId:mediaId,externalUrl:null};
   }
@@ -99,7 +99,7 @@ export class InstagramPhotoPublisher implements PersonaPublisher {
     return response.json() as Promise<Record<string,unknown>>;
   }
   private async graphGet(id:string,fields:string):Promise<Record<string,unknown>>{
-    if(!/^\\d+$/.test(id))throw Error('Invalid Instagram media/container ID');
+    if(!/^\d+$/.test(id))throw Error('Invalid Instagram media/container ID');
     const url=new URL(this.base+id);url.searchParams.set('fields',fields);
     const response=await this.fetchImpl(url,{
       headers:{Authorization:'Bearer '+this.config.accessToken},
