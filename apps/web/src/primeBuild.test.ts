@@ -113,8 +113,19 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'outreach-a');
     await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'outreach-b');
     await logPrimeFromErika('Я случайно повторил сообщение', s, day, 'correction-c');
+    await logPrimeFromErika('Я случайно повторил сообщение', s, day, 'correction-c');
     expect(primeWeeklySummary(readPrimeSettings(s)!, day, [], readPrimeJournal(s).events)?.outreach).toBe(1);
     expect(readPrimeJournal(s).audit).toHaveLength(3);
+  });
+  it('a retry of a voided outreach operation cannot resurrect the original event', async () => {
+    const s = new Store(); beginPrimeBuild(s, day);
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'op-id');
+    await logPrimeFromErika('Нет, я не написал девушке', s, day, 'correction-id');
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'op-id');
+    await logPrimeFromErika('Нет, я не написал девушке', s, day, 'correction-id');
+    expect(readPrimeJournal(s).events).toHaveLength(1);
+    expect(readPrimeJournal(s).events[0].voided).toBe(true);
+    expect(readPrimeJournal(s).audit).toHaveLength(2);
   });
   it('never marks negated or future actions as completed, and never counts a non-message', () => {
     expect(classifyPrimeUtterance('Я не написал девушке')?.event).not.toBe('new_outreach');
