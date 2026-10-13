@@ -99,11 +99,22 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
     expect(readPrimeJournal(s).events).toHaveLength(1);
     expect(readPrimeJournal(s).events[0].outcome).toBe('skip');
   });
-  it('idempotent automatic logging of the same natural-language utterance', async () => {
+  it('same phrase can represent two real-world outreaches but retry identity is idempotent', async () => {
     const s = new Store(); beginPrimeBuild(s, day);
-    await logPrimeFromErika('Я написал девушке из Instagram', s, day);
-    await logPrimeFromErika('Я написал девушке из Instagram', s, day);
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'real-event-1');
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'real-event-1');
     expect(primeWeeklySummary(readPrimeSettings(s)!, day, [], readPrimeJournal(s).events)?.outreach).toBe(1);
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'real-event-2');
+    expect(primeWeeklySummary(readPrimeSettings(s)!, day, [], readPrimeJournal(s).events)?.outreach).toBe(2);
+    expect(readPrimeJournal(s).audit).toHaveLength(2);
+  });
+  it('an explicit accidental repeat correction voids the latest recorded outreach', async () => {
+    const s = new Store(); beginPrimeBuild(s, day);
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'outreach-a');
+    await logPrimeFromErika('Я написал девушке из Instagram', s, day, 'outreach-b');
+    await logPrimeFromErika('Я случайно повторил сообщение', s, day, 'correction-c');
+    expect(primeWeeklySummary(readPrimeSettings(s)!, day, [], readPrimeJournal(s).events)?.outreach).toBe(1);
+    expect(readPrimeJournal(s).audit).toHaveLength(3);
   });
   it('never marks negated or future actions as completed, and never counts a non-message', () => {
     expect(classifyPrimeUtterance('Я не написал девушке')?.event).not.toBe('new_outreach');
@@ -157,8 +168,8 @@ describe('Prime Build V1 — 30 days, existing Life OS models', () => {
   it('Erika impulse remains a thought, not a completed pause or new outreach', async () => {
     const s = new Store(), cfg = beginPrimeBuild(s, day);
     const phrase = 'Мне опять захотелось написать девушке из Instagram';
-    await logPrimeFromErika(phrase, s, day);
-    await logPrimeFromErika(phrase, s, day);
+    await logPrimeFromErika(phrase, s, day, 'same-operation');
+    await logPrimeFromErika(phrase, s, day, 'same-operation');
     const summary = primeWeeklySummary(cfg, day, [], readPrimeJournal(s).events);
     expect(summary?.pauses).toBe(0);
     expect(summary?.outreach).toBe(0);
