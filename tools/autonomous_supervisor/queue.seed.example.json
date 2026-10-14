@@ -1,0 +1,15 @@
+{
+  "jobs": [
+    {
+      "id": "TRUST-001",
+      "title": "Trust Closure — highest priority bounded correction",
+      "priority": 10,
+      "kind": "codex",
+      "payload": {
+        "base_ref": "main",
+        "branch": "auto/trust-001",
+        "prompt": "Inspect the current repository state and implement exactly one highest-priority bounded Trust Closure correction packet. Preserve unrelated work. Never touch main, production, frozen accepted branches, secrets, or unrelated worktrees. Run configured local tests/typecheck/build and commit only verified changes."
+      }
+    }
+  ]
+}
