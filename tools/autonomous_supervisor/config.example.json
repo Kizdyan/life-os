@@ -1,0 +1,11 @@
+{
+  "db_path": "data/supervisor.db",
+  "repo_path": "../..",
+  "worktree_root": "worktrees",
+  "bind_host": "127.0.0.1",
+  "bind_port": 8787,
+  "loop_seconds": 15,
+  "codex_retry_seconds": 1800,
+  "protected_branches": ["main", "recovery/iphone-static-supabase"],
+  "test_commands": ["npm test -- --run", "npm run typecheck", "npm run web:build"]
+}
