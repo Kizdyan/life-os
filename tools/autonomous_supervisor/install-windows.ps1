@@ -42,7 +42,7 @@ if(-not $RepoPath){ $RepoPath=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).P
 $RepoPath=(Resolve-Path $RepoPath).Path
 if($RepoPath -match '^[A-Za-z]:\\'){
   $drive=$RepoPath.Substring(0,1).ToLowerInvariant()
-  $rest=$RepoPath.Substring(2).Replace('\\','/')
+  $rest=$RepoPath.Substring(2).Replace('\','/')
   $wslRepo="/mnt/$drive$rest"
 }else{
   $escaped=$RepoPath.Replace("'","'"'"'")
@@ -50,16 +50,19 @@ if($RepoPath -match '^[A-Za-z]:\\'){
 }
 if(-not $wslRepo){ throw "Cannot translate repo path into WSL path." }
 Info "WSL repository path: $wslRepo"
+$wslUser=(& wsl.exe -d $Distro -- bash -lc "id -un").Trim()
+if(-not $wslUser){ throw "Cannot determine the Ubuntu user." }
+Info "WSL user: $wslUser"
 Info "Enabling systemd in WSL..."
-& wsl.exe -d $Distro -- bash -lc "printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf >/dev/null"
+& wsl.exe -d $Distro -u root -- bash -lc "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf"
 & wsl.exe --shutdown
 Start-Sleep -Seconds 2
 Info "Checking local dependencies..."
-& wsl.exe -d $Distro -- bash -lc "command -v python3 >/dev/null || (sudo apt-get update && sudo apt-get install -y python3); command -v git >/dev/null || (sudo apt-get update && sudo apt-get install -y git); command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl); command -v npm >/dev/null || (sudo apt-get update && sudo apt-get install -y nodejs npm); command -v bwrap >/dev/null || (sudo apt-get update && sudo apt-get install -y bubblewrap)"
+& wsl.exe -d $Distro -u root -- bash -lc "apt-get update >/dev/null && apt-get install -y python3 git curl nodejs npm bubblewrap >/dev/null"
 $codex = (& wsl.exe -d $Distro -- bash -lc "command -v codex || true").Trim()
 if(-not $codex){
   Info "Installing latest Codex CLI..."
-  & wsl.exe -d $Distro -- bash -lc "sudo npm install -g @openai/codex@latest"
+  & wsl.exe -d $Distro -u root -- bash -lc "npm install -g @openai/codex@latest"
 }
 Info "Checking Codex ChatGPT sign-in..."
 & wsl.exe -d $Distro -- bash -lc "codex login status" *> $null
@@ -72,17 +75,17 @@ Info "Generating local control token..."
 $token=(& wsl.exe -d $Distro -- python3 -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
 if(-not $token){ throw "Could not create control token." }
 Info "Installing Supervisor service..."
-$cmd = "cd '$wslRepo/tools/autonomous_supervisor' && chmod +x install-wsl.sh && SUPERVISOR_CONTROL_TOKEN='$token' ./install-wsl.sh"
-& wsl.exe -d $Distro -- bash -lc $cmd
+$cmd = "cd '$wslRepo/tools/autonomous_supervisor' && chmod +x install-wsl.sh && SUPERVISOR_RUN_USER='$wslUser' SUPERVISOR_CONTROL_TOKEN='$token' ./install-wsl.sh"
+& wsl.exe -d $Distro -u root -- bash -lc $cmd
 Info "Registering Windows startup task..."
-$action=New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $Distro -- bash -lc `"systemctl start life-os-supervisor.service`""
-$trigger=New-ScheduledTaskTrigger -AtStartup
-$principal=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$action=New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $Distro -u root -- bash -lc `"systemctl start life-os-supervisor.service; systemctl start life-os-supervisor-watchdog.timer`""
+$trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$principal=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 Register-ScheduledTask -TaskName "Life OS Autonomous Supervisor" -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
 Info "Seeding the first autonomous Trust Closure job..."
 & wsl.exe -d $Distro -- bash -lc "cd '$wslRepo/tools/autonomous_supervisor' && python3 supervisor.py --config config.json --seed queue.seed.example.json --seed-only"
 Info "Starting Supervisor now..."
-& wsl.exe -d $Distro -- bash -lc "systemctl restart life-os-supervisor.service; systemctl restart life-os-supervisor-watchdog.timer"
+& wsl.exe -d $Distro -u root -- bash -lc "systemctl restart life-os-supervisor.service; systemctl restart life-os-supervisor-watchdog.timer"
 Start-Sleep -Seconds 2
 $status=& wsl.exe -d $Distro -- bash -lc "curl -fsS http://127.0.0.1:8787/api/status"
 if(-not $status){ throw "Supervisor did not return a health response." }
