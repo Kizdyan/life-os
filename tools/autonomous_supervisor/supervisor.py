@@ -84,7 +84,6 @@ class Runner:
         wanted=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
         self.s.state(j["id"],"PREPARING")
         self.git(root,["worktree","prune"])
-        self.git(root,["fetch","origin","--prune"])
 
         # Reuse an already-registered supervisor worktree for this branch.
         listing=self.git(root,["worktree","list","--porcelain"]).splitlines()
