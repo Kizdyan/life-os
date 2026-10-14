@@ -62,13 +62,19 @@ class Runner:
             if j["kind"]=="shell":self.shell_job(j)
             elif j["kind"]=="codex":self.codex_job(j)
             else:self.s.state(j["id"],"HUMAN_REQUIRED","unsupported job kind")
-        except Exception as e:self.s.event(j["id"],"EXCEPTION",str(e));self.s.state(j["id"],"FAILED",str(e))
+        except Exception as e:
+            msg=str(e);self.s.event(j["id"],"EXCEPTION",msg)
+            retryable=any(x.lower() in msg.lower() for x in ("git fetch","could not resolve host","connection reset","connection timed out","temporary failure","network is unreachable"))
+            if retryable and int(j.get("attempts",0))<5:self.s.state(j["id"],"QUEUED",msg,time.time()+60,bump=True)
+            else:self.s.state(j["id"],"FAILED",msg)
         finally:self.current=None;self.proc=None;self.s.setmeta("current_job_id","");self.s.setmeta("heartbeat_at",now())
     def cmd(self,cmd,cwd,stdin=None):
         self.proc=subprocess.Popen(cmd,cwd=cwd,text=True,stdin=subprocess.PIPE if stdin is not None else None,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
         out,_=self.proc.communicate(stdin);code=self.proc.returncode;self.proc=None;return code,out or ""
     def git(self,cwd,args):
-        p=subprocess.run(["git",*args],cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        cmd=["git","-c","credential.helper=","-c","credential.https://github.com.helper=!gh auth git-credential",*args]
+        env={**os.environ,"GIT_TERMINAL_PROMPT":"0"}
+        p=subprocess.run(cmd,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=env)
         if p.returncode:raise RuntimeError("git "+" ".join(args)+" failed: "+p.stdout[-3000:])
         return p.stdout.strip()
     def worktree(self,j):
