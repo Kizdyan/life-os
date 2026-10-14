@@ -75,18 +75,42 @@ class Runner:
         p=j["payload"];root=Path(self.cfg["repo_path"]);wtroot=Path(self.cfg["worktree_root"]);wtroot.mkdir(parents=True,exist_ok=True)
         branch=p.get("branch") or "auto/"+j["id"].lower();base=p.get("base_ref") or "main"
         if branch in set(self.cfg["protected_branches"]):raise RuntimeError("protected branch denied: "+branch)
-        wt=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
+        wanted=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
         self.s.state(j["id"],"PREPARING")
-        if not wt.exists():
-            self.git(root,["fetch","origin","--prune"])
-            exists=subprocess.run(["git","show-ref","--verify","--quiet","refs/heads/"+branch],cwd=root).returncode==0
-            if not exists:
-                local_base=subprocess.run(["git","rev-parse","--verify","--quiet",base+"^{commit}"],cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-                if local_base.returncode!=0:
-                    self.git(root,["fetch","origin",base])
-                    base="FETCH_HEAD"
-            args=["worktree","add"]+( [] if exists else ["-b",branch] )+[str(wt),branch if exists else base]
-            self.git(root,args)
+        self.git(root,["worktree","prune"])
+        self.git(root,["fetch","origin","--prune"])
+
+        # Reuse an already-registered supervisor worktree for this branch.
+        listing=self.git(root,["worktree","list","--porcelain"]).splitlines()
+        registered=[];cur={}
+        for line in listing+[""]:
+            if not line:
+                if cur:registered.append(cur);cur={}
+                continue
+            k,_,v=line.partition(" ")
+            if k in ("worktree","branch"):cur[k]=v
+        branch_ref="refs/heads/"+branch
+        for entry in registered:
+            path=Path(entry.get("worktree",""))
+            if entry.get("branch")==branch_ref and str(path).startswith(str(wtroot)):
+                p["branch"]=branch;p["worktree_path"]=str(path);self.s.payload(j["id"],p);return path
+
+        # Never delete an unexpected directory. Choose a fresh path instead.
+        wt=wanted
+        if wt.exists():
+            n=2
+            while (wtroot/(wanted.name+"-"+str(n))).exists():n+=1
+            wt=wtroot/(wanted.name+"-"+str(n))
+
+        exists=subprocess.run(["git","show-ref","--verify","--quiet",branch_ref],cwd=root).returncode==0
+        if not exists:
+            local_base=subprocess.run(["git","rev-parse","--verify","--quiet",base+"^{commit}"],cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+            if local_base.returncode!=0:
+                self.git(root,["fetch","origin",base])
+                base="FETCH_HEAD"
+            self.git(root,["worktree","add","-b",branch,str(wt),base])
+        else:
+            self.git(root,["worktree","add",str(wt),branch])
         p["branch"]=branch;p["worktree_path"]=str(wt);self.s.payload(j["id"],p);return wt
     def shell_job(self,j):
         self.s.state(j["id"],"TESTING",bump=True);p=j["payload"];cmd=p.get("command")
