@@ -36,3 +36,30 @@ Job flow:
 QUEUED -> PREPARING -> CODING -> TESTING -> READY
 
 Exceptional states: WAITING_FOR_CODEX / HUMAN_REQUIRED / FAILED / CANCELLED.
+
+
+## Windows one-time install
+
+Run PowerShell as Administrator from a dedicated checkout/worktree of this branch:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\autonomous_supervisor\install-windows.ps1 -RepoPath $PWD
+```
+
+The installer:
+- enables WSL/systemd when available;
+- installs missing Python/Git/curl/bubblewrap and the latest Codex CLI;
+- asks for one-time ChatGPT sign-in only if Codex is not already authenticated;
+- installs the Supervisor and heartbeat watchdog;
+- creates a Windows startup task so WSL/Supervisor come back after reboot;
+- creates the local control token without sending it anywhere;
+- seeds the first Trust Closure job;
+- starts the runtime and verifies the local health endpoint.
+
+After install, verify with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\autonomous_supervisor\verify-windows.ps1
+```
+
+A successful install is not considered proven 24/7 until the service survives a deliberate restart/reboot and the heartbeat resumes with the same durable queue.
