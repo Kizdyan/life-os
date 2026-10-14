@@ -66,8 +66,20 @@ if ($LASTEXITCODE -ne 0) { throw "Could not configure systemd in WSL." }
 Start-Sleep -Seconds 2
 
 Info "Installing local dependencies..."
-& wsl.exe -d $Distro -u root -- bash -lc 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 git curl nodejs npm bubblewrap >/dev/null'
+& wsl.exe -d $Distro -u root -- bash -lc 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 git curl nodejs npm bubblewrap gh >/dev/null'
 if ($LASTEXITCODE -ne 0) { throw "Could not install WSL dependencies." }
+
+Info "Checking GitHub authentication for the private repository..."
+& wsl.exe -d $Distro -- bash -lc 'gh auth status -h github.com >/dev/null 2>&1'
+if ($LASTEXITCODE -ne 0) {
+  Info "One-time HUMAN_REQUIRED: complete the GitHub sign-in shown by gh."
+  & wsl.exe -d $Distro -- gh auth login -h github.com -p https -w
+  if ($LASTEXITCODE -ne 0) { throw "GitHub sign-in was not completed." }
+}
+& wsl.exe -d $Distro -- gh auth setup-git
+if ($LASTEXITCODE -ne 0) { throw "Could not configure git to use GitHub authentication." }
+& wsl.exe -d $Distro -- git config --global user.name "Life OS Supervisor"
+& wsl.exe -d $Distro -- git config --global user.email "life-os-supervisor@localhost"
 
 Info "Configuring Supervisor listener for the Windows localhost proxy..."
 $configJsonPath="$wslRepo/tools/autonomous_supervisor/config.json"
@@ -140,5 +152,11 @@ New-Item -ItemType Directory -Force -Path $tokenDir | Out-Null
 Set-Content -Path (Join-Path $tokenDir "supervisor-control-token.txt") -Value $token -Encoding ascii
 
 Info "HEALTH: $status"
+Info "Retrying any previously failed bootstrap job..."
+try {
+  Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:8787/api/control" -Method Post -Headers @{"x-supervisor-token"=$token} -ContentType "application/json" -Body '{"action":"retry"}' -TimeoutSec 5 | Out-Null
+} catch {
+  Info "No retryable bootstrap job, or it was already resumed."
+}
 Info "Dashboard: http://127.0.0.1:8787"
 Info "Installation complete. The next acceptance step is automatic restart/reboot recovery, then iPhone access."
