@@ -69,6 +69,11 @@ Info "Installing local dependencies..."
 & wsl.exe -d $Distro -u root -- bash -lc 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 git curl nodejs npm bubblewrap >/dev/null'
 if ($LASTEXITCODE -ne 0) { throw "Could not install WSL dependencies." }
 
+Info "Configuring Supervisor listener for the Windows localhost proxy..."
+$configJsonPath="$wslRepo/tools/autonomous_supervisor/config.json"
+& wsl.exe -d $Distro -- python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p,encoding='utf-8')); d['bind_host']='0.0.0.0'; open(p,'w',encoding='utf-8').write(json.dumps(d,ensure_ascii=False,indent=2)+'\n')" $configJsonPath
+if ($LASTEXITCODE -ne 0) { throw "Could not update Supervisor bind_host." }
+
 $codexRaw = & wsl.exe -d $Distro -- bash -lc 'command -v codex || true'
 $codexPath = if ($null -eq $codexRaw) { "" } else { (($codexRaw | Out-String).Trim()) }
 if (-not $codexPath) {
@@ -104,7 +109,8 @@ if ($LASTEXITCODE -ne 0) { throw "Supervisor service installation failed." }
 
 Info "Registering Windows autostart..."
 $taskName = "Life OS Autonomous Supervisor"
-$taskAction = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $Distro -u root -- systemctl start life-os-supervisor.service"
+$startScript = Join-Path $PSScriptRoot "start-windows.ps1"
+$taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`" -Distro $Distro"
 $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $taskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force | Out-Null
@@ -121,10 +127,13 @@ Info "Starting Supervisor now..."
 if ($LASTEXITCODE -ne 0) { throw "Could not start life-os-supervisor.service." }
 & wsl.exe -d $Distro -u root -- systemctl restart life-os-supervisor-watchdog.timer
 if ($LASTEXITCODE -ne 0) { throw "Could not start life-os-supervisor-watchdog.timer." }
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 2
+Info "Creating stable Windows localhost access..."
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "start-windows.ps1") -Distro $Distro
+if ($LASTEXITCODE -ne 0) { throw "Could not expose Supervisor on Windows localhost." }
 
-$status = & wsl.exe -d $Distro -- curl -fsS http://127.0.0.1:8787/api/status
-if (-not $status) { throw "Supervisor did not return a health response." }
+$status = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8787/api/status" -TimeoutSec 5).Content
+if (-not $status) { throw "Supervisor did not return a Windows health response." }
 
 $tokenDir = Join-Path $env:LOCALAPPDATA "LifeOS"
 New-Item -ItemType Directory -Force -Path $tokenDir | Out-Null
