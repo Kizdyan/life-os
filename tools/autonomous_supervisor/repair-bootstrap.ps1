@@ -7,6 +7,12 @@ if(-not (Test-Path $tokenFile)){ throw "Local Supervisor control token not found
 $token=(Get-Content $tokenFile -Raw).Trim()
 if(-not $token){ throw "Local Supervisor control token is empty." }
 
+Info "Verifying GitHub authentication for autonomous git..."
+& wsl.exe -d $Distro -- gh auth status -h github.com
+if($LASTEXITCODE -ne 0){ throw "GitHub CLI is not authenticated in WSL." }
+& wsl.exe -d $Distro -- gh auth setup-git
+if($LASTEXITCODE -ne 0){ throw "Could not configure gh as git credential helper." }
+
 Info "Restarting Supervisor with the latest code..."
 & wsl.exe -d $Distro -u root -- systemctl restart life-os-supervisor.service
 if($LASTEXITCODE -ne 0){ throw "Could not restart Supervisor." }
