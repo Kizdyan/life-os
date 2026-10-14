@@ -23,16 +23,26 @@ if($LASTEXITCODE -ne 0){
 $distros = (& wsl.exe -l -q) -replace "`0","" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 if($distros -notcontains $Distro){ & wsl.exe --install -d $Distro; exit 3010 }
 if(-not $RepoPath){ $RepoPath=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
-$wslRepo=(& wsl.exe -d $Distro -- wslpath -a "$RepoPath").Trim()
+$wslRepo=(& wsl.exe -d $Distro -- wslpath -u "$RepoPath").Trim()
 if(-not $wslRepo){ throw "Cannot translate repo path into WSL path." }
 Info "Enabling systemd in WSL..."
 & wsl.exe -d $Distro -- bash -lc "printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf >/dev/null"
 & wsl.exe --shutdown
 Start-Sleep -Seconds 2
 Info "Checking local dependencies..."
-& wsl.exe -d $Distro -- bash -lc "command -v python3 >/dev/null || (sudo apt-get update && sudo apt-get install -y python3); command -v git >/dev/null || (sudo apt-get update && sudo apt-get install -y git); command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)"
+& wsl.exe -d $Distro -- bash -lc "command -v python3 >/dev/null || (sudo apt-get update && sudo apt-get install -y python3); command -v git >/dev/null || (sudo apt-get update && sudo apt-get install -y git); command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl); command -v npm >/dev/null || (sudo apt-get update && sudo apt-get install -y nodejs npm); command -v bwrap >/dev/null || (sudo apt-get update && sudo apt-get install -y bubblewrap)"
 $codex = (& wsl.exe -d $Distro -- bash -lc "command -v codex || true").Trim()
-if(-not $codex){ throw "Codex CLI is not installed inside WSL. Install/sign in locally with ChatGPT, then rerun this installer." }
+if(-not $codex){
+  Info "Installing latest Codex CLI..."
+  & wsl.exe -d $Distro -- bash -lc "sudo npm install -g @openai/codex@latest"
+}
+Info "Checking Codex ChatGPT sign-in..."
+& wsl.exe -d $Distro -- bash -lc "codex login status" *> $null
+if($LASTEXITCODE -ne 0){
+  Info "One-time HUMAN_REQUIRED: complete the ChatGPT sign-in window opened by Codex."
+  & wsl.exe -d $Distro -- bash -lc "codex login"
+  if($LASTEXITCODE -ne 0){ throw "Codex ChatGPT sign-in was not completed." }
+}
 Info "Generating local control token..."
 $token=(& wsl.exe -d $Distro -- python3 -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
 if(-not $token){ throw "Could not create control token." }
@@ -44,6 +54,8 @@ $action=New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $Distro -- bash
 $trigger=New-ScheduledTaskTrigger -AtStartup
 $principal=New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 Register-ScheduledTask -TaskName "Life OS Autonomous Supervisor" -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+Info "Seeding the first autonomous Trust Closure job..."
+& wsl.exe -d $Distro -- bash -lc "cd '$wslRepo/tools/autonomous_supervisor' && python3 supervisor.py --config config.json --seed queue.seed.example.json --seed-only"
 Info "Starting Supervisor now..."
 & wsl.exe -d $Distro -- bash -lc "systemctl restart life-os-supervisor.service; systemctl restart life-os-supervisor-watchdog.timer"
 Start-Sleep -Seconds 2
