@@ -78,8 +78,13 @@ class Runner:
         wt=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
         self.s.state(j["id"],"PREPARING")
         if not wt.exists():
-            self.git(root,["fetch","--all","--prune"])
+            self.git(root,["fetch","origin","--prune"])
             exists=subprocess.run(["git","show-ref","--verify","--quiet","refs/heads/"+branch],cwd=root).returncode==0
+            if not exists:
+                local_base=subprocess.run(["git","rev-parse","--verify","--quiet",base+"^{commit}"],cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+                if local_base.returncode!=0:
+                    self.git(root,["fetch","origin",base])
+                    base="FETCH_HEAD"
             args=["worktree","add"]+( [] if exists else ["-b",branch] )+[str(wt),branch if exists else base]
             self.git(root,args)
         p["branch"]=branch;p["worktree_path"]=str(wt);self.s.payload(j["id"],p);return wt
