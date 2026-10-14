@@ -21,12 +21,22 @@ if($distros -notcontains $Distro){
   exit 3010
 }
 Info "Ubuntu is registered. Updating WSL components when supported..."
-& wsl.exe --update *> $null
-Info "Ensuring Ubuntu uses WSL 2..."
-& wsl.exe --set-default-version 2 *> $null
-& wsl.exe --set-version $Distro 2
-if($LASTEXITCODE -ne 0){
-  throw "Ubuntu could not be switched to WSL 2. Enable Virtual Machine Platform / virtualization, reboot, then rerun."
+cmd.exe /c "wsl.exe --update >nul 2>&1"
+Info "Checking Ubuntu WSL version..."
+$versionTable = (& wsl.exe -l -v 2>$null) -replace "`0",""
+$ubuntuLine = $versionTable | Where-Object { $_ -match [regex]::Escape($Distro) } | Select-Object -First 1
+if($ubuntuLine -and $ubuntuLine -match "\\s2\\s*$"){
+  Info "Ubuntu already uses WSL 2."
+} else {
+  Info "Switching Ubuntu to WSL 2..."
+  cmd.exe /c "wsl.exe --set-version $Distro 2"
+  if($LASTEXITCODE -ne 0){
+    Info "Enabling required Windows features for WSL 2..."
+    dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
+    dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
+    Write-Host "[Life OS] Windows reboot is required once. Reboot, then run this installer again." -ForegroundColor Yellow
+    exit 3010
+  }
 }
 if(-not $RepoPath){ $RepoPath=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 $wslRepo=(& wsl.exe -d $Distro -- wslpath -u "$RepoPath").Trim()
