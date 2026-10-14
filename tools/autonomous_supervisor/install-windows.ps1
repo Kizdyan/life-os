@@ -14,14 +14,20 @@ if(-not (IsAdmin)){
   exit
 }
 Info "Checking WSL..."
-& wsl.exe --status *> $null
-if($LASTEXITCODE -ne 0){
-  Info "Installing WSL + Ubuntu. Reboot Windows if requested, then run this installer again."
+$distros = @((& wsl.exe -l -q 2>$null) -replace "`0","" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if($distros -notcontains $Distro){
+  Info "Ubuntu is not registered yet. Installing WSL + Ubuntu. Reboot Windows if requested, then run this installer again."
   & wsl.exe --install -d $Distro
   exit 3010
 }
-$distros = (& wsl.exe -l -q) -replace "`0","" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-if($distros -notcontains $Distro){ & wsl.exe --install -d $Distro; exit 3010 }
+Info "Ubuntu is registered. Updating WSL components when supported..."
+& wsl.exe --update *> $null
+Info "Ensuring Ubuntu uses WSL 2..."
+& wsl.exe --set-default-version 2 *> $null
+& wsl.exe --set-version $Distro 2
+if($LASTEXITCODE -ne 0){
+  throw "Ubuntu could not be switched to WSL 2. Enable Virtual Machine Platform / virtualization, reboot, then rerun."
+}
 if(-not $RepoPath){ $RepoPath=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 $wslRepo=(& wsl.exe -d $Distro -- wslpath -u "$RepoPath").Trim()
 if(-not $wslRepo){ throw "Cannot translate repo path into WSL path." }
