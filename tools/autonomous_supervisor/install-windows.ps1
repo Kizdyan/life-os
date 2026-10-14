@@ -39,8 +39,17 @@ if($ubuntuLine -and $ubuntuLine -match "\\s2\\s*$"){
   }
 }
 if(-not $RepoPath){ $RepoPath=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
-$wslRepo=(& wsl.exe -d $Distro -- wslpath -u "$RepoPath").Trim()
+$RepoPath=(Resolve-Path $RepoPath).Path
+if($RepoPath -match '^[A-Za-z]:\\'){
+  $drive=$RepoPath.Substring(0,1).ToLowerInvariant()
+  $rest=$RepoPath.Substring(2).Replace('\\','/')
+  $wslRepo="/mnt/$drive$rest"
+}else{
+  $escaped=$RepoPath.Replace("'","'"'"'")
+  $wslRepo=(& wsl.exe -d $Distro -- bash -lc "wslpath -u '$escaped'").Trim()
+}
 if(-not $wslRepo){ throw "Cannot translate repo path into WSL path." }
+Info "WSL repository path: $wslRepo"
 Info "Enabling systemd in WSL..."
 & wsl.exe -d $Distro -- bash -lc "printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf >/dev/null"
 & wsl.exe --shutdown
