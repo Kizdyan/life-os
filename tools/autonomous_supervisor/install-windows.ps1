@@ -127,6 +127,14 @@ $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $taskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force | Out-Null
 
+Info "Registering Windows bridge watchdog..."
+$watchdogTaskName = "Life OS Supervisor Windows Watchdog"
+$watchdogScript = Join-Path $PSScriptRoot "watchdog-windows.ps1"
+$watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScript`" -Distro $Distro"
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+$watchdogPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger $watchdogTrigger -Principal $watchdogPrincipal -Force | Out-Null
+
 Info "Seeding the first autonomous Trust Closure job..."
 $supervisorPy = "$wslRepo/tools/autonomous_supervisor/supervisor.py"
 $configJson = "$wslRepo/tools/autonomous_supervisor/config.json"
