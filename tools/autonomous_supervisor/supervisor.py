@@ -103,6 +103,10 @@ class Runner:
         for raw in p.get("test_commands") or self.cfg["test_commands"]:
             code,out=self.cmd(["bash","-lc",str(raw)],wt);self.s.event(j["id"],"TEST",str(raw),{"exit":code,"tail":out[-12000:]})
             if code:self.s.state(j["id"],"QUEUED","test failed: "+str(raw),time.time()+5);return
+        dirty=self.git(wt,["status","--porcelain"])
+        if dirty:
+            self.git(wt,["add","-A"])
+            self.git(wt,["commit","-m",f"auto({j['id']}): {j['title']}"])
         p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p);self.s.state(j["id"],"READY")
     def stop_current(self):
         if not self.proc or self.proc.poll() is not None:return False
@@ -156,7 +160,7 @@ class App:
         finally:self.r.stop.set();self.r.stop_current();self.http.server_close()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument("--config",default=os.getenv("SUPERVISOR_CONFIG","config.json"));p.add_argument("--seed");a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument("--config",default=os.getenv("SUPERVISOR_CONFIG","config.json"));p.add_argument("--seed");p.add_argument("--seed-only",action="store_true");a=p.parse_args()
     cp=Path(a.config).resolve();cfg=json.loads(cp.read_text());root=cp.parent
     for k in ("db_path","repo_path","worktree_root"):
         q=Path(cfg[k]).expanduser();cfg[k]=str(q if q.is_absolute() else (root/q).resolve())
@@ -168,6 +172,9 @@ def main():
         for i in items:
             if i.get("id") in have:continue
             app.s.add(i["title"],i["kind"],i.get("payload",{}),int(i.get("priority",100)),i.get("id"))
+        if a.seed_only:
+            app.s.c.close()
+            return
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
