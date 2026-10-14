@@ -92,6 +92,11 @@ if (-not $token) { throw "Could not generate the local control token." }
 
 Info "Installing Supervisor service and watchdog..."
 $installScript = "$wslRepo/tools/autonomous_supervisor/install-wsl.sh"
+$watchdogService = "$wslRepo/tools/autonomous_supervisor/life-os-supervisor-watchdog.service"
+$watchdogTimer = "$wslRepo/tools/autonomous_supervisor/life-os-supervisor-watchdog.timer"
+Info "Normalizing Linux runtime files to LF line endings..."
+& wsl.exe -d $Distro -u root -- sed -i 's/$//' $installScript $watchdogService $watchdogTimer
+if ($LASTEXITCODE -ne 0) { throw "Could not normalize Linux runtime files." }
 & wsl.exe -d $Distro -- chmod +x $installScript
 if ($LASTEXITCODE -ne 0) { throw "Could not make install-wsl.sh executable." }
 & wsl.exe -d $Distro -u root -- env "SUPERVISOR_RUN_USER=$wslUser" "SUPERVISOR_CONTROL_TOKEN=$token" bash $installScript
