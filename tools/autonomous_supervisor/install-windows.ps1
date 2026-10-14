@@ -54,7 +54,8 @@ $rest = $RepoPath.Substring(2) -replace '\\','/'
 $wslRepo = "/mnt/$drive$rest"
 Info "WSL repository path: $wslRepo"
 
-$wslUser = (& wsl.exe -d $Distro -- id -un).Trim()
+$wslUserRaw = & wsl.exe -d $Distro -- id -un
+$wslUser = if ($null -eq $wslUserRaw) { "" } else { (($wslUserRaw | Out-String).Trim()) }
 if (-not $wslUser) { throw "Cannot determine the Ubuntu user." }
 Info "WSL user: $wslUser"
 
@@ -68,7 +69,8 @@ Info "Installing local dependencies..."
 & wsl.exe -d $Distro -u root -- bash -lc 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 git curl nodejs npm bubblewrap >/dev/null'
 if ($LASTEXITCODE -ne 0) { throw "Could not install WSL dependencies." }
 
-$codexPath = (& wsl.exe -d $Distro -- bash -lc 'command -v codex || true').Trim()
+$codexRaw = & wsl.exe -d $Distro -- bash -lc 'command -v codex || true'
+$codexPath = if ($null -eq $codexRaw) { "" } else { (($codexRaw | Out-String).Trim()) }
 if (-not $codexPath) {
   Info "Installing latest Codex CLI..."
   & wsl.exe -d $Distro -u root -- npm install -g @openai/codex@latest
@@ -84,7 +86,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Info "Generating a local control token..."
-$token = (& wsl.exe -d $Distro -- python3 -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+$tokenRaw = & wsl.exe -d $Distro -- python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+$token = if ($null -eq $tokenRaw) { "" } else { (($tokenRaw | Out-String).Trim()) }
 if (-not $token) { throw "Could not generate the local control token." }
 
 Info "Installing Supervisor service and watchdog..."
