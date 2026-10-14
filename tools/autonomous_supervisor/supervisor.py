@@ -159,22 +159,27 @@ class App:
         try:self.http.serve_forever(.5)
         finally:self.r.stop.set();self.r.stop_current();self.http.server_close()
 
+def seed_store(store:Store,seed_path:str)->int:
+    x=json.loads(Path(seed_path).read_text());items=x if isinstance(x,list) else x.get("jobs",[])
+    have={j["id"] for j in store.jobs(10000)};added=0
+    for i in items:
+        if i.get("id") in have:continue
+        store.add(i["title"],i["kind"],i.get("payload",{}),int(i.get("priority",100)),i.get("id"));added+=1
+    return added
+
 def main():
     p=argparse.ArgumentParser();p.add_argument("--config",default=os.getenv("SUPERVISOR_CONFIG","config.json"));p.add_argument("--seed");p.add_argument("--seed-only",action="store_true");a=p.parse_args()
     cp=Path(a.config).resolve();cfg=json.loads(cp.read_text());root=cp.parent
     for k in ("db_path","repo_path","worktree_root"):
         q=Path(cfg[k]).expanduser();cfg[k]=str(q if q.is_absolute() else (root/q).resolve())
     cfg["loop_seconds"]=max(5,int(cfg.get("loop_seconds",15)));cfg["codex_retry_seconds"]=max(300,int(cfg.get("codex_retry_seconds",1800)))
+    if a.seed and a.seed_only:
+        store=Store(Path(cfg["db_path"]))
+        try:seed_store(store,a.seed)
+        finally:store.c.close()
+        return
     app=App(cfg)
-    if a.seed:
-        x=json.loads(Path(a.seed).read_text());items=x if isinstance(x,list) else x.get("jobs",[])
-        have={j["id"] for j in app.s.jobs(10000)}
-        for i in items:
-            if i.get("id") in have:continue
-            app.s.add(i["title"],i["kind"],i.get("payload",{}),int(i.get("priority",100)),i.get("id"))
-        if a.seed_only:
-            app.s.c.close()
-            return
+    if a.seed:seed_store(app.s,a.seed)
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
