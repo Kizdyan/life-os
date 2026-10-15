@@ -2,6 +2,8 @@
   "db_path": "~/.life-os-supervisor/supervisor.db",
   "repo_path": "../..",
   "worktree_root": "~/.life-os-supervisor/worktrees",
+  "mission_path": "mission.v1.json",
+  "default_base_ref": "feature/autonomous-supervisor-runtime-v1",
   "bind_host": "127.0.0.1",
   "bind_port": 8787,
   "loop_seconds": 15,

@@ -13,6 +13,27 @@ def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
 def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
 def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
 def critic_command(dirty,base): return ["codex","exec","review","--uncommitted"] if dirty else ["codex","exec","review","--base",base]
+def replenish_backlog(store,mission):
+    items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
+    for item in items:
+        if item["id"] in by_id:continue
+        store.add(item["title"],item.get("kind","codex"),item.get("payload",{}),int(item.get("priority",100)),item["id"]);added+=1
+    if added:return added
+    active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
+    if any(j["state"] in active for j in store.jobs(10000)):return 0
+    continuation=mission.get("continuation")
+    if not continuation:return 0
+    seq=1+sum(1 for j in jobs if j["id"].startswith("ROADMAP-"));jid=f"ROADMAP-{seq:03d}"
+    store.add(continuation["title"],continuation.get("kind","codex"),continuation.get("payload",{}),int(continuation.get("priority",100)),jid);return 1
+
+def resolve_base(store,payload,default):
+    deps=payload.get("dependencies",[])
+    if deps:
+        jobs={j["id"]:j for j in store.jobs(10000)}
+        for dep in reversed(deps):
+            candidate=jobs.get(dep,{}).get("payload",{}).get("candidate_sha")
+            if candidate:return candidate
+    return payload.get("base_ref") or default
 
 class Store:
     def __init__(self,path:Path):
@@ -37,9 +58,16 @@ class Store:
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
     def pick(self):
-        with self.l:r=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX') ORDER BY priority,created_at LIMIT 1").fetchone()
-        if r is None or (r["not_before"] is not None and r["not_before"]>time.time()):return None
-        return self.row(r)
+        with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX') ORDER BY priority,created_at").fetchall()
+        for r in rows:
+            if r["not_before"] is not None and r["not_before"]>time.time():return None
+            job=self.row(r);deps=job["payload"].get("dependencies",[])
+            if deps:
+                marks=",".join("?" for _ in deps)
+                with self.l:states={x["id"]:x["state"] for x in self.c.execute(f"SELECT id,state FROM jobs WHERE id IN ({marks})",deps)}
+                if not all(states.get(dep)=="READY" for dep in deps):continue
+            return job
+        return None
     def state(self,j,s,error=None,not_before=None,bump=False):
         with self.l,self.c:
             self.c.execute("UPDATE jobs SET state=?,last_error=?,not_before=?,attempts=attempts+?,updated_at=? WHERE id=?",(s,error,not_before,1 if bump else 0,now(),j))
@@ -67,7 +95,7 @@ class Store:
 
 class Runner:
     def __init__(self,cfg,store):
-        self.cfg=cfg;self.s=store;self.stop=threading.Event();self.proc=None;self.current=None;self.s.recover_interrupted()
+        self.cfg=cfg;self.s=store;self.mission=cfg.get("_mission",{});self.stop=threading.Event();self.proc=None;self.current=None;self.s.recover_interrupted()
     def heartbeat_loop(self):
         while not self.stop.wait(min(10,self.cfg["loop_seconds"])):
             self.s.setmeta("heartbeat_at",now())
@@ -78,6 +106,7 @@ class Runner:
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
             j=self.s.pick()
+            if not j and self.mission:replenish_backlog(self.s,self.mission);j=self.s.pick()
             if not j:self.s.setmeta("status","IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
             self.run(j)
     def run(self,j):
@@ -108,12 +137,11 @@ class Runner:
         return p.stdout.strip()
     def worktree(self,j):
         p=j["payload"];root=Path(self.cfg["repo_path"]);wtroot=Path(self.cfg["worktree_root"]);wtroot.mkdir(parents=True,exist_ok=True)
-        branch=p.get("branch") or "auto/"+j["id"].lower();base=p.get("base_ref") or "main"
+        branch=p.get("branch") or "auto/"+j["id"].lower();base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"))
         if branch in set(self.cfg["protected_branches"]):raise RuntimeError("protected branch denied: "+branch)
         wanted=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
         self.s.state(j["id"],"PREPARING")
         self.git(root,["worktree","prune"])
-        self.git(root,["fetch","origin","--prune"])
 
         # Reuse an already-registered supervisor worktree for this branch.
         listing=self.git(root,["worktree","list","--porcelain"]).splitlines()
@@ -256,8 +284,9 @@ def seed_store(store:Store,seed_path:str)->int:
 def main():
     p=argparse.ArgumentParser();p.add_argument("--config",default=os.getenv("SUPERVISOR_CONFIG","config.json"));p.add_argument("--seed");p.add_argument("--seed-only",action="store_true");a=p.parse_args()
     cp=Path(a.config).resolve();cfg=json.loads(cp.read_text());root=cp.parent
-    for k in ("db_path","repo_path","worktree_root"):
+    for k in ("db_path","repo_path","worktree_root","mission_path"):
         q=Path(cfg[k]).expanduser();cfg[k]=str(q if q.is_absolute() else (root/q).resolve())
+    mp=Path(cfg["mission_path"]);cfg["_mission"]=json.loads(mp.read_text()) if mp.exists() else {}
     cfg["loop_seconds"]=max(5,int(cfg.get("loop_seconds",15)));cfg["codex_retry_seconds"]=max(300,int(cfg.get("codex_retry_seconds",1800)));cfg["command_timeout_seconds"]=max(60,int(cfg.get("command_timeout_seconds",7200)))
     if a.seed and a.seed_only:
         store=Store(Path(cfg["db_path"]))
@@ -269,11 +298,4 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
-
-
-
-
-
-
-
 

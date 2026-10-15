@@ -2,7 +2,7 @@ import tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import Store,Runner,critic_clean,critic_command,default_codex_command,repair_prompt,quota,seed_store
+from supervisor import Store,Runner,critic_clean,critic_command,default_codex_command,repair_prompt,replenish_backlog,resolve_base,quota,seed_store
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -60,15 +60,24 @@ class T(unittest.TestCase):
   x=self.s.overview()
   self.assertEqual(x["counts"]["READY"],1);self.assertEqual(x["counts"]["QUEUED"],1)
   self.assertEqual(x["last_ready"]["id"],"R");self.assertEqual(x["last_event"]["job_id"],"Q")
+ def test_dependency_blocked_job_allows_independent_work(self):
+  self.s.add("blocked","codex",{"dependencies":["MISSING"]},1,"B")
+  self.s.add("independent","codex",{},2,"I")
+  self.assertEqual(self.s.pick()["id"],"I")
+ def test_mission_backlog_replenishes_idempotently(self):
+  mission={"backlog":[{"id":"P1","title":"one","priority":1,"kind":"codex","payload":{"workstream":"CONTENT_CONVEYOR","prompt":"one"}},{"id":"P2","title":"two","priority":2,"kind":"codex","payload":{"workstream":"VIDEO","dependencies":["P1"],"prompt":"two"}}],"continuation":{"title":"continue","priority":99,"kind":"codex","payload":{"workstream":"CONTENT_CONVEYOR","prompt":"inspect next gap"}}}
+  self.assertEqual(replenish_backlog(self.s,mission),2);self.assertEqual(replenish_backlog(self.s,mission),0)
+  self.assertEqual(self.s.pick()["id"],"P1")
+  self.s.state("P1","READY");self.assertEqual(self.s.pick()["id"],"P2")
+  self.s.state("P2","READY");self.assertEqual(replenish_backlog(self.s,mission),1)
+  self.assertTrue(self.s.pick()["id"].startswith("ROADMAP-"))
+ def test_dependent_job_uses_verified_parent_candidate(self):
+  self.s.add("parent","codex",{},1,"P");p=self.s.jobs()[0]["payload"];p["candidate_sha"]="abc123";self.s.payload("P",p);self.s.state("P","READY")
+  self.assertEqual(resolve_base(self.s,{"dependencies":["P"]},"feature/base"),"abc123")
+  self.assertEqual(resolve_base(self.s,{},"feature/base"),"feature/base")
  def test_ready_state_is_not_recovered(self):
   self.s.add("x","shell",{"command":"true"},7,"J1")
   self.s.state("J1","READY")
   self.assertEqual(self.s.recover_interrupted(),[])
   self.assertEqual(self.s.jobs()[0]["state"],"READY")
 if __name__=="__main__":unittest.main()
-
-
-
-
-
-
