@@ -9,6 +9,9 @@ QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits?
 def now(): return datetime.now(timezone.utc).isoformat()
 def jd(x): return json.dumps(x,ensure_ascii=False,separators=(",",":"))
 def quota(s): return any(p.search(s) for p in QUOTA)
+def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
+def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
+def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
 
 class Store:
     def __init__(self,path:Path):
@@ -41,15 +44,28 @@ class Store:
         self.event(j,"STATE",s,{"error":error,"not_before":not_before})
     def payload(self,j,p):
         with self.l,self.c:self.c.execute("UPDATE jobs SET payload=?,updated_at=? WHERE id=?",(jd(p),now(),j))
+    def recover_interrupted(self):
+        states=("PREPARING","CODING","TESTING","CRITIC")
+        with self.l,self.c:
+            rows=self.c.execute("SELECT id FROM jobs WHERE state IN (?,?,?,?)",states).fetchall()
+            ids=[r["id"] for r in rows]
+            for jid in ids:
+                self.c.execute("UPDATE jobs SET state='QUEUED',last_error=?,not_before=NULL,updated_at=? WHERE id=?",("recovered after supervisor restart",now(),jid))
+        for jid in ids:self.event(jid,"RECOVERY","requeued interrupted job")
+        return ids
     def events(self,n=100):
         with self.l:rows=self.c.execute("SELECT * FROM events ORDER BY seq DESC LIMIT ?",(n,)).fetchall()
         return [dict(r) for r in rows]
 
 class Runner:
     def __init__(self,cfg,store):
-        self.cfg=cfg;self.s=store;self.stop=threading.Event();self.proc=None;self.current=None
+        self.cfg=cfg;self.s=store;self.stop=threading.Event();self.proc=None;self.current=None;self.s.recover_interrupted()
+    def heartbeat_loop(self):
+        while not self.stop.wait(min(10,self.cfg["loop_seconds"])):
+            self.s.setmeta("heartbeat_at",now())
     def loop(self):
         self.s.setmeta("started_at",now());self.s.setmeta("status","IDLE")
+        threading.Thread(target=self.heartbeat_loop,daemon=True).start()
         while not self.stop.is_set():
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
@@ -70,7 +86,12 @@ class Runner:
         finally:self.current=None;self.proc=None;self.s.setmeta("current_job_id","");self.s.setmeta("heartbeat_at",now())
     def cmd(self,cmd,cwd,stdin=None):
         self.proc=subprocess.Popen(cmd,cwd=cwd,text=True,stdin=subprocess.PIPE if stdin is not None else None,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
-        out,_=self.proc.communicate(stdin);code=self.proc.returncode;self.proc=None;return code,out or ""
+        try:
+            out,_=self.proc.communicate(stdin,timeout=float(self.cfg.get("command_timeout_seconds",7200)))
+        except subprocess.TimeoutExpired:
+            os.killpg(self.proc.pid,signal.SIGKILL);out,_=self.proc.communicate();self.proc=None
+            raise TimeoutError("command timed out")
+        code=self.proc.returncode;self.proc=None;return code,out or ""
     def git(self,cwd,args):
         cmd=["git","-c","credential.helper=","-c","credential.https://github.com.helper=!gh auth git-credential",*args]
         env={**os.environ,"GIT_TERMINAL_PROMPT":"0"}
@@ -125,10 +146,10 @@ class Runner:
         code,out=self.cmd(c,Path(p.get("cwd") or self.cfg["repo_path"]));self.s.event(j["id"],"SHELL_EXIT",str(code),{"tail":out[-10000:]})
         self.s.state(j["id"],"READY" if code==0 else "FAILED",None if code==0 else "exit "+str(code))
     def codex_job(self,j):
-        p=j["payload"];prompt=str(p.get("prompt","")).strip()
+        p=j["payload"];prompt=str(p.get("repair_prompt") or p.get("prompt","")).strip()
         if not prompt:raise RuntimeError("missing prompt")
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
-        raw=p.get("codex_command") or ["codex","exec","--sandbox","workspace-write","--ask-for-approval","never","-"]
+        raw=p.get("codex_command") or default_codex_command()
         c=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
         code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":out[-12000:]})
         if code:
@@ -137,8 +158,22 @@ class Runner:
         self.s.state(j["id"],"TESTING")
         for raw in p.get("test_commands") or self.cfg["test_commands"]:
             code,out=self.cmd(["bash","-lc",str(raw)],wt);self.s.event(j["id"],"TEST",str(raw),{"exit":code,"tail":out[-12000:]})
-            if code:self.s.state(j["id"],"QUEUED","test failed: "+str(raw),time.time()+5);return
+            if code:
+                count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),str(raw),code,out);self.s.payload(j["id"],p)
+                if count<=3:self.s.state(j["id"],"QUEUED","test failed: "+str(raw),time.time()+30)
+                else:self.s.state(j["id"],"FAILED","repair limit reached: "+str(raw))
+                return
+        p.pop("repair_prompt",None);p["repair_count"]=0;self.s.payload(j["id"],p)
         dirty=self.git(wt,["status","--porcelain"])
+        if dirty:
+            self.s.state(j["id"],"CRITIC")
+            code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
+            if code or not critic_clean(out):
+                if quota(out):self.s.state(j["id"],"WAITING_FOR_CODEX","usage limit",time.time()+self.cfg["codex_retry_seconds"]);return
+                count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
+                if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
+                else:self.s.state(j["id"],"FAILED","critic repair limit reached")
+                return
         if dirty:
             self.git(wt,["add","-A"])
             self.git(wt,["commit","-m",f"auto({j['id']}): {j['title']}"])
@@ -207,7 +242,7 @@ def main():
     cp=Path(a.config).resolve();cfg=json.loads(cp.read_text());root=cp.parent
     for k in ("db_path","repo_path","worktree_root"):
         q=Path(cfg[k]).expanduser();cfg[k]=str(q if q.is_absolute() else (root/q).resolve())
-    cfg["loop_seconds"]=max(5,int(cfg.get("loop_seconds",15)));cfg["codex_retry_seconds"]=max(300,int(cfg.get("codex_retry_seconds",1800)))
+    cfg["loop_seconds"]=max(5,int(cfg.get("loop_seconds",15)));cfg["codex_retry_seconds"]=max(300,int(cfg.get("codex_retry_seconds",1800)));cfg["command_timeout_seconds"]=max(60,int(cfg.get("command_timeout_seconds",7200)))
     if a.seed and a.seed_only:
         store=Store(Path(cfg["db_path"]))
         try:seed_store(store,a.seed)
@@ -218,3 +253,7 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
+
+
+
+

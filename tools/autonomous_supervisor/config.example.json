@@ -6,6 +6,14 @@
   "bind_port": 8787,
   "loop_seconds": 15,
   "codex_retry_seconds": 1800,
-  "protected_branches": ["main", "recovery/iphone-static-supabase"],
-  "test_commands": ["npm test -- --run", "npm run typecheck", "npm run web:build"]
+  "protected_branches": [
+    "main",
+    "recovery/iphone-static-supabase"
+  ],
+  "test_commands": [
+    "TZ=UTC npm test -- --run",
+    "npm run typecheck",
+    "npm run web:build"
+  ],
+  "command_timeout_seconds": 7200
 }
