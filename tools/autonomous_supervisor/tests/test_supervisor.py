@@ -41,12 +41,22 @@ class T(unittest.TestCase):
  def test_critic_reviews_committed_candidate_against_base(self):
   self.assertEqual(critic_command(False,"main"),["codex","exec","review","--base","main"])
   self.assertEqual(critic_command(True,"main"),["codex","exec","review","--uncommitted"])
+ def test_service_shutdown_leaves_active_job_recoverable(self):
+  class P:
+   def poll(self):return None
+   def terminate(self):pass
+   def wait(self,timeout):return 0
+  self.s.add("x","shell",{"command":"true"},7,"J1");r=Runner({"loop_seconds":1},self.s)
+  self.s.state("J1","CODING");r.current="J1";r.proc=P()
+  self.assertTrue(r.stop_current(cancel=False))
+  self.assertEqual(self.s.jobs()[0]["state"],"CODING")
  def test_ready_state_is_not_recovered(self):
   self.s.add("x","shell",{"command":"true"},7,"J1")
   self.s.state("J1","READY")
   self.assertEqual(self.s.recover_interrupted(),[])
   self.assertEqual(self.s.jobs()[0]["state"],"READY")
 if __name__=="__main__":unittest.main()
+
 
 
 
