@@ -37,8 +37,9 @@ class Store:
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
     def pick(self):
-        with self.l:r=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX') AND (not_before IS NULL OR not_before<=?) ORDER BY priority,created_at LIMIT 1",(time.time(),)).fetchone()
-        return None if r is None else self.row(r)
+        with self.l:r=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX') ORDER BY priority,created_at LIMIT 1").fetchone()
+        if r is None or (r["not_before"] is not None and r["not_before"]>time.time()):return None
+        return self.row(r)
     def state(self,j,s,error=None,not_before=None,bump=False):
         with self.l,self.c:
             self.c.execute("UPDATE jobs SET state=?,last_error=?,not_before=?,attempts=attempts+?,updated_at=? WHERE id=?",(s,error,not_before,1 if bump else 0,now(),j))
@@ -262,6 +263,7 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
+
 
 
 

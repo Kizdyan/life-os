@@ -50,6 +50,10 @@ class T(unittest.TestCase):
   self.s.state("J1","CODING");r.current="J1";r.proc=P()
   self.assertTrue(r.stop_current(cancel=False))
   self.assertEqual(self.s.jobs()[0]["state"],"CODING")
+ def test_cooldown_on_highest_priority_job_blocks_later_packets(self):
+  self.s.add("first","codex",{},1,"J1");self.s.state("J1","QUEUED",not_before=time.time()+60)
+  self.s.add("second","codex",{},2,"J2")
+  self.assertIsNone(self.s.pick())
  def test_ready_state_is_not_recovered(self):
   self.s.add("x","shell",{"command":"true"},7,"J1")
   self.s.state("J1","READY")
