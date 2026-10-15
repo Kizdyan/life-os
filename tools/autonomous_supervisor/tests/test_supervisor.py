@@ -2,7 +2,7 @@ import tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import Store,Runner,critic_clean,default_codex_command,repair_prompt,quota,seed_store
+from supervisor import Store,Runner,critic_clean,critic_command,default_codex_command,repair_prompt,quota,seed_store
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -38,12 +38,16 @@ class T(unittest.TestCase):
  def test_critic_requires_explicit_clean_result(self):
   self.assertTrue(critic_clean("No actionable regressions were found."))
   self.assertFalse(critic_clean("[P1] unsafe mutation"))
+ def test_critic_reviews_committed_candidate_against_base(self):
+  self.assertEqual(critic_command(False,"main"),["codex","exec","review","--base","main"])
+  self.assertEqual(critic_command(True,"main"),["codex","exec","review","--uncommitted"])
  def test_ready_state_is_not_recovered(self):
   self.s.add("x","shell",{"command":"true"},7,"J1")
   self.s.state("J1","READY")
   self.assertEqual(self.s.recover_interrupted(),[])
   self.assertEqual(self.s.jobs()[0]["state"],"READY")
 if __name__=="__main__":unittest.main()
+
 
 
 

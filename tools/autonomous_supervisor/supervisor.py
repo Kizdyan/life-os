@@ -12,6 +12,7 @@ def quota(s): return any(p.search(s) for p in QUOTA)
 def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
 def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
 def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
+def critic_command(dirty,base): return ["codex","exec","review","--uncommitted"] if dirty else ["codex","exec","review","--base",base]
 
 class Store:
     def __init__(self,path:Path):
@@ -165,6 +166,14 @@ class Runner:
                 return
         p.pop("repair_prompt",None);p["repair_count"]=0;self.s.payload(j["id"],p)
         dirty=self.git(wt,["status","--porcelain"])
+        self.s.state(j["id"],"CRITIC")
+        code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
+        if code or not critic_clean(out):
+            if quota(out):self.s.state(j["id"],"WAITING_FOR_CODEX","usage limit",time.time()+self.cfg["codex_retry_seconds"]);return
+            count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
+            if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
+            else:self.s.state(j["id"],"FAILED","critic repair limit reached")
+            return
         if dirty:
             self.s.state(j["id"],"CRITIC")
             code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
@@ -253,6 +262,7 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
+
 
 
 
