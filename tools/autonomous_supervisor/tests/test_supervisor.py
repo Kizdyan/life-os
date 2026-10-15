@@ -54,6 +54,12 @@ class T(unittest.TestCase):
   self.s.add("first","codex",{},1,"J1");self.s.state("J1","QUEUED",not_before=time.time()+60)
   self.s.add("second","codex",{},2,"J2")
   self.assertIsNone(self.s.pick())
+ def test_dashboard_overview_reports_queue_ready_and_last_event(self):
+  self.s.add("ready","shell",{},1,"R");self.s.state("R","READY")
+  self.s.add("next","shell",{},2,"Q")
+  x=self.s.overview()
+  self.assertEqual(x["counts"]["READY"],1);self.assertEqual(x["counts"]["QUEUED"],1)
+  self.assertEqual(x["last_ready"]["id"],"R");self.assertEqual(x["last_event"]["job_id"],"Q")
  def test_ready_state_is_not_recovered(self):
   self.s.add("x","shell",{"command":"true"},7,"J1")
   self.s.state("J1","READY")

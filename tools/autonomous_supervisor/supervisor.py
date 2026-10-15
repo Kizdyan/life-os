@@ -46,6 +46,12 @@ class Store:
         self.event(j,"STATE",s,{"error":error,"not_before":not_before})
     def payload(self,j,p):
         with self.l,self.c:self.c.execute("UPDATE jobs SET payload=?,updated_at=? WHERE id=?",(jd(p),now(),j))
+    def overview(self):
+        with self.l:
+            counts={r["state"]:r["n"] for r in self.c.execute("SELECT state,COUNT(*) n FROM jobs GROUP BY state")}
+            ready=self.c.execute("SELECT * FROM jobs WHERE state='READY' ORDER BY updated_at DESC LIMIT 1").fetchone()
+            event=self.c.execute("SELECT * FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+        return {"counts":counts,"last_ready":None if ready is None else self.row(ready),"last_event":None if event is None else dict(event)}
     def recover_interrupted(self):
         states=("PREPARING","CODING","TESTING","CRITIC")
         with self.l,self.c:
@@ -196,7 +202,7 @@ class Runner:
         if cancel and self.current:self.s.state(self.current,"CANCELLED","stopped from control center")
         return True
 
-HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}button,input{padding:10px;border-radius:10px;border:0}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}</style><main><h1>Autonomous Development</h1><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><pre id=e></pre></div></main><script>t.value=localStorage.st||'';async function g(u){return(await fetch(u,{cache:'no-store'})).json()}async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);l()}async function l(){let s=await g('/api/status'),j=await g('/api/jobs'),ev=await g('/api/events');document.getElementById('s').innerHTML='<div class=row><span class=p>● '+s.status+'</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span><span class=p>Paused '+s.paused+'</span></div><p>Current: '+(s.current_job_id||'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>P</th><th>State</th><th>Title</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.priority+'</td><td>'+x.state+'</td><td>'+x.title+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>x.created_at+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n')}l();setInterval(l,5000)</script>"""
+HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}button,input{padding:10px;border-radius:10px;border:0}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}</style><main><h1>Autonomous Development</h1><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><pre id=e></pre></div></main><script>t.value=localStorage.st||'';async function g(u){return(await fetch(u,{cache:'no-store'})).json()}async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);l()}async function l(){let s=await g('/api/status'),j=await g('/api/jobs'),ev=await g('/api/events');document.getElementById('s').innerHTML='<div class=row><span class=p>● '+s.status+'</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span><span class=p>Paused '+s.paused+'</span></div><p>Current: '+(s.current_job_id||'—')+'</p><p>Queue: '+JSON.stringify(s.counts||{})+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p><p>Last event: '+(s.last_event?s.last_event.type+' '+s.last_event.msg:'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>P</th><th>State</th><th>Title</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.priority+'</td><td>'+x.state+'</td><td>'+x.title+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>x.created_at+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n')}l();setInterval(l,5000)</script>"""
 
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
@@ -210,7 +216,7 @@ class H(BaseHTTPRequestHandler):
             if h:
                 try:age=max(0,int(time.time()-datetime.fromisoformat(h).timestamp()))
                 except:pass
-            self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","current_job_id":a.s.meta("current_job_id") or None});return
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","current_job_id":a.s.meta("current_job_id") or None,**o});return
         if self.path=="/api/jobs":self.sendj({"jobs":a.s.jobs()});return
         if self.path=="/api/events":self.sendj({"events":a.s.events()});return
         self.sendj({"error":"not_found"},404)
@@ -263,6 +269,7 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
+
 
 
 
