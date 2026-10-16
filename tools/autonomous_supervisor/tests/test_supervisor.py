@@ -1,4 +1,4 @@
-import tempfile,time,unittest
+import json,tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -130,4 +130,16 @@ class T(unittest.TestCase):
   self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone",HTML)
   self.assertIn("Updated: ",HTML);self.assertIn("Time zone: ",HTML)
   self.assertNotIn("location.reload",HTML);self.assertNotIn("setInterval",HTML)
+ def test_portfolio_fairness_prevents_ready_product_starvation(self):
+  self.s.add("persona one","codex",{"product":"PERSONA"},1,"P1")
+  self.s.add("life os","shell",{"product":"LIFE_OS","command":"true"},100,"L1")
+  self.s.setmeta("scheduler.last_product","PERSONA");self.s.setmeta("scheduler.consecutive_product_jobs","3")
+  policy={"maxConsecutiveJobsPerProduct":3}
+  picked=self.s.pick({"CODEX":"AVAILABLE","SHELL":"AVAILABLE"},policy)
+  self.assertEqual(picked["id"],"L1")
+ def test_canonical_mission_plans_across_the_whole_portfolio(self):
+  mission=json.loads((Path(__file__).resolve().parents[1]/"mission.v1.json").read_text())
+  self.assertEqual(set(mission["canonicalProducts"]),{"PERSONA","LIFE_OS","DIVE_M","SHARED"})
+  self.assertEqual(set(mission["continuation"]["payload"]["planning_products"]),set(mission["canonicalProducts"]))
+  self.assertIn("highest-value bounded next step",mission["continuation"]["payload"]["prompt"])
 if __name__=="__main__":unittest.main()

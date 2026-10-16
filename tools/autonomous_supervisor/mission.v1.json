@@ -1,7 +1,56 @@
 {
   "version": 1,
-  "mission": "Build and operate Life OS and Persona, prioritizing a high-quality Persona Content Conveyor.",
-  "businessOutcome": "Produce real, distinctive Instagram content through a repeatable evidence-based growth and learning loop.",
+  "mission": "Build and operate the whole Life OS product portfolio through one durable Development / Portfolio Supervisor.",
+  "businessOutcome": "Launch the first real usable Persona and continuously improve Persona, Life OS, Dive M Personal and shared foundations through truthful evidence-based loops.",
+  "canonicalProducts": [
+    "PERSONA",
+    "LIFE_OS",
+    "DIVE_M",
+    "SHARED"
+  ],
+  "productPortfolio": {
+    "PERSONA": {
+      "businessPriority": 1,
+      "state": "CURRENT_RELEASE_FOCUS",
+      "objective": "Operate a recurring high-quality content publication and learning conveyor."
+    },
+    "LIFE_OS": {
+      "businessPriority": 2,
+      "state": "CONTINUOUS_AND_BLOCKER_PROMOTED",
+      "objective": "Remain the canonical personal operating system and source of execution, context, wellbeing, sync and privacy truth."
+    },
+    "DIVE_M": {
+      "businessPriority": 3,
+      "state": "PERSONAL_ACTIVE_CLASSIC_COMPATIBLE",
+      "objective": "Develop private owner analytics without mixing private data with future Dive M Classic tenant data."
+    },
+    "SHARED": {
+      "businessPriority": 2,
+      "state": "FOUNDATIONAL",
+      "objective": "Provide canonical identity, provenance, events, memory, decisions, assets, analytics, permissions and audit primitives."
+    }
+  },
+  "schedulerPolicy": {
+    "highestBusinessPriorityProduct": "PERSONA",
+    "promoteCrossProductBlockers": true,
+    "qualityAndTruthBeforeFeatureCount": true,
+    "maxConsecutiveJobsPerProduct": 3,
+    "doNotManufactureWork": true,
+    "selectOnlyDependencyAndCapabilityReady": true
+  },
+  "currentReleaseFocus": {
+    "name": "FIRST REAL USABLE PERSONA",
+    "gates": [
+      "VIDEO_READY",
+      "CAROUSEL_READY",
+      "PHOTO_READY",
+      "REAL_CONTENT_MATERIAL",
+      "SHOOTING_FLOW_AND_MEDIA_INTAKE",
+      "EDITORIAL_READY",
+      "SAFE_PUBLISHER",
+      "METRICS_AND_LEARNING"
+    ]
+  },
   "principles": [
     "truth",
     "quality",
@@ -83,6 +132,8 @@
     "METRICS",
     "LEARNING",
     "CANONICAL_INTEGRATION"
+    ,"DIVE_M_PERSONAL"
+    ,"PORTFOLIO_PLANNING"
   ],
   "backlog": [
     {
@@ -376,6 +427,30 @@
       }
     },
     {
+      "id": "DIVE-M-PERSONAL-001",
+      "title": "Define the first bounded Dive M Personal insight contract",
+      "priority": 110,
+      "kind": "codex",
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "business_priority": 3,
+        "dependencies": [],
+        "requires": ["CODEX"],
+        "risk": "private owner data crossing a future tenant boundary",
+        "goal": "Define one canonical read-only personal insight contract over trusted Life OS and Persona observations.",
+        "acceptance": [
+          "owner-private and future tenant boundaries are explicit",
+          "inputs reference canonical observations rather than duplicate state",
+          "recommendations retain provenance",
+          "no production mutation"
+        ],
+        "evidence": [],
+        "next_action": "inspect existing analytics and observation contracts and implement the smallest compatible read-only slice",
+        "prompt": "Implement one bounded Dive M Personal insight-contract slice over existing canonical Life OS and Persona observations. Keep owner data isolated from future Dive M Classic tenants, preserve provenance, add deterministic tests, and do not deploy."
+      }
+    },
+    {
       "id": "CANONICAL-001",
       "title": "Integrate verified candidates into one canonical proposal",
       "priority": 120,
@@ -405,8 +480,14 @@
     "priority": 200,
     "kind": "local_ai",
     "payload": {
-      "workstream": "CONTENT_CONVEYOR",
-      "goal": "Select and complete the next smallest mission-aligned verified gap.",
+      "workstream": "PORTFOLIO_PLANNING",
+      "goal": "Select and complete the next smallest mission-aligned verified portfolio gap.",
+      "planning_products": [
+        "PERSONA",
+        "LIFE_OS",
+        "DIVE_M",
+        "SHARED"
+      ],
       "dependencies": [],
       "acceptance": [
         "gap is evidenced by repository and durable state",
@@ -416,7 +497,7 @@
       ],
       "risk": 1,
       "next_action": "inspect mission, queue, READY candidates, failures and repository state",
-      "prompt": "Read mission.v1.json and the durable supervisor queue/events. Inspect actual repository state and READY candidates. Select exactly one smallest highest-value gap serving the Persona Content Conveyor, or a Life OS truth/privacy/sync blocker. Implement it in the isolated worktree with deterministic tests and critic. Do not touch main, production, frozen branches, paid APIs, or GitHub Actions.",
+      "prompt": "Read mission.v1.json and the durable supervisor queue/events. Ask: what is the current portfolio business outcome, what blocks it, which product owns the blocker, what is the highest-value bounded next step, and which other product is runnable while the top product is blocked? Plan across PERSONA, LIFE_OS, DIVE_M and SHARED. Keep FIRST REAL USABLE PERSONA as the current release focus; promote Life OS or Shared blockers; prevent starvation without manufacturing work. Implement exactly one dependency-ready and capability-ready bounded gap in an isolated worktree with deterministic tests and critic. Do not touch main, production, frozen branches, paid APIs, or GitHub Actions.",
       "product": "SHARED",
       "requires": [
         "LOCAL_AI",

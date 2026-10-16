@@ -47,7 +47,7 @@ def replenish_backlog(store,mission,capabilities=None):
     if capabilities is None:
         active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
         if any(j["state"] in active for j in store.jobs(10000)):return 0
-    elif store.pick(capabilities):return 0
+    elif store.pick(capabilities,mission.get("schedulerPolicy")):return 0
     roadmaps=[j for j in store.jobs(10000) if j["id"].startswith("ROADMAP-")]
     if roadmaps and max(roadmaps,key=lambda j:int(j["id"].split("-")[-1]))["state"]!="READY":return 0
     continuation=mission.get("continuation")
@@ -86,9 +86,10 @@ class Store:
         with self.l:rows=self.c.execute("SELECT * FROM jobs ORDER BY priority,created_at LIMIT ?",(n,)).fetchall()
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
-    def pick(self,capabilities=None):
+    def pick(self,capabilities=None,scheduler_policy=None):
         capabilities=capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
         with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW') ORDER BY priority,created_at").fetchall()
+        eligible=[]
         for r in rows:
             job=self.row(r);deps=job["payload"].get("dependencies",[])
             if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":required={"CODEX"}
@@ -99,8 +100,14 @@ class Store:
                 marks=",".join("?" for _ in deps)
                 with self.l:states={x["id"]:x["state"] for x in self.c.execute(f"SELECT id,state FROM jobs WHERE id IN ({marks})",deps)}
                 if not all(states.get(dep)=="READY" for dep in deps):continue
-            return job
-        return None
+            eligible.append(job)
+        if not eligible:return None
+        limit=int((scheduler_policy or {}).get("maxConsecutiveJobsPerProduct",0) or 0)
+        last=self.meta("scheduler.last_product");streak=int(self.meta("scheduler.consecutive_product_jobs") or 0)
+        if limit and last and streak>=limit:
+            alternative=next((job for job in eligible if job_product(job)!=last),None)
+            if alternative:return alternative
+        return eligible[0]
     def state(self,j,s,error=None,not_before=None,bump=False):
         with self.l,self.c:
             self.c.execute("UPDATE jobs SET state=?,last_error=?,not_before=?,attempts=attempts+?,updated_at=? WHERE id=?",(s,error,not_before,1 if bump else 0,now(),j))
@@ -166,11 +173,14 @@ class Runner:
         while not self.stop.is_set():
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
-            caps=self.capabilities();self.s.setmeta("capabilities",jd(caps));j=self.s.pick(caps)
+            caps=self.capabilities();self.s.setmeta("capabilities",jd(caps));j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
             if not j and self.mission:replenish_backlog(self.s,self.mission,caps);j=self.s.pick(caps)
             if not j:self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
             self.run(j)
     def run(self,j):
+        product=job_product(j);last=self.s.meta("scheduler.last_product")
+        streak=int(self.s.meta("scheduler.consecutive_product_jobs") or 0)+1 if last==product else 1
+        self.s.setmeta("scheduler.last_product",product);self.s.setmeta("scheduler.consecutive_product_jobs",str(streak))
         self.current=j["id"];self.s.setmeta("current_job_id",self.current);self.s.setmeta("status","RUNNING")
         try:
             if j["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":self.codex_review_job(j)
