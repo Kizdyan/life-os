@@ -4,7 +4,7 @@ import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,prepare_command,validate_changed_paths
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
@@ -448,24 +448,41 @@ class Runner:
         raw=self.cfg.get("local_ai_command") or [];cmd=prepare_command(shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw])
         if not cmd:raise RuntimeError("local AI is not configured")
         if p.get("allowed_files"):
-            max_repairs=max(0,min(int(p.get("max_repairs",1)),2));evidence=[]
+            self.ensure_node_dependencies(wt,j["id"])
+            max_repairs=max(0,min(int(p.get("max_repairs",1)),2));evidence=[];repair_context=None;seen_fingerprints=set()
             for iteration in range(max_repairs+1):
-                task={**p,"goal":str(p.get("goal",""))+("\nRepair the previous verification failure: "+str(evidence[-1]["error"]) if evidence else "")}
+                task={**p,"repair_context":repair_context,"previous_attempts":[{"iteration":x["iteration"],"response_sha256":x["response_sha256"],"diff_sha256":x.get("diff_sha256"),"failure_kind":x.get("failure",{}).get("kind")} for x in evidence]}
                 prompt=build_prompt(task,wt);started=time.time();code,out=self.cmd(cmd,wt,prompt)
                 self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"iteration":iteration,"duration_seconds":round(time.time()-started,2),"tail":safe_tail(out,1200)})
                 if code:raise RuntimeError("local AI exit "+str(code)+": "+safe_tail(out,650))
+                attempt={"iteration":iteration,"response_sha256":diff_fingerprint(out),"checks":[]}
                 try:apply_edits(parse_response(out),task,wt)
-                except LocalCodingError as exc:raise RuntimeError(str(exc))
+                except LocalCodingError as exc:
+                    failure={"kind":"MODEL_RESPONSE","command":"local model response parser","exit":1,"output":str(exc)}
+                    attempt["failure"]=failure;evidence.append(attempt);repair_context=failure
+                    self.s.event(j["id"],"LOCAL_ATTEMPT","invalid response",attempt)
+                    if iteration>=max_repairs:p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local QA repair limit reached");return
+                    continue
                 changed=self.git(wt,["diff","--name-only"]).splitlines();validate_changed_paths(changed,p["allowed_files"])
+                diff=self.git(wt,["diff","--no-ext-diff"]);validate_test_integrity(diff)
+                fingerprint=diff_fingerprint(diff);attempt.update({"diff_sha256":fingerprint,"changed_files":changed,"diff_tail":safe_tail(diff,8000)})
+                if fingerprint in seen_fingerprints:
+                    attempt["failure"]={"kind":"REPEATED_PATCH","command":"candidate diff fingerprint","exit":1,"output":"local model repeated an identical candidate patch"};evidence.append(attempt)
+                    p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local model repeated identical repair");return
+                seen_fingerprints.add(fingerprint)
                 checks=[];failed=None
-                for raw_test in p.get("test_commands") or self.cfg["test_commands"]:
-                    c,o=self.cmd(["bash","-lc",str(raw_test)],wt);checks.append({"command":str(raw_test),"exit":c,"tail":safe_tail(o,1000)})
+                for raw_test in order_checks(p.get("test_commands") or self.cfg["test_commands"],changed):
+                    c,o=self.cmd(["bash","-lc",str(raw_test)],wt);checks.append({"command":str(raw_test),"exit":c,"tail":safe_tail(o,3000)})
                     self.s.event(j["id"],"LOCAL_QA",str(raw_test),checks[-1])
-                    if c:failed={"error":str(raw_test)+" exit "+str(c),"tail":safe_tail(o,1500)};break
+                    if c:failed={"command":str(raw_test),"exit":c,"output":safe_tail(o,6000)};break
                 if not failed:
-                    c,o=self.cmd(["git","diff","--check"],wt);failed=None if c==0 else {"error":"git diff --check","tail":safe_tail(o)}
-                evidence.append({"iteration":iteration,"checks":checks,**(failed or {})})
+                    c,o=self.cmd(["git","diff","--check"],wt);failed=None if c==0 else {"command":"git diff --check","exit":c,"output":safe_tail(o,6000)}
+                attempt["checks"]=checks
+                if failed:
+                    repair_context=build_repair_context(failed,wt,p["allowed_files"]);attempt["failure"]=repair_context
+                evidence.append(attempt);self.s.event(j["id"],"LOCAL_ATTEMPT","verified" if not failed else "repair required",attempt)
                 if not failed:break
+                if repair_context["kind"]=="ENVIRONMENT":p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local QA environment failure");return
                 if iteration>=max_repairs:p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local QA repair limit reached");return
             dirty=self.git(wt,["status","--porcelain"])
             if not dirty:self.s.state(j["id"],"FAILED","local model produced no diff");return

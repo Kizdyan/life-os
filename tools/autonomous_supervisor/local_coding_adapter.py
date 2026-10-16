@@ -1,8 +1,45 @@
 from __future__ import annotations
-import json,re
+import hashlib,json,re
 from pathlib import Path
 
 class LocalCodingError(RuntimeError):pass
+
+def classify_failure(command:str,exit_code:int,output:str)->str:
+    lower=output.lower()
+    if exit_code in (126,127) or any(x in lower for x in ("not found","no such file or directory","cannot find module")):return "ENVIRONMENT"
+    if "typecheck" in command.lower() or re.search(r"error TS\d+",output):return "TYPECHECK"
+    if "test" in command.lower() or "failed tests" in lower:return "TEST"
+    if "diff --check" in command:return "DIFF"
+    return "COMMAND"
+
+def build_repair_context(failure:dict,root:Path,allowed_files:list[str])->dict:
+    output=str(failure.get("output") or failure.get("tail") or "")[-6000:]
+    locations=[];seen=set();allowed=set(allowed_files)
+    pattern=r"(?P<path>[A-Za-z0-9_./\\-]+\.(?:ts|tsx|js|jsx|py))(?::|\()(?P<line>\d+)(?::|,)(?P<column>\d+)\)?"
+    for match in re.finditer(pattern,output):
+        rel=match.group("path").replace("\\","/");line=int(match.group("line"));key=(rel,line)
+        if key in seen or rel not in allowed:continue
+        seen.add(key);p=(root/rel).resolve()
+        if root.resolve() not in p.parents or not p.is_file():continue
+        lines=p.read_text(errors="replace").splitlines();lo=max(1,line-2);hi=min(len(lines),line+2)
+        locations.append({"path":rel,"line":line,"column":int(match.group("column")),"snippet":"\n".join(f"{n}: {lines[n-1]}" for n in range(lo,hi+1))})
+    return {"kind":classify_failure(str(failure.get("command","")),int(failure.get("exit",1)),output),"command":str(failure.get("command","")),"exit":int(failure.get("exit",1)),"output":output,"locations":locations,"instruction":"Repair only the diagnosed failure. Preserve tests and assertions. Do not add a test that merely restates this instruction."}
+
+def diff_fingerprint(diff:str)->str:return hashlib.sha256(diff.encode()).hexdigest()
+
+def validate_test_integrity(diff:str):
+    removed=[]
+    for line in diff.splitlines():
+        if line.startswith("---"):continue
+        if line.startswith("-") and re.search(r"\b(?:it|test)\s*\(|\bexpect\s*\(",line[1:]):removed.append(line[1:].strip())
+    if removed:raise LocalCodingError("local candidate removed or rewrote existing tests/assertions")
+
+def order_checks(commands:list[str],changed_files:list[str])->list[str]:
+    """Run static diagnostics before runtime tests when a test file changed."""
+    if not any(re.search(r"(?:^|/)[^/]+\.(?:test|spec)\.(?:ts|tsx|js|jsx|py)$",path.replace("\\","/")) for path in changed_files):
+        return list(commands)
+    static=[command for command in commands if "typecheck" in command.lower()]
+    return static+[command for command in commands if command not in static]
 
 def prepare_command(command:list[str])->list[str]:
     prepared=list(command)
@@ -34,8 +71,8 @@ def build_prompt(task:dict,root:Path)->str:
         text=p.read_text(errors="replace")
         if len(text)>30000:raise LocalCodingError("context file too large: "+rel)
         files.append({"path":rel,"content":text})
-    request={"goal":task.get("goal"),"acceptance":task.get("acceptance",[]),"allowed_files":allowed,"files":files}
-    return "You are a bounded local coding worker. Return ONLY valid JSON: {\"plan\":string,\"edits\":[{\"path\":string,\"content\":string}],\"risks\":[string]}. Edit only allowed_files. Preserve behavior outside the goal. Do not use shell, secrets, network, markdown fences, or placeholders.\n"+json.dumps(request,ensure_ascii=False)
+    request={"goal":task.get("goal"),"acceptance":task.get("acceptance",[]),"allowed_files":allowed,"files":files,"repair":task.get("repair_context"),"previous_attempts":task.get("previous_attempts",[])}
+    return "You are a bounded local coding worker. Return ONLY valid JSON: {\"plan\":string,\"edits\":[{\"path\":string,\"content\":string}],\"risks\":[string]}. Edit only allowed_files. Preserve behavior outside the goal. Never delete or weaken existing tests. When repair is present, use its exact output and source locations, change only the failing section, and do not repeat a previous patch. Do not use shell, secrets, network, markdown fences, or placeholders.\n"+json.dumps(request,ensure_ascii=False)
 
 def apply_edits(data:dict,task:dict,root:Path)->list[str]:
     allowed=set(map(str,task.get("allowed_files",[])));changed=[];total=0

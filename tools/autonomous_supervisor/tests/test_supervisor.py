@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,prepare_command,validate_changed_paths
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -209,6 +209,33 @@ class T(unittest.TestCase):
  def test_local_coding_parser_ignores_ollama_spinner_preamble(self):
   raw='\x1b[1G⠙ \x1b[K\x1b[?25h\n{"plan":"bounded","edits":[{"path":"a.ts","content":"x"}],"risks":[]}\n\x1b[?25h'
   self.assertEqual(parse_response(raw)["plan"],"bounded")
+ def test_local_repair_context_contains_failure_kind_exact_output_and_source_lines(self):
+  root=Path(self.d.name);p=root/"a.test.ts";p.write_text("one\ntwo\nthree\nfour\n")
+  output="a.test.ts(3,7): error TS2345: Property 'items' is missing"
+  failure={"command":"npm run typecheck","exit":2,"output":output}
+  context=build_repair_context(failure,root,["a.test.ts"])
+  self.assertEqual(context["kind"],"TYPECHECK")
+  self.assertEqual(context["output"],output)
+  self.assertEqual(context["locations"][0]["line"],3)
+  self.assertIn("3: three",context["locations"][0]["snippet"])
+ def test_local_failure_classification_distinguishes_environment_test_and_typecheck(self):
+  self.assertEqual(classify_failure("npm test",127,"vitest: not found"),"ENVIRONMENT")
+  self.assertEqual(classify_failure("npm run typecheck",2,"a.ts(1,1): error TS1"),"TYPECHECK")
+  self.assertEqual(classify_failure("npm test",1,"Failed Tests 1"),"TEST")
+ def test_local_attempt_fingerprint_detects_identical_patch(self):
+  self.assertEqual(diff_fingerprint("same"),diff_fingerprint("same"))
+  self.assertNotEqual(diff_fingerprint("same"),diff_fingerprint("different"))
+ def test_local_low_risk_candidate_cannot_delete_existing_tests_or_assertions(self):
+  with self.assertRaises(LocalCodingError):validate_test_integrity('-  it("keeps behavior",()=>{\n-    expect(value).toBe(1);\n')
+  validate_test_integrity('+  it("rejects bad input",()=>{ expect(run()).toThrow(); });\n')
+ def test_local_repair_prompt_contains_structured_diagnostic(self):
+  root=Path(self.d.name);(root/"a.ts").write_text("export const a=1;\n")
+  prompt=build_prompt({"goal":"fix","acceptance":[],"allowed_files":["a.ts"],"repair_context":{"kind":"TYPECHECK","output":"a.ts(1,1): error TS1","locations":[]}},root)
+  request=json.loads(prompt.split("\n",1)[1]);self.assertEqual(request["repair"]["kind"],"TYPECHECK");self.assertIn("error TS1",request["repair"]["output"])
+ def test_local_test_edits_run_typecheck_before_runtime_tests(self):
+  commands=["TZ=UTC npm test -- --run a.test.ts","npm run typecheck"]
+  self.assertEqual(order_checks(commands,["a.test.ts"]),["npm run typecheck","TZ=UTC npm test -- --run a.test.ts"])
+  self.assertEqual(order_checks(commands,["a.ts"]),commands)
  def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")
