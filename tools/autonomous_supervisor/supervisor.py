@@ -151,7 +151,7 @@ class Runner:
         if forced:
             codex_status="WAITING_FOR_QUOTA"
             if codex.get("reason")!="forced":set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=0,reason="forced")
-        elif codex.get("status")=="WAITING_FOR_QUOTA" and retry>time.time():codex_status="WAITING_FOR_QUOTA"
+        elif codex.get("status") in ("WAITING_FOR_QUOTA","ERROR") and retry>time.time():codex_status=codex["status"]
         else:
             codex_status="AVAILABLE"
             if codex.get("status")!="AVAILABLE":set_capability(self.s,"CODEX","AVAILABLE");self.s.release_codex_waits()
@@ -253,7 +253,7 @@ class Runner:
         code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":out[-12000:]})
         if code:
             if codex_unavailable(out):
-                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
             raise RuntimeError("Codex exit "+str(code))
         set_capability(self.s,"CODEX","AVAILABLE")
         self.s.state(j["id"],"TESTING")
@@ -270,7 +270,7 @@ class Runner:
         code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
         if code or not critic_clean(out):
             if codex_unavailable(out):
-                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
             count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
             if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
             else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -280,7 +280,7 @@ class Runner:
             code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
             if code or not critic_clean(out):
                 if codex_unavailable(out):
-                    retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                    retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
                 count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
                 if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
                 else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -312,7 +312,7 @@ class Runner:
         p=j["payload"];wt=Path(p["worktree_path"]);base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"));self.s.state(j["id"],"CRITIC")
         code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":out[-12000:]})
         if code and codex_unavailable(out):
-            retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW",reason,retry);return
+            retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW",reason,retry);return
         if code or not critic_clean(out):self.s.state(j["id"],"FAILED","Codex review rejected local candidate");return
         set_capability(self.s,"CODEX","AVAILABLE");self.s.state(j["id"],"READY")
     def stop_current(self,cancel=True):
