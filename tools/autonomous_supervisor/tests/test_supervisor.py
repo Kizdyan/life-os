@@ -2,7 +2,7 @@ import tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import Store,Runner,critic_clean,critic_command,default_codex_command,repair_prompt,replenish_backlog,resolve_base,quota,seed_store
+from supervisor import Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -12,6 +12,8 @@ class T(unittest.TestCase):
  def test_wait_until_quota_reset(self):
   self.s.add("x","shell",{"command":"true"},7,"J1");self.s.state("J1","WAITING_FOR_CODEX",not_before=time.time()+60);self.assertIsNone(self.s.pick())
  def test_quota_detection(self):self.assertTrue(quota("usage limit reached; reset later"))
+ def test_codex_transport_outage_is_capability_unavailable(self):
+  self.assertTrue(codex_unavailable("workspace routing discovery failed; Reconnecting... 5/5"))
  def test_seed_store_is_idempotent_without_http_server(self):
   seed=Path(self.d.name)/"seed.json";seed.write_text('{"jobs":[{"id":"J-SEED","title":"seed","priority":1,"kind":"shell","payload":{"command":"true"}}]}')
   self.assertEqual(seed_store(self.s,str(seed)),1);self.assertEqual(seed_store(self.s,str(seed)),0);self.assertEqual([x["id"] for x in self.s.jobs()],["J-SEED"])
@@ -50,10 +52,11 @@ class T(unittest.TestCase):
   self.s.state("J1","CODING");r.current="J1";r.proc=P()
   self.assertTrue(r.stop_current(cancel=False))
   self.assertEqual(self.s.jobs()[0]["state"],"CODING")
- def test_cooldown_on_highest_priority_job_blocks_later_packets(self):
-  self.s.add("first","codex",{},1,"J1");self.s.state("J1","QUEUED",not_before=time.time()+60)
-  self.s.add("second","codex",{},2,"J2")
-  self.assertIsNone(self.s.pick())
+ def test_waiting_codex_job_does_not_block_deterministic_work(self):
+  self.s.add("first","codex",{},1,"J1");self.s.state("J1","WAITING_FOR_CODEX",not_before=time.time()+60)
+  self.s.add("second","shell",{"command":"true"},2,"J2")
+  self.assertEqual(self.s.pick({"CODEX":"WAITING_FOR_QUOTA","SHELL":"AVAILABLE"})["id"],"J2")
+  self.assertEqual(self.s.jobs()[0]["state"],"WAITING_FOR_CODEX")
  def test_dashboard_overview_reports_queue_ready_and_last_event(self):
   self.s.add("ready","shell",{},1,"R");self.s.state("R","READY")
   self.s.add("next","shell",{},2,"Q")
@@ -80,4 +83,33 @@ class T(unittest.TestCase):
   self.s.state("J1","READY")
   self.assertEqual(self.s.recover_interrupted(),[])
   self.assertEqual(self.s.jobs()[0]["state"],"READY")
+ def test_old_jobs_derive_safe_capabilities(self):
+  self.assertEqual(required_capabilities({"kind":"codex","payload":{}}),{"CODEX"})
+  self.assertEqual(required_capabilities({"kind":"shell","payload":{}}),{"SHELL"})
+ def test_local_ai_allowed_job_is_selected_only_when_available(self):
+  self.s.add("local","local_ai",{"risk":1},1,"L")
+  self.assertIsNone(self.s.pick({"LOCAL_AI":"NOT_INSTALLED"}))
+  self.assertEqual(self.s.pick({"LOCAL_AI":"AVAILABLE"})["id"],"L")
+ def test_codex_required_is_never_routed_to_local_ai(self):
+  job={"kind":"codex","payload":{"risk":3,"executor":"LOCAL_AI"}}
+  self.assertEqual(job_executor(job),"CODEX")
+  self.assertEqual(required_capabilities(job),{"CODEX"})
+ def test_waiting_codex_becomes_runnable_after_recovery(self):
+  self.s.add("codex","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()-1)
+  self.assertIsNone(self.s.pick({"CODEX":"WAITING_FOR_QUOTA"}))
+  self.assertEqual(self.s.pick({"CODEX":"AVAILABLE"})["id"],"C")
+ def test_capability_state_survives_restart(self):
+  self.s.setmeta("capability.CODEX",'{"status":"WAITING_FOR_QUOTA","retry_at":123}')
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  self.assertEqual(capability_status(self.s,"CODEX")["status"],"WAITING_FOR_QUOTA")
+ def test_local_ready_pending_review_survives_restart(self):
+  self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_READY_PENDING_CODEX_REVIEW")
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  self.assertEqual(self.s.jobs()[0]["state"],"LOCAL_READY_PENDING_CODEX_REVIEW")
+ def test_queue_summary_distinguishes_runnable_and_waiting(self):
+  self.s.add("codex","codex",{"product":"PERSONA"},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+60)
+  self.s.add("shell","shell",{"product":"SHARED","command":"true"},2,"S")
+  self.s.add("human","shell",{"product":"LIFE_OS"},3,"H");self.s.state("H","HUMAN_REQUIRED")
+  summary=self.s.queue_summary({"CODEX":"WAITING_FOR_QUOTA","SHELL":"AVAILABLE"})
+  self.assertEqual(summary["runnable"],1);self.assertEqual(summary["waiting_codex"],1);self.assertEqual(summary["waiting_human"],1)
 if __name__=="__main__":unittest.main()

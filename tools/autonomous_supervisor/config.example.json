@@ -17,5 +17,8 @@
     "npm run typecheck",
     "npm run web:build"
   ],
-  "command_timeout_seconds": 7200
+  "command_timeout_seconds": 7200,
+  "local_ai_command": ["ollama", "run", "qwen2.5-coder:1.5b"],
+  "local_ai_model": "qwen2.5-coder:1.5b",
+  "local_ai_max_concurrency": 1
 }

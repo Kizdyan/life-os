@@ -2,26 +2,427 @@
   "version": 1,
   "mission": "Build and operate Life OS and Persona, prioritizing a high-quality Persona Content Conveyor.",
   "businessOutcome": "Produce real, distinctive Instagram content through a repeatable evidence-based growth and learning loop.",
-  "principles": ["truth", "quality", "privacy", "durability", "individuality", "evidence", "safe automation", "zero recurring AI cost by default"],
-  "priorities": ["AUTONOMOUS_RUNTIME", "CONTENT_CONVEYOR", "PERSONA_INTELLIGENCE", "VIDEO_CAROUSEL_PHOTO", "PRODUCTION", "QUALITY_COURT", "PUBLISHER", "METRICS_LEARNING", "LIFE_OS"],
-  "hardSafety": ["never write or merge to main", "never mutate or deploy production without authorization", "never modify frozen or recovery accepted branches", "never live publish without explicit authorization", "never expose secrets", "never destructively reset or clean unrelated work", "never purchase services or invoke paid APIs", "never trigger GitHub Actions while unavailable or exhausted"],
-  "qualityPolicy": {"states": ["PASS", "REVISION_REQUIRED", "REJECT", "HUMAN_REQUIRED"], "rule": "Every meaningful stage requires executed evidence and stage-specific QC; weak or generic output may not silently advance.", "antiGenericQuestion": "Could essentially the same material be given to hundreds of other creators?"},
-  "contentConveyor": ["REAL_CONTEXT", "STRONG_IDEA", "IDEA_QC", "SCRIPT_STRUCTURE", "SCRIPT_QC", "SHOOTING_BRIEF", "BRIEF_QC", "REAL_MEDIA", "SOURCE_QC", "EDIT_ASSEMBLY", "EDIT_QC", "BRAND_SIGNATURE_QA", "ANTI_GENERIC_QA", "PLATFORM_QA", "EDITORIAL_READY", "LIVE_PUBLICATION_AUTHORIZATION", "PUBLISH", "AUTHORITATIVE_CONFIRMATION", "REAL_METRICS", "LEARNING"],
-  "workstreams": ["AUTONOMOUS_RUNTIME", "TRUTH", "SYNC", "PRIVACY", "ERIKA", "ARCHETYPE_BRAND", "PERSONA_INTELLIGENCE", "CONTENT_CONVEYOR", "VIDEO", "CAROUSEL", "PHOTO", "MEDIA_INTAKE", "QUALITY_COURT", "PUBLISHER", "METRICS", "LEARNING", "CANONICAL_INTEGRATION"],
-  "backlog": [
-    {"id":"CONVEYOR-001","title":"Define executable Persona content conveyor state machine","priority":30,"kind":"codex","payload":{"workstream":"CONTENT_CONVEYOR","goal":"Create one canonical, durable, quality-gated conveyor contract across real context through editorial ready.","dependencies":[],"acceptance":["canonical stages and transitions are executable","each stage has PASS/REVISION_REQUIRED/REJECT/HUMAN_REQUIRED","durable evidence and next action are represented","tests prove weak output cannot advance"],"risk":"parallel state or oversized refactor","next_action":"inspect existing Persona contracts and implement the smallest compatible state-machine slice","prompt":"Implement the smallest coherent Persona Content Conveyor state-machine slice. Reuse canonical contracts and durable state, preserve existing behavior, add deterministic tests, and do not publish or deploy."}},
-    {"id":"ARCHETYPE-001","title":"Connect Archetype and Brand evidence to the conveyor","priority":40,"kind":"codex","payload":{"workstream":"ARCHETYPE_BRAND","goal":"Make brand identity and signature evidence available to content decisions without duplicating state.","dependencies":["CONVEYOR-001"],"acceptance":["canonical brand evidence is referenced","missing evidence is truthful","anti-generic review is testable"],"risk":"invented identity data","next_action":"map existing Archetype/Brand data into the conveyor contract","prompt":"Connect existing Archetype and Brand evidence to the canonical conveyor with truthful missing-data states and deterministic anti-generic tests. Do not invent user facts."}},
-    {"id":"INTELLIGENCE-001","title":"Produce evidence-bound Persona ideas","priority":50,"kind":"codex","payload":{"workstream":"PERSONA_INTELLIGENCE","goal":"Generate bounded content opportunities from real context and brand evidence.","dependencies":["ARCHETYPE-001"],"acceptance":["ideas cite real signals","generic ideas require revision","format intent is explicit","FREE_ONLY remains default"],"risk":"generic or fabricated recommendations","next_action":"implement deterministic idea evidence and QC slice","prompt":"Implement the smallest evidence-bound Persona idea and QC slice using existing context/cache. Preserve FREE_ONLY and reject unverified actionable ideas."}},
-    {"id":"MEDIA-INTAKE-001","title":"Unify real media intake provenance","priority":55,"kind":"codex","payload":{"workstream":"MEDIA_INTAKE","goal":"Connect immutable MediaAsset provenance and shooting sessions to the conveyor.","dependencies":["CONVEYOR-001"],"acceptance":["MediaAsset identity is preserved","source provenance and QC are durable","no duplicate processing request"],"risk":"parallel media source of truth","next_action":"adapt existing MediaAsset contracts","prompt":"Connect existing immutable MediaAsset and shooting-session contracts to the conveyor. Add provenance/QC tests without modifying frozen media engines."}},
-    {"id":"VIDEO-001","title":"Complete the real video lane through editorial ready","priority":60,"kind":"codex","payload":{"workstream":"VIDEO","goal":"Drive a real video from approved idea and media through safe edit QA to editorial ready.","dependencies":["INTELLIGENCE-001","MEDIA-INTAKE-001"],"acceptance":["renderer-independent edit intent","crop and quality gates","real media lineage","no live publication"],"risk":"destructive crop or false quality","next_action":"integrate proven video contracts as one bounded lane","prompt":"Implement the next bounded video-lane gap using existing Video Engine and Media Router contracts. Preserve frozen engines, require objective crop/quality QA, and stop at EDITORIAL_READY."}},
-    {"id":"CAROUSEL-001","title":"Build the first-class carousel lane","priority":61,"kind":"codex","payload":{"workstream":"CAROUSEL","goal":"Create a mobile-readable carousel production lane with narrative and design QC.","dependencies":["INTELLIGENCE-001","MEDIA-INTAKE-001"],"acceptance":["slide ordering and hierarchy are canonical","1080x1350 package is validated","mobile readability and anti-generic QA pass"],"risk":"routing carousel through video renderer","next_action":"implement one deterministic carousel vertical slice","prompt":"Implement the smallest first-class carousel lane with narrative, slide, typography, mobile-readability and anti-generic QC. Do not route it through the video renderer."}},
-    {"id":"PHOTO-001","title":"Build the first-class photo editorial lane","priority":62,"kind":"codex","payload":{"workstream":"PHOTO","goal":"Create restrained photo selection, processing and editorial packaging.","dependencies":["INTELLIGENCE-001","MEDIA-INTAKE-001"],"acceptance":["source detail and composition are protected","editorial angle and caption are linked","export QA is deterministic"],"risk":"unnecessary destructive processing","next_action":"implement one deterministic photo vertical slice","prompt":"Implement the smallest photo/editorial lane using immutable source media, restrained processing, composition QA, caption linkage and deterministic export validation."}},
-    {"id":"QUALITY-COURT-001","title":"Unify stage and final quality court decisions","priority":70,"kind":"codex","payload":{"workstream":"QUALITY_COURT","goal":"Require independent evidence-backed quality decisions before editorial ready.","dependencies":["VIDEO-001","CAROUSEL-001","PHOTO-001"],"acceptance":["all three lanes use the same decision vocabulary","revision loops are bounded","brand/signature/platform/technical evidence is retained"],"risk":"decorative scores","next_action":"consolidate proven gates without rewriting lanes","prompt":"Unify existing deterministic and critic quality evidence across video, carousel and photo. Require executable evidence and bounded repair before EDITORIAL_READY."}},
-    {"id":"PUBLISHER-001","title":"Complete safe publisher contracts and authorization gate","priority":80,"kind":"codex","payload":{"workstream":"PUBLISHER","goal":"Prepare exact immutable assets for provider submission without live publishing.","dependencies":["QUALITY-COURT-001"],"acceptance":["explicit LIVE authorization is mandatory","asset identity is immutable","provider confirmation cannot be fabricated","no production call occurs"],"risk":"unapproved live publication","next_action":"strengthen contracts and simulations only","prompt":"Implement or strengthen safe Publisher contracts and local simulations. Require explicit LIVE authorization and authoritative provider confirmation. Never publish or touch production."}},
-    {"id":"METRICS-LEARNING-001","title":"Close the authoritative metrics and learning loop","priority":90,"kind":"codex","payload":{"workstream":"METRICS","goal":"Turn real provider metrics into bounded observations, hypotheses and next experiments.","dependencies":["PUBLISHER-001"],"acceptance":["metric provenance is explicit","observations are separated from hypotheses","learning changes the next bounded experiment"],"risk":"invented performance data","next_action":"implement provider-neutral evidence contracts","prompt":"Implement the smallest provider-neutral metrics and learning loop using authoritative evidence only. Never fabricate publication or performance data."}},
-    {"id":"SYNC-001","title":"Audit and close the next bounded sync integrity gap","priority":100,"kind":"codex","payload":{"workstream":"SYNC","goal":"Improve canonical sync where it supports truthful Persona state.","dependencies":[],"acceptance":["one concrete integrity gap is fixed","conflict semantics are tested","no production mutation"],"risk":"broad Life OS refactor","next_action":"select one repository-evidenced sync gap","prompt":"Inspect current sync contracts and fix exactly one smallest repository-evidenced integrity gap that supports Persona or canonical state. Add tests; avoid broad refactors."}},
-    {"id":"PRIVACY-001","title":"Audit and close the next bounded privacy boundary gap","priority":101,"kind":"codex","payload":{"workstream":"PRIVACY","goal":"Preserve least-privilege access and secret-safe evidence across Persona flows.","dependencies":[],"acceptance":["one concrete boundary is verified or fixed","secrets remain server-only","tests cover the boundary"],"risk":"secret exposure","next_action":"inspect existing trust boundaries and choose one bounded gap","prompt":"Inspect current Persona trust boundaries and fix exactly one smallest privacy/security gap. Do not expose or rotate secrets and do not touch production."}},
-    {"id":"CANONICAL-001","title":"Integrate verified candidates into one canonical proposal","priority":120,"kind":"codex","payload":{"workstream":"CANONICAL_INTEGRATION","goal":"Prepare a conflict-aware integration proposal from verified candidates.","dependencies":["METRICS-LEARNING-001","SYNC-001","PRIVACY-001"],"acceptance":["candidate lineage is explicit","conflicts are documented and tested","main remains untouched"],"risk":"unsafe merge or lost work","next_action":"produce an isolated integration candidate","prompt":"Create a conflict-aware isolated integration candidate from the verified dependency SHAs. Run local regression and critic. Do not merge to main, push, deploy, or modify production."}}
+  "principles": [
+    "truth",
+    "quality",
+    "privacy",
+    "durability",
+    "individuality",
+    "evidence",
+    "safe automation",
+    "zero recurring AI cost by default"
   ],
-  "continuation": {"title":"Autonomous roadmap replenishment review","priority":200,"kind":"codex","payload":{"workstream":"CONTENT_CONVEYOR","goal":"Select and complete the next smallest mission-aligned verified gap.","dependencies":[],"acceptance":["gap is evidenced by repository and durable state","change is bounded","tests and critic pass","next action is persisted"],"risk":"random feature work","next_action":"inspect mission, queue, READY candidates, failures and repository state","prompt":"Read mission.v1.json and the durable supervisor queue/events. Inspect actual repository state and READY candidates. Select exactly one smallest highest-value gap serving the Persona Content Conveyor, or a Life OS truth/privacy/sync blocker. Implement it in the isolated worktree with deterministic tests and critic. Do not touch main, production, frozen branches, paid APIs, or GitHub Actions."}}
+  "priorities": [
+    "AUTONOMOUS_RUNTIME",
+    "CONTENT_CONVEYOR",
+    "PERSONA_INTELLIGENCE",
+    "VIDEO_CAROUSEL_PHOTO",
+    "PRODUCTION",
+    "QUALITY_COURT",
+    "PUBLISHER",
+    "METRICS_LEARNING",
+    "LIFE_OS"
+  ],
+  "hardSafety": [
+    "never write or merge to main",
+    "never mutate or deploy production without authorization",
+    "never modify frozen or recovery accepted branches",
+    "never live publish without explicit authorization",
+    "never expose secrets",
+    "never destructively reset or clean unrelated work",
+    "never purchase services or invoke paid APIs",
+    "never trigger GitHub Actions while unavailable or exhausted"
+  ],
+  "qualityPolicy": {
+    "states": [
+      "PASS",
+      "REVISION_REQUIRED",
+      "REJECT",
+      "HUMAN_REQUIRED"
+    ],
+    "rule": "Every meaningful stage requires executed evidence and stage-specific QC; weak or generic output may not silently advance.",
+    "antiGenericQuestion": "Could essentially the same material be given to hundreds of other creators?"
+  },
+  "contentConveyor": [
+    "REAL_CONTEXT",
+    "STRONG_IDEA",
+    "IDEA_QC",
+    "SCRIPT_STRUCTURE",
+    "SCRIPT_QC",
+    "SHOOTING_BRIEF",
+    "BRIEF_QC",
+    "REAL_MEDIA",
+    "SOURCE_QC",
+    "EDIT_ASSEMBLY",
+    "EDIT_QC",
+    "BRAND_SIGNATURE_QA",
+    "ANTI_GENERIC_QA",
+    "PLATFORM_QA",
+    "EDITORIAL_READY",
+    "LIVE_PUBLICATION_AUTHORIZATION",
+    "PUBLISH",
+    "AUTHORITATIVE_CONFIRMATION",
+    "REAL_METRICS",
+    "LEARNING"
+  ],
+  "workstreams": [
+    "AUTONOMOUS_RUNTIME",
+    "TRUTH",
+    "SYNC",
+    "PRIVACY",
+    "ERIKA",
+    "ARCHETYPE_BRAND",
+    "PERSONA_INTELLIGENCE",
+    "CONTENT_CONVEYOR",
+    "VIDEO",
+    "CAROUSEL",
+    "PHOTO",
+    "MEDIA_INTAKE",
+    "QUALITY_COURT",
+    "PUBLISHER",
+    "METRICS",
+    "LEARNING",
+    "CANONICAL_INTEGRATION"
+  ],
+  "backlog": [
+    {
+      "id": "CONVEYOR-001",
+      "title": "Define executable Persona content conveyor state machine",
+      "priority": 30,
+      "kind": "codex",
+      "payload": {
+        "workstream": "CONTENT_CONVEYOR",
+        "goal": "Create one canonical, durable, quality-gated conveyor contract across real context through editorial ready.",
+        "dependencies": [],
+        "acceptance": [
+          "canonical stages and transitions are executable",
+          "each stage has PASS/REVISION_REQUIRED/REJECT/HUMAN_REQUIRED",
+          "durable evidence and next action are represented",
+          "tests prove weak output cannot advance"
+        ],
+        "risk": "parallel state or oversized refactor",
+        "next_action": "inspect existing Persona contracts and implement the smallest compatible state-machine slice",
+        "prompt": "Implement the smallest coherent Persona Content Conveyor state-machine slice. Reuse canonical contracts and durable state, preserve existing behavior, add deterministic tests, and do not publish or deploy.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "VERIFY-001",
+      "title": "Verify autonomous runtime deterministically",
+      "priority": 35,
+      "kind": "shell",
+      "payload": {
+        "product": "SHARED",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": [
+          "SHELL",
+          "TESTS"
+        ],
+        "goal": "Run deterministic supervisor regression without Codex.",
+        "dependencies": [],
+        "acceptance": [
+          "supervisor tests pass",
+          "mission and configuration parse"
+        ],
+        "next_action": "run local deterministic verification",
+        "command": "cd tools/autonomous_supervisor && python3 -m unittest tests.test_supervisor && python3 -m py_compile supervisor.py"
+      }
+    },
+    {
+      "id": "ARCHETYPE-001",
+      "title": "Connect Archetype and Brand evidence to the conveyor",
+      "priority": 40,
+      "kind": "codex",
+      "payload": {
+        "workstream": "ARCHETYPE_BRAND",
+        "goal": "Make brand identity and signature evidence available to content decisions without duplicating state.",
+        "dependencies": [
+          "CONVEYOR-001"
+        ],
+        "acceptance": [
+          "canonical brand evidence is referenced",
+          "missing evidence is truthful",
+          "anti-generic review is testable"
+        ],
+        "risk": "invented identity data",
+        "next_action": "map existing Archetype/Brand data into the conveyor contract",
+        "prompt": "Connect existing Archetype and Brand evidence to the canonical conveyor with truthful missing-data states and deterministic anti-generic tests. Do not invent user facts.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "INTELLIGENCE-001",
+      "title": "Produce evidence-bound Persona ideas",
+      "priority": 50,
+      "kind": "codex",
+      "payload": {
+        "workstream": "PERSONA_INTELLIGENCE",
+        "goal": "Generate bounded content opportunities from real context and brand evidence.",
+        "dependencies": [
+          "ARCHETYPE-001"
+        ],
+        "acceptance": [
+          "ideas cite real signals",
+          "generic ideas require revision",
+          "format intent is explicit",
+          "FREE_ONLY remains default"
+        ],
+        "risk": "generic or fabricated recommendations",
+        "next_action": "implement deterministic idea evidence and QC slice",
+        "prompt": "Implement the smallest evidence-bound Persona idea and QC slice using existing context/cache. Preserve FREE_ONLY and reject unverified actionable ideas.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "MEDIA-INTAKE-001",
+      "title": "Unify real media intake provenance",
+      "priority": 55,
+      "kind": "codex",
+      "payload": {
+        "workstream": "MEDIA_INTAKE",
+        "goal": "Connect immutable MediaAsset provenance and shooting sessions to the conveyor.",
+        "dependencies": [
+          "CONVEYOR-001"
+        ],
+        "acceptance": [
+          "MediaAsset identity is preserved",
+          "source provenance and QC are durable",
+          "no duplicate processing request"
+        ],
+        "risk": "parallel media source of truth",
+        "next_action": "adapt existing MediaAsset contracts",
+        "prompt": "Connect existing immutable MediaAsset and shooting-session contracts to the conveyor. Add provenance/QC tests without modifying frozen media engines.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "VIDEO-001",
+      "title": "Complete the real video lane through editorial ready",
+      "priority": 60,
+      "kind": "codex",
+      "payload": {
+        "workstream": "VIDEO",
+        "goal": "Drive a real video from approved idea and media through safe edit QA to editorial ready.",
+        "dependencies": [
+          "INTELLIGENCE-001",
+          "MEDIA-INTAKE-001"
+        ],
+        "acceptance": [
+          "renderer-independent edit intent",
+          "crop and quality gates",
+          "real media lineage",
+          "no live publication"
+        ],
+        "risk": "destructive crop or false quality",
+        "next_action": "integrate proven video contracts as one bounded lane",
+        "prompt": "Implement the next bounded video-lane gap using existing Video Engine and Media Router contracts. Preserve frozen engines, require objective crop/quality QA, and stop at EDITORIAL_READY.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "CAROUSEL-001",
+      "title": "Build the first-class carousel lane",
+      "priority": 61,
+      "kind": "codex",
+      "payload": {
+        "workstream": "CAROUSEL",
+        "goal": "Create a mobile-readable carousel production lane with narrative and design QC.",
+        "dependencies": [
+          "INTELLIGENCE-001",
+          "MEDIA-INTAKE-001"
+        ],
+        "acceptance": [
+          "slide ordering and hierarchy are canonical",
+          "1080x1350 package is validated",
+          "mobile readability and anti-generic QA pass"
+        ],
+        "risk": "routing carousel through video renderer",
+        "next_action": "implement one deterministic carousel vertical slice",
+        "prompt": "Implement the smallest first-class carousel lane with narrative, slide, typography, mobile-readability and anti-generic QC. Do not route it through the video renderer.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "PHOTO-001",
+      "title": "Build the first-class photo editorial lane",
+      "priority": 62,
+      "kind": "codex",
+      "payload": {
+        "workstream": "PHOTO",
+        "goal": "Create restrained photo selection, processing and editorial packaging.",
+        "dependencies": [
+          "INTELLIGENCE-001",
+          "MEDIA-INTAKE-001"
+        ],
+        "acceptance": [
+          "source detail and composition are protected",
+          "editorial angle and caption are linked",
+          "export QA is deterministic"
+        ],
+        "risk": "unnecessary destructive processing",
+        "next_action": "implement one deterministic photo vertical slice",
+        "prompt": "Implement the smallest photo/editorial lane using immutable source media, restrained processing, composition QA, caption linkage and deterministic export validation.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "QUALITY-COURT-001",
+      "title": "Unify stage and final quality court decisions",
+      "priority": 70,
+      "kind": "codex",
+      "payload": {
+        "workstream": "QUALITY_COURT",
+        "goal": "Require independent evidence-backed quality decisions before editorial ready.",
+        "dependencies": [
+          "VIDEO-001",
+          "CAROUSEL-001",
+          "PHOTO-001"
+        ],
+        "acceptance": [
+          "all three lanes use the same decision vocabulary",
+          "revision loops are bounded",
+          "brand/signature/platform/technical evidence is retained"
+        ],
+        "risk": "decorative scores",
+        "next_action": "consolidate proven gates without rewriting lanes",
+        "prompt": "Unify existing deterministic and critic quality evidence across video, carousel and photo. Require executable evidence and bounded repair before EDITORIAL_READY.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "PUBLISHER-001",
+      "title": "Complete safe publisher contracts and authorization gate",
+      "priority": 80,
+      "kind": "codex",
+      "payload": {
+        "workstream": "PUBLISHER",
+        "goal": "Prepare exact immutable assets for provider submission without live publishing.",
+        "dependencies": [
+          "QUALITY-COURT-001"
+        ],
+        "acceptance": [
+          "explicit LIVE authorization is mandatory",
+          "asset identity is immutable",
+          "provider confirmation cannot be fabricated",
+          "no production call occurs"
+        ],
+        "risk": "unapproved live publication",
+        "next_action": "strengthen contracts and simulations only",
+        "prompt": "Implement or strengthen safe Publisher contracts and local simulations. Require explicit LIVE authorization and authoritative provider confirmation. Never publish or touch production.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "METRICS-LEARNING-001",
+      "title": "Close the authoritative metrics and learning loop",
+      "priority": 90,
+      "kind": "codex",
+      "payload": {
+        "workstream": "METRICS",
+        "goal": "Turn real provider metrics into bounded observations, hypotheses and next experiments.",
+        "dependencies": [
+          "PUBLISHER-001"
+        ],
+        "acceptance": [
+          "metric provenance is explicit",
+          "observations are separated from hypotheses",
+          "learning changes the next bounded experiment"
+        ],
+        "risk": "invented performance data",
+        "next_action": "implement provider-neutral evidence contracts",
+        "prompt": "Implement the smallest provider-neutral metrics and learning loop using authoritative evidence only. Never fabricate publication or performance data.",
+        "product": "PERSONA"
+      }
+    },
+    {
+      "id": "SYNC-001",
+      "title": "Audit and close the next bounded sync integrity gap",
+      "priority": 100,
+      "kind": "codex",
+      "payload": {
+        "workstream": "SYNC",
+        "goal": "Improve canonical sync where it supports truthful Persona state.",
+        "dependencies": [],
+        "acceptance": [
+          "one concrete integrity gap is fixed",
+          "conflict semantics are tested",
+          "no production mutation"
+        ],
+        "risk": "broad Life OS refactor",
+        "next_action": "select one repository-evidenced sync gap",
+        "prompt": "Inspect current sync contracts and fix exactly one smallest repository-evidenced integrity gap that supports Persona or canonical state. Add tests; avoid broad refactors.",
+        "product": "LIFE_OS"
+      }
+    },
+    {
+      "id": "PRIVACY-001",
+      "title": "Audit and close the next bounded privacy boundary gap",
+      "priority": 101,
+      "kind": "codex",
+      "payload": {
+        "workstream": "PRIVACY",
+        "goal": "Preserve least-privilege access and secret-safe evidence across Persona flows.",
+        "dependencies": [],
+        "acceptance": [
+          "one concrete boundary is verified or fixed",
+          "secrets remain server-only",
+          "tests cover the boundary"
+        ],
+        "risk": "secret exposure",
+        "next_action": "inspect existing trust boundaries and choose one bounded gap",
+        "prompt": "Inspect current Persona trust boundaries and fix exactly one smallest privacy/security gap. Do not expose or rotate secrets and do not touch production.",
+        "product": "LIFE_OS"
+      }
+    },
+    {
+      "id": "CANONICAL-001",
+      "title": "Integrate verified candidates into one canonical proposal",
+      "priority": 120,
+      "kind": "codex",
+      "payload": {
+        "workstream": "CANONICAL_INTEGRATION",
+        "goal": "Prepare a conflict-aware integration proposal from verified candidates.",
+        "dependencies": [
+          "METRICS-LEARNING-001",
+          "SYNC-001",
+          "PRIVACY-001"
+        ],
+        "acceptance": [
+          "candidate lineage is explicit",
+          "conflicts are documented and tested",
+          "main remains untouched"
+        ],
+        "risk": "unsafe merge or lost work",
+        "next_action": "produce an isolated integration candidate",
+        "prompt": "Create a conflict-aware isolated integration candidate from the verified dependency SHAs. Run local regression and critic. Do not merge to main, push, deploy, or modify production.",
+        "product": "LIFE_OS"
+      }
+    }
+  ],
+  "continuation": {
+    "title": "Autonomous roadmap replenishment review",
+    "priority": 200,
+    "kind": "local_ai",
+    "payload": {
+      "workstream": "CONTENT_CONVEYOR",
+      "goal": "Select and complete the next smallest mission-aligned verified gap.",
+      "dependencies": [],
+      "acceptance": [
+        "gap is evidenced by repository and durable state",
+        "change is bounded",
+        "tests and critic pass",
+        "next action is persisted"
+      ],
+      "risk": 1,
+      "next_action": "inspect mission, queue, READY candidates, failures and repository state",
+      "prompt": "Read mission.v1.json and the durable supervisor queue/events. Inspect actual repository state and READY candidates. Select exactly one smallest highest-value gap serving the Persona Content Conveyor, or a Life OS truth/privacy/sync blocker. Implement it in the isolated worktree with deterministic tests and critic. Do not touch main, production, frozen branches, paid APIs, or GitHub Actions.",
+      "product": "SHARED",
+      "requires": [
+        "LOCAL_AI",
+        "ROADMAP"
+      ],
+      "output_path": "artifacts/local-ai/roadmap-review.md"
+    }
+  }
 }

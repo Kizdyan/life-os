@@ -1,18 +1,43 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,json,os,re,shlex,signal,sqlite3,subprocess,threading,time,uuid
+import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time,uuid
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset")]
+CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
 def now(): return datetime.now(timezone.utc).isoformat()
 def jd(x): return json.dumps(x,ensure_ascii=False,separators=(",",":"))
 def quota(s): return any(p.search(s) for p in QUOTA)
+def codex_unavailable(s): return quota(s) or any(p.search(s) for p in CODEX_UNAVAILABLE)
 def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
 def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
 def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
 def critic_command(dirty,base): return ["codex","exec","review","--uncommitted"] if dirty else ["codex","exec","review","--base",base]
+def job_executor(job):
+    kind=job.get("kind");payload=job.get("payload",{})
+    if kind=="codex":return "CODEX"
+    if kind=="local_ai":return "CODEX" if int(payload.get("risk",1))>=3 else "LOCAL_AI"
+    return "DETERMINISTIC"
+def required_capabilities(job):
+    declared=job.get("payload",{}).get("requires")
+    if declared:return {str(x).upper() for x in declared}
+    return {"CODEX"} if job_executor(job)=="CODEX" else ({"LOCAL_AI"} if job_executor(job)=="LOCAL_AI" else {"SHELL"})
+def capability_status(store,name,default="AVAILABLE"):
+    raw=store.meta("capability."+name)
+    if not raw:return {"status":default}
+    try:return json.loads(raw)
+    except:return {"status":"ERROR","reason":"invalid durable capability state"}
+def set_capability(store,name,status,**extra):store.setmeta("capability."+name,jd({"status":status,**extra,"updated_at":now()}))
+def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in required_capabilities(job))
+def job_product(job):
+    explicit=job.get("payload",{}).get("product")
+    if explicit:return explicit
+    stream=job.get("payload",{}).get("workstream","")
+    if stream in {"CONTENT_CONVEYOR","ARCHETYPE_BRAND","PERSONA_INTELLIGENCE","MEDIA_INTAKE","VIDEO","CAROUSEL","PHOTO","QUALITY_COURT","PUBLISHER","METRICS","LEARNING"}:return "PERSONA"
+    if stream in {"TRUTH","SYNC","PRIVACY","ERIKA","CANONICAL_INTEGRATION"}:return "LIFE_OS"
+    return "SHARED"
 def replenish_backlog(store,mission):
     items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
     for item in items:
@@ -57,11 +82,15 @@ class Store:
         with self.l:rows=self.c.execute("SELECT * FROM jobs ORDER BY priority,created_at LIMIT ?",(n,)).fetchall()
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
-    def pick(self):
-        with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX') ORDER BY priority,created_at").fetchall()
+    def pick(self,capabilities=None):
+        capabilities=capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+        with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW') ORDER BY priority,created_at").fetchall()
         for r in rows:
-            if r["not_before"] is not None and r["not_before"]>time.time():return None
             job=self.row(r);deps=job["payload"].get("dependencies",[])
+            if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":required={"CODEX"}
+            else:required=required_capabilities(job)
+            if not all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in required):continue
+            if r["not_before"] is not None and r["not_before"]>time.time():continue
             if deps:
                 marks=",".join("?" for _ in deps)
                 with self.l:states={x["id"]:x["state"] for x in self.c.execute(f"SELECT id,state FROM jobs WHERE id IN ({marks})",deps)}
@@ -72,6 +101,8 @@ class Store:
         with self.l,self.c:
             self.c.execute("UPDATE jobs SET state=?,last_error=?,not_before=?,attempts=attempts+?,updated_at=? WHERE id=?",(s,error,not_before,1 if bump else 0,now(),j))
         self.event(j,"STATE",s,{"error":error,"not_before":not_before})
+    def release_codex_waits(self):
+        with self.l,self.c:self.c.execute("UPDATE jobs SET not_before=NULL,updated_at=? WHERE state IN ('WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW')",(now(),))
     def payload(self,j,p):
         with self.l,self.c:self.c.execute("UPDATE jobs SET payload=?,updated_at=? WHERE id=?",(jd(p),now(),j))
     def overview(self):
@@ -80,6 +111,16 @@ class Store:
             ready=self.c.execute("SELECT * FROM jobs WHERE state='READY' ORDER BY updated_at DESC LIMIT 1").fetchone()
             event=self.c.execute("SELECT * FROM events ORDER BY seq DESC LIMIT 1").fetchone()
         return {"counts":counts,"last_ready":None if ready is None else self.row(ready),"last_event":None if event is None else dict(event)}
+    def queue_summary(self,capabilities):
+        jobs=self.jobs(10000);runnable=0
+        for job in jobs:
+            if job["state"] not in ("QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"):continue
+            needed={"CODEX"} if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else required_capabilities(job)
+            if job.get("not_before") and job["not_before"]>time.time():continue
+            if all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in needed):
+                deps=job["payload"].get("dependencies",[]);states={x["id"]:x["state"] for x in jobs}
+                if all(states.get(x)=="READY" for x in deps):runnable+=1
+        return {"runnable":runnable,"waiting_codex":sum(j["state"] in ("WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW") for j in jobs),"waiting_human":sum(j["state"]=="HUMAN_REQUIRED" for j in jobs),"ready":sum(j["state"]=="READY" for j in jobs)}
     def recover_interrupted(self):
         states=("PREPARING","CODING","TESTING","CRITIC")
         with self.l,self.c:
@@ -99,21 +140,39 @@ class Runner:
     def heartbeat_loop(self):
         while not self.stop.wait(min(10,self.cfg["loop_seconds"])):
             self.s.setmeta("heartbeat_at",now())
+    def capabilities(self):
+        forced=os.getenv("SUPERVISOR_FORCE_CODEX_UNAVAILABLE")=="1" or bool(self.cfg.get("force_codex_unavailable",False))
+        codex=capability_status(self.s,"CODEX")
+        retry=float(codex.get("retry_at",0) or 0)
+        if forced:
+            codex_status="WAITING_FOR_QUOTA"
+            if codex.get("reason")!="forced":set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=0,reason="forced")
+        elif codex.get("status")=="WAITING_FOR_QUOTA" and retry>time.time():codex_status="WAITING_FOR_QUOTA"
+        else:
+            codex_status="AVAILABLE"
+            if codex.get("status")!="AVAILABLE":set_capability(self.s,"CODEX","AVAILABLE");self.s.release_codex_waits()
+        raw=self.cfg.get("local_ai_command") or []
+        cmd=shlex.split(raw) if isinstance(raw,str) else list(raw)
+        local="AVAILABLE" if cmd and shutil.which(str(cmd[0])) else "NOT_INSTALLED"
+        set_capability(self.s,"LOCAL_AI",local,runtime=str(cmd[0]) if cmd else None,model=self.cfg.get("local_ai_model"))
+        return {"CODEX":codex_status,"LOCAL_AI":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
     def loop(self):
         self.s.setmeta("started_at",now());self.s.setmeta("status","IDLE")
         threading.Thread(target=self.heartbeat_loop,daemon=True).start()
         while not self.stop.is_set():
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
-            j=self.s.pick()
-            if not j and self.mission:replenish_backlog(self.s,self.mission);j=self.s.pick()
-            if not j:self.s.setmeta("status","IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
+            caps=self.capabilities();self.s.setmeta("capabilities",jd(caps));j=self.s.pick(caps)
+            if not j and self.mission:replenish_backlog(self.s,self.mission);j=self.s.pick(caps)
+            if not j:self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
             self.run(j)
     def run(self,j):
         self.current=j["id"];self.s.setmeta("current_job_id",self.current);self.s.setmeta("status","RUNNING")
         try:
-            if j["kind"]=="shell":self.shell_job(j)
+            if j["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":self.codex_review_job(j)
+            elif j["kind"]=="shell":self.shell_job(j)
             elif j["kind"]=="codex":self.codex_job(j)
+            elif j["kind"]=="local_ai":self.local_ai_job(j)
             else:self.s.state(j["id"],"HUMAN_REQUIRED","unsupported job kind")
         except Exception as e:
             msg=str(e);self.s.event(j["id"],"EXCEPTION",msg)
@@ -189,8 +248,10 @@ class Runner:
         c=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
         code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":out[-12000:]})
         if code:
-            if quota(out):self.s.state(j["id"],"WAITING_FOR_CODEX","usage limit",time.time()+self.cfg["codex_retry_seconds"]);return
+            if codex_unavailable(out):
+                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
             raise RuntimeError("Codex exit "+str(code))
+        set_capability(self.s,"CODEX","AVAILABLE")
         self.s.state(j["id"],"TESTING")
         for raw in p.get("test_commands") or self.cfg["test_commands"]:
             code,out=self.cmd(["bash","-lc",str(raw)],wt);self.s.event(j["id"],"TEST",str(raw),{"exit":code,"tail":out[-12000:]})
@@ -204,7 +265,8 @@ class Runner:
         self.s.state(j["id"],"CRITIC")
         code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
         if code or not critic_clean(out):
-            if quota(out):self.s.state(j["id"],"WAITING_FOR_CODEX","usage limit",time.time()+self.cfg["codex_retry_seconds"]);return
+            if codex_unavailable(out):
+                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
             count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
             if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
             else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -213,7 +275,8 @@ class Runner:
             self.s.state(j["id"],"CRITIC")
             code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
             if code or not critic_clean(out):
-                if quota(out):self.s.state(j["id"],"WAITING_FOR_CODEX","usage limit",time.time()+self.cfg["codex_retry_seconds"]);return
+                if codex_unavailable(out):
+                    retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
                 count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
                 if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
                 else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -222,6 +285,32 @@ class Runner:
             self.git(wt,["add","-A"])
             self.git(wt,["commit","-m",f"auto({j['id']}): {j['title']}"])
         p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p);self.s.state(j["id"],"READY")
+    def local_ai_job(self,j):
+        p=j["payload"]
+        if int(p.get("risk",1))>1:raise RuntimeError("local AI authority denied for risk above 1")
+        wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
+        raw=self.cfg.get("local_ai_command") or [];cmd=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
+        if not cmd:raise RuntimeError("local AI is not configured")
+        prompt=("BOUNDED LOCAL TASK. Never access secrets, production, main, publishing, auth, or privacy architecture. "+str(p.get("prompt","")))[:6000]
+        code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":out[-12000:]})
+        if code:raise RuntimeError("local AI exit "+str(code))
+        target=Path(p.get("output_path") or ("artifacts/local-ai/"+j["id"]+".md"))
+        if target.is_absolute() or ".." in target.parts:raise RuntimeError("unsafe local AI output path")
+        target=wt/target;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(out.strip()+"\n")
+        self.s.state(j["id"],"TESTING")
+        for raw_test in p.get("test_commands") or self.cfg["test_commands"]:
+            code,out=self.cmd(["bash","-lc",str(raw_test)],wt);self.s.event(j["id"],"TEST",str(raw_test),{"exit":code,"tail":out[-12000:]})
+            if code:raise RuntimeError("local AI verification failed: "+str(raw_test))
+        dirty=self.git(wt,["status","--porcelain"])
+        if dirty:self.git(wt,["add","-A"]);self.git(wt,["commit","-m",f"auto-local({j['id']}): {j['title']}"])
+        p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW")
+    def codex_review_job(self,j):
+        p=j["payload"];wt=Path(p["worktree_path"]);base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"));self.s.state(j["id"],"CRITIC")
+        code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":out[-12000:]})
+        if code and codex_unavailable(out):
+            retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=retry,reason=reason);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW",reason,retry);return
+        if code or not critic_clean(out):self.s.state(j["id"],"FAILED","Codex review rejected local candidate");return
+        set_capability(self.s,"CODEX","AVAILABLE");self.s.state(j["id"],"READY")
     def stop_current(self,cancel=True):
         if not self.proc or self.proc.poll() is not None:return False
         self.proc.terminate()
@@ -230,7 +319,7 @@ class Runner:
         if cancel and self.current:self.s.state(self.current,"CANCELLED","stopped from control center")
         return True
 
-HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}button,input{padding:10px;border-radius:10px;border:0}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}</style><main><h1>Autonomous Development</h1><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><pre id=e></pre></div></main><script>t.value=localStorage.st||'';async function g(u){return(await fetch(u,{cache:'no-store'})).json()}async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);l()}async function l(){let s=await g('/api/status'),j=await g('/api/jobs'),ev=await g('/api/events');document.getElementById('s').innerHTML='<div class=row><span class=p>● '+s.status+'</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span><span class=p>Paused '+s.paused+'</span></div><p>Current: '+(s.current_job_id||'—')+'</p><p>Queue: '+JSON.stringify(s.counts||{})+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p><p>Last event: '+(s.last_event?s.last_event.type+' '+s.last_event.msg:'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>P</th><th>State</th><th>Title</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.priority+'</td><td>'+x.state+'</td><td>'+x.title+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>x.created_at+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n')}l();setInterval(l,5000)</script>"""
+HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}button,input{padding:10px;border-radius:10px;border:0}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}</style><main><h1>Autonomous Development</h1><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><pre id=e></pre></div></main><script>t.value=localStorage.st||'';async function g(u){return(await fetch(u,{cache:'no-store'})).json()}async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);l()}async function l(){let s=await g('/api/status'),j=await g('/api/jobs'),ev=await g('/api/events'),cur=j.jobs.find(x=>x.id===s.current_job_id);document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>x.created_at+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n')}l();setInterval(l,5000)</script>"""
 
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
@@ -244,8 +333,14 @@ class H(BaseHTTPRequestHandler):
             if h:
                 try:age=max(0,int(time.time()-datetime.fromisoformat(h).timestamp()))
                 except:pass
-            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","current_job_id":a.s.meta("current_job_id") or None,**o});return
-        if self.path=="/api/jobs":self.sendj({"jobs":a.s.jobs()});return
+            try:caps=json.loads(a.s.meta("capabilities") or "{}")
+            except:caps={}
+            current=next((x for x in a.s.jobs() if x["id"]==(a.s.meta("current_job_id") or "")),None)
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),**o});return
+        if self.path=="/api/jobs":
+            jobs=a.s.jobs()
+            for job in jobs:job["product"]=job_product(job);job["executor"]="CODEX" if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else job_executor(job)
+            self.sendj({"jobs":jobs});return
         if self.path=="/api/events":self.sendj({"events":a.s.events()});return
         self.sendj({"error":"not_found"},404)
     def do_POST(self):
