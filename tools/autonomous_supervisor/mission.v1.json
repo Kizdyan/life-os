@@ -422,7 +422,10 @@
         "LOCAL_AI",
         "ROADMAP"
       ],
-      "output_path": "artifacts/local-ai/roadmap-review.md"
+      "output_path": "artifacts/local-ai/roadmap-review.md",
+      "test_commands": [
+        "test -s artifacts/local-ai/roadmap-review.md"
+      ]
     }
   }
 }

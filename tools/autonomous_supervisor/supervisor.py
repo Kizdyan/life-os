@@ -48,7 +48,8 @@ def replenish_backlog(store,mission,capabilities=None):
         active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
         if any(j["state"] in active for j in store.jobs(10000)):return 0
     elif store.pick(capabilities):return 0
-    if any(j["id"].startswith("ROADMAP-") and j["state"] not in ("READY","FAILED","CANCELLED") for j in store.jobs(10000)):return 0
+    roadmaps=[j for j in store.jobs(10000) if j["id"].startswith("ROADMAP-")]
+    if roadmaps and max(roadmaps,key=lambda j:int(j["id"].split("-")[-1]))["state"]!="READY":return 0
     continuation=mission.get("continuation")
     if not continuation:return 0
     seq=1+sum(1 for j in jobs if j["id"].startswith("ROADMAP-"));jid=f"ROADMAP-{seq:03d}"

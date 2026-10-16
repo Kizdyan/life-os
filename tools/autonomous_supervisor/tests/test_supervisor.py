@@ -80,6 +80,10 @@ class T(unittest.TestCase):
   caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertEqual(self.s.pick(caps)["kind"],"local_ai")
+ def test_failed_latest_roadmap_does_not_busy_loop(self):
+  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1}}};caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1);jid=self.s.pick(caps)["id"];self.s.state(jid,"FAILED","bounded failure")
+  self.assertEqual(replenish_backlog(self.s,mission,caps),0)
  def test_dependent_job_uses_verified_parent_candidate(self):
   self.s.add("parent","codex",{},1,"P");p=self.s.jobs()[0]["payload"];p["candidate_sha"]="abc123";self.s.payload("P",p);self.s.state("P","READY")
   self.assertEqual(resolve_base(self.s,{"dependencies":["P"]},"feature/base"),"abc123")
