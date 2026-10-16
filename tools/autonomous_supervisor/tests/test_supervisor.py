@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,validate_changed_paths
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -189,4 +190,15 @@ class T(unittest.TestCase):
   r.park_codex(job,"workspace routing discovery failed")
   self.assertTrue(capability_status(self.s,"CODEX")["manual_hold"])
   self.assertIsNone(self.s.jobs()[0]["not_before"])
+ def test_local_coding_adapter_reads_and_edits_only_allowlist(self):
+  root=Path(self.d.name);(root/"a.ts").write_text("export const a=1;\n")
+  task={"goal":"change a","acceptance":["a is 2"],"allowed_files":["a.ts"]}
+  self.assertIn("export const a=1",build_prompt(task,root))
+  data=parse_response('{"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}')
+  self.assertEqual(apply_edits(data,task,root),["a.ts"]);self.assertIn("a=2",(root/"a.ts").read_text())
+  with self.assertRaises(LocalCodingError):apply_edits({"edits":[{"path":"x.ts","content":"x"}]},task,root)
+ def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
+  self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
+  self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")
+  self.assertEqual(self.s.pick({"SHELL":"AVAILABLE","LOCAL_AI":"AVAILABLE"})["id"],"N")
 if __name__=="__main__":unittest.main()

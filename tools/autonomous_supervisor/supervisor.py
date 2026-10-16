@@ -4,6 +4,7 @@ import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,validate_changed_paths
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
@@ -35,7 +36,7 @@ def required_capabilities(job):
     return required
 
 RUNNABLE_STATES={"QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"}
-TERMINAL_STATES={"READY","FAILED","CANCELLED","HUMAN_REQUIRED"}
+TERMINAL_STATES={"READY","LOCAL_VERIFIED","FAILED","CANCELLED","HUMAN_REQUIRED"}
 
 def eligibility_reasons(job,capabilities,states=None,clock=None):
     state=job["state"]
@@ -49,7 +50,7 @@ def eligibility_reasons(job,capabilities,states=None,clock=None):
         reasons.append("RETRY_COOLDOWN")
     if states is not None:
         for dep in job.get("payload",{}).get("dependencies",[]):
-            if states.get(dep)!="READY":reasons.append("DEPENDENCY_"+str(dep)+"_"+str(states.get(dep,"MISSING")))
+            if states.get(dep) not in ("READY","LOCAL_VERIFIED"):reasons.append("DEPENDENCY_"+str(dep)+"_"+str(states.get(dep,"MISSING")))
     return reasons
 
 def safe_tail(message,limit=1200):
@@ -195,7 +196,7 @@ class Store:
         return {"runnable":sum(j["runnable"] for j in detail),
             "waiting_codex":sum(j["state"] in ("WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW") for j in detail),
             "waiting_human":sum(j["state"]=="HUMAN_REQUIRED" for j in detail),
-            "ready":sum(j["state"]=="READY" for j in detail),
+            "ready":sum(j["state"] in ("READY","LOCAL_VERIFIED") for j in detail),
             "blocked_reasons":reasons}
     def stop_wait_diagnostic(self,capabilities,mission):
         summary=self.queue_summary(capabilities)
@@ -446,6 +447,31 @@ class Runner:
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
         raw=self.cfg.get("local_ai_command") or [];cmd=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
         if not cmd:raise RuntimeError("local AI is not configured")
+        if p.get("allowed_files"):
+            max_repairs=max(0,min(int(p.get("max_repairs",1)),2));evidence=[]
+            for iteration in range(max_repairs+1):
+                task={**p,"goal":str(p.get("goal",""))+("\nRepair the previous verification failure: "+str(evidence[-1]["error"]) if evidence else "")}
+                prompt=build_prompt(task,wt);started=time.time();code,out=self.cmd(cmd,wt,prompt)
+                self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"iteration":iteration,"duration_seconds":round(time.time()-started,2),"tail":safe_tail(out,1200)})
+                if code:raise RuntimeError("local AI exit "+str(code)+": "+safe_tail(out,650))
+                try:apply_edits(parse_response(out),task,wt)
+                except LocalCodingError as exc:raise RuntimeError(str(exc))
+                changed=self.git(wt,["diff","--name-only"]).splitlines();validate_changed_paths(changed,p["allowed_files"])
+                checks=[];failed=None
+                for raw_test in p.get("test_commands") or self.cfg["test_commands"]:
+                    c,o=self.cmd(["bash","-lc",str(raw_test)],wt);checks.append({"command":str(raw_test),"exit":c,"tail":safe_tail(o,1000)})
+                    self.s.event(j["id"],"LOCAL_QA",str(raw_test),checks[-1])
+                    if c:failed={"error":str(raw_test)+" exit "+str(c),"tail":safe_tail(o,1500)};break
+                if not failed:
+                    c,o=self.cmd(["git","diff","--check"],wt);failed=None if c==0 else {"error":"git diff --check","tail":safe_tail(o)}
+                evidence.append({"iteration":iteration,"checks":checks,**(failed or {})})
+                if not failed:break
+                if iteration>=max_repairs:p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local QA repair limit reached");return
+            dirty=self.git(wt,["status","--porcelain"])
+            if not dirty:self.s.state(j["id"],"FAILED","local model produced no diff");return
+            self.git(wt,["add","-A"]);self.git(wt,["commit","-m",f"auto-local({j['id']}): {j['title']}"])
+            p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);p["changed_files"]=changed;p["local_evidence"]=evidence;p["local_model"]=self.cfg.get("local_ai_model");self.s.payload(j["id"],p)
+            self.s.setmeta("local_ai.last_success_at",now());self.s.state(j["id"],"LOCAL_VERIFIED");return
         prompt=("BOUNDED LOCAL TASK. Never access secrets, production, main, publishing, auth, or privacy architecture. "+str(p.get("prompt","")))[:6000]
         code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":safe_tail(out,3000)})
         if code:
