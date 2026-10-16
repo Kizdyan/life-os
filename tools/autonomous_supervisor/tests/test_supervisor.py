@@ -200,6 +200,9 @@ class T(unittest.TestCase):
  def test_local_coding_parser_ignores_ollama_terminal_control_sequences(self):
   raw='```json\n{\x1b[?25l\x1b[?25h"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}\n```'
   self.assertEqual(parse_response(raw)["plan"],"bounded")
+ def test_local_coding_parser_extracts_fenced_json_after_ollama_preamble(self):
+  raw='Generating response...\n```json\n{"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}\n```\n'
+  self.assertEqual(parse_response(raw)["edits"][0]["path"],"a.ts")
  def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")
