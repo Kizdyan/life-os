@@ -74,6 +74,12 @@ class T(unittest.TestCase):
   self.s.state("P1","READY");self.assertEqual(self.s.pick()["id"],"P2")
   self.s.state("P2","READY");self.assertEqual(replenish_backlog(self.s,mission),1)
   self.assertTrue(self.s.pick()["id"].startswith("ROADMAP-"))
+ def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
+  self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
+  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1}}}
+  caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  self.assertEqual(self.s.pick(caps)["kind"],"local_ai")
  def test_dependent_job_uses_verified_parent_candidate(self):
   self.s.add("parent","codex",{},1,"P");p=self.s.jobs()[0]["payload"];p["candidate_sha"]="abc123";self.s.payload("P",p);self.s.state("P","READY")
   self.assertEqual(resolve_base(self.s,{"dependencies":["P"]},"feature/base"),"abc123")

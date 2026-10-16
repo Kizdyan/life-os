@@ -38,14 +38,17 @@ def job_product(job):
     if stream in {"CONTENT_CONVEYOR","ARCHETYPE_BRAND","PERSONA_INTELLIGENCE","MEDIA_INTAKE","VIDEO","CAROUSEL","PHOTO","QUALITY_COURT","PUBLISHER","METRICS","LEARNING"}:return "PERSONA"
     if stream in {"TRUTH","SYNC","PRIVACY","ERIKA","CANONICAL_INTEGRATION"}:return "LIFE_OS"
     return "SHARED"
-def replenish_backlog(store,mission):
+def replenish_backlog(store,mission,capabilities=None):
     items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
     for item in items:
         if item["id"] in by_id:continue
         store.add(item["title"],item.get("kind","codex"),item.get("payload",{}),int(item.get("priority",100)),item["id"]);added+=1
     if added:return added
-    active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
-    if any(j["state"] in active for j in store.jobs(10000)):return 0
+    if capabilities is None:
+        active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
+        if any(j["state"] in active for j in store.jobs(10000)):return 0
+    elif store.pick(capabilities):return 0
+    if any(j["id"].startswith("ROADMAP-") and j["state"] not in ("READY","FAILED","CANCELLED") for j in store.jobs(10000)):return 0
     continuation=mission.get("continuation")
     if not continuation:return 0
     seq=1+sum(1 for j in jobs if j["id"].startswith("ROADMAP-"));jid=f"ROADMAP-{seq:03d}"
@@ -163,7 +166,7 @@ class Runner:
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
             caps=self.capabilities();self.s.setmeta("capabilities",jd(caps));j=self.s.pick(caps)
-            if not j and self.mission:replenish_backlog(self.s,self.mission);j=self.s.pick(caps)
+            if not j and self.mission:replenish_backlog(self.s,self.mission,caps);j=self.s.pick(caps)
             if not j:self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
             self.run(j)
     def run(self,j):
