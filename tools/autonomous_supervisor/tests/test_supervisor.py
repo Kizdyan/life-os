@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,validate_changed_paths
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,prepare_command,validate_changed_paths
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -203,6 +203,9 @@ class T(unittest.TestCase):
  def test_local_coding_parser_extracts_fenced_json_after_ollama_preamble(self):
   raw='Generating response...\n```json\n{"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}\n```\n'
   self.assertEqual(parse_response(raw)["edits"][0]["path"],"a.ts")
+ def test_local_coding_ollama_command_requires_structured_json(self):
+  self.assertEqual(prepare_command(["ollama","run","qwen2.5-coder:7b"]),["ollama","run","qwen2.5-coder:7b","--format","json","--hidethinking","--nowordwrap"])
+  self.assertEqual(prepare_command(["custom-worker","model"]),["custom-worker","model"])
  def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")

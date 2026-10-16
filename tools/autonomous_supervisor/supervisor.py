@@ -4,7 +4,7 @@ import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,validate_changed_paths
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,parse_response,prepare_command,validate_changed_paths
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
@@ -445,7 +445,7 @@ class Runner:
         p=j["payload"]
         if int(p.get("risk",1))>1:raise RuntimeError("local AI authority denied for risk above 1")
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
-        raw=self.cfg.get("local_ai_command") or [];cmd=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
+        raw=self.cfg.get("local_ai_command") or [];cmd=prepare_command(shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw])
         if not cmd:raise RuntimeError("local AI is not configured")
         if p.get("allowed_files"):
             max_repairs=max(0,min(int(p.get("max_repairs",1)),2));evidence=[]

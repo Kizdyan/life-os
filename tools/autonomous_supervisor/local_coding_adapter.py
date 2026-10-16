@@ -4,6 +4,14 @@ from pathlib import Path
 
 class LocalCodingError(RuntimeError):pass
 
+def prepare_command(command:list[str])->list[str]:
+    prepared=list(command)
+    if prepared and Path(prepared[0]).name.lower() in ("ollama","ollama.exe"):
+        if "--format" not in prepared:prepared.extend(["--format","json"])
+        if "--hidethinking" not in prepared:prepared.append("--hidethinking")
+        if "--nowordwrap" not in prepared:prepared.append("--nowordwrap")
+    return prepared
+
 def parse_response(raw:str)->dict:
     # `ollama run` may emit cursor visibility/progress control sequences even
     # when stdout is captured. They can occur between individual JSON tokens.
