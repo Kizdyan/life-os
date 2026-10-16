@@ -197,6 +197,9 @@ class T(unittest.TestCase):
   data=parse_response('{"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}')
   self.assertEqual(apply_edits(data,task,root),["a.ts"]);self.assertIn("a=2",(root/"a.ts").read_text())
   with self.assertRaises(LocalCodingError):apply_edits({"edits":[{"path":"x.ts","content":"x"}]},task,root)
+ def test_local_coding_parser_ignores_ollama_terminal_control_sequences(self):
+  raw='```json\n{\x1b[?25l\x1b[?25h"plan":"bounded","edits":[{"path":"a.ts","content":"export const a=2;\\n"}],"risks":[]}\n```'
+  self.assertEqual(parse_response(raw)["plan"],"bounded")
  def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")

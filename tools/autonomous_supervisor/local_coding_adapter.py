@@ -5,7 +5,10 @@ from pathlib import Path
 class LocalCodingError(RuntimeError):pass
 
 def parse_response(raw:str)->dict:
-    text=re.sub(r"^```(?:json)?\s*|\s*```$","",raw.strip(),flags=re.I)
+    # `ollama run` may emit cursor visibility/progress control sequences even
+    # when stdout is captured. They can occur between individual JSON tokens.
+    clean=re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]","",raw)
+    text=re.sub(r"^```(?:json)?\s*|\s*```$","",clean.strip(),flags=re.I)
     try:data=json.loads(text)
     except Exception as exc:raise LocalCodingError("local model returned invalid JSON") from exc
     if not isinstance(data,dict) or not isinstance(data.get("edits"),list):raise LocalCodingError("local model response has no edits")
