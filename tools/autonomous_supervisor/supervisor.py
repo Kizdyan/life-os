@@ -416,6 +416,7 @@ class Runner:
         dirty=self.git(wt,["status","--porcelain"])
         self.s.state(j["id"],"CRITIC")
         self.require_codex();code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
+        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
         if code or not critic_clean(out):
             if codex_unavailable(out):
                 self.park_codex(j,out);return
@@ -426,6 +427,7 @@ class Runner:
         if dirty:
             self.s.state(j["id"],"CRITIC")
             self.require_codex();code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
+            if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
             if code or not critic_clean(out):
                 if codex_unavailable(out):
                     self.park_codex(j,out);return
@@ -463,6 +465,7 @@ class Runner:
     def codex_review_job(self,j):
         p=j["payload"];wt=Path(p["worktree_path"]);base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"));self.s.state(j["id"],"CRITIC")
         self.require_codex();code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":safe_tail(out,12000)})
+        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW","LOCAL_ONLY");return
         if code and codex_unavailable(out):
             self.park_codex(j,out,"LOCAL_READY_PENDING_CODEX_REVIEW");return
         if code or not critic_clean(out):self.s.state(j["id"],"FAILED","Codex review rejected local candidate");return

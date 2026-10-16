@@ -167,6 +167,7 @@ class T(unittest.TestCase):
  def test_runner_refuses_codex_process_when_local_only(self):
   set_execution_mode(self.s,"LOCAL_ONLY");r=Runner({"loop_seconds":1},self.s)
   with self.assertRaisesRegex(RuntimeError,"LOCAL_ONLY"):r.require_codex()
+  self.assertGreaterEqual(Path(__file__).resolve().parents[1].joinpath("supervisor.py").read_text().count("self.require_codex()"),4)
  def test_dashboard_exposes_real_execution_mode_controls(self):
   self.assertIn("Локально · без Codex",HTML);self.assertIn("Codex разрешён",HTML)
   self.assertIn("set_execution_mode",HTML);self.assertIn("pending_mode",HTML)
