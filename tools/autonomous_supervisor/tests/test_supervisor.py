@@ -206,6 +206,9 @@ class T(unittest.TestCase):
  def test_local_coding_ollama_command_requires_structured_json(self):
   self.assertEqual(prepare_command(["ollama","run","qwen2.5-coder:7b"]),["ollama","run","qwen2.5-coder:7b","--format","json","--hidethinking","--nowordwrap"])
   self.assertEqual(prepare_command(["custom-worker","model"]),["custom-worker","model"])
+ def test_local_coding_parser_ignores_ollama_spinner_preamble(self):
+  raw='\x1b[1G⠙ \x1b[K\x1b[?25h\n{"plan":"bounded","edits":[{"path":"a.ts","content":"x"}],"risks":[]}\n\x1b[?25h'
+  self.assertEqual(parse_response(raw)["plan"],"bounded")
  def test_local_verified_satisfies_dependencies_without_becoming_production_ready(self):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")

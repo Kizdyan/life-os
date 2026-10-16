@@ -18,6 +18,7 @@ def parse_response(raw:str)->dict:
     clean=re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]","",raw)
     fenced=re.search(r"```(?:json)?\s*(\{.*\})\s*```",clean,flags=re.I|re.S)
     text=fenced.group(1) if fenced else re.sub(r"^```(?:json)?\s*|\s*```$","",clean.strip(),flags=re.I)
+    if not fenced and "{" in text and "}" in text:text=text[text.index("{"):text.rindex("}")+1]
     try:data=json.loads(text)
     except Exception as exc:raise LocalCodingError("local model returned invalid JSON") from exc
     if not isinstance(data,dict) or not isinstance(data.get("edits"),list):raise LocalCodingError("local model response has no edits")
