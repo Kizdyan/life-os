@@ -51,6 +51,40 @@
       "METRICS_AND_LEARNING"
     ]
   },
+  "qualityFirstAddendum": {
+    "version": 1,
+    "continuousConveyors": ["DEVELOPMENT", "USER_WORK"],
+    "liveDataPolicy": {"isolatedFromDevelopmentAndTests": true, "developmentIsNeverLiveSourceOfTruth": true, "noDestructiveLiveTests": true},
+    "readyPolicy": {"requiresEvidenceProportionalToRisk": true, "missingEvidence": "UNKNOWN", "testPassAloneIsInsufficient": true},
+    "criticPolicy": {"verdicts": ["APPROVE", "REVISION_REQUIRED", "REJECT", "HUMAN_REQUIRED"], "mustTryToDisproveCorrectness": true},
+    "safeEvolutionPolicy": {"sequence": ["EXPAND", "MIGRATE_OR_DUAL_READ", "VERIFY", "CONTRACT_LATER"], "assumeOldClientsAndPendingOfflineMutations": true},
+    "releasePolicy": {"states": ["DEVELOPMENT_READY", "INTEGRATION_READY", "RELEASE_READY", "PRODUCTION_RELEASED"], "humanGateDoesNotFreezePortfolio": true, "rollbackAndMonitoringRequiredWhenRelevant": true},
+    "failureLearningPolicy": {"persistRootCauseAndRepairEvidence": true, "feedIntoPlanningTestsCriticsAndRelease": true},
+    "capabilityPolicy": {"codexUnavailableDoesNotMeanSystemUnavailable": true, "localAiSemanticReviewState": "LOCAL_READY_PENDING_CODEX_REVIEW", "fallbackDoesNotLowerQuality": true},
+    "humanInterruptionPolicy": {"onlyTrueHumanDependencies": true, "routineEngineeringIsAutonomous": true},
+    "invariants": [
+      "USER WORK DOES NOT STOP FOR DEVELOPMENT.",
+      "DEVELOPMENT DOES NOT STOP BECAUSE THE USER IS USING THE PRODUCT.",
+      "ONE BLOCKED JOB DOES NOT BLOCK A PRODUCT.",
+      "ONE BLOCKED PRODUCT DOES NOT BLOCK THE PORTFOLIO.",
+      "CODEX UNAVAILABLE DOES NOT MEAN SYSTEM UNAVAILABLE.",
+      "HUMAN_REQUIRED IS ONLY FOR TRUE HUMAN DEPENDENCIES.",
+      "NO READY WITHOUT EVIDENCE.",
+      "TEST PASS DOES NOT AUTOMATICALLY MEAN PRODUCT CORRECTNESS.",
+      "NO RELEASE WITHOUT PROPORTIONATE QUALITY GATES.",
+      "NO QUALITY SACRIFICE TO CREATE AN ILLUSION OF SPEED.",
+      "NO UNNECESSARY OVERENGINEERING THAT DELAYS REAL VALUE WITHOUT REDUCING REAL RISK.",
+      "NO SILENT DATA CORRUPTION.",
+      "NO FALSE STATE.",
+      "NO FALSE ANALYTICS.",
+      "NO FALSE PUBLICATION CONFIRMATION.",
+      "NO GENERIC PERSONA CONTENT MERELY TO FILL A SCHEDULE.",
+      "LIVE USER DATA MUST REMAIN ISOLATED FROM DEVELOPMENT/TEST DATA.",
+      "SAFE RELEASES MUST PRESERVE THE USER'S ABILITY TO CONTINUE WORKING.",
+      "EVERY IMPORTANT FAILURE SHOULD IMPROVE FUTURE PREVENTION.",
+      "QUALITY, TRUTH AND DURABILITY OUTRANK FEATURE COUNT."
+    ]
+  },
   "principles": [
     "truth",
     "quality",
@@ -131,9 +165,9 @@
     "PUBLISHER",
     "METRICS",
     "LEARNING",
-    "CANONICAL_INTEGRATION"
-    ,"DIVE_M_PERSONAL"
-    ,"PORTFOLIO_PLANNING"
+    "CANONICAL_INTEGRATION",
+    "DIVE_M_PERSONAL",
+    "PORTFOLIO_PLANNING"
   ],
   "backlog": [
     {
@@ -436,7 +470,9 @@
         "workstream": "DIVE_M_PERSONAL",
         "business_priority": 3,
         "dependencies": [],
-        "requires": ["CODEX"],
+        "requires": [
+          "CODEX"
+        ],
         "risk": "private owner data crossing a future tenant boundary",
         "goal": "Define one canonical read-only personal insight contract over trusted Life OS and Persona observations.",
         "acceptance": [
@@ -508,5 +544,71 @@
         "test -s artifacts/local-ai/roadmap-review.md"
       ]
     }
-  }
+  },
+  "fallbackBacklog": [
+    {
+      "id": "LOCAL-QA-20261016-TEST",
+      "title": "Run Life OS regression tests",
+      "kind": "shell",
+      "priority": 60,
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": [
+          "SHELL"
+        ],
+        "dependencies": [],
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; TZ=UTC npm test -- --run"
+      }
+    },
+    {
+      "id": "LOCAL-QA-20261016-TYPECHECK",
+      "title": "Verify Life OS TypeScript",
+      "kind": "shell",
+      "priority": 60,
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": [
+          "SHELL"
+        ],
+        "dependencies": [],
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run typecheck"
+      }
+    },
+    {
+      "id": "LOCAL-QA-20261016-API",
+      "title": "Verify Life OS API types",
+      "kind": "shell",
+      "priority": 60,
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": [
+          "SHELL"
+        ],
+        "dependencies": [],
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run api:typecheck"
+      }
+    },
+    {
+      "id": "LOCAL-QA-20261016-BUILD",
+      "title": "Verify Life OS web build",
+      "kind": "shell",
+      "priority": 60,
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": [
+          "SHELL"
+        ],
+        "dependencies": [],
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run web:build"
+      }
+    }
+  ]
 }

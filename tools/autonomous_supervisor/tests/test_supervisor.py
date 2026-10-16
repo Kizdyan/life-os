@@ -2,7 +2,7 @@ import json,tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store
+from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -76,12 +76,12 @@ class T(unittest.TestCase):
   self.assertTrue(self.s.pick()["id"].startswith("ROADMAP-"))
  def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
   self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
-  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1}}}
+  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}}
   caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertEqual(self.s.pick(caps)["kind"],"local_ai")
  def test_failed_latest_roadmap_does_not_busy_loop(self):
-  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1}}};caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
+  mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}};caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1);jid=self.s.pick(caps)["id"];self.s.state(jid,"FAILED","bounded failure")
   self.assertEqual(replenish_backlog(self.s,mission,caps),0)
  def test_dependent_job_uses_verified_parent_candidate(self):
@@ -142,4 +142,50 @@ class T(unittest.TestCase):
   self.assertEqual(set(mission["canonicalProducts"]),{"PERSONA","LIFE_OS","DIVE_M","SHARED"})
   self.assertEqual(set(mission["continuation"]["payload"]["planning_products"]),set(mission["canonicalProducts"]))
   self.assertIn("highest-value bounded next step",mission["continuation"]["payload"]["prompt"])
+ def test_quality_first_addendum_is_durable_and_evidence_bound(self):
+  mission=json.loads((Path(__file__).resolve().parents[1]/"mission.v1.json").read_text())
+  policy=mission["qualityFirstAddendum"]
+  self.assertEqual(set(policy["continuousConveyors"]),{"DEVELOPMENT","USER_WORK"})
+  self.assertEqual(len(policy["invariants"]),20)
+  self.assertEqual(policy["readyPolicy"]["missingEvidence"],"UNKNOWN")
+  self.assertEqual(policy["releasePolicy"]["states"],["DEVELOPMENT_READY","INTEGRATION_READY","RELEASE_READY","PRODUCTION_RELEASED"])
+  self.assertIn("LOCAL_READY_PENDING_CODEX_REVIEW",policy["capabilityPolicy"]["localAiSemanticReviewState"])
+  self.assertTrue(policy["liveDataPolicy"]["isolatedFromDevelopmentAndTests"])
+ def test_local_only_blocks_codex_but_keeps_local_and_shell_runnable(self):
+  set_execution_mode(self.s,"LOCAL_ONLY")
+  self.s.add("codex","codex",{},1,"C");self.s.add("local","local_ai",{"risk":1},2,"L");self.s.add("shell","shell",{"command":"true"},3,"S")
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
+  self.assertEqual(self.s.pick(caps)["id"],"L")
+  self.s.state("L","READY");self.assertEqual(self.s.pick(caps)["id"],"S")
+ def test_execution_mode_survives_store_restart_and_releases_waits(self):
+  set_execution_mode(self.s,"LOCAL_ONLY");self.s.add("codex","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+999)
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
+  set_execution_mode(self.s,"CODEX_ALLOWED")
+  self.assertEqual(self.s.jobs()[0]["state"],"WAITING_FOR_CODEX");self.assertIsNone(self.s.jobs()[0]["not_before"])
+ def test_runner_refuses_codex_process_when_local_only(self):
+  set_execution_mode(self.s,"LOCAL_ONLY");r=Runner({"loop_seconds":1},self.s)
+  with self.assertRaisesRegex(RuntimeError,"LOCAL_ONLY"):r.require_codex()
+ def test_dashboard_exposes_real_execution_mode_controls(self):
+  self.assertIn("Локально · без Codex",HTML);self.assertIn("Codex разрешён",HTML)
+  self.assertIn("set_execution_mode",HTML);self.assertIn("pending_mode",HTML)
+ def test_mode_change_can_wait_for_active_codex_without_ui_only_switch(self):
+  class P:
+   def poll(self):return None
+  self.s.add("codex","codex",{},1,"C");r=Runner({"loop_seconds":1},self.s);r.current="C";r.proc=P()
+  self.assertEqual(r.request_execution_mode("LOCAL_ONLY","after_current"),"PENDING_AFTER_CURRENT")
+  self.assertEqual(execution_mode(self.s),"CODEX_ALLOWED");self.assertEqual(self.s.meta("pending_execution_mode"),"LOCAL_ONLY")
+ def test_failed_shell_qa_never_becomes_ready(self):
+  class R(Runner):
+   def cmd(self,*_):return 2,"type error"
+  self.s.add("qa","shell",{"command":"false"},1,"Q");job=self.s.jobs()[0]
+  R({"loop_seconds":1,"repo_path":self.d.name},self.s).shell_job(job)
+  self.assertEqual(self.s.jobs()[0]["state"],"FAILED")
+ def test_transport_retry_limit_sets_durable_manual_hold(self):
+  self.s.add("codex","codex",{},1,"C");job=self.s.jobs()[0];job["attempts"]=3
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300,"max_codex_transport_attempts":3},self.s)
+  r.park_codex(job,"workspace routing discovery failed")
+  self.assertTrue(capability_status(self.s,"CODEX")["manual_hold"])
+  self.assertIsNone(self.s.jobs()[0]["not_before"])
 if __name__=="__main__":unittest.main()

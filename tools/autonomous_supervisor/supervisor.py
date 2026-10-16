@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time,uuid
+import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time,uuid,fcntl
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -16,20 +16,68 @@ def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY.
 def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
 def critic_command(dirty,base): return ["codex","exec","review","--uncommitted"] if dirty else ["codex","exec","review","--base",base]
 def job_executor(job):
+    if job.get("state")=="LOCAL_READY_PENDING_CODEX_REVIEW":return "CODEX"
     kind=job.get("kind");payload=job.get("payload",{})
     if kind=="codex":return "CODEX"
-    if kind=="local_ai":return "CODEX" if int(payload.get("risk",1))>=3 else "LOCAL_AI"
+    # Risk > 1 cannot be delegated to the restricted local AI. This must agree
+    # with local_ai_job's security check, otherwise risk=2 always fails.
+    if kind=="local_ai":return "CODEX" if int(payload.get("risk",1))>1 else "LOCAL_AI"
     return "DETERMINISTIC"
 def required_capabilities(job):
+    executor=job_executor(job)
+    if job.get("state")=="LOCAL_READY_PENDING_CODEX_REVIEW":return {"CODEX"}
     declared=job.get("payload",{}).get("requires")
-    if declared:return {str(x).upper() for x in declared}
-    return {"CODEX"} if job_executor(job)=="CODEX" else ({"LOCAL_AI"} if job_executor(job)=="LOCAL_AI" else {"SHELL"})
+    if isinstance(declared,str):declared=[declared]
+    required={str(x).upper() for x in declared} if declared else set()
+    # Declared requirements may add prerequisites, never bypass the executor
+    # authorization (especially CODEX for risky local_ai jobs).
+    required.add("CODEX" if executor=="CODEX" else ("LOCAL_AI" if executor=="LOCAL_AI" else "SHELL"))
+    return required
+
+RUNNABLE_STATES={"QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"}
+TERMINAL_STATES={"READY","FAILED","CANCELLED","HUMAN_REQUIRED"}
+
+def eligibility_reasons(job,capabilities,states=None,clock=None):
+    state=job["state"]
+    if state not in RUNNABLE_STATES:return ["STATE_"+state]
+    reasons=[]
+    for need in sorted(required_capabilities(job)):
+        if capabilities.get(need,"UNAVAILABLE")!="AVAILABLE":
+            reasons.append("CAPABILITY_"+need+"_"+str(capabilities.get(need,"UNAVAILABLE")))
+    deadline=job.get("not_before")
+    if deadline is not None and float(deadline)>(time.time() if clock is None else clock):
+        reasons.append("RETRY_COOLDOWN")
+    if states is not None:
+        for dep in job.get("payload",{}).get("dependencies",[]):
+            if states.get(dep)!="READY":reasons.append("DEPENDENCY_"+str(dep)+"_"+str(states.get(dep,"MISSING")))
+    return reasons
+
+def safe_tail(message,limit=1200):
+    message=str(message)[-limit:]
+    message=re.sub(r"\x1b\[[0-9;]*[A-Za-z]","",message)
+    message=re.sub(r"(?i)(authorization\s*:\s*bearer\s+)\S+",r"\1[REDACTED]",message)
+    message=re.sub(r"(?i)((?:api[_-]?key|access[_-]?token|secret|password|control[_-]?token)\s*[=:]\s*)\S+",r"\1[REDACTED]",message)
+    message=re.sub(r"\bsk-[A-Za-z0-9_-]{12,}","[REDACTED]",message)
+    return message
 def capability_status(store,name,default="AVAILABLE"):
     raw=store.meta("capability."+name)
     if not raw:return {"status":default}
     try:return json.loads(raw)
     except:return {"status":"ERROR","reason":"invalid durable capability state"}
 def set_capability(store,name,status,**extra):store.setmeta("capability."+name,jd({"status":status,**extra,"updated_at":now()}))
+EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED"}
+def execution_mode(store):
+    mode=store.meta("execution_mode") or "CODEX_ALLOWED"
+    return mode if mode in EXECUTION_MODES else "LOCAL_ONLY"
+def set_execution_mode(store,mode):
+    if mode not in EXECUTION_MODES:raise ValueError("invalid execution mode")
+    previous=execution_mode(store);store.setmeta("execution_mode",mode)
+    if mode=="CODEX_ALLOWED":
+        store.release_codex_waits()
+        state=capability_status(store,"CODEX");state.pop("manual_hold",None)
+        store.setmeta("capability.CODEX",jd(state))
+    store.event(None,"EXECUTION_MODE_CHANGED",mode,{"previous":previous,"mode":mode})
+    return mode
 def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
@@ -48,12 +96,26 @@ def replenish_backlog(store,mission,capabilities=None):
         active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
         if any(j["state"] in active for j in store.jobs(10000)):return 0
     elif store.pick(capabilities,mission.get("schedulerPolicy")):return 0
-    roadmaps=[j for j in store.jobs(10000) if j["id"].startswith("ROADMAP-")]
-    if roadmaps and max(roadmaps,key=lambda j:int(j["id"].split("-")[-1]))["state"]!="READY":return 0
+    # An explicit independent fallback backlog is always eligible for seeding,
+    # even when the latest ROADMAP job failed or is waiting on Codex.
+    fallback=mission.get("fallbackBacklog",[])
+    added=0
+    for item in fallback:
+        if item["id"] in by_id:continue
+        store.add(item["title"],item.get("kind","shell"),item.get("payload",{}),int(item.get("priority",100)),item["id"]);added+=1
+    if added:return added
+    roadmaps=[j for j in store.jobs(10000) if re.fullmatch(r"ROADMAP-\d+",j["id"])]
+    last=max(roadmaps,key=lambda j:int(j["id"].split("-")[-1])) if roadmaps else None
+    # Never manufacture duplicates of an unresolved continuation. Failed
+    # ROADMAP tasks require explicit review or independent fallback work.
+    if last and last["state"]!="READY":return 0
     continuation=mission.get("continuation")
     if not continuation:return 0
-    seq=1+sum(1 for j in jobs if j["id"].startswith("ROADMAP-"));jid=f"ROADMAP-{seq:03d}"
-    store.add(continuation["title"],continuation.get("kind","codex"),continuation.get("payload",{}),int(continuation.get("priority",100)),jid);return 1
+    # Continuations are opt-in but must specify an executable payload.
+    payload=continuation.get("payload",{})
+    if not isinstance(payload,dict) or not (payload.get("command") or payload.get("prompt")):return 0
+    seq=1+max([int(j["id"].split("-")[-1]) for j in roadmaps] or [0]);jid=f"ROADMAP-{seq:03d}"
+    store.add(continuation["title"],continuation.get("kind","codex"),payload,int(continuation.get("priority",100)),jid);return 1
 
 def resolve_base(store,payload,default):
     deps=payload.get("dependencies",[])
@@ -87,20 +149,10 @@ class Store:
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
     def pick(self,capabilities=None,scheduler_policy=None):
-        capabilities=capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+        if capabilities is None:capabilities={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
         with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW') ORDER BY priority,created_at").fetchall()
-        eligible=[]
-        for r in rows:
-            job=self.row(r);deps=job["payload"].get("dependencies",[])
-            if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":required={"CODEX"}
-            else:required=required_capabilities(job)
-            if not all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in required):continue
-            if r["not_before"] is not None and r["not_before"]>time.time():continue
-            if deps:
-                marks=",".join("?" for _ in deps)
-                with self.l:states={x["id"]:x["state"] for x in self.c.execute(f"SELECT id,state FROM jobs WHERE id IN ({marks})",deps)}
-                if not all(states.get(dep)=="READY" for dep in deps):continue
-            eligible.append(job)
+        all_jobs=self.jobs(10000);states={j["id"]:j["state"] for j in all_jobs}
+        eligible=[self.row(r) for r in rows if not eligibility_reasons(self.row(r),capabilities,states)]
         if not eligible:return None
         limit=int((scheduler_policy or {}).get("maxConsecutiveJobsPerProduct",0) or 0)
         last=self.meta("scheduler.last_product");streak=int(self.meta("scheduler.consecutive_product_jobs") or 0)
@@ -122,16 +174,44 @@ class Store:
             ready=self.c.execute("SELECT * FROM jobs WHERE state='READY' ORDER BY updated_at DESC LIMIT 1").fetchone()
             event=self.c.execute("SELECT * FROM events ORDER BY seq DESC LIMIT 1").fetchone()
         return {"counts":counts,"last_ready":None if ready is None else self.row(ready),"last_event":None if event is None else dict(event)}
+    def job_diagnostics(self,capabilities):
+        jobs=self.jobs(10000);states={j["id"]:j["state"] for j in jobs}
+        result=[]
+        for j in jobs:
+            reasons=eligibility_reasons(j,capabilities,states)
+            result.append({"id":j["id"],"product":job_product(j),"state":j["state"],
+                "executor":job_executor(j),"required_capabilities":sorted(required_capabilities(j)),
+                "runnable":not bool(reasons),"reason_not_runnable":reasons,
+                "dependencies":list(j["payload"].get("dependencies",[])),
+                "next_retry_at":j.get("not_before"),"attempts":j["attempts"],
+                "last_error":safe_tail(j.get("last_error") or "",500)})
+        return result
     def queue_summary(self,capabilities):
-        jobs=self.jobs(10000);runnable=0
-        for job in jobs:
-            if job["state"] not in ("QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"):continue
-            needed={"CODEX"} if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else required_capabilities(job)
-            if job.get("not_before") and job["not_before"]>time.time():continue
-            if all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in needed):
-                deps=job["payload"].get("dependencies",[]);states={x["id"]:x["state"] for x in jobs}
-                if all(states.get(x)=="READY" for x in deps):runnable+=1
-        return {"runnable":runnable,"waiting_codex":sum(j["state"] in ("WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW") for j in jobs),"waiting_human":sum(j["state"]=="HUMAN_REQUIRED" for j in jobs),"ready":sum(j["state"]=="READY" for j in jobs)}
+        detail=self.job_diagnostics(capabilities)
+        reasons={}
+        for j in detail:
+            if j["state"] in RUNNABLE_STATES:
+                for reason in j["reason_not_runnable"]:reasons[reason]=reasons.get(reason,0)+1
+        return {"runnable":sum(j["runnable"] for j in detail),
+            "waiting_codex":sum(j["state"] in ("WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW") for j in detail),
+            "waiting_human":sum(j["state"]=="HUMAN_REQUIRED" for j in detail),
+            "ready":sum(j["state"]=="READY" for j in detail),
+            "blocked_reasons":reasons}
+    def stop_wait_diagnostic(self,capabilities,mission):
+        summary=self.queue_summary(capabilities)
+        detail=self.job_diagnostics(capabilities)
+        pending=[j for j in detail if j["state"] in RUNNABLE_STATES]
+        latest=[j for j in detail if re.fullmatch(r"ROADMAP-\d+",j["id"])]
+        last=max(latest,key=lambda j:int(j["id"].split("-")[-1])) if latest else None
+        if pending:reason="NO_ELIGIBLE_TASKS"
+        elif last and last["state"]!="READY" and mission.get("continuation"):reason="CONTINUATION_BLOCKED_BY_ROADMAP"
+        elif not mission.get("continuation") and not mission.get("fallbackBacklog"):reason="NO_CONFIGURED_FURTHER_WORK"
+        else:reason="NO_PENDING_JOBS"
+        record={"reason":reason,"blocked_reasons":summary["blocked_reasons"],"last_roadmap":last["id"] if last else None,"last_roadmap_state":last["state"] if last else None}
+        encoded=jd(record)
+        if encoded!=self.meta("scheduler.last_idle_reason"):
+            self.setmeta("scheduler.last_idle_reason",encoded)
+            self.event(None,"SCHEDULER_IDLE",reason,record)
     def recover_interrupted(self):
         states=("PREPARING","CODING","TESTING","CRITIC")
         with self.l,self.c:
@@ -158,6 +238,7 @@ class Runner:
         if forced:
             codex_status="WAITING_FOR_QUOTA"
             if codex.get("reason")!="forced":set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=0,reason="forced")
+        elif codex.get("manual_hold"):codex_status=codex.get("status","ERROR")
         elif codex.get("status") in ("WAITING_FOR_QUOTA","ERROR") and retry>time.time():codex_status=codex["status"]
         else:
             codex_status="AVAILABLE"
@@ -165,18 +246,45 @@ class Runner:
         raw=self.cfg.get("local_ai_command") or []
         cmd=shlex.split(raw) if isinstance(raw,str) else list(raw)
         local="AVAILABLE" if cmd and shutil.which(str(cmd[0])) else "NOT_INSTALLED"
-        set_capability(self.s,"LOCAL_AI",local,runtime=str(cmd[0]) if cmd else None,model=self.cfg.get("local_ai_model"))
-        return {"CODEX":codex_status,"LOCAL_AI":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
+        # AVAILABLE means executable found; successful task execution is a
+        # separate evidence dimension, not an assumption.
+        old=capability_status(self.s,"LOCAL_AI")
+        extras={"runtime":str(cmd[0]) if cmd else None,"model":self.cfg.get("local_ai_model"),
+                "availability_evidence":"EXECUTABLE_FOUND_ONLY" if local=="AVAILABLE" else "NO_EXECUTABLE",
+                "semantic_verification":self.s.meta("local_ai.semantic_verification") or "UNKNOWN"}
+        if old.get("status")!=local or any(old.get(k)!=v for k,v in extras.items()):
+            set_capability(self.s,"LOCAL_AI",local,**extras)
+        effective_codex="DISABLED_BY_USER" if execution_mode(self.s)=="LOCAL_ONLY" else codex_status
+        return {"CODEX":effective_codex,"CODEX_ACTUAL":codex_status,"LOCAL_AI":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
+    def require_codex(self):
+        if execution_mode(self.s)!="CODEX_ALLOWED":raise RuntimeError("Codex process blocked by LOCAL_ONLY")
+    def park_codex(self,j,out,state="WAITING_FOR_CODEX"):
+        reason="quota" if quota(out) else "transport"
+        exhausted=reason=="transport" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
+        retry=None if exhausted else time.time()+self.cfg["codex_retry_seconds"]
+        set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry or 0,reason=reason,manual_hold=exhausted)
+        self.s.state(j["id"],state,"transport retry limit reached" if exhausted else reason,retry)
     def loop(self):
         self.s.setmeta("started_at",now());self.s.setmeta("status","IDLE")
         threading.Thread(target=self.heartbeat_loop,daemon=True).start()
         while not self.stop.is_set():
             self.s.setmeta("heartbeat_at",now())
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
-            caps=self.capabilities();self.s.setmeta("capabilities",jd(caps));j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
-            if not j and self.mission:replenish_backlog(self.s,self.mission,caps);j=self.s.pick(caps)
-            if not j:self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE");self.stop.wait(self.cfg["loop_seconds"]);continue
-            self.run(j)
+            try:
+                caps=self.capabilities();self.s.setmeta("capabilities",jd(caps))
+                j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
+                if not j and self.mission:
+                    replenish_backlog(self.s,self.mission,caps)
+                    j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
+                if not j:
+                    self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE")
+                    self.s.stop_wait_diagnostic(caps,self.mission)
+                    self.stop.wait(self.cfg["loop_seconds"]);continue
+                self.run(j)
+            except Exception as exc:
+                self.s.setmeta("status","ERROR")
+                self.s.event(None,"SCHEDULER_ERROR",safe_tail(exc))
+                self.stop.wait(self.cfg["loop_seconds"])
     def run(self,j):
         product=job_product(j);last=self.s.meta("scheduler.last_product")
         streak=int(self.s.meta("scheduler.consecutive_product_jobs") or 0)+1 if last==product else 1
@@ -186,14 +294,22 @@ class Runner:
             if j["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW":self.codex_review_job(j)
             elif j["kind"]=="shell":self.shell_job(j)
             elif j["kind"]=="codex":self.codex_job(j)
-            elif j["kind"]=="local_ai":self.local_ai_job(j)
+            elif j["kind"]=="local_ai":
+                # High-risk local work needs Codex, not local_ai_job, otherwise
+                # it immediately raises and permanently FAILs.
+                if int(j["payload"].get("risk",1))>1:self.codex_job(j)
+                else:self.local_ai_job(j)
             else:self.s.state(j["id"],"HUMAN_REQUIRED","unsupported job kind")
         except Exception as e:
             msg=str(e);self.s.event(j["id"],"EXCEPTION",msg)
             retryable=any(x.lower() in msg.lower() for x in ("git fetch","could not resolve host","connection reset","connection timed out","temporary failure","network is unreachable"))
             if retryable and int(j.get("attempts",0))<5:self.s.state(j["id"],"QUEUED",msg,time.time()+60,bump=True)
             else:self.s.state(j["id"],"FAILED",msg)
-        finally:self.current=None;self.proc=None;self.s.setmeta("current_job_id","");self.s.setmeta("heartbeat_at",now())
+        finally:
+            self.current=None;self.proc=None;self.s.setmeta("current_job_id","");self.s.setmeta("heartbeat_at",now())
+            pending=self.s.meta("pending_execution_mode")
+            if pending in EXECUTION_MODES:
+                set_execution_mode(self.s,pending);self.s.setmeta("pending_execution_mode","")
     def cmd(self,cmd,cwd,stdin=None):
         self.proc=subprocess.Popen(cmd,cwd=cwd,text=True,stdin=subprocess.PIPE if stdin is not None else None,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
         try:
@@ -248,6 +364,26 @@ class Runner:
         else:
             self.git(root,["worktree","add",str(wt),branch])
         p["branch"]=branch;p["worktree_path"]=str(wt);self.s.payload(j["id"],p);return wt
+    def ensure_node_dependencies(self, wt, jid):
+        if not (wt / "package.json").is_file():
+            return
+        if (wt / "node_modules" / ".bin" / "vitest").exists():
+            return
+        if (wt / "package-lock.json").is_file():
+            command = ["npm", "ci", "--no-audit", "--no-fund"]
+        else:
+            command = ["npm", "install", "--no-save",
+                       "--package-lock=false", "--no-audit",
+                       "--no-fund"]
+        code, output = self.cmd(command, wt)
+        self.s.event(jid, "DEPENDENCY_SETUP", "npm", {
+            "exit": code, "tail": safe_tail(output, 1200)
+        })
+        if code:
+            raise RuntimeError(
+                "Dependency setup failed: " + safe_tail(output, 400)
+            )
+
     def shell_job(self,j):
         self.s.state(j["id"],"TESTING",bump=True);p=j["payload"];cmd=p.get("command")
         if not cmd:raise RuntimeError("missing command")
@@ -260,13 +396,15 @@ class Runner:
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
         raw=p.get("codex_command") or default_codex_command()
         c=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
-        code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":out[-12000:]})
+        self.require_codex();code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":safe_tail(out,12000)})
+        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
         if code:
             if codex_unavailable(out):
-                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                self.park_codex(j,out);return
             raise RuntimeError("Codex exit "+str(code))
         set_capability(self.s,"CODEX","AVAILABLE")
         self.s.state(j["id"],"TESTING")
+        self.ensure_node_dependencies(wt, j["id"])
         for raw in p.get("test_commands") or self.cfg["test_commands"]:
             code,out=self.cmd(["bash","-lc",str(raw)],wt);self.s.event(j["id"],"TEST",str(raw),{"exit":code,"tail":out[-12000:]})
             if code:
@@ -277,20 +415,20 @@ class Runner:
         p.pop("repair_prompt",None);p["repair_count"]=0;self.s.payload(j["id"],p)
         dirty=self.git(wt,["status","--porcelain"])
         self.s.state(j["id"],"CRITIC")
-        code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
+        self.require_codex();code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
         if code or not critic_clean(out):
             if codex_unavailable(out):
-                retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                self.park_codex(j,out);return
             count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
             if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
             else:self.s.state(j["id"],"FAILED","critic repair limit reached")
             return
         if dirty:
             self.s.state(j["id"],"CRITIC")
-            code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":out[-12000:]})
+            self.require_codex();code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
             if code or not critic_clean(out):
                 if codex_unavailable(out):
-                    retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"WAITING_FOR_CODEX",reason,retry);return
+                    self.park_codex(j,out);return
                 count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
                 if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
                 else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -306,23 +444,27 @@ class Runner:
         raw=self.cfg.get("local_ai_command") or [];cmd=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
         if not cmd:raise RuntimeError("local AI is not configured")
         prompt=("BOUNDED LOCAL TASK. Never access secrets, production, main, publishing, auth, or privacy architecture. "+str(p.get("prompt","")))[:6000]
-        code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":out[-12000:]})
-        if code:raise RuntimeError("local AI exit "+str(code))
+        code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":safe_tail(out,3000)})
+        if code:
+            raise RuntimeError("local AI exit "+str(code)+": "+safe_tail(out,650))
         target=Path(p.get("output_path") or ("artifacts/local-ai/"+j["id"]+".md"))
         if target.is_absolute() or ".." in target.parts:raise RuntimeError("unsafe local AI output path")
         target=wt/target;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(out.strip()+"\n")
         self.s.state(j["id"],"TESTING")
+        self.ensure_node_dependencies(wt, j["id"])
         for raw_test in p.get("test_commands") or self.cfg["test_commands"]:
             code,out=self.cmd(["bash","-lc",str(raw_test)],wt);self.s.event(j["id"],"TEST",str(raw_test),{"exit":code,"tail":out[-12000:]})
             if code:raise RuntimeError("local AI verification failed: "+str(raw_test))
         dirty=self.git(wt,["status","--porcelain"])
         if dirty:self.git(wt,["add","-A"]);self.git(wt,["commit","-m",f"auto-local({j['id']}): {j['title']}"])
-        p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW")
+        p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p)
+        self.s.setmeta("local_ai.last_success_at",now())
+        self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW")
     def codex_review_job(self,j):
         p=j["payload"];wt=Path(p["worktree_path"]);base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"));self.s.state(j["id"],"CRITIC")
-        code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":out[-12000:]})
+        self.require_codex();code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":safe_tail(out,12000)})
         if code and codex_unavailable(out):
-            retry=time.time()+self.cfg["codex_retry_seconds"];reason="quota" if quota(out) else "transport";set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry,reason=reason);self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW",reason,retry);return
+            self.park_codex(j,out,"LOCAL_READY_PENDING_CODEX_REVIEW");return
         if code or not critic_clean(out):self.s.state(j["id"],"FAILED","Codex review rejected local candidate");return
         set_capability(self.s,"CODEX","AVAILABLE");self.s.state(j["id"],"READY")
     def stop_current(self,cancel=True):
@@ -332,9 +474,23 @@ class Runner:
         except subprocess.TimeoutExpired:self.proc.kill()
         if cancel and self.current:self.s.state(self.current,"CANCELLED","stopped from control center")
         return True
+    def request_execution_mode(self,mode,active_policy="after_current"):
+        if mode not in EXECUTION_MODES:raise ValueError("invalid execution mode")
+        current=next((j for j in self.s.jobs(10000) if j["id"]==self.current),None)
+        active_codex=bool(current and job_executor(current)=="CODEX" and self.proc and self.proc.poll() is None)
+        if mode=="LOCAL_ONLY" and active_codex and active_policy=="after_current":
+            self.s.setmeta("pending_execution_mode",mode)
+            self.s.event(None,"EXECUTION_MODE_PENDING",mode,{"current_job_id":self.current})
+            return "PENDING_AFTER_CURRENT"
+        set_execution_mode(self.s,mode);self.s.setmeta("pending_execution_mode","")
+        if mode=="LOCAL_ONLY" and active_codex and active_policy=="stop_active":
+            self.stop_current(False)
+            return "ACTIVE_CODEX_STOP_REQUESTED"
+        return "APPLIED"
 
-HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
+HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}.mode{background:#252b38;color:#eef2f7}.mode.active{background:#25784a;box-shadow:0 0 0 2px #55d98b inset}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=c><strong>Режим исполнения</strong><div class=row style='margin-top:10px'><button id=localmode class=mode onclick="mode('LOCAL_ONLY')">Локально · без Codex</button><button id=codexmode class=mode onclick="mode('CODEX_ALLOWED')">Codex разрешён</button></div><p id=modeinfo class=meta>Loading mode…</p></div><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
 const POLL_MS=4000,MAX_BACKOFF_MS=20000;let timer=null,refreshing=false,failures=0;
+let currentSnapshot=null;
 t.value=localStorage.st||'';
 const zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'Local';
 function offset(){let n=-new Date().getTimezoneOffset(),sign=n>=0?'+':'-',h=Math.floor(Math.abs(n)/60),m=Math.abs(n)%60;return 'UTC'+sign+h+(m?':'+String(m).padStart(2,'0'):'')}
@@ -343,7 +499,8 @@ function clock(d){let p=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'
 z.textContent='Time zone: '+zone+' ('+offset()+')';tz.textContent=z.textContent;
 async function g(url){let r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error(url+' '+r.status);return r.json()}
 async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);immediate()}
-function render(s,j,ev){let cur=j.jobs.find(x=>x.id===s.current_job_id);document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
+async function mode(value){localStorage.st=t.value;let active=value==='LOCAL_ONLY'&&currentSnapshot?.current_executor==='CODEX',pending_mode=active?(confirm('Codex выполняет задачу. OK — остановить безопасно сейчас; Отмена — применить после завершения.')?'stop_active':'after_current'):'after_current';let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:'set_execution_mode',mode:value,pending_mode})});let x=await r.json();alert(x.message);immediate()}
+function render(s,j,ev){currentSnapshot=s;let cur=j.jobs.find(x=>x.id===s.current_job_id),local=s.execution_mode==='LOCAL_ONLY';localmode.classList.toggle('active',local);codexmode.classList.toggle('active',!local);modeinfo.textContent='Активен: '+s.execution_mode+' · Codex: '+(s.capabilities.CODEX_ACTUAL||s.capabilities.CODEX)+' · Local: '+(s.local_ai_proof?.model||'не настроена')+(s.pending_execution_mode?' · ожидает: '+s.pending_execution_mode:'');document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Idle reason: '+(s.idle_reason?s.idle_reason.reason:'—')+'</p><p>Blocked: '+Object.entries(s.queue.blocked_reasons||{}).map(([a,b])=>a+'='+b).join(', ')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
 function schedule(ms=POLL_MS){if(timer!==null)clearTimeout(timer);timer=setTimeout(refresh,ms)}
 async function refresh(){if(refreshing)return;refreshing=true;try{let [s,j,ev]=await Promise.all([g('/api/status'),g('/api/jobs'),g('/api/events')]);render(s,j,ev);failures=0}catch(error){failures=Math.min(failures+1,3);u.textContent='Update retrying…'}finally{refreshing=false;schedule(Math.min(POLL_MS*Math.pow(2,failures),MAX_BACKOFF_MS))}}
 function immediate(){if(refreshing)return;if(timer!==null)clearTimeout(timer);timer=null;refresh()}
@@ -365,12 +522,18 @@ class H(BaseHTTPRequestHandler):
             try:caps=json.loads(a.s.meta("capabilities") or "{}")
             except:caps={}
             current=next((x for x in a.s.jobs() if x["id"]==(a.s.meta("current_job_id") or "")),None)
-            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),**o});return
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),**o});return
         if self.path=="/api/jobs":
             jobs=a.s.jobs()
             for job in jobs:job["product"]=job_product(job);job["executor"]="CODEX" if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else job_executor(job)
             self.sendj({"jobs":jobs});return
         if self.path=="/api/events":self.sendj({"events":a.s.events()});return
+        if self.path=="/api/diagnostics":
+            try:caps=json.loads(a.s.meta("capabilities") or "{}")
+            except:caps={}
+            self.sendj({"jobs":a.s.job_diagnostics(caps),
+                        "idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),
+                        "local_ai_proof":capability_status(a.s,"LOCAL_AI")});return
         self.sendj({"error":"not_found"},404)
     def do_POST(self):
         a=self.server.app
@@ -385,13 +548,27 @@ class H(BaseHTTPRequestHandler):
         elif act=="retry":
             j=next((x for x in a.s.jobs() if x["state"] in ("FAILED","WAITING_FOR_CODEX","CANCELLED")),None)
             if not j:self.sendj({"message":"No retryable job"},409);return
+            if job_executor(j)=="CODEX" and execution_mode(a.s)=="LOCAL_ONLY":self.sendj({"message":"Codex task remains waiting in LOCAL_ONLY"},409);return
             a.s.state(j["id"],"QUEUED");m="Queued "+j["id"]
+        elif act=="set_execution_mode":
+            try:result=a.r.request_execution_mode(str(x.get("mode")),str(x.get("pending_mode") or "after_current"))
+            except ValueError:self.sendj({"message":"Invalid execution mode"},400);return
+            m="Execution mode "+result
         else:self.sendj({"message":"Unsupported action"},400);return
         self.sendj({"message":m})
 
 class App:
     def __init__(self,cfg):
-        self.cfg=cfg;self.s=Store(Path(cfg["db_path"]));self.r=Runner(cfg,self.s);self.http=ThreadingHTTPServer((cfg["bind_host"],cfg["bind_port"]),H);self.http.app=self
+        self.cfg=cfg
+        lock_path=Path(cfg["db_path"]+".instance.lock")
+        lock_path.parent.mkdir(parents=True,exist_ok=True)
+        self.instance_lock=open(lock_path,"a+")
+        try:fcntl.flock(self.instance_lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.instance_lock.close()
+            raise RuntimeError("Supervisor already running for this durable queue; refused second runner")
+        self.s=Store(Path(cfg["db_path"]));self.r=Runner(cfg,self.s)
+        self.http=ThreadingHTTPServer((cfg["bind_host"],cfg["bind_port"]),H);self.http.app=self
     def run(self):
         threading.Thread(target=self.r.loop,daemon=True).start()
         try:self.http.serve_forever(.5)
