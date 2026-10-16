@@ -367,7 +367,8 @@ class Runner:
     def ensure_node_dependencies(self, wt, jid):
         if not (wt / "package.json").is_file():
             return
-        if (wt / "node_modules" / ".bin" / "vitest").exists():
+        dependency_markers=(wt/"node_modules"/".bin"/"vitest",wt/"node_modules"/"ai",wt/"node_modules"/"@ai-sdk"/"gateway")
+        if all(path.exists() for path in dependency_markers):
             return
         if (wt / "package-lock.json").is_file():
             command = ["npm", "ci", "--no-audit", "--no-fund"]

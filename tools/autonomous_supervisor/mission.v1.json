@@ -559,7 +559,7 @@
           "SHELL"
         ],
         "dependencies": [],
-        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; TZ=UTC npm test -- --run"
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ] || [ ! -d node_modules/ai ] || [ ! -d node_modules/@ai-sdk/gateway ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; TZ=UTC npm test -- --run"
       }
     },
     {
@@ -575,7 +575,7 @@
           "SHELL"
         ],
         "dependencies": [],
-        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run typecheck"
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ] || [ ! -d node_modules/ai ] || [ ! -d node_modules/@ai-sdk/gateway ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run typecheck"
       }
     },
     {
@@ -591,7 +591,7 @@
           "SHELL"
         ],
         "dependencies": [],
-        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run api:typecheck"
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ] || [ ! -d node_modules/ai ] || [ ! -d node_modules/@ai-sdk/gateway ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run api:typecheck"
       }
     },
     {
@@ -607,7 +607,7 @@
           "SHELL"
         ],
         "dependencies": [],
-        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run web:build"
+        "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ] || [ ! -d node_modules/ai ] || [ ! -d node_modules/@ai-sdk/gateway ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run web:build"
       }
     }
   ]
