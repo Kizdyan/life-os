@@ -2,7 +2,7 @@ import tempfile,time,unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store
+from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -122,4 +122,12 @@ class T(unittest.TestCase):
   self.s.add("human","shell",{"product":"LIFE_OS"},3,"H");self.s.state("H","HUMAN_REQUIRED")
   summary=self.s.queue_summary({"CODEX":"WAITING_FOR_QUOTA","SHELL":"AVAILABLE"})
   self.assertEqual(summary["runnable"],1);self.assertEqual(summary["waiting_codex"],1);self.assertEqual(summary["waiting_human"],1)
+ def test_dashboard_polling_is_resilient_and_times_are_local_only(self):
+  self.assertIn("const POLL_MS=4000",HTML)
+  self.assertIn("cache:'no-store'",HTML)
+  self.assertIn("if(refreshing)return",HTML)
+  self.assertIn("visibilitychange",HTML);self.assertIn("addEventListener('focus'",HTML)
+  self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone",HTML)
+  self.assertIn("Updated: ",HTML);self.assertIn("Time zone: ",HTML)
+  self.assertNotIn("location.reload",HTML);self.assertNotIn("setInterval",HTML)
 if __name__=="__main__":unittest.main()
