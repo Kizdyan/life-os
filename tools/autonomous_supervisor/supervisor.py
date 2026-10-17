@@ -45,7 +45,8 @@ def codex_budget_allows(job,scheduler_policy=None):
     return decision.get("state") not in ("DRAIN","QUOTA_BLOCKED","UNKNOWN")
 
 RUNNABLE_STATES={"QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"}
-TERMINAL_STATES={"READY","LOCAL_VERIFIED","FAILED","CANCELLED","HUMAN_REQUIRED"}
+TERMINAL_STATES={"READY","LOCAL_VERIFIED","INTEGRATED","ACCEPTED","SUPERSEDED","FAILED","CANCELLED","HUMAN_REQUIRED"}
+DEPENDENCY_SATISFIED_STATES={"READY","LOCAL_VERIFIED","INTEGRATED","ACCEPTED","SUPERSEDED"}
 
 def eligibility_reasons(job,capabilities,states=None,clock=None):
     state=job["state"]
@@ -59,7 +60,7 @@ def eligibility_reasons(job,capabilities,states=None,clock=None):
         reasons.append("RETRY_COOLDOWN")
     if states is not None:
         for dep in job.get("payload",{}).get("dependencies",[]):
-            if states.get(dep) not in ("READY","LOCAL_VERIFIED"):reasons.append("DEPENDENCY_"+str(dep)+"_"+str(states.get(dep,"MISSING")))
+            if states.get(dep) not in DEPENDENCY_SATISFIED_STATES:reasons.append("DEPENDENCY_"+str(dep)+"_"+str(states.get(dep,"MISSING")))
     return reasons
 
 def safe_tail(message,limit=1200):
@@ -123,7 +124,7 @@ def advance_milestones(store,mission):
     for milestone in milestones:
         mid=str(milestone.get("id") or "")
         evidence=milestone.get("evidenceJobs",[])
-        proven=bool(evidence) and all(jobs.get(j,{}).get("state") in ("READY","LOCAL_VERIFIED") for j in evidence)
+        proven=bool(evidence) and all(jobs.get(j,{}).get("state") in DEPENDENCY_SATISFIED_STATES for j in evidence)
         if mid and store.meta("milestone.accepted."+mid):accepted.add(mid);continue
         if milestone.get("status")=="ACCEPTED" and proven:accepted.add(mid);continue
         if milestone.get("status")=="APPROVED" and store.meta("milestone.active."+mid) and proven:
@@ -139,6 +140,30 @@ def advance_milestones(store,mission):
         decision={"activatedAt":now(),"dependsOn":sorted(deps),"acceptedEvidence":sorted(accepted),"sourceRequirement":milestone.get("sourceRequirement")}
         store.setmeta(key,jd(decision));store.event(None,"MILESTONE_ACTIVATED",mid,decision);activated.append(mid)
     return activated
+def reconcile_registry_outcomes(store,mission,current_head,is_ancestor):
+    registry={str(item.get("id")):item for item in mission.get("plannerRegistry",[]) if item.get("id")}
+    jobs={j["id"]:j for j in store.jobs(10000)};changed=[]
+    for jid,item in registry.items():
+        integrated_sha=str(item.get("integratedSha") or "")
+        job=jobs.get(jid)
+        if not job or not integrated_sha or job["state"] in {"INTEGRATED","ACCEPTED"}:continue
+        if not is_ancestor(integrated_sha,current_head):continue
+        payload={**job["payload"],"integrated_sha":integrated_sha,"integration_head":current_head,"integration_verified_at":now()}
+        store.payload(jid,payload);store.state(jid,"ACCEPTED" if item.get("status")=="ACCEPTED" else "INTEGRATED")
+        store.event(jid,"INTEGRATION_CONFIRMED",integrated_sha,{"head":current_head,"sourceRequirement":item.get("sourceRequirement"),"targetVersion":item.get("targetVersion")})
+        jobs[jid]={**job,"state":"ACCEPTED" if item.get("status")=="ACCEPTED" else "INTEGRATED","payload":payload};changed.append(jid)
+    for jid,item in registry.items():
+        replacement_id=str(item.get("supersededBy") or "")
+        job=jobs.get(jid);replacement=registry.get(replacement_id);replacement_job=jobs.get(replacement_id)
+        if not job or not replacement or not replacement_job or job["state"]=="SUPERSEDED":continue
+        equivalent=(jid in replacement.get("replaces",[]) and item.get("sourceRequirement")==replacement.get("sourceRequirement") and item.get("targetVersion")==replacement.get("targetVersion"))
+        proven=replacement_job["state"] in {"INTEGRATED","ACCEPTED"}
+        if not equivalent or not proven:continue
+        payload={**job["payload"],"superseded_by":replacement_id,"supersession_verified_at":now(),"supersession_integrated_sha":replacement_job["payload"].get("integrated_sha")}
+        store.payload(jid,payload);store.state(jid,"SUPERSEDED")
+        store.event(jid,"SUPERSESSION_CONFIRMED",replacement_id,{"sourceRequirement":item.get("sourceRequirement"),"targetVersion":item.get("targetVersion"),"integratedSha":payload["supersession_integrated_sha"]})
+        jobs[jid]={**job,"state":"SUPERSEDED","payload":payload};changed.append(jid)
+    return changed
 def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
     items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
     for item in items:
@@ -152,7 +177,7 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
         def occupies_prepared_slot(job):
             if job["kind"]!="local_ai" or job["state"] in TERMINAL_STATES:return False
             dependencies=job.get("payload",{}).get("dependencies",[])
-            return not any(states.get(dep) in TERMINAL_STATES and states.get(dep) not in {"READY","LOCAL_VERIFIED"} for dep in dependencies)
+            return not any(states.get(dep) in TERMINAL_STATES and states.get(dep) not in DEPENDENCY_SATISFIED_STATES for dep in dependencies)
         active_local=sum(1 for j in jobs if occupies_prepared_slot(j))
         registry=sorted(mission.get("plannerRegistry",[]),key=lambda item:(int(item.get("priority",100)),str(item.get("id",""))))
         for item in registry:
@@ -291,7 +316,10 @@ class Store:
         return {"runnable":sum(j["runnable"] for j in detail),
             "waiting_codex":sum(j["state"] in ("WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW") for j in detail),
             "waiting_human":sum(j["state"]=="HUMAN_REQUIRED" for j in detail),
-            "ready":sum(j["state"] in ("READY","LOCAL_VERIFIED") for j in detail),
+            "ready":sum(j["state"] in DEPENDENCY_SATISFIED_STATES for j in detail),
+            "locally_verified":sum(j["state"]=="LOCAL_VERIFIED" for j in detail),
+            "integrated":sum(j["state"] in ("INTEGRATED","ACCEPTED") for j in detail),
+            "superseded":sum(j["state"]=="SUPERSEDED" for j in detail),
             "blocked_reasons":reasons}
     def stop_wait_diagnostic(self,capabilities,mission):
         summary=self.queue_summary(capabilities)
@@ -390,6 +418,12 @@ class Runner:
         if isinstance(budget,dict):policy["_codexBudget"]=budget
         policy["_codexBudgetPolicy"]=self.cfg.get("codex_budget_policy",{})
         return policy
+    def reconcile_integrations(self):
+        repo=Path(self.cfg["repo_path"])
+        head=subprocess.run(["git","rev-parse","HEAD"],cwd=repo,text=True,capture_output=True,check=True).stdout.strip()
+        def is_ancestor(candidate,current):
+            return subprocess.run(["git","merge-base","--is-ancestor",candidate,current],cwd=repo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+        return reconcile_registry_outcomes(self.s,self.mission,head,is_ancestor)
     def park_codex(self,j,out,state="WAITING_FOR_CODEX"):
         reason="quota" if quota(out) else "transport"
         exhausted=reason=="transport" and execution_mode(self.s)!="AUTO_HYBRID" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
@@ -409,6 +443,7 @@ class Runner:
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
             try:
                 caps=self.capabilities();self.s.setmeta("capabilities",jd(caps))
+                self.reconcile_integrations()
                 scheduler_policy=self.scheduler_policy()
                 j=self.s.pick(caps,scheduler_policy)
                 if not j and self.mission:

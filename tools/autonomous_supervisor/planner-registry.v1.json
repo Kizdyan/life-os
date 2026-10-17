@@ -341,7 +341,8 @@
     },
     {
       "id": "P0-QWEN-DIVEM-STRING-ARRAYS-001",
-      "status": "ACTIVE",
+      "status": "INTEGRATED",
+      "integratedSha": "11706b40a618663a684ec2baf95b86c7f33cbf3f",
       "title": "Reject non-string DiveM provider array entries",
       "kind": "local_ai",
       "priority": 61,
@@ -379,7 +380,8 @@
     },
     {
       "id": "P0-QWEN-LIFE-MAXVISIBLE-001",
-      "status": "ACTIVE",
+      "status": "INTEGRATED",
+      "integratedSha": "11706b40a618663a684ec2baf95b86c7f33cbf3f",
       "title": "Reject non-finite Attention Digest visibility limits",
       "kind": "local_ai",
       "priority": 62,
@@ -418,7 +420,8 @@
     },
     {
       "id": "P0-QWEN-PERSONA-TIMELINE-001",
-      "status": "ACTIVE",
+      "status": "SUPERSEDED",
+      "supersededBy": "P0-QWEN-PERSONA-TIMELINE-002",
       "title": "Reject invalid Persona content-plan temporal ranges",
       "kind": "local_ai",
       "priority": 50,
@@ -448,7 +451,8 @@
     },
     {
       "id": "P0-QWEN-LIFE-EXPERIMENT-DIRECTION-001",
-      "status": "ACTIVE",
+      "status": "SUPERSEDED",
+      "supersededBy": "P0-QWEN-LIFE-EXPERIMENT-DIRECTION-002",
       "title": "Reject unknown Life OS behavior experiment directions",
       "kind": "local_ai",
       "priority": 51,
@@ -478,7 +482,8 @@
     },
     {
       "id": "P0-QWEN-DIVEM-ENUMS-001",
-      "status": "ACTIVE",
+      "status": "SUPERSEDED",
+      "supersededBy": "P0-QWEN-DIVEM-ENUMS-002",
       "title": "Reject non-canonical DiveM provider enum values",
       "kind": "local_ai",
       "priority": 52,
@@ -508,7 +513,9 @@
     },
     {
       "id": "P0-QWEN-LIFE-EXPERIMENT-DIRECTION-002",
-      "status": "ACTIVE",
+      "status": "INTEGRATED",
+      "integratedSha": "6e312f9892eb39a53a3cb6ad385117e93e33ab78",
+      "replaces": ["P0-QWEN-LIFE-EXPERIMENT-DIRECTION-001"],
       "title": "Continue with independent Life OS experiment direction boundary",
       "kind": "local_ai",
       "priority": 53,
@@ -537,7 +544,9 @@
     },
     {
       "id": "P0-QWEN-DIVEM-ENUMS-002",
-      "status": "ACTIVE",
+      "status": "INTEGRATED",
+      "integratedSha": "6e312f9892eb39a53a3cb6ad385117e93e33ab78",
+      "replaces": ["P0-QWEN-DIVEM-ENUMS-001"],
       "title": "Continue with independent DiveM provider enum boundary",
       "kind": "local_ai",
       "priority": 54,
@@ -566,7 +575,9 @@
     },
     {
       "id": "P0-QWEN-PERSONA-TIMELINE-002",
-      "status": "ACTIVE",
+      "status": "INTEGRATED",
+      "integratedSha": "52197891f31dd185751ba0fa43ba85afdc443afe",
+      "replaces": ["P0-QWEN-PERSONA-TIMELINE-001"],
       "title": "Apply minimal Persona temporal checks without restructuring",
       "kind": "local_ai",
       "priority": 49,

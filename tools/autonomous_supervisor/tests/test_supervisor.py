@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -125,6 +125,37 @@ class T(unittest.TestCase):
   mission={"plannerPolicy":{"approvedLocalQueueDepth":2},"plannerRegistry":[{"id":"NEXT-SLICE","title":"next","kind":"local_ai","priority":3,"status":"ACTIVE","sourceRequirement":"APPROVED","targetVersion":"next","acceptance":["evidence"],"payload":{"product":"LIFE_OS","requires":["LOCAL_AI"]}}]}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertIn("NEXT-SLICE",[j["id"] for j in self.s.jobs()])
+ def test_registry_reconciliation_records_integrated_sha_and_explicit_supersession(self):
+  self.s.add("old","local_ai",{},1,"OLD");self.s.state("OLD","FAILED")
+  self.s.add("replacement","local_ai",{},2,"NEW");self.s.state("NEW","LOCAL_VERIFIED")
+  mission={"plannerRegistry":[
+   {"id":"OLD","sourceRequirement":"REQ","targetVersion":"v1","supersededBy":"NEW"},
+   {"id":"NEW","sourceRequirement":"REQ","targetVersion":"v1","replaces":["OLD"],"integratedSha":"abc123"}]}
+  changed=reconcile_registry_outcomes(self.s,mission,"head",lambda candidate,head:candidate=="abc123" and head=="head")
+  self.assertEqual(changed,["NEW","OLD"])
+  jobs={j["id"]:j for j in self.s.jobs()}
+  self.assertEqual(jobs["NEW"]["state"],"INTEGRATED")
+  self.assertEqual(jobs["NEW"]["payload"]["integrated_sha"],"abc123")
+  self.assertEqual(jobs["OLD"]["state"],"SUPERSEDED")
+  self.assertEqual(jobs["OLD"]["payload"]["superseded_by"],"NEW")
+ def test_registry_reconciliation_refuses_unproven_or_non_equivalent_supersession(self):
+  self.s.add("old","local_ai",{},1,"OLD");self.s.state("OLD","FAILED")
+  self.s.add("replacement","local_ai",{},2,"NEW");self.s.state("NEW","LOCAL_VERIFIED")
+  mission={"plannerRegistry":[
+   {"id":"OLD","sourceRequirement":"REQ-A","targetVersion":"v1","supersededBy":"NEW"},
+   {"id":"NEW","sourceRequirement":"REQ-B","targetVersion":"v1","replaces":["OLD"],"integratedSha":"abc123"}]}
+  reconcile_registry_outcomes(self.s,mission,"head",lambda candidate,head:False)
+  jobs={j["id"]:j for j in self.s.jobs()}
+  self.assertEqual(jobs["NEW"]["state"],"LOCAL_VERIFIED")
+  self.assertEqual(jobs["OLD"]["state"],"FAILED")
+ def test_superseded_dependency_is_satisfied_but_local_verified_is_reported_distinctly(self):
+  self.s.add("old","local_ai",{},1,"OLD");self.s.state("OLD","SUPERSEDED")
+  self.s.add("next","local_ai",{"dependencies":["OLD"]},2,"NEXT")
+  caps={"LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  self.assertEqual(self.s.pick(caps)["id"],"NEXT")
+  summary=self.s.queue_summary(caps)
+  self.assertEqual(summary["integrated"],0)
+  self.assertEqual(summary["locally_verified"],0)
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
   root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})
