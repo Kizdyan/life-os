@@ -89,6 +89,38 @@ describe("StructuredContentPlanner", () => {
     ).rejects.toThrow("clips");
   });
 
+  it.each([
+    ["clip", { clips: [{ assetId: "asset-1", sourceStartMs: 1000, sourceEndMs: 1000, order: 1, reason: "invalid" }] }],
+    ["caption", { captions: [{ startMs: 1200, endMs: 800, text: "invalid" }] }],
+    ["overlay", { overlays: [{ atMs: 0, durationMs: 0, text: "invalid", role: "hook" }] }],
+  ])("rejects invalid %s temporal ranges", async (_field, invalid) => {
+    const planner = new StructuredContentPlanner({
+      completeJson: async () => ({
+        title: null,
+        caption: null,
+        aspectRatio: "9:16",
+        targetDurationMs: 12000,
+        hook: null,
+        clips: [],
+        captions: [],
+        overlays: [],
+        audio: [],
+        coverBrief: null,
+        editorNotes: [],
+        ...invalid,
+      }),
+    });
+
+    await expect(planner.createPlan({
+      projectId: "project-1",
+      assetIds: ["asset-1"],
+      channel: "instagram",
+      goal: "test",
+      styleMemoryNotes: [],
+      lifeOsContext: null,
+    })).rejects.toThrow(/duration|range/i);
+  });
+
   it("passes DiveM assessment into revision request", async () => {
     let userPayload: Record<string, unknown> | null = null;
     const planner = new StructuredContentPlanner({

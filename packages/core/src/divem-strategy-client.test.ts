@@ -123,4 +123,31 @@ describe("DiveM strategy client adapter", () => {
       currentFocus: [],
     })).rejects.toThrow(field+" entries must be strings");
   });
+
+  it.each([
+    ["fit", { fit: "excellent" }],
+    ["weak_transition", { weak_transition: "awareness" }],
+    ["evidence_state", { evidence_state: "verified" }],
+  ])("fails closed when provider %s is outside its canonical enum", async (field, malformed) => {
+    const client = new DiveMStrategyClient({
+      assessContent: async () => ({
+        fit: "mixed",
+        notes: [],
+        weak_transition: null,
+        revision_suggestions: [],
+        confidence: 0.5,
+        evidence_state: "partial",
+        ...malformed,
+      }) as any,
+    });
+
+    await expect(client.assessContent({
+      profileId: "personal",
+      projectId: "project-1",
+      assetIds: [],
+      channel: "instagram",
+      goal: "test",
+      currentFocus: [],
+    })).rejects.toThrow(field+" must be one of");
+  });
 });
