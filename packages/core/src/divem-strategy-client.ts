@@ -49,6 +49,14 @@ export class DiveMStrategyClient implements DiveMStrategyService {
       evidence: { ...(input.evidence ?? {}) },
     });
 
+    if (!Array.isArray(payload.notes)) {
+      throw new Error("notes must be an array");
+    }
+
+    if (!Array.isArray(payload.revision_suggestions)) {
+      throw new Error("revision_suggestions must be an array");
+    }
+
     if (!Number.isFinite(payload.confidence) || payload.confidence < 0 || payload.confidence > 1) {
       throw new Error("DiveM assessment confidence must be between 0 and 1");
     }
