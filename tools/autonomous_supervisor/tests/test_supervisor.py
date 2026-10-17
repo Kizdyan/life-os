@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -366,4 +366,9 @@ class T(unittest.TestCase):
   self.s.add("local","local_ai",{"risk":1},1,"L");self.s.state("L","LOCAL_VERIFIED")
   self.s.add("next","shell",{"command":"true","dependencies":["L"]},2,"N")
   self.assertEqual(self.s.pick({"SHELL":"AVAILABLE","LOCAL_AI":"AVAILABLE"})["id"],"N")
+ def test_verified_local_candidate_replaces_stale_failed_semantic_proof(self):
+  self.s.setmeta("local_ai.semantic_verification","FAILED_REAL_CODE_E2E_QA_REPAIR_LIMIT")
+  record_local_ai_success(self.s,"L")
+  self.assertEqual(self.s.meta("local_ai.semantic_verification"),"PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:L")
+  self.assertIsNotNone(self.s.meta("local_ai.last_success_at"))
 if __name__=="__main__":unittest.main()

@@ -67,6 +67,9 @@ def capability_status(store,name,default="AVAILABLE"):
     try:return json.loads(raw)
     except:return {"status":"ERROR","reason":"invalid durable capability state"}
 def set_capability(store,name,status,**extra):store.setmeta("capability."+name,jd({"status":status,**extra,"updated_at":now()}))
+def record_local_ai_success(store,job_id):
+    store.setmeta("local_ai.last_success_at",now())
+    store.setmeta("local_ai.semantic_verification","PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:"+str(job_id))
 EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED","AUTO_HYBRID"}
 def execution_mode(store):
     mode=store.meta("execution_mode") or "CODEX_ALLOWED"
@@ -521,7 +524,7 @@ class Runner:
             if not dirty:self.s.state(j["id"],"FAILED","local model produced no diff");return
             self.git(wt,["add","-A"]);self.git(wt,["commit","-m",f"auto-local({j['id']}): {j['title']}"])
             p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);p["changed_files"]=changed;p["local_evidence"]=evidence;p["local_model"]=self.cfg.get("local_ai_model");self.s.payload(j["id"],p)
-            self.s.setmeta("local_ai.last_success_at",now());self.s.state(j["id"],"LOCAL_VERIFIED");return
+            record_local_ai_success(self.s,j["id"]);self.s.state(j["id"],"LOCAL_VERIFIED");return
         prompt=("BOUNDED LOCAL TASK. Never access secrets, production, main, publishing, auth, or privacy architecture. "+str(p.get("prompt","")))[:6000]
         code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":safe_tail(out,3000)})
         if code:
