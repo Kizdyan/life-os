@@ -705,8 +705,8 @@
     },
     {
       "id": "CODEX-PERSONA-PHOTO-FIDELITY-001",
-      "status": "ACTIVE",
-      "integratedSha": "d957cc1",
+      "status": "INTEGRATED",
+      "integratedSha": "d957cc164ef46bcfea9225ec29ee1abacdd35543",
       "replaces": ["P0-QWEN-PERSONA-PHOTO-FIDELITY-003"],
       "title": "Integrate original-preserving Persona photo edit validation",
       "kind": "codex",
@@ -726,6 +726,36 @@
         "requires": ["CODEX", "TESTS", "TYPECHECK"],
         "executor_used": "CODEX",
         "implementation_reason": "Qwen 7B exhausted bounded repairs without passing the independent contract"
+      }
+    },
+    {
+      "id": "P0-QWEN-PERSONA-TARGET-DURATION-001",
+      "status": "ACTIVE",
+      "title": "Reject non-positive Persona target durations",
+      "kind": "local_ai",
+      "priority": 49,
+      "sourceRequirement": "PERSONA_CONTENT_PLAN_TEMPORAL_INTEGRITY",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": [
+        "the pre-existing target-duration regression changes from RED to GREEN",
+        "zero and negative targetDurationMs fail closed",
+        "null and positive target durations preserve existing behavior",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "QUALITY_COURT",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/content-planner.ts"],
+        "required_changed_files": ["packages/core/src/content-planner.ts"],
+        "max_repairs": 2,
+        "goal": "Change only targetDurationMs validation inside parsePlan. Store the existing nullableNumber result in a local constant before the return object. If it is not null and is less than or equal to zero, throw an Error containing target duration. Return that constant as targetDurationMs. Preserve null and positive values, all other validations, mappings, imports and helpers. Do not edit tests or any other file.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/content-planner.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
       }
     }
   ]

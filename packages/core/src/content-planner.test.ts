@@ -121,6 +121,33 @@ describe("StructuredContentPlanner", () => {
     })).rejects.toThrow(/duration|range/i);
   });
 
+  it.each([0, -1])("rejects non-positive target duration %s", async (targetDurationMs) => {
+    const planner = new StructuredContentPlanner({
+      completeJson: async () => ({
+        title: null,
+        caption: null,
+        aspectRatio: "9:16",
+        targetDurationMs,
+        hook: null,
+        clips: [],
+        captions: [],
+        overlays: [],
+        audio: [],
+        coverBrief: null,
+        editorNotes: [],
+      }),
+    });
+
+    await expect(planner.createPlan({
+      projectId: "project-1",
+      assetIds: ["asset-1"],
+      channel: "instagram",
+      goal: "test",
+      styleMemoryNotes: [],
+      lifeOsContext: null,
+    })).rejects.toThrow(/target duration/i);
+  });
+
   it("passes DiveM assessment into revision request", async () => {
     let userPayload: Record<string, unknown> | null = null;
     const planner = new StructuredContentPlanner({
