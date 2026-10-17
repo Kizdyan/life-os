@@ -104,7 +104,9 @@ def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
     if not isinstance(items,list):raise ValueError("planner registry items must be a list")
     milestones=data.get("milestones",[]) if isinstance(data,dict) else []
     if not isinstance(milestones,list):raise ValueError("planner registry milestones must be a list")
-    return {**mission,"plannerRegistry":items,"plannerMilestones":milestones,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
+    policy=data.get("policy",{}) if isinstance(data,dict) else {}
+    if not isinstance(policy,dict):raise ValueError("planner registry policy must be an object")
+    return {**mission,"plannerRegistry":items,"plannerMilestones":milestones,"plannerPolicy":policy,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
 def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE") in (("AVAILABLE","PROBE_DUE") if x=="CODEX" else ("AVAILABLE",)) for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
@@ -143,6 +145,27 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
         if item["id"] in by_id:continue
         store.add(item["title"],item.get("kind","codex"),item.get("payload",{}),int(item.get("priority",100)),item["id"]);added+=1
     if added:return added
+    queue_depth=max(1,int(mission.get("plannerPolicy",{}).get("approvedLocalQueueDepth",1) or 1))
+    if queue_depth>1:
+        advance_milestones(store,mission)
+        jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};states={j["id"]:j["state"] for j in jobs}
+        active_local=sum(1 for j in jobs if j["kind"]=="local_ai" and j["state"] not in TERMINAL_STATES)
+        registry=sorted(mission.get("plannerRegistry",[]),key=lambda item:(int(item.get("priority",100)),str(item.get("id",""))))
+        for item in registry:
+            if active_local>=queue_depth:break
+            required=(item.get("id"),item.get("title"),item.get("sourceRequirement"),item.get("targetVersion"),item.get("acceptance"))
+            status=item.get("status","ACTIVE");milestone=str(item.get("milestone") or "")
+            activated=bool(milestone and store.meta("milestone.active."+milestone))
+            if item.get("kind")!="local_ai" or (status!="ACTIVE" and not (status=="PLANNED" and activated)):continue
+            if not all(required) or item["id"] in by_id:continue
+            payload={**item.get("payload",{}),"planner_source_requirement":item["sourceRequirement"],"target_version":item["targetVersion"],"acceptance":item["acceptance"]}
+            probe={"id":item["id"],"state":"QUEUED","kind":"local_ai","payload":payload}
+            reasons=eligibility_reasons(probe,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"},states)
+            if any(not reason.startswith("DEPENDENCY_") for reason in reasons):continue
+            store.add(item["title"],"local_ai",payload,int(item.get("priority",100)),item["id"])
+            store.event(item["id"],"PLANNER_SEEDED",item["sourceRequirement"],{"target_version":item["targetVersion"],"product":job_product(probe),"prepared_ahead":True})
+            by_id[item["id"]]=probe;states[item["id"]]="QUEUED";active_local+=1;added+=1
+        if added:return added
     if capabilities is None:
         active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
         if any(j["state"] in active for j in store.jobs(10000)):return 0

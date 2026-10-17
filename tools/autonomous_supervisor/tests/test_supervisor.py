@@ -107,11 +107,23 @@ class T(unittest.TestCase):
    {"id":"LIFE-NEXT","title":"independent","kind":"shell","priority":2,"sourceRequirement":"L1","targetVersion":"life-next","acceptance":["x"],"payload":{"product":"LIFE_OS","requires":["SHELL"]}}]}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertIn("LIFE-NEXT",[j["id"] for j in self.s.jobs()]);self.assertNotIn("PERSONA-NEXT",[j["id"] for j in self.s.jobs()])
+ def test_approved_local_queue_is_materialized_ahead_with_dependencies_preserved(self):
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE"}
+  def item(jid,priority,product,dependencies=[]):return {"id":jid,"title":jid,"kind":"local_ai","priority":priority,"sourceRequirement":"APPROVED-"+jid,"targetVersion":"next","acceptance":["focused executable evidence"],"payload":{"product":product,"risk":1,"requires":["LOCAL_AI","TESTS"],"dependencies":dependencies,"allowed_files":[jid+".ts"],"test_commands":["true"]}}
+  mission={"plannerPolicy":{"approvedLocalQueueDepth":3},"plannerRegistry":[
+   item("PERSONA-SLICE",1,"PERSONA"),item("LIFE-SLICE",2,"LIFE_OS",["PERSONA-SLICE"]),item("DIVE-SLICE",3,"DIVE_M",["LIFE-SLICE"])]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),3)
+  self.assertEqual([j["id"] for j in self.s.jobs()],["PERSONA-SLICE","LIFE-SLICE","DIVE-SLICE"])
+  self.assertEqual(self.s.pick(caps)["id"],"PERSONA-SLICE")
+  self.s.state("PERSONA-SLICE","LOCAL_VERIFIED")
+  self.assertEqual(self.s.pick(caps)["id"],"LIFE-SLICE")
+  self.assertEqual(replenish_backlog(self.s,mission,caps),0)
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
   root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})
   self.assertEqual(loaded["mission"],"canonical");self.assertEqual(loaded["backlog"],[1]);self.assertEqual(loaded["plannerRegistry"],[{"id":"X"}])
   self.assertEqual(loaded["plannerMilestones"],[{"id":"M2"}])
+  self.assertEqual(loaded["plannerPolicy"],{})
  def test_milestone_orchestrator_activates_approved_successor_once_after_evidence(self):
   self.s.add("verified","local_ai",{"executor_used":"LOCAL_AI"},1,"M1-EVIDENCE");self.s.state("M1-EVIDENCE","LOCAL_VERIFIED")
   mission={"plannerMilestones":[
