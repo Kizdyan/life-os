@@ -108,25 +108,35 @@ function parsePlan(raw: unknown): PlannedContentDraft {
     hook: nullableString(raw.hook),
     clips: clipsRaw.map((item, index) => {
       const value = requireRecord(item, `clips[${index}]`);
+      const sourceStartMs = requireNumber(
+        value.sourceStartMs ?? value.source_start_ms,
+        "sourceStartMs",
+      );
+      const sourceEndMs = requireNumber(
+        value.sourceEndMs ?? value.source_end_ms,
+        "sourceEndMs",
+      );
+      if (sourceStartMs < 0 || sourceEndMs <= sourceStartMs) {
+        throw new Error(`Content planner clips[${index}] has invalid temporal range`);
+      }
       return {
         assetId: requireString(value.assetId ?? value.asset_id, "assetId"),
-        sourceStartMs: requireNumber(
-          value.sourceStartMs ?? value.source_start_ms,
-          "sourceStartMs",
-        ),
-        sourceEndMs: requireNumber(
-          value.sourceEndMs ?? value.source_end_ms,
-          "sourceEndMs",
-        ),
+        sourceStartMs,
+        sourceEndMs,
         order: requireNumber(value.order, "order"),
         reason: requireString(value.reason, "reason"),
       };
     }),
     captions: captionsRaw.map((item, index) => {
       const value = requireRecord(item, `captions[${index}]`);
+      const startMs = requireNumber(value.startMs ?? value.start_ms, "startMs");
+      const endMs = requireNumber(value.endMs ?? value.end_ms, "endMs");
+      if (startMs < 0 || endMs <= startMs) {
+        throw new Error(`Content planner captions[${index}] has invalid temporal range`);
+      }
       return {
-        startMs: requireNumber(value.startMs ?? value.start_ms, "startMs"),
-        endMs: requireNumber(value.endMs ?? value.end_ms, "endMs"),
+        startMs,
+        endMs,
         text: requireString(value.text, "text"),
       };
     }),
@@ -136,12 +146,17 @@ function parsePlan(raw: unknown): PlannedContentDraft {
       if (!["hook", "context", "cta", "label"].includes(role)) {
         throw new Error("Content planner returned invalid overlay role");
       }
+      const atMs = requireNumber(value.atMs ?? value.at_ms, "atMs");
+      const durationMs = requireNumber(
+        value.durationMs ?? value.duration_ms,
+        "durationMs",
+      );
+      if (atMs < 0 || durationMs <= 0) {
+        throw new Error(`Content planner overlays[${index}] has invalid duration or range`);
+      }
       return {
-        atMs: requireNumber(value.atMs ?? value.at_ms, "atMs"),
-        durationMs: requireNumber(
-          value.durationMs ?? value.duration_ms,
-          "durationMs",
-        ),
+        atMs,
+        durationMs,
         text: requireString(value.text, "text"),
         role: role as "hook" | "context" | "cta" | "label",
       };
