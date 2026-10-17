@@ -351,7 +351,7 @@
         "the pre-existing malformed element regression changes from RED to GREEN",
         "notes and revision_suggestions reject every non-string entry",
         "valid string arrays and existing mapping remain unchanged",
-        "focused tests, full regression and TypeScript pass"
+        "focused regression and TypeScript pass; combined full regression runs after candidate integration"
       ],
       "payload": {
         "product": "DIVE_M",
@@ -373,7 +373,6 @@
         "goal": "Change only DiveMStrategyClient provider-response validation. After confirming notes and revision_suggestions are arrays, fail closed with an explicit <field> entries must be strings error unless every entry is a string. Preserve confidence validation, valid response mapping and all existing behavior. Do not edit tests.",
         "test_commands": [
           "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
-          "TZ=UTC npm test -- --run",
           "npm run typecheck"
         ]
       }
@@ -391,7 +390,7 @@
         "NaN and both infinities fail closed with Invalid maxVisible",
         "zero remains a valid explicit visibility limit",
         "attention ordering and existing policy behavior remain unchanged",
-        "focused tests, full regression and TypeScript pass"
+        "focused regression and TypeScript pass; combined full regression runs after candidate integration"
       ],
       "payload": {
         "product": "LIFE_OS",
@@ -413,7 +412,6 @@
         "goal": "Change only buildAttentionDigest maxVisible validation. If maxVisible is provided and is not finite, fail closed with Error Invalid maxVisible before slicing. Preserve maxVisible zero, existing floor and lower-bound behavior, ordering, policy validation and all other behavior. Do not edit tests.",
         "test_commands": [
           "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
-          "TZ=UTC npm test -- --run",
           "npm run typecheck"
         ]
       }
