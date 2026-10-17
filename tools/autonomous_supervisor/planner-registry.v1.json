@@ -673,6 +673,7 @@
     {
       "id": "P0-QWEN-PERSONA-PHOTO-FIDELITY-003",
       "status": "FAILED_EVIDENCE",
+      "supersededBy": "CODEX-PERSONA-PHOTO-FIDELITY-001",
       "replaces": ["P0-QWEN-PERSONA-PHOTO-FIDELITY-002"],
       "title": "Complete the typed Persona photo fidelity validator",
       "kind": "local_ai",
@@ -700,6 +701,31 @@
           "TZ=UTC npm test -- --run",
           "npm run typecheck"
         ]
+      }
+    },
+    {
+      "id": "CODEX-PERSONA-PHOTO-FIDELITY-001",
+      "status": "ACTIVE",
+      "integratedSha": "d957cc1",
+      "replaces": ["P0-QWEN-PERSONA-PHOTO-FIDELITY-003"],
+      "title": "Integrate original-preserving Persona photo edit validation",
+      "kind": "codex",
+      "priority": 45,
+      "sourceRequirement": "PERSONA_PHOTO_ORIGINAL_FIDELITY",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": [
+        "ordinary adjustments preserve the original asset and source resolution",
+        "appearance-changing and generative operations fail closed",
+        "crop requires explicit composition approval",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "PHOTO",
+        "risk": 1,
+        "requires": ["CODEX", "TESTS", "TYPECHECK"],
+        "executor_used": "CODEX",
+        "implementation_reason": "Qwen 7B exhausted bounded repairs without passing the independent contract"
       }
     }
   ]
