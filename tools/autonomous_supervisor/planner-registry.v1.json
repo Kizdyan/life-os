@@ -15,7 +15,7 @@
   "items": [
     {
       "id": "M1-LIFE-ATTENTION-POLICY-001",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
       "title": "Correct non-finite attention policy with executable boundary evidence",
       "kind": "local_ai",
       "priority": 40,
@@ -42,6 +42,36 @@
         ],
         "max_repairs": 2,
         "goal": "Fix the observed AttentionLoadPolicy validation defect. Add executable boundary tests for every non-finite numeric field and preserve the existing valid equality boundary mediumAt === highAt. Do not weaken or remove existing tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "M1-LIFE-ATTENTION-POLICY-002",
+      "status": "ACTIVE",
+      "title": "Implement the independently specified attention policy boundary",
+      "kind": "local_ai",
+      "priority": 41,
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE",
+      "targetVersion": "autonomous-supervisor-m1",
+      "acceptance": [
+        "the pre-existing independent regression test changes from RED to GREEN",
+        "all non-finite policy numbers are rejected",
+        "mediumAt equal to highAt remains valid",
+        "full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/attention-load.ts"],
+        "required_changed_files": ["packages/core/src/attention-load.ts"],
+        "max_repairs": 2,
+        "goal": "Make the existing independent AttentionLoadPolicy boundary regression pass by changing only the implementation. Preserve the documented valid threshold relationship and all existing behavior. Do not edit tests.",
         "test_commands": [
           "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
           "TZ=UTC npm test -- --run",

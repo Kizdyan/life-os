@@ -22,4 +22,13 @@ describe("Cognitive Load Guard",()=>{
     const result=buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:{mediumAt:2,highAt:4,dueSoonHours:24},items:[item("a",{status:"missed_time"}),item("b",{status:"moved"}),item("c",{status:"not_completed"}),item("d",{status:"missed_time"})]});
     expect(result.load).toBe("high"); expect(result.isClinicalAssessment).toBe(false);
   });
+  it("rejects every non-finite policy number while preserving the equal threshold boundary",()=>{
+    const valid={mediumAt:3,highAt:3,dueSoonHours:24};
+    expect(()=>buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:valid,items:[]})).not.toThrow();
+    for(const value of [Number.NaN,Number.POSITIVE_INFINITY,Number.NEGATIVE_INFINITY]){
+      expect(()=>buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:{...valid,mediumAt:value},items:[]})).toThrow("Invalid attention load policy");
+      expect(()=>buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:{...valid,highAt:value},items:[]})).toThrow("Invalid attention load policy");
+      expect(()=>buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:{...valid,dueSoonHours:value},items:[]})).toThrow("Invalid attention load policy");
+    }
+  });
 });
