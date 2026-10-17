@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -108,9 +108,44 @@ class T(unittest.TestCase):
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertIn("LIFE-NEXT",[j["id"] for j in self.s.jobs()]);self.assertNotIn("PERSONA-NEXT",[j["id"] for j in self.s.jobs()])
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
-  root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"items":[{"id":"X"}]}))
+  root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})
   self.assertEqual(loaded["mission"],"canonical");self.assertEqual(loaded["backlog"],[1]);self.assertEqual(loaded["plannerRegistry"],[{"id":"X"}])
+  self.assertEqual(loaded["plannerMilestones"],[{"id":"M2"}])
+ def test_milestone_orchestrator_activates_approved_successor_once_after_evidence(self):
+  self.s.add("verified","local_ai",{"executor_used":"LOCAL_AI"},1,"M1-EVIDENCE");self.s.state("M1-EVIDENCE","LOCAL_VERIFIED")
+  mission={"plannerMilestones":[
+   {"id":"M1","status":"ACCEPTED","evidenceJobs":["M1-EVIDENCE"]},
+   {"id":"M2","status":"APPROVED","dependsOn":["M1"]}]}
+  self.assertEqual(advance_milestones(self.s,mission),["M2"])
+  self.assertEqual(advance_milestones(self.s,mission),[])
+  self.assertIsNotNone(self.s.meta("milestone.active.M2"))
+  count=self.s.c.execute("select count(*) from events where type='MILESTONE_ACTIVATED' and msg='M2'").fetchone()[0]
+  self.assertEqual(count,1)
+ def test_milestone_orchestrator_refuses_successor_without_accepted_evidence(self):
+  self.s.add("failed","local_ai",{},1,"M1-EVIDENCE");self.s.state("M1-EVIDENCE","FAILED")
+  mission={"plannerMilestones":[
+   {"id":"M1","status":"ACCEPTED","evidenceJobs":["M1-EVIDENCE"]},
+   {"id":"M2","status":"APPROVED","dependsOn":["M1"]}]}
+  self.assertEqual(advance_milestones(self.s,mission),[])
+  self.assertIsNone(self.s.meta("milestone.active.M2"))
+ def test_milestone_orchestrator_accepts_completed_active_stage_and_advances(self):
+  self.s.add("m1","shell",{},1,"M1-E");self.s.state("M1-E","READY")
+  mission={"plannerMilestones":[
+   {"id":"M1","status":"ACCEPTED","evidenceJobs":["M1-E"]},
+   {"id":"M2","status":"APPROVED","dependsOn":["M1"],"evidenceJobs":["M2-E"]},
+   {"id":"M3","status":"APPROVED","dependsOn":["M2"]}]}
+  self.assertEqual(advance_milestones(self.s,mission),["M2"])
+  self.s.add("m2","shell",{},1,"M2-E");self.s.state("M2-E","READY")
+  self.assertEqual(advance_milestones(self.s,mission),["M3"])
+  self.assertIsNotNone(self.s.meta("milestone.accepted.M2"))
+ def test_replenishment_seeds_planned_item_only_after_its_milestone_is_activated(self):
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  item={"id":"M2-LIFE-1","milestone":"M2","status":"PLANNED","title":"approved work","kind":"shell","priority":1,"sourceRequirement":"M2-REQ","targetVersion":"life-next","acceptance":["proof"],"payload":{"product":"LIFE_OS","requires":["SHELL"]}}
+  mission={"plannerRegistry":[item]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),0)
+  self.s.setmeta("milestone.active.M2",json.dumps({"activatedAt":"now"}))
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
  def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
   self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}}

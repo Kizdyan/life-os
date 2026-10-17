@@ -94,7 +94,9 @@ def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
     if not path.exists():return mission
     data=json.loads(path.read_text());items=data if isinstance(data,list) else data.get("items",[])
     if not isinstance(items,list):raise ValueError("planner registry items must be a list")
-    return {**mission,"plannerRegistry":items,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
+    milestones=data.get("milestones",[]) if isinstance(data,dict) else []
+    if not isinstance(milestones,list):raise ValueError("planner registry milestones must be a list")
+    return {**mission,"plannerRegistry":items,"plannerMilestones":milestones,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
 def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE") in (("AVAILABLE","PROBE_DUE") if x=="CODEX" else ("AVAILABLE",)) for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
@@ -103,6 +105,30 @@ def job_product(job):
     if stream in {"CONTENT_CONVEYOR","ARCHETYPE_BRAND","PERSONA_INTELLIGENCE","MEDIA_INTAKE","VIDEO","CAROUSEL","PHOTO","QUALITY_COURT","PUBLISHER","METRICS","LEARNING"}:return "PERSONA"
     if stream in {"TRUTH","SYNC","PRIVACY","ERIKA","CANONICAL_INTEGRATION"}:return "LIFE_OS"
     return "SHARED"
+def advance_milestones(store,mission):
+    milestones=mission.get("plannerMilestones",[])
+    if not milestones:return []
+    jobs={j["id"]:j for j in store.jobs(10000)}
+    accepted=set()
+    for milestone in milestones:
+        mid=str(milestone.get("id") or "")
+        evidence=milestone.get("evidenceJobs",[])
+        proven=bool(evidence) and all(jobs.get(j,{}).get("state") in ("READY","LOCAL_VERIFIED") for j in evidence)
+        if mid and store.meta("milestone.accepted."+mid):accepted.add(mid);continue
+        if milestone.get("status")=="ACCEPTED" and proven:accepted.add(mid);continue
+        if milestone.get("status")=="APPROVED" and store.meta("milestone.active."+mid) and proven:
+            decision={"acceptedAt":now(),"evidenceJobs":list(evidence)}
+            store.setmeta("milestone.accepted."+mid,jd(decision));store.event(None,"MILESTONE_ACCEPTED",mid,decision);accepted.add(mid)
+    activated=[]
+    for milestone in milestones:
+        mid=str(milestone.get("id") or "")
+        deps={str(x) for x in milestone.get("dependsOn",[])}
+        if not mid or milestone.get("status")!="APPROVED" or not deps.issubset(accepted):continue
+        key="milestone.active."+mid
+        if store.meta(key):continue
+        decision={"activatedAt":now(),"dependsOn":sorted(deps),"acceptedEvidence":sorted(accepted),"sourceRequirement":milestone.get("sourceRequirement")}
+        store.setmeta(key,jd(decision));store.event(None,"MILESTONE_ACTIVATED",mid,decision);activated.append(mid)
+    return activated
 def replenish_backlog(store,mission,capabilities=None):
     items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
     for item in items:
@@ -124,11 +150,15 @@ def replenish_backlog(store,mission,capabilities=None):
     # A registry item is a version-scoped, evidence-bearing requirement, not a
     # generated activity placeholder. Seed at most one independently runnable
     # item per idle cycle and never reuse an existing durable id.
+    advance_milestones(store,mission)
     states={j["id"]:j["state"] for j in store.jobs(10000)}
     registry=sorted(mission.get("plannerRegistry",[]),key=lambda item:(int(item.get("priority",100)),str(item.get("id",""))))
     for item in registry:
         required=(item.get("id"),item.get("title"),item.get("sourceRequirement"),item.get("targetVersion"),item.get("acceptance"))
-        if item.get("status","ACTIVE")!="ACTIVE" or not all(required) or item["id"] in by_id:continue
+        status=item.get("status","ACTIVE");milestone=str(item.get("milestone") or "")
+        activated=bool(milestone and store.meta("milestone.active."+milestone))
+        if status!="ACTIVE" and not (status=="PLANNED" and activated):continue
+        if not all(required) or item["id"] in by_id:continue
         payload={**item.get("payload",{}),"planner_source_requirement":item["sourceRequirement"],"target_version":item["targetVersion"],"acceptance":item["acceptance"]}
         probe={"id":item["id"],"state":"QUEUED","kind":item.get("kind","codex"),"payload":payload}
         if eligibility_reasons(probe,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"},states):continue
