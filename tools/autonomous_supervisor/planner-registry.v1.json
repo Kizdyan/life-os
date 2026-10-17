@@ -81,7 +81,9 @@
     },
     {
       "id": "M1-LIFE-ATTENTION-POLICY-003",
-      "status": "ACTIVE",
+      "status": "ACCEPTED",
+      "acceptedCandidateSha": "46fd4afd9f33be5a5cf3ba92496a17200fd3e778",
+      "integratedSha": "74f845daf5545ef6dac23aea3c4eb7df69b5dfef",
       "title": "Reject non-finite attention policy values with the standard finite-number predicate",
       "kind": "local_ai",
       "priority": 42,
