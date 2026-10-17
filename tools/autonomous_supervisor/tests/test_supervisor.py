@@ -371,4 +371,9 @@ class T(unittest.TestCase):
   record_local_ai_success(self.s,"L")
   self.assertEqual(self.s.meta("local_ai.semantic_verification"),"PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:L")
   self.assertIsNotNone(self.s.meta("local_ai.last_success_at"))
+ def test_runner_startup_restores_semantic_proof_from_durable_verified_job(self):
+  self.s.add("local","local_ai",{"risk":1,"executor_used":"LOCAL_AI"},1,"L");self.s.state("L","LOCAL_VERIFIED")
+  self.s.setmeta("local_ai.semantic_verification","FAILED_STALE_VALUE")
+  Runner({"loop_seconds":1},self.s)
+  self.assertEqual(self.s.meta("local_ai.semantic_verification"),"PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:L")
 if __name__=="__main__":unittest.main()

@@ -67,9 +67,14 @@ def capability_status(store,name,default="AVAILABLE"):
     try:return json.loads(raw)
     except:return {"status":"ERROR","reason":"invalid durable capability state"}
 def set_capability(store,name,status,**extra):store.setmeta("capability."+name,jd({"status":status,**extra,"updated_at":now()}))
-def record_local_ai_success(store,job_id):
-    store.setmeta("local_ai.last_success_at",now())
+def record_local_ai_success(store,job_id,verified_at=None):
+    store.setmeta("local_ai.last_success_at",verified_at or now())
     store.setmeta("local_ai.semantic_verification","PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:"+str(job_id))
+def reconcile_local_ai_success(store):
+    verified=[j for j in store.jobs(10000) if j.get("state")=="LOCAL_VERIFIED" and j.get("payload",{}).get("executor_used")=="LOCAL_AI"]
+    if verified:
+        latest=max(verified,key=lambda j:j.get("updated_at") or "")
+        record_local_ai_success(store,latest["id"],latest.get("updated_at"))
 EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED","AUTO_HYBRID"}
 def execution_mode(store):
     mode=store.meta("execution_mode") or "CODEX_ALLOWED"
@@ -253,7 +258,7 @@ class Store:
 
 class Runner:
     def __init__(self,cfg,store):
-        self.cfg=cfg;self.s=store;self.mission=cfg.get("_mission",{});self.stop=threading.Event();self.proc=None;self.current=None;self.s.recover_interrupted()
+        self.cfg=cfg;self.s=store;self.mission=cfg.get("_mission",{});self.stop=threading.Event();self.proc=None;self.current=None;self.s.recover_interrupted();reconcile_local_ai_success(self.s)
     def heartbeat_loop(self):
         while not self.stop.wait(min(10,self.cfg["loop_seconds"])):
             self.s.setmeta("heartbeat_at",now())
