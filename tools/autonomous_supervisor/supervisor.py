@@ -149,7 +149,11 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
     if queue_depth>1:
         advance_milestones(store,mission)
         jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};states={j["id"]:j["state"] for j in jobs}
-        active_local=sum(1 for j in jobs if j["kind"]=="local_ai" and j["state"] not in TERMINAL_STATES)
+        def occupies_prepared_slot(job):
+            if job["kind"]!="local_ai" or job["state"] in TERMINAL_STATES:return False
+            dependencies=job.get("payload",{}).get("dependencies",[])
+            return not any(states.get(dep) in TERMINAL_STATES and states.get(dep) not in {"READY","LOCAL_VERIFIED"} for dep in dependencies)
+        active_local=sum(1 for j in jobs if occupies_prepared_slot(j))
         registry=sorted(mission.get("plannerRegistry",[]),key=lambda item:(int(item.get("priority",100)),str(item.get("id",""))))
         for item in registry:
             if active_local>=queue_depth:break

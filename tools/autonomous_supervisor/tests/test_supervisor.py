@@ -118,6 +118,13 @@ class T(unittest.TestCase):
   self.s.state("PERSONA-SLICE","LOCAL_VERIFIED")
   self.assertEqual(self.s.pick(caps)["id"],"LIFE-SLICE")
   self.assertEqual(replenish_backlog(self.s,mission,caps),0)
+ def test_failed_dependency_does_not_starve_next_approved_local_slice(self):
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE"}
+  self.s.add("failed","local_ai",{},1,"FAILED-BASE");self.s.state("FAILED-BASE","FAILED")
+  self.s.add("blocked","local_ai",{"dependencies":["FAILED-BASE"]},2,"BLOCKED-SLICE")
+  mission={"plannerPolicy":{"approvedLocalQueueDepth":2},"plannerRegistry":[{"id":"NEXT-SLICE","title":"next","kind":"local_ai","priority":3,"status":"ACTIVE","sourceRequirement":"APPROVED","targetVersion":"next","acceptance":["evidence"],"payload":{"product":"LIFE_OS","requires":["LOCAL_AI"]}}]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  self.assertIn("NEXT-SLICE",[j["id"] for j in self.s.jobs()])
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
   root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})

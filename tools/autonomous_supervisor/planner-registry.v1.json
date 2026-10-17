@@ -505,6 +505,64 @@
           "npm run typecheck"
         ]
       }
+    },
+    {
+      "id": "P0-QWEN-LIFE-EXPERIMENT-DIRECTION-002",
+      "status": "ACTIVE",
+      "title": "Continue with independent Life OS experiment direction boundary",
+      "kind": "local_ai",
+      "priority": 53,
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE",
+      "targetVersion": "autonomous-supervisor-m1",
+      "acceptance": [
+        "the pre-existing unknown-direction regression changes from RED to GREEN",
+        "only increase and decrease are accepted at the runtime boundary",
+        "existing experiment evaluation and explicit-promotion behavior remains unchanged",
+        "focused regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/behavior-experiment.ts"],
+        "required_changed_files": ["packages/core/src/behavior-experiment.ts"],
+        "max_repairs": 2,
+        "goal": "Change only evaluateBehaviorExperiment runtime boundary validation. Make the existing independent regression pass by rejecting any direction other than increase or decrease with an error mentioning direction. Preserve reversible, finite-number, evidence and promotion behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/behavior-experiment.test.ts",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "P0-QWEN-DIVEM-ENUMS-002",
+      "status": "ACTIVE",
+      "title": "Continue with independent DiveM provider enum boundary",
+      "kind": "local_ai",
+      "priority": 54,
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
+      "targetVersion": "personal-strategy-foundation",
+      "acceptance": [
+        "the pre-existing fit, weak_transition and evidence_state regressions change from RED to GREEN",
+        "only canonical enum values pass the provider boundary",
+        "existing arrays, confidence and mapping behavior remains unchanged",
+        "focused regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/divem-strategy-client.ts"],
+        "required_changed_files": ["packages/core/src/divem-strategy-client.ts"],
+        "max_repairs": 2,
+        "goal": "Change only DiveMStrategyClient provider-response validation. Make the existing independent regression pass by rejecting fit, weak_transition and evidence_state outside their declared canonical values with an explicit <field> must be one of error. Preserve valid null weak_transition, arrays, confidence and mapping. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
+          "npm run typecheck"
+        ]
+      }
     }
   ]
 }
