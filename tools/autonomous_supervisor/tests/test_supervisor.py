@@ -248,6 +248,30 @@ class T(unittest.TestCase):
   self.assertEqual(caps["CODEX"],"WAITING_FOR_QUOTA")
   self.assertEqual(self.s.pick(caps)["id"],"L")
   self.assertEqual(capability_status(self.s,"CODEX")["retry_at"],retry)
+ def test_local_only_never_reads_codex_budget(self):
+  calls=[];set_execution_mode(self.s,"LOCAL_ONLY")
+  r=Runner({"loop_seconds":1,"codex_budget_enabled":True,"codex_budget_reader":lambda:calls.append(1)},self.s)
+  self.assertEqual(r.capabilities()["CODEX"],"DISABLED_BY_USER")
+  self.assertEqual(r.capabilities()["CODEX"],"DISABLED_BY_USER")
+  self.assertEqual(calls,[])
+  self.assertEqual(json.loads(self.s.meta("codex.budget"))["state"],"DISABLED_BY_USER")
+ def test_auto_hybrid_reads_budget_once_and_blocks_when_weekly_reserve_is_reached(self):
+  calls=[];set_execution_mode(self.s,"AUTO_HYBRID")
+  def reader():
+   calls.append(1);return {"ordinaryUsageAllowed":True,"rateLimits":{"primary":None,"secondary":None},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":10,"windowDurationMins":300},"secondary":{"usedPercent":90,"windowDurationMins":10080}}}}
+  cfg={"loop_seconds":1,"codex_budget_enabled":True,"codex_budget_reader":reader,"codex_budget_refresh_seconds":300,"codex_budget_policy":{"shortReservePercent":10,"weeklyReservePercent":20,"staleAfterSeconds":600}}
+  r=Runner(cfg,self.s)
+  self.assertEqual(r.capabilities()["CODEX"],"BUDGET_DRAIN")
+  self.assertEqual(r.capabilities()["CODEX"],"BUDGET_DRAIN")
+  self.assertEqual(len(calls),1)
+  self.assertEqual(json.loads(self.s.meta("codex.budget"))["state"],"DRAIN")
+ def test_scheduler_skips_codex_task_that_would_consume_weekly_reserve_and_runs_local(self):
+  self.s.add("expensive","codex",{"budgetEstimate":{"shortPercent":5,"weeklyPercent":5}},1,"C")
+  self.s.add("local","local_ai",{"risk":1},2,"L")
+  budget={"state":"NORMAL","snapshot":{"source":"codex_app_server","observedAt":1000,"ordinaryUsageAllowed":True,"short":{"remainingPercent":80},"weekly":{"remainingPercent":22}}}
+  scheduler={"_codexBudget":budget,"_codexBudgetPolicy":{"shortReservePercent":10,"weeklyReservePercent":20,"staleAfterSeconds":600},"_clock":1001}
+  caps={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  self.assertEqual(self.s.pick(caps,scheduler)["id"],"L")
  def test_auto_hybrid_probe_is_due_once_and_only_success_recovers(self):
   set_execution_mode(self.s,"AUTO_HYBRID")
   self.s.add("codex","codex",{},1,"C")
@@ -411,4 +435,11 @@ class T(unittest.TestCase):
   self.s.setmeta("local_ai.semantic_verification","FAILED_STALE_VALUE")
   Runner({"loop_seconds":1},self.s)
   self.assertEqual(self.s.meta("local_ai.semantic_verification"),"PASSED_REAL_CODE_E2E_LOCAL_VERIFIED:L")
+ def test_budget_caution_keeps_codex_available_for_fitting_tasks(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.setmeta("codex.budget",json.dumps({"state":"CAUTION","snapshot":{"source":"codex_app_server","observedAt":time.time(),"ordinaryUsageAllowed":True,"short":{"remainingPercent":30},"weekly":{"remainingPercent":30}},"refreshedAt":time.time()}))
+  runner=Runner({"loop_seconds":1,"codex_budget_enabled":True,"codex_budget_refresh_seconds":300,"codex_budget_policy":{"shortReservePercent":10,"weeklyReservePercent":10}},self.s)
+  self.assertEqual(runner.capabilities()["CODEX"],"AVAILABLE")
+  self.s.add("small","codex",{"budgetEstimate":{"shortPercent":1,"weeklyPercent":1}},1,"C")
+  self.assertEqual(self.s.pick(runner.capabilities(),runner.scheduler_policy())["id"],"C")
 if __name__=="__main__":unittest.main()

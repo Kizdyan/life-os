@@ -8,6 +8,15 @@
   "bind_port": 8787,
   "loop_seconds": 15,
   "codex_retry_seconds": 1800,
+  "codex_budget_enabled": true,
+  "codex_budget_refresh_seconds": 300,
+  "codex_budget_timeout_seconds": 10,
+  "codex_budget_policy": {
+    "shortReservePercent": 15,
+    "weeklyReservePercent": 25,
+    "staleAfterSeconds": 600,
+    "cautionPercent": 10
+  },
   "protected_branches": [
     "main",
     "recovery/iphone-static-supabase"

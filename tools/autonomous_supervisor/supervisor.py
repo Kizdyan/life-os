@@ -5,6 +5,7 @@ from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
+from codex_budget import evaluate_budget,normalize_rate_limits,read_rate_limits
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset",r"\b429\b")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
@@ -35,6 +36,13 @@ def required_capabilities(job):
     # authorization (especially CODEX for risky local_ai jobs).
     required.add("CODEX" if executor=="CODEX" else ("LOCAL_AI" if executor=="LOCAL_AI" else "SHELL"))
     return required
+def codex_budget_allows(job,scheduler_policy=None):
+    if job_executor(job)!="CODEX":return True
+    scheduler_policy=scheduler_policy or {};budget=scheduler_policy.get("_codexBudget")
+    if not isinstance(budget,dict):return True
+    if budget.get("state") in ("DISABLED_BY_USER","NOT_CONFIGURED"):return False
+    decision=evaluate_budget(budget.get("snapshot"),scheduler_policy.get("_codexBudgetPolicy",{}),job.get("payload",{}).get("budgetEstimate",{}),scheduler_policy.get("_clock"))
+    return decision.get("state") not in ("DRAIN","QUOTA_BLOCKED","UNKNOWN")
 
 RUNNABLE_STATES={"QUEUED","WAITING_FOR_CODEX","LOCAL_READY_PENDING_CODEX_REVIEW"}
 TERMINAL_STATES={"READY","LOCAL_VERIFIED","FAILED","CANCELLED","HUMAN_REQUIRED"}
@@ -129,7 +137,7 @@ def advance_milestones(store,mission):
         decision={"activatedAt":now(),"dependsOn":sorted(deps),"acceptedEvidence":sorted(accepted),"sourceRequirement":milestone.get("sourceRequirement")}
         store.setmeta(key,jd(decision));store.event(None,"MILESTONE_ACTIVATED",mid,decision);activated.append(mid)
     return activated
-def replenish_backlog(store,mission,capabilities=None):
+def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
     items=mission.get("backlog",[]);jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};added=0
     for item in items:
         if item["id"] in by_id:continue
@@ -138,7 +146,7 @@ def replenish_backlog(store,mission,capabilities=None):
     if capabilities is None:
         active={"QUEUED","PREPARING","CODING","TESTING","CRITIC","WAITING_FOR_CODEX"}
         if any(j["state"] in active for j in store.jobs(10000)):return 0
-    elif store.pick(capabilities,mission.get("schedulerPolicy")):return 0
+    elif store.pick(capabilities,scheduler_policy or mission.get("schedulerPolicy")):return 0
     # An explicit independent fallback backlog is always eligible for seeding,
     # even when the latest ROADMAP job failed or is waiting on Codex.
     fallback=mission.get("fallbackBacklog",[])
@@ -213,7 +221,7 @@ class Store:
         if capabilities is None:capabilities={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
         with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW') ORDER BY priority,created_at").fetchall()
         all_jobs=self.jobs(10000);states={j["id"]:j["state"] for j in all_jobs}
-        eligible=[self.row(r) for r in rows if not eligibility_reasons(self.row(r),capabilities,states)]
+        eligible=[self.row(r) for r in rows if not eligibility_reasons(self.row(r),capabilities,states) and codex_budget_allows(self.row(r),scheduler_policy)]
         if not eligible:return None
         limit=int((scheduler_policy or {}).get("maxConsecutiveJobsPerProduct",0) or 0)
         last=self.meta("scheduler.last_product");streak=int(self.meta("scheduler.consecutive_product_jobs") or 0)
@@ -292,7 +300,28 @@ class Runner:
     def heartbeat_loop(self):
         while not self.stop.wait(min(10,self.cfg["loop_seconds"])):
             self.s.setmeta("heartbeat_at",now())
+    def refresh_codex_budget(self):
+        if execution_mode(self.s)=="LOCAL_ONLY":
+            state={"state":"DISABLED_BY_USER","source":"execution_mode","updatedAt":now()}
+            self.s.setmeta("codex.budget",jd(state));return state
+        if not self.cfg.get("codex_budget_enabled",False):return {"state":"NOT_CONFIGURED","source":"config"}
+        try:prior=json.loads(self.s.meta("codex.budget") or "null")
+        except Exception:prior=None
+        refresh=float(self.cfg.get("codex_budget_refresh_seconds",300))
+        if isinstance(prior,dict) and prior.get("refreshedAt") and time.time()-float(prior["refreshedAt"])<refresh:return prior
+        try:
+            reader=self.cfg.get("codex_budget_reader")
+            result=reader() if callable(reader) else read_rate_limits(timeout=float(self.cfg.get("codex_budget_timeout_seconds",10)))
+            refreshed=time.time();snapshot=normalize_rate_limits(result,refreshed)
+            decision=evaluate_budget(snapshot,self.cfg.get("codex_budget_policy",{}),self.cfg.get("codex_default_estimate",{}),refreshed)
+            state={**decision,"snapshot":snapshot,"refreshedAt":refreshed}
+            self.s.setmeta("codex.budget",jd(state));self.s.event(None,"CODEX_BUDGET_REFRESHED",state["state"],{"source":"codex_app_server","observedAt":refreshed})
+            return state
+        except Exception as exc:
+            state={"state":"UNKNOWN","source":"codex_app_server","reason":safe_tail(exc,300),"refreshedAt":time.time()}
+            self.s.setmeta("codex.budget",jd(state));self.s.event(None,"CODEX_BUDGET_REFRESH_FAILED","UNKNOWN",{"reason":state["reason"]});return state
     def capabilities(self):
+        budget=self.refresh_codex_budget()
         forced=os.getenv("SUPERVISOR_FORCE_CODEX_UNAVAILABLE")=="1" or bool(self.cfg.get("force_codex_unavailable",False))
         codex=capability_status(self.s,"CODEX")
         retry=float(codex.get("retry_at",0) or 0)
@@ -306,6 +335,8 @@ class Runner:
         else:
             codex_status="AVAILABLE"
             if codex.get("status")!="AVAILABLE":set_capability(self.s,"CODEX","AVAILABLE");self.s.release_codex_waits()
+        if budget.get("state") in ("DRAIN","QUOTA_BLOCKED","UNKNOWN") and codex_status in ("AVAILABLE","PROBE_DUE"):
+            codex_status="BUDGET_"+budget["state"]
         raw=self.cfg.get("local_ai_command") or []
         cmd=shlex.split(raw) if isinstance(raw,str) else list(raw)
         local="AVAILABLE" if cmd and shutil.which(str(cmd[0])) else "NOT_INSTALLED"
@@ -325,6 +356,13 @@ class Runner:
         if mode=="LOCAL_ONLY":raise RuntimeError("Codex process blocked by LOCAL_ONLY")
         if mode=="AUTO_HYBRID" and self.capabilities()["CODEX"] not in ("AVAILABLE","PROBE_DUE"):
             raise RuntimeError("Codex process blocked by durable cooldown")
+    def scheduler_policy(self):
+        policy=dict(self.mission.get("schedulerPolicy") or {})
+        try:budget=json.loads(self.s.meta("codex.budget") or "null")
+        except Exception:budget=None
+        if isinstance(budget,dict):policy["_codexBudget"]=budget
+        policy["_codexBudgetPolicy"]=self.cfg.get("codex_budget_policy",{})
+        return policy
     def park_codex(self,j,out,state="WAITING_FOR_CODEX"):
         reason="quota" if quota(out) else "transport"
         exhausted=reason=="transport" and execution_mode(self.s)!="AUTO_HYBRID" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
@@ -344,10 +382,11 @@ class Runner:
             if self.s.meta("paused")=="1":self.s.setmeta("status","PAUSED");self.stop.wait(self.cfg["loop_seconds"]);continue
             try:
                 caps=self.capabilities();self.s.setmeta("capabilities",jd(caps))
-                j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
+                scheduler_policy=self.scheduler_policy()
+                j=self.s.pick(caps,scheduler_policy)
                 if not j and self.mission:
-                    replenish_backlog(self.s,self.mission,caps)
-                    j=self.s.pick(caps,self.mission.get("schedulerPolicy"))
+                    replenish_backlog(self.s,self.mission,caps,scheduler_policy)
+                    j=self.s.pick(caps,scheduler_policy)
                 if not j:
                     self.s.setmeta("status","DEGRADED" if caps["CODEX"]!="AVAILABLE" else "IDLE")
                     self.s.stop_wait_diagnostic(caps,self.mission)
@@ -640,7 +679,7 @@ class H(BaseHTTPRequestHandler):
             try:caps=json.loads(a.s.meta("capabilities") or "{}")
             except:caps={}
             current=next((x for x in a.s.jobs() if x["id"]==(a.s.meta("current_job_id") or "")),None)
-            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),"codex_cooldown":capability_status(a.s,"CODEX"),**o});return
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),"codex_cooldown":capability_status(a.s,"CODEX"),"codex_budget":json.loads(a.s.meta("codex.budget") or "null"),**o});return
         if self.path=="/api/jobs":
             jobs=a.s.jobs()
             for job in jobs:job["product"]=job_product(job);job["executor"]="CODEX" if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else job_executor(job)
