@@ -31,4 +31,11 @@ describe("Cognitive Load Guard",()=>{
       expect(()=>buildAttentionDigest({now:"2026-10-01T12:00:00+03:00",policy:{...valid,dueSoonHours:value},items:[]})).toThrow("Invalid attention load policy");
     }
   });
+  it("rejects non-finite maxVisible instead of silently hiding every attention item",()=>{
+    const input={now:"2026-10-01T12:00:00+03:00",items:[item("missed",{status:"missed_time"})]};
+    for(const maxVisible of [Number.NaN,Number.POSITIVE_INFINITY,Number.NEGATIVE_INFINITY]){
+      expect(()=>buildAttentionDigest({...input,maxVisible})).toThrow("Invalid maxVisible");
+    }
+    expect(buildAttentionDigest({...input,maxVisible:0}).visible).toEqual([]);
+  });
 });
