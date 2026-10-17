@@ -71,4 +71,30 @@ describe("DiveM strategy client adapter", () => {
       }),
     ).rejects.toThrow("confidence");
   });
+
+  it.each([
+    ["notes", { notes: null }],
+    ["revision_suggestions", { revision_suggestions: { text: "unsafe" } }],
+  ])("fails closed when provider %s is not an array", async (field, malformed) => {
+    const client = new DiveMStrategyClient({
+      assessContent: async () => ({
+        fit: "mixed",
+        notes: [],
+        weak_transition: null,
+        revision_suggestions: [],
+        confidence: 0,
+        evidence_state: "insufficient",
+        ...malformed,
+      }) as any,
+    });
+
+    await expect(client.assessContent({
+      profileId: "personal",
+      projectId: "project-1",
+      assetIds: [],
+      channel: "instagram",
+      goal: "test",
+      currentFocus: [],
+    })).rejects.toThrow(`${field} must be an array`);
+  });
 });
