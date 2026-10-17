@@ -34,6 +34,11 @@ def validate_test_integrity(diff:str):
         if line.startswith("-") and re.search(r"\b(?:it|test)\s*\(|\bexpect\s*\(",line[1:]):removed.append(line[1:].strip())
     if removed:raise LocalCodingError("local candidate removed or rewrote existing tests/assertions")
 
+def validate_required_changes(changed_files:list[str],required_files:list[str]):
+    changed={path.replace("\\","/") for path in changed_files}
+    missing=[path for path in required_files if path.replace("\\","/") not in changed]
+    if missing:raise LocalCodingError("local candidate did not change required evidence files: "+", ".join(missing))
+
 def order_checks(commands:list[str],changed_files:list[str])->list[str]:
     """Run static diagnostics before runtime tests when a test file changed."""
     if not any(re.search(r"(?:^|/)[^/]+\.(?:test|spec)\.(?:ts|tsx|js|jsx|py)$",path.replace("\\","/")) for path in changed_files):

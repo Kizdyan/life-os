@@ -4,7 +4,7 @@ import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset",r"\b429\b")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
@@ -80,6 +80,13 @@ def set_execution_mode(store,mode):
         store.setmeta("capability.CODEX",jd(state))
     store.event(None,"EXECUTION_MODE_CHANGED",mode,{"previous":previous,"mode":mode})
     return mode
+def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
+    path=Path(configured).expanduser() if configured else root/"planner-registry.v1.json"
+    if not path.is_absolute():path=(root/path).resolve()
+    if not path.exists():return mission
+    data=json.loads(path.read_text());items=data if isinstance(data,list) else data.get("items",[])
+    if not isinstance(items,list):raise ValueError("planner registry items must be a list")
+    return {**mission,"plannerRegistry":items,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
 def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE") in (("AVAILABLE","PROBE_DUE") if x=="CODEX" else ("AVAILABLE",)) for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
@@ -106,6 +113,20 @@ def replenish_backlog(store,mission,capabilities=None):
         if item["id"] in by_id:continue
         store.add(item["title"],item.get("kind","shell"),item.get("payload",{}),int(item.get("priority",100)),item["id"]);added+=1
     if added:return added
+    # A registry item is a version-scoped, evidence-bearing requirement, not a
+    # generated activity placeholder. Seed at most one independently runnable
+    # item per idle cycle and never reuse an existing durable id.
+    states={j["id"]:j["state"] for j in store.jobs(10000)}
+    registry=sorted(mission.get("plannerRegistry",[]),key=lambda item:(int(item.get("priority",100)),str(item.get("id",""))))
+    for item in registry:
+        required=(item.get("id"),item.get("title"),item.get("sourceRequirement"),item.get("targetVersion"),item.get("acceptance"))
+        if item.get("status","ACTIVE")!="ACTIVE" or not all(required) or item["id"] in by_id:continue
+        payload={**item.get("payload",{}),"planner_source_requirement":item["sourceRequirement"],"target_version":item["targetVersion"],"acceptance":item["acceptance"]}
+        probe={"id":item["id"],"state":"QUEUED","kind":item.get("kind","codex"),"payload":payload}
+        if eligibility_reasons(probe,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"},states):continue
+        store.add(item["title"],item.get("kind","codex"),payload,int(item.get("priority",100)),item["id"])
+        store.event(item["id"],"PLANNER_SEEDED",item["sourceRequirement"],{"target_version":item["targetVersion"],"product":job_product(probe)})
+        return 1
     roadmaps=[j for j in store.jobs(10000) if re.fullmatch(r"ROADMAP-\d+",j["id"])]
     last=max(roadmaps,key=lambda j:int(j["id"].split("-")[-1])) if roadmaps else None
     # Never manufacture duplicates of an unresolved continuation. Failed
@@ -473,14 +494,17 @@ class Runner:
                     if iteration>=max_repairs:p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local QA repair limit reached");return
                     continue
                 changed=self.git(wt,["diff","--name-only"]).splitlines();validate_changed_paths(changed,p["allowed_files"])
+                contract_failure=None
+                try:validate_required_changes(changed,p.get("required_changed_files",[]))
+                except LocalCodingError as exc:contract_failure={"command":"candidate evidence contract","exit":1,"output":str(exc)}
                 diff=self.git(wt,["diff","--no-ext-diff"]);validate_test_integrity(diff)
                 fingerprint=diff_fingerprint(diff);attempt.update({"diff_sha256":fingerprint,"changed_files":changed,"diff_tail":safe_tail(diff,8000)})
                 if fingerprint in seen_fingerprints:
                     attempt["failure"]={"kind":"REPEATED_PATCH","command":"candidate diff fingerprint","exit":1,"output":"local model repeated an identical candidate patch"};evidence.append(attempt)
                     p["local_evidence"]=evidence;self.s.payload(j["id"],p);self.s.state(j["id"],"FAILED","local model repeated identical repair");return
                 seen_fingerprints.add(fingerprint)
-                checks=[];failed=None
-                for raw_test in order_checks(p.get("test_commands") or self.cfg["test_commands"],changed):
+                checks=[];failed=contract_failure
+                for raw_test in ([] if failed else order_checks(p.get("test_commands") or self.cfg["test_commands"],changed)):
                     c,o=self.cmd(["bash","-lc",str(raw_test)],wt);checks.append({"command":str(raw_test),"exit":c,"tail":safe_tail(o,3000)})
                     self.s.event(j["id"],"LOCAL_QA",str(raw_test),checks[-1])
                     if c:failed={"command":str(raw_test),"exit":c,"output":safe_tail(o,6000)};break
@@ -643,7 +667,8 @@ def main():
     cp=Path(a.config).resolve();cfg=json.loads(cp.read_text());root=cp.parent
     for k in ("db_path","repo_path","worktree_root","mission_path"):
         q=Path(cfg[k]).expanduser();cfg[k]=str(q if q.is_absolute() else (root/q).resolve())
-    mp=Path(cfg["mission_path"]);cfg["_mission"]=json.loads(mp.read_text()) if mp.exists() else {}
+    mp=Path(cfg["mission_path"]);mission=json.loads(mp.read_text()) if mp.exists() else {}
+    cfg["_mission"]=load_planner_registry(root,mission,cfg.get("planner_registry_path"))
     cfg["loop_seconds"]=max(5,int(cfg.get("loop_seconds",15)));cfg["codex_retry_seconds"]=max(300,int(cfg.get("codex_retry_seconds",1800)));cfg["command_timeout_seconds"]=max(60,int(cfg.get("command_timeout_seconds",7200)))
     if a.seed and a.seed_only:
         store=Store(Path(cfg["db_path"]))

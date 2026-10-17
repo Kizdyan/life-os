@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "policy": {
+    "source": "https://github.com/Kizdyan/life-os/issues/86#issuecomment-6232676684",
+    "seedAtMostOnePerIdleCycle": true,
+    "deduplicateByDurableJobId": true,
+    "requireSourceTargetAndAcceptance": true,
+    "doNotFabricateWork": true
+  },
+  "targetVersions": {
+    "LIFE_OS": "autonomous-supervisor-m1",
+    "PERSONA": "first-real-usable-persona",
+    "DIVE_M": "personal-strategy-foundation"
+  },
+  "items": [
+    {
+      "id": "M1-LIFE-ATTENTION-POLICY-001",
+      "status": "ACTIVE",
+      "title": "Correct non-finite attention policy with executable boundary evidence",
+      "kind": "local_ai",
+      "priority": 40,
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE",
+      "targetVersion": "autonomous-supervisor-m1",
+      "acceptance": [
+        "NaN and positive or negative Infinity in every numeric policy field are rejected",
+        "mediumAt equal to highAt remains valid as required by the existing contract",
+        "the implementation and focused regression test both change",
+        "focused tests, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": [
+          "packages/core/src/attention-load.ts",
+          "packages/core/src/attention-load.test.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/attention-load.ts",
+          "packages/core/src/attention-load.test.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Fix the observed AttentionLoadPolicy validation defect. Add executable boundary tests for every non-finite numeric field and preserve the existing valid equality boundary mediumAt === highAt. Do not weaken or remove existing tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "M2-PERSONA-SEMANTIC-GATES-001",
+      "status": "PLANNED",
+      "title": "Reject misleading Persona semantic QA fixtures",
+      "kind": "codex",
+      "priority": 50,
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": ["zero-confidence fixtures use actual zero confidence", "removed old assertions fail acceptance", "developer and critic evidence are distinct"],
+      "payload": {"product": "PERSONA", "workstream": "QUALITY_COURT", "risk": 2, "requires": ["CODEX", "TESTS"]}
+    },
+    {
+      "id": "M2-DIVEM-BOUNDARY-QA-001",
+      "status": "PLANNED",
+      "title": "Harden DiveM strategy response boundaries",
+      "kind": "local_ai",
+      "priority": 60,
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
+      "targetVersion": "personal-strategy-foundation",
+      "acceptance": ["malformed provider arrays fail closed", "confidence boundaries are executable", "existing mapping contract remains intact"],
+      "payload": {"product": "DIVE_M", "workstream": "DIVE_M_PERSONAL", "risk": 1, "requires": ["LOCAL_AI", "TESTS"]}
+    },
+    {
+      "id": "M3-IPHONE-COMMAND-CENTER-001",
+      "status": "PLANNED",
+      "title": "Private remote truthful iPhone Command Center",
+      "kind": "codex",
+      "priority": 70,
+      "sourceRequirement": "M3_MOBILE_TRUTHFUL_STATUS",
+      "targetVersion": "autonomous-supervisor-m3",
+      "acceptance": ["private authenticated HTTPS", "offline last-known state remains available", "no public local control endpoint"],
+      "payload": {"product": "SHARED", "workstream": "AUTONOMOUS_RUNTIME", "risk": 3, "requires": ["CODEX", "NETWORK"]}
+    },
+    {
+      "id": "M4-SUSTAINED-AUTONOMY-001",
+      "status": "PLANNED",
+      "title": "Sustained autonomy simulator and unattended acceptance",
+      "kind": "codex",
+      "priority": 80,
+      "sourceRequirement": "M4_SUSTAINED_ACCEPTANCE",
+      "targetVersion": "autonomous-supervisor-m4",
+      "acceptance": ["accelerated deterministic scenarios pass", "real bounded unattended evidence is separate", "accepted product outcomes are reported"],
+      "payload": {"product": "SHARED", "workstream": "AUTONOMOUS_RUNTIME", "risk": 2, "requires": ["CODEX", "TESTS"]}
+    }
+  ]
+}

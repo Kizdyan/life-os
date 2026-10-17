@@ -4,8 +4,8 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
+from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -81,6 +81,36 @@ class T(unittest.TestCase):
   self.s.state("P1","READY");self.assertEqual(self.s.pick()["id"],"P2")
   self.s.state("P2","READY");self.assertEqual(replenish_backlog(self.s,mission),1)
   self.assertTrue(self.s.pick()["id"].startswith("ROADMAP-"))
+ def test_planner_registry_seeds_known_independent_work_when_codex_queue_is_blocked(self):
+  self.s.add("blocked","codex",{"product":"PERSONA"},1,"BLOCKED")
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  mission={"plannerRegistry":[{"id":"LIFE-REQ-1","title":"Fix real boundary","kind":"local_ai","priority":5,"sourceRequirement":"REQ-LIFE-1","targetVersion":"life-next","acceptance":["boundary rejects invalid input"],"payload":{"product":"LIFE_OS","risk":1,"requires":["LOCAL_AI"]}}]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  seeded=next(j for j in self.s.jobs() if j["id"]=="LIFE-REQ-1")
+  self.assertEqual(seeded["payload"]["planner_source_requirement"],"REQ-LIFE-1")
+  self.assertEqual(self.s.pick(caps)["id"],"LIFE-REQ-1")
+ def test_planner_registry_is_deduplicated_and_refuses_unverifiable_items(self):
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  valid={"id":"DIVE-REQ-1","title":"Useful DiveM guard","kind":"shell","priority":5,"sourceRequirement":"REQ-DIVE-1","targetVersion":"divem-next","acceptance":["real assertion"],"payload":{"product":"DIVE_M","requires":["SHELL"]}}
+  invalid={"id":"FAKE-1","title":"activity","kind":"shell","priority":1,"payload":{"product":"LIFE_OS","requires":["SHELL"]}}
+  mission={"plannerRegistry":[invalid,valid]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  self.s.state("DIVE-REQ-1","READY")
+  self.assertEqual(replenish_backlog(self.s,mission,caps),0)
+  self.assertEqual([j["id"] for j in self.s.jobs()].count("DIVE-REQ-1"),1)
+  self.assertNotIn("FAKE-1",[j["id"] for j in self.s.jobs()])
+ def test_planner_registry_skips_unready_dependency_and_selects_other_product(self):
+  self.s.add("blocked dependency","codex",{},1,"DEP")
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  mission={"plannerRegistry":[
+   {"id":"PERSONA-NEXT","title":"blocked","kind":"shell","priority":1,"sourceRequirement":"P1","targetVersion":"persona-next","acceptance":["x"],"payload":{"product":"PERSONA","requires":["SHELL"],"dependencies":["DEP"]}},
+   {"id":"LIFE-NEXT","title":"independent","kind":"shell","priority":2,"sourceRequirement":"L1","targetVersion":"life-next","acceptance":["x"],"payload":{"product":"LIFE_OS","requires":["SHELL"]}}]}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  self.assertIn("LIFE-NEXT",[j["id"] for j in self.s.jobs()]);self.assertNotIn("PERSONA-NEXT",[j["id"] for j in self.s.jobs()])
+ def test_external_planner_registry_keeps_mission_as_canonical_base(self):
+  root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"items":[{"id":"X"}]}))
+  loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})
+  self.assertEqual(loaded["mission"],"canonical");self.assertEqual(loaded["backlog"],[1]);self.assertEqual(loaded["plannerRegistry"],[{"id":"X"}])
  def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
   self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}}
@@ -321,6 +351,9 @@ class T(unittest.TestCase):
  def test_local_low_risk_candidate_cannot_delete_existing_tests_or_assertions(self):
   with self.assertRaises(LocalCodingError):validate_test_integrity('-  it("keeps behavior",()=>{\n-    expect(value).toBe(1);\n')
   validate_test_integrity('+  it("rejects bad input",()=>{ expect(run()).toThrow(); });\n')
+ def test_local_candidate_must_change_declared_evidence_files(self):
+  validate_required_changes(["a.ts","a.test.ts"],["a.test.ts"])
+  with self.assertRaisesRegex(LocalCodingError,"required evidence files"):validate_required_changes(["a.ts"],["a.test.ts"])
  def test_local_repair_prompt_contains_structured_diagnostic(self):
   root=Path(self.d.name);(root/"a.ts").write_text("export const a=1;\n")
   prompt=build_prompt({"goal":"fix","acceptance":[],"allowed_files":["a.ts"],"repair_context":{"kind":"TYPECHECK","output":"a.ts(1,1): error TS1","locations":[]}},root)
