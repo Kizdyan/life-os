@@ -11,42 +11,64 @@
     {
       "id": "M1",
       "status": "ACCEPTED",
-      "evidenceJobs": ["M1-LIFE-ATTENTION-POLICY-003"],
+      "evidenceJobs": [
+        "M1-LIFE-ATTENTION-POLICY-003"
+      ],
       "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE"
     },
     {
       "id": "M1.5",
       "status": "APPROVED",
-      "dependsOn": ["M1"],
-      "evidenceJobs": ["M2-DIVEM-BOUNDARY-QA-001"],
+      "dependsOn": [
+        "M1"
+      ],
+      "evidenceJobs": [
+        "M2-DIVEM-BOUNDARY-QA-001"
+      ],
       "sourceRequirement": "MILESTONE_ORCHESTRATOR_CONTINUITY"
     },
     {
       "id": "M2A",
       "status": "APPROVED",
-      "dependsOn": ["M1.5"],
-      "evidenceJobs": ["M2A-BUDGET-MANAGER-ACCEPTANCE-001"],
+      "dependsOn": [
+        "M1.5"
+      ],
+      "evidenceJobs": [
+        "M2A-BUDGET-MANAGER-ACCEPTANCE-001"
+      ],
       "sourceRequirement": "CODEX_BUDGET_MANAGER"
     },
     {
       "id": "M2B",
       "status": "PLANNED",
-      "dependsOn": ["M2A"],
-      "evidenceJobs": ["M2-PERSONA-SEMANTIC-GATES-001"],
+      "dependsOn": [
+        "M2A"
+      ],
+      "evidenceJobs": [
+        "M2-PERSONA-SEMANTIC-GATES-001"
+      ],
       "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE"
     },
     {
       "id": "M3",
       "status": "PLANNED",
-      "dependsOn": ["M2B"],
-      "evidenceJobs": ["M3-IPHONE-COMMAND-CENTER-001"],
+      "dependsOn": [
+        "M2B"
+      ],
+      "evidenceJobs": [
+        "M3-IPHONE-COMMAND-CENTER-001"
+      ],
       "sourceRequirement": "M3_MOBILE_TRUTHFUL_STATUS"
     },
     {
       "id": "M4",
       "status": "PLANNED",
-      "dependsOn": ["M3"],
-      "evidenceJobs": ["M4-SUSTAINED-AUTONOMY-001"],
+      "dependsOn": [
+        "M3"
+      ],
+      "evidenceJobs": [
+        "M4-SUSTAINED-AUTONOMY-001"
+      ],
       "sourceRequirement": "M4_SUSTAINED_ACCEPTANCE"
     }
   ],
@@ -74,7 +96,12 @@
         "product": "LIFE_OS",
         "workstream": "AUTONOMOUS_RUNTIME",
         "risk": 1,
-        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
         "allowed_files": [
           "packages/core/src/attention-load.ts",
           "packages/core/src/attention-load.test.ts"
@@ -110,9 +137,18 @@
         "product": "LIFE_OS",
         "workstream": "AUTONOMOUS_RUNTIME",
         "risk": 1,
-        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
-        "allowed_files": ["packages/core/src/attention-load.ts"],
-        "required_changed_files": ["packages/core/src/attention-load.ts"],
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
         "max_repairs": 2,
         "goal": "Make the existing independent AttentionLoadPolicy boundary regression pass by changing only the implementation. Preserve the documented valid threshold relationship and all existing behavior. Do not edit tests.",
         "test_commands": [
@@ -143,9 +179,18 @@
         "product": "LIFE_OS",
         "workstream": "AUTONOMOUS_RUNTIME",
         "risk": 1,
-        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
-        "allowed_files": ["packages/core/src/attention-load.ts"],
-        "required_changed_files": ["packages/core/src/attention-load.ts"],
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
         "max_repairs": 1,
         "goal": "Change only AttentionLoadPolicy validation. Use Number.isFinite for mediumAt, highAt and dueSoonHours so NaN and both infinities fail closed. Preserve the existing lower-bound and threshold-order checks, including the valid equality mediumAt === highAt. Do not edit selection logic or tests.",
         "test_commands": [
@@ -164,8 +209,20 @@
       "priority": 50,
       "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
       "targetVersion": "first-real-usable-persona",
-      "acceptance": ["zero-confidence fixtures use actual zero confidence", "removed old assertions fail acceptance", "developer and critic evidence are distinct"],
-      "payload": {"product": "PERSONA", "workstream": "QUALITY_COURT", "risk": 2, "requires": ["CODEX", "TESTS"]}
+      "acceptance": [
+        "zero-confidence fixtures use actual zero confidence",
+        "removed old assertions fail acceptance",
+        "developer and critic evidence are distinct"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "QUALITY_COURT",
+        "risk": 2,
+        "requires": [
+          "CODEX",
+          "TESTS"
+        ]
+      }
     },
     {
       "id": "M2-DIVEM-BOUNDARY-QA-001",
@@ -187,9 +244,18 @@
         "product": "DIVE_M",
         "workstream": "DIVE_M_PERSONAL",
         "risk": 1,
-        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
-        "allowed_files": ["packages/core/src/divem-strategy-client.ts"],
-        "required_changed_files": ["packages/core/src/divem-strategy-client.ts"],
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
         "max_repairs": 2,
         "goal": "Change only DiveMStrategyClient provider-response validation. Before mapping, fail closed with an explicit '<field> must be an array' error when notes or revision_suggestions is not an array. Preserve request mapping, valid confidence boundaries 0 and 1, and all existing behavior. Do not edit tests.",
         "test_commands": [
@@ -208,8 +274,20 @@
       "priority": 70,
       "sourceRequirement": "M3_MOBILE_TRUTHFUL_STATUS",
       "targetVersion": "autonomous-supervisor-m3",
-      "acceptance": ["private authenticated HTTPS", "offline last-known state remains available", "no public local control endpoint"],
-      "payload": {"product": "SHARED", "workstream": "AUTONOMOUS_RUNTIME", "risk": 3, "requires": ["CODEX", "NETWORK"]}
+      "acceptance": [
+        "private authenticated HTTPS",
+        "offline last-known state remains available",
+        "no public local control endpoint"
+      ],
+      "payload": {
+        "product": "SHARED",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 3,
+        "requires": [
+          "CODEX",
+          "NETWORK"
+        ]
+      }
     },
     {
       "id": "M2A-BUDGET-MANAGER-ACCEPTANCE-001",
@@ -230,7 +308,10 @@
         "product": "SHARED",
         "workstream": "AUTONOMOUS_RUNTIME",
         "risk": 0,
-        "requires": ["SHELL", "TESTS"],
+        "requires": [
+          "SHELL",
+          "TESTS"
+        ],
         "command": "python3 -m unittest tools.autonomous_supervisor.tests.test_codex_budget && python3 -m unittest discover -s tools/autonomous_supervisor/tests -p 'test_*.py'"
       }
     },
@@ -243,8 +324,99 @@
       "priority": 80,
       "sourceRequirement": "M4_SUSTAINED_ACCEPTANCE",
       "targetVersion": "autonomous-supervisor-m4",
-      "acceptance": ["accelerated deterministic scenarios pass", "real bounded unattended evidence is separate", "accepted product outcomes are reported"],
-      "payload": {"product": "SHARED", "workstream": "AUTONOMOUS_RUNTIME", "risk": 2, "requires": ["CODEX", "TESTS"]}
+      "acceptance": [
+        "accelerated deterministic scenarios pass",
+        "real bounded unattended evidence is separate",
+        "accepted product outcomes are reported"
+      ],
+      "payload": {
+        "product": "SHARED",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 2,
+        "requires": [
+          "CODEX",
+          "TESTS"
+        ]
+      }
+    },
+    {
+      "id": "P0-QWEN-DIVEM-STRING-ARRAYS-001",
+      "status": "ACTIVE",
+      "title": "Reject non-string DiveM provider array entries",
+      "kind": "local_ai",
+      "priority": 61,
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
+      "targetVersion": "personal-strategy-foundation",
+      "acceptance": [
+        "the pre-existing malformed element regression changes from RED to GREEN",
+        "notes and revision_suggestions reject every non-string entry",
+        "valid string arrays and existing mapping remain unchanged",
+        "focused tests, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "risk": 1,
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Change only DiveMStrategyClient provider-response validation. After confirming notes and revision_suggestions are arrays, fail closed with an explicit <field> entries must be strings error unless every entry is a string. Preserve confidence validation, valid response mapping and all existing behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "P0-QWEN-LIFE-MAXVISIBLE-001",
+      "status": "ACTIVE",
+      "title": "Reject non-finite Attention Digest visibility limits",
+      "kind": "local_ai",
+      "priority": 62,
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE",
+      "targetVersion": "autonomous-supervisor-m1",
+      "acceptance": [
+        "the pre-existing maxVisible regression changes from RED to GREEN",
+        "NaN and both infinities fail closed with Invalid maxVisible",
+        "zero remains a valid explicit visibility limit",
+        "attention ordering and existing policy behavior remain unchanged",
+        "focused tests, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 1,
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/attention-load.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Change only buildAttentionDigest maxVisible validation. If maxVisible is provided and is not finite, fail closed with Error Invalid maxVisible before slicing. Preserve maxVisible zero, existing floor and lower-bound behavior, ordering, policy validation and all other behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
     }
   ]
 }
