@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time,uuid,fcntl
+import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time,uuid,fcntl,selectors
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -456,6 +456,95 @@ class Runner:
             os.killpg(self.proc.pid,signal.SIGKILL);out,_=self.proc.communicate();self.proc=None
             raise TimeoutError("command timed out")
         code=self.proc.returncode;self.proc=None;return code,out or ""
+    def local_model_cmd(self,cmd,cwd,prompt,job_id,iteration=0):
+        """Bounded Ollama stdout reader. Never use the general build/test timeout.
+
+        A running process is not proof of model progress.  Emit elapsed-time and
+        output-byte diagnostics, and fail closed on nonterminating/repetitive output.
+        """
+        configured=self.cfg.get("local_ai_repair_timeout_seconds" if iteration else "local_ai_timeout_seconds",300 if iteration else 480)
+        deadline_seconds=max(5.0,min(1800.0,float(configured)))
+        output_limit=max(65536,min(8388608,int(self.cfg.get("local_ai_max_output_bytes",1048576))))
+        progress_interval=max(1.0,min(120.0,float(self.cfg.get("local_ai_progress_seconds",30))))
+        started=time.monotonic()
+        proc=subprocess.Popen(cmd,cwd=cwd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT,start_new_session=True)
+        self.proc=proc
+        output=bytearray()
+        selector=selectors.DefaultSelector()
+        reason=None
+        try:
+            self.s.event(job_id,"LOCAL_AI_STARTED","model request",{"iteration":iteration,
+                "deadline_seconds":deadline_seconds,"max_output_bytes":output_limit})
+            prompt_bytes=str(prompt).encode("utf-8")
+            written=0
+            assert proc.stdout is not None
+            selector.register(proc.stdout,selectors.EVENT_READ)
+            if proc.stdin is not None:
+                if prompt_bytes:
+                    selector.register(proc.stdin,selectors.EVENT_WRITE)
+                else:
+                    proc.stdin.close()
+            next_progress=started+progress_interval
+            while selector.get_map():
+                elapsed=time.monotonic()-started
+                if elapsed>=deadline_seconds:
+                    reason="MODEL_TIMEOUT";break
+                if self.stop.is_set():
+                    reason="MODEL_SUPERVISOR_STOP";break
+                for key,_ in selector.select(min(1.0,max(0.0,deadline_seconds-elapsed))):
+                    if key.events==selectors.EVENT_WRITE:
+                        try:written+=os.write(key.fileobj.fileno(),prompt_bytes[written:written+16384])
+                        except (BrokenPipeError,ConnectionResetError):written=len(prompt_bytes)
+                        if written>=len(prompt_bytes):
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                        continue
+                    chunk=os.read(key.fileobj.fileno(),65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    output.extend(chunk)
+                    if len(output)>output_limit:
+                        reason="MODEL_OUTPUT_LIMIT";break
+                    if self._repetitive_model_output(output):
+                        reason="MODEL_REPETITIVE_OUTPUT";break
+                if reason:break
+                current=time.monotonic()
+                if current>=next_progress:
+                    self.s.event(job_id,"LOCAL_AI_PROGRESS","model request in progress",
+                        {"iteration":iteration,"elapsed_seconds":round(current-started,1),
+                         "output_bytes":len(output),"deadline_seconds":deadline_seconds})
+                    next_progress=current+progress_interval
+            if reason:
+                self.s.event(job_id,"LOCAL_AI_GUARD",reason,{"iteration":iteration,
+                    "elapsed_seconds":round(time.monotonic()-started,1),"output_bytes":len(output)})
+                raise RuntimeError("local AI bounded execution: "+reason)
+            return proc.wait(timeout=5),output.decode("utf-8",errors="replace")
+        finally:
+            selector.close()
+            if proc.poll() is None:
+                try:os.killpg(proc.pid,signal.SIGTERM)
+                except ProcessLookupError:pass
+                try:proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    try:os.killpg(proc.pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    proc.wait(timeout=5)
+            if proc.stdout is not None:proc.stdout.close()
+            if proc.stdin is not None and not proc.stdin.closed:proc.stdin.close()
+            if self.proc is proc:self.proc=None
+
+    @staticmethod
+    def _repetitive_model_output(output):
+        if len(output)<12000:return False
+        sample=output[-16000:].decode("utf-8",errors="replace")
+        sample=re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]","",sample)
+        compact=re.sub(r"\s+","",sample)
+        for size in range(8,129):
+            if len(compact)>=size*12 and compact[-size*12:]==compact[-size:]*12:
+                return True
+        return False
     def git(self,cwd,args):
         cmd=["git","-c","credential.helper=","-c","credential.https://github.com.helper=!gh auth git-credential",*args]
         env={**os.environ,"GIT_TERMINAL_PROMPT":"0"}
@@ -586,7 +675,18 @@ class Runner:
             max_repairs=max(0,min(int(p.get("max_repairs",1)),2));evidence=[];repair_context=None;seen_fingerprints=set()
             for iteration in range(max_repairs+1):
                 task={**p,"repair_context":repair_context,"previous_attempts":[{"iteration":x["iteration"],"response_sha256":x["response_sha256"],"diff_sha256":x.get("diff_sha256"),"failure_kind":x.get("failure",{}).get("kind")} for x in evidence]}
-                prompt=build_prompt(task,wt);started=time.time();code,out=self.cmd(cmd,wt,prompt)
+                prompt=build_prompt(task,wt);started=time.time()
+                try:
+                    code,out=self.local_model_cmd(cmd,wt,prompt,j["id"],iteration)
+                except (RuntimeError,ValueError) as exc:
+                    # Model limits or malformed runtime configuration must not
+                    # trigger another unbounded repair of the same failed call.
+                    failure={"kind":"MODEL_RUNTIME","command":"local model execution guard",
+                             "exit":1,"output":safe_tail(str(exc),500)}
+                    attempt={"iteration":iteration,"failure":failure,"checks":[]}
+                    evidence.append(attempt);p["local_evidence"]=evidence;self.s.payload(j["id"],p)
+                    self.s.event(j["id"],"LOCAL_ATTEMPT","model execution aborted",attempt)
+                    self.s.state(j["id"],"FAILED",safe_tail(str(exc),500));return
                 self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"iteration":iteration,"duration_seconds":round(time.time()-started,2),"tail":safe_tail(out,1200)})
                 if code:raise RuntimeError("local AI exit "+str(code)+": "+safe_tail(out,650))
                 attempt={"iteration":iteration,"response_sha256":diff_fingerprint(out),"checks":[]}
@@ -627,7 +727,7 @@ class Runner:
             p["executor_used"]="LOCAL_AI";p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);p["changed_files"]=changed;p["local_evidence"]=evidence;p["local_model"]=self.cfg.get("local_ai_model");self.s.payload(j["id"],p)
             record_local_ai_success(self.s,j["id"]);self.s.state(j["id"],"LOCAL_VERIFIED");return
         prompt=("BOUNDED LOCAL TASK. Never access secrets, production, main, publishing, auth, or privacy architecture. "+str(p.get("prompt","")))[:6000]
-        code,out=self.cmd(cmd,wt,prompt);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":safe_tail(out,3000)})
+        code,out=self.local_model_cmd(cmd,wt,prompt,j["id"]);self.s.event(j["id"],"LOCAL_AI_EXIT",str(code),{"tail":safe_tail(out,3000)})
         if code:
             raise RuntimeError("local AI exit "+str(code)+": "+safe_tail(out,650))
         target=Path(p.get("output_path") or ("artifacts/local-ai/"+j["id"]+".md"))
