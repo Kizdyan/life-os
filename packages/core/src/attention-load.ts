@@ -8,7 +8,7 @@ export const DEFAULT_ATTENTION_LOAD_POLICY:AttentionLoadPolicy={mediumAt:3,highA
 
 export function buildAttentionDigest(input:{items:LifeItem[];now:string;maxVisible?:number;policy?:AttentionLoadPolicy}):AttentionDigest{
   const policy=input.policy??DEFAULT_ATTENTION_LOAD_POLICY;
-  if(policy.mediumAt<1||policy.highAt<policy.mediumAt||policy.dueSoonHours<0) throw new Error("Invalid attention load policy");
+  if(!Number.isFinite(policy.mediumAt) || policy.mediumAt < 1 || !Number.isFinite(policy.highAt) || policy.highAt < policy.mediumAt || !Number.isFinite(policy.dueSoonHours) || policy.dueSoonHours < 0) throw new Error("Invalid attention load policy");
   const now=Date.parse(input.now); if(!Number.isFinite(now)) throw new Error("Invalid current time");
   const entries=input.items.map(item=>toEntry(item,now,policy)).filter((x):x is AttentionEntry=>x!==null).sort((a,b)=>b.priority-a.priority||(a.plannedStart??"~").localeCompare(b.plannedStart??"~")||a.itemId.localeCompare(b.itemId));
   const max=Math.max(0,Math.floor(input.maxVisible??5));
