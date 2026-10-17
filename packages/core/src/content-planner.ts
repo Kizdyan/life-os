@@ -96,15 +96,19 @@ function parsePlan(raw: unknown): PlannedContentDraft {
   if (!["9:16", "16:9", "1:1", "4:5"].includes(String(aspectRatio))) {
     throw new Error("Content planner returned invalid aspect ratio");
   }
+  const targetDurationMs = nullableNumber(
+    raw.targetDurationMs ?? raw.target_duration_ms,
+    "targetDurationMs",
+  );
+  if (targetDurationMs !== null && targetDurationMs <= 0) {
+    throw new Error("Content planner target duration must be positive");
+  }
 
   return {
     title: nullableString(raw.title),
     caption: nullableString(raw.caption),
     aspectRatio: aspectRatio as PlannedContentDraft["aspectRatio"],
-    targetDurationMs: nullableNumber(
-      raw.targetDurationMs ?? raw.target_duration_ms,
-      "targetDurationMs",
-    ),
+    targetDurationMs,
     hook: nullableString(raw.hook),
     clips: clipsRaw.map((item, index) => {
       const value = requireRecord(item, `clips[${index}]`);

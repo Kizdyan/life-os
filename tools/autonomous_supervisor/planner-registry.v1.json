@@ -730,7 +730,7 @@
     },
     {
       "id": "P0-QWEN-PERSONA-TARGET-DURATION-001",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
       "title": "Reject non-positive Persona target durations",
       "kind": "local_ai",
       "priority": 49,
