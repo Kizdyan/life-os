@@ -53,15 +53,61 @@
   },
   "qualityFirstAddendum": {
     "version": 1,
-    "continuousConveyors": ["DEVELOPMENT", "USER_WORK"],
-    "liveDataPolicy": {"isolatedFromDevelopmentAndTests": true, "developmentIsNeverLiveSourceOfTruth": true, "noDestructiveLiveTests": true},
-    "readyPolicy": {"requiresEvidenceProportionalToRisk": true, "missingEvidence": "UNKNOWN", "testPassAloneIsInsufficient": true},
-    "criticPolicy": {"verdicts": ["APPROVE", "REVISION_REQUIRED", "REJECT", "HUMAN_REQUIRED"], "mustTryToDisproveCorrectness": true},
-    "safeEvolutionPolicy": {"sequence": ["EXPAND", "MIGRATE_OR_DUAL_READ", "VERIFY", "CONTRACT_LATER"], "assumeOldClientsAndPendingOfflineMutations": true},
-    "releasePolicy": {"states": ["DEVELOPMENT_READY", "INTEGRATION_READY", "RELEASE_READY", "PRODUCTION_RELEASED"], "humanGateDoesNotFreezePortfolio": true, "rollbackAndMonitoringRequiredWhenRelevant": true},
-    "failureLearningPolicy": {"persistRootCauseAndRepairEvidence": true, "feedIntoPlanningTestsCriticsAndRelease": true},
-    "capabilityPolicy": {"codexUnavailableDoesNotMeanSystemUnavailable": true, "localAiSemanticReviewState": "LOCAL_READY_PENDING_CODEX_REVIEW", "fallbackDoesNotLowerQuality": true},
-    "humanInterruptionPolicy": {"onlyTrueHumanDependencies": true, "routineEngineeringIsAutonomous": true},
+    "continuousConveyors": [
+      "DEVELOPMENT",
+      "USER_WORK"
+    ],
+    "liveDataPolicy": {
+      "isolatedFromDevelopmentAndTests": true,
+      "developmentIsNeverLiveSourceOfTruth": true,
+      "noDestructiveLiveTests": true
+    },
+    "readyPolicy": {
+      "requiresEvidenceProportionalToRisk": true,
+      "missingEvidence": "UNKNOWN",
+      "testPassAloneIsInsufficient": true
+    },
+    "criticPolicy": {
+      "verdicts": [
+        "APPROVE",
+        "REVISION_REQUIRED",
+        "REJECT",
+        "HUMAN_REQUIRED"
+      ],
+      "mustTryToDisproveCorrectness": true
+    },
+    "safeEvolutionPolicy": {
+      "sequence": [
+        "EXPAND",
+        "MIGRATE_OR_DUAL_READ",
+        "VERIFY",
+        "CONTRACT_LATER"
+      ],
+      "assumeOldClientsAndPendingOfflineMutations": true
+    },
+    "releasePolicy": {
+      "states": [
+        "DEVELOPMENT_READY",
+        "INTEGRATION_READY",
+        "RELEASE_READY",
+        "PRODUCTION_RELEASED"
+      ],
+      "humanGateDoesNotFreezePortfolio": true,
+      "rollbackAndMonitoringRequiredWhenRelevant": true
+    },
+    "failureLearningPolicy": {
+      "persistRootCauseAndRepairEvidence": true,
+      "feedIntoPlanningTestsCriticsAndRelease": true
+    },
+    "capabilityPolicy": {
+      "codexUnavailableDoesNotMeanSystemUnavailable": true,
+      "localAiSemanticReviewState": "LOCAL_READY_PENDING_CODEX_REVIEW",
+      "fallbackDoesNotLowerQuality": true
+    },
+    "humanInterruptionPolicy": {
+      "onlyTrueHumanDependencies": true,
+      "routineEngineeringIsAutonomous": true
+    },
     "invariants": [
       "USER WORK DOES NOT STOP FOR DEVELOPMENT.",
       "DEVELOPMENT DOES NOT STOP BECAUSE THE USER IS USING THE PRODUCT.",
@@ -608,6 +654,111 @@
         ],
         "dependencies": [],
         "command": "set -e; if [ ! -x node_modules/.bin/vitest ] || [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ] || [ ! -d node_modules/ai ] || [ ! -d node_modules/@ai-sdk/gateway ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-save --package-lock=false --no-audit --no-fund; fi; fi; npm run web:build"
+      }
+    },
+    {
+      "id": "LOCAL-AUTO-STYLE-001",
+      "title": "Local regression style-memory",
+      "kind": "local_ai",
+      "priority": 70,
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "LOCAL_REGRESSION",
+        "risk": 1,
+        "requires": [
+          "LOCAL_AI"
+        ],
+        "local_model": "qwen2.5-coder:7b",
+        "base_ref": "3165269bd0f0ee167ddfd76da588b0fe5c57e1fe",
+        "branch": "auto/local-auto-style-001",
+        "allowed_files": [
+          "packages/core/src/style-memory.ts",
+          "packages/core/src/style-memory.test.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Read source and tests. Add at least two meaningful executable tests for existing behavior. Modify only the test file. Do not weaken or skip tests. If unable, fail honestly.",
+        "acceptance": [
+          "At least two genuine new test cases",
+          "Implementation file unchanged",
+          "Focused and full tests and typecheck pass"
+        ],
+        "test_commands": [
+          "git diff --quiet 3165269bd0f0ee167ddfd76da588b0fe5c57e1fe -- packages/core/src/style-memory.ts",
+          "test \"$(grep -oF \"it(\" packages/core/src/style-memory.test.ts | wc -l)\" -ge 4",
+          "TZ=UTC npm test -- --run packages/core/src/style-memory.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "LOCAL-AUTO-FORMAT-001",
+      "title": "Local regression format-memory",
+      "kind": "local_ai",
+      "priority": 70,
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "LOCAL_REGRESSION",
+        "risk": 1,
+        "requires": [
+          "LOCAL_AI"
+        ],
+        "local_model": "qwen2.5-coder:7b",
+        "base_ref": "3165269bd0f0ee167ddfd76da588b0fe5c57e1fe",
+        "branch": "auto/local-auto-format-001",
+        "allowed_files": [
+          "packages/core/src/format-memory.ts",
+          "packages/core/src/format-memory.test.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Read source and tests. Add at least two meaningful executable tests for existing behavior. Modify only the test file. Do not weaken or skip tests. If unable, fail honestly.",
+        "acceptance": [
+          "At least two genuine new test cases",
+          "Implementation file unchanged",
+          "Focused and full tests and typecheck pass"
+        ],
+        "test_commands": [
+          "git diff --quiet 3165269bd0f0ee167ddfd76da588b0fe5c57e1fe -- packages/core/src/format-memory.ts",
+          "test \"$(grep -oF \"it(\" packages/core/src/format-memory.test.ts | wc -l)\" -ge 5",
+          "TZ=UTC npm test -- --run packages/core/src/format-memory.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "LOCAL-AUTO-ERIKA-001",
+      "title": "Local regression erika-productivity",
+      "kind": "local_ai",
+      "priority": 70,
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "LOCAL_REGRESSION",
+        "risk": 1,
+        "requires": [
+          "LOCAL_AI"
+        ],
+        "local_model": "qwen2.5-coder:7b",
+        "base_ref": "3165269bd0f0ee167ddfd76da588b0fe5c57e1fe",
+        "branch": "auto/local-auto-erika-001",
+        "allowed_files": [
+          "packages/core/src/erika-productivity.ts",
+          "packages/core/src/erika-productivity.test.ts"
+        ],
+        "max_repairs": 2,
+        "goal": "Read source and tests. Add at least two meaningful executable tests for existing behavior. Modify only the test file. Do not weaken or skip tests. If unable, fail honestly.",
+        "acceptance": [
+          "At least two genuine new test cases",
+          "Implementation file unchanged",
+          "Focused and full tests and typecheck pass"
+        ],
+        "test_commands": [
+          "git diff --quiet 3165269bd0f0ee167ddfd76da588b0fe5c57e1fe -- packages/core/src/erika-productivity.ts",
+          "test \"$(grep -oF \"it(\" packages/core/src/erika-productivity.test.ts | wc -l)\" -ge 5",
+          "TZ=UTC npm test -- --run packages/core/src/erika-productivity.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
       }
     }
   ]
