@@ -7,6 +7,49 @@
     "requireSourceTargetAndAcceptance": true,
     "doNotFabricateWork": true
   },
+  "milestones": [
+    {
+      "id": "M1",
+      "status": "ACCEPTED",
+      "evidenceJobs": ["M1-LIFE-ATTENTION-POLICY-003"],
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE"
+    },
+    {
+      "id": "M1.5",
+      "status": "APPROVED",
+      "dependsOn": ["M1"],
+      "evidenceJobs": ["M2-DIVEM-BOUNDARY-QA-001"],
+      "sourceRequirement": "MILESTONE_ORCHESTRATOR_CONTINUITY"
+    },
+    {
+      "id": "M2A",
+      "status": "APPROVED",
+      "dependsOn": ["M1.5"],
+      "evidenceJobs": ["M2A-BUDGET-MANAGER-ACCEPTANCE-001"],
+      "sourceRequirement": "CODEX_BUDGET_MANAGER"
+    },
+    {
+      "id": "M2B",
+      "status": "PLANNED",
+      "dependsOn": ["M2A"],
+      "evidenceJobs": ["M2-PERSONA-SEMANTIC-GATES-001"],
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE"
+    },
+    {
+      "id": "M3",
+      "status": "PLANNED",
+      "dependsOn": ["M2B"],
+      "evidenceJobs": ["M3-IPHONE-COMMAND-CENTER-001"],
+      "sourceRequirement": "M3_MOBILE_TRUTHFUL_STATUS"
+    },
+    {
+      "id": "M4",
+      "status": "PLANNED",
+      "dependsOn": ["M3"],
+      "evidenceJobs": ["M4-SUSTAINED-AUTONOMY-001"],
+      "sourceRequirement": "M4_SUSTAINED_ACCEPTANCE"
+    }
+  ],
   "targetVersions": {
     "LIFE_OS": "autonomous-supervisor-m1",
     "PERSONA": "first-real-usable-persona",
@@ -114,6 +157,7 @@
     },
     {
       "id": "M2-PERSONA-SEMANTIC-GATES-001",
+      "milestone": "M2B",
       "status": "PLANNED",
       "title": "Reject misleading Persona semantic QA fixtures",
       "kind": "codex",
@@ -125,17 +169,39 @@
     },
     {
       "id": "M2-DIVEM-BOUNDARY-QA-001",
+      "milestone": "M1.5",
       "status": "PLANNED",
       "title": "Harden DiveM strategy response boundaries",
       "kind": "local_ai",
       "priority": 60,
       "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
       "targetVersion": "personal-strategy-foundation",
-      "acceptance": ["malformed provider arrays fail closed", "confidence boundaries are executable", "existing mapping contract remains intact"],
-      "payload": {"product": "DIVE_M", "workstream": "DIVE_M_PERSONAL", "risk": 1, "requires": ["LOCAL_AI", "TESTS"]}
+      "acceptance": [
+        "the pre-existing independent malformed-array regression changes from RED to GREEN",
+        "notes and revision_suggestions fail closed unless they are arrays",
+        "confidence 0 and 1 remain valid while non-finite or out-of-range confidence fails",
+        "existing request and response mapping remains intact",
+        "focused tests, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/divem-strategy-client.ts"],
+        "required_changed_files": ["packages/core/src/divem-strategy-client.ts"],
+        "max_repairs": 2,
+        "goal": "Change only DiveMStrategyClient provider-response validation. Before mapping, fail closed with an explicit '<field> must be an array' error when notes or revision_suggestions is not an array. Preserve request mapping, valid confidence boundaries 0 and 1, and all existing behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
     },
     {
       "id": "M3-IPHONE-COMMAND-CENTER-001",
+      "milestone": "M3",
       "status": "PLANNED",
       "title": "Private remote truthful iPhone Command Center",
       "kind": "codex",
@@ -146,7 +212,31 @@
       "payload": {"product": "SHARED", "workstream": "AUTONOMOUS_RUNTIME", "risk": 3, "requires": ["CODEX", "NETWORK"]}
     },
     {
+      "id": "M2A-BUDGET-MANAGER-ACCEPTANCE-001",
+      "milestone": "M2A",
+      "status": "PLANNED",
+      "title": "Verify Codex budget manager and Supervisor regressions",
+      "kind": "shell",
+      "priority": 65,
+      "sourceRequirement": "CODEX_BUDGET_MANAGER",
+      "targetVersion": "autonomous-supervisor-m2a",
+      "acceptance": [
+        "official rate-limit response is parsed without inference calls",
+        "LOCAL_ONLY performs zero Codex budget probes",
+        "weekly reserve and per-task estimates prevent over-budget Codex selection",
+        "Supervisor regression remains green"
+      ],
+      "payload": {
+        "product": "SHARED",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 0,
+        "requires": ["SHELL", "TESTS"],
+        "command": "python3 -m unittest tools.autonomous_supervisor.tests.test_codex_budget && python3 -m unittest discover -s tools/autonomous_supervisor/tests -p 'test_*.py'"
+      }
+    },
+    {
       "id": "M4-SUSTAINED-AUTONOMY-001",
+      "milestone": "M4",
       "status": "PLANNED",
       "title": "Sustained autonomy simulator and unattended acceptance",
       "kind": "codex",
