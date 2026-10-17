@@ -563,6 +563,35 @@
           "npm run typecheck"
         ]
       }
+    },
+    {
+      "id": "P0-QWEN-PERSONA-TIMELINE-002",
+      "status": "ACTIVE",
+      "title": "Apply minimal Persona temporal checks without restructuring",
+      "kind": "local_ai",
+      "priority": 49,
+      "sourceRequirement": "M2_INDEPENDENT_QUALITY_EVIDENCE",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": [
+        "the existing clip, caption and overlay temporal regression changes from RED to GREEN",
+        "the planner class, imports, mappings and helpers remain intact",
+        "only local range checks are added",
+        "focused regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "QUALITY_COURT",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/content-planner.ts"],
+        "required_changed_files": ["packages/core/src/content-planner.ts"],
+        "max_repairs": 1,
+        "goal": "Make a minimal edit inside the three existing parsePlan map callbacks only. In clips, store the parsed sourceStartMs and sourceEndMs numbers, throw Error containing range when end is not greater than start, then return the same fields. In captions do the same for startMs/endMs. In overlays store durationMs and throw Error containing duration when it is not positive. Do not change imports, StructuredContentPlanner, BASE_SYSTEM_PROMPT, helper functions, object shapes, audio, editorNotes, or any other code. Do not rewrite the file and do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/content-planner.test.ts",
+          "npm run typecheck"
+        ]
+      }
     }
   ]
 }
