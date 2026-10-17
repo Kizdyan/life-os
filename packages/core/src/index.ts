@@ -66,6 +66,7 @@ export * from './productivity-digest';
 export * from './behavior-experiment';
 
 export * from './media-brain';
+export * from './photo-edit-policy';
 export * from './reference-evidence';
 export * from './format-memory';
 export * from './personal-format-seed';
