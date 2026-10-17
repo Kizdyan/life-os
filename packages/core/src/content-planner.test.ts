@@ -93,6 +93,7 @@ describe("StructuredContentPlanner", () => {
     ["clip", { clips: [{ assetId: "asset-1", sourceStartMs: 1000, sourceEndMs: 1000, order: 1, reason: "invalid" }] }],
     ["caption", { captions: [{ startMs: 1200, endMs: 800, text: "invalid" }] }],
     ["overlay", { overlays: [{ atMs: 0, durationMs: 0, text: "invalid", role: "hook" }] }],
+    ["audio", { audio: [{ atMs: -1, kind: "voice", instruction: "invalid" }] }],
   ])("rejects invalid %s temporal ranges", async (_field, invalid) => {
     const planner = new StructuredContentPlanner({
       completeJson: async () => ({
