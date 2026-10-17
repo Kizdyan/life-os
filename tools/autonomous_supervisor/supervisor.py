@@ -366,7 +366,8 @@ class Runner:
         if isinstance(prior,dict) and prior.get("refreshedAt") and time.time()-float(prior["refreshedAt"])<refresh:return prior
         try:
             reader=self.cfg.get("codex_budget_reader")
-            result=reader() if callable(reader) else read_rate_limits(timeout=float(self.cfg.get("codex_budget_timeout_seconds",10)))
+            command=self.cfg.get("codex_budget_command")
+            result=reader() if callable(reader) else read_rate_limits(command=command,timeout=float(self.cfg.get("codex_budget_timeout_seconds",10)))
             refreshed=time.time();snapshot=normalize_rate_limits(result,refreshed)
             decision=evaluate_budget(snapshot,self.cfg.get("codex_budget_policy",{}),self.cfg.get("codex_default_estimate",{}),refreshed)
             state={**decision,"snapshot":snapshot,"refreshedAt":refreshed}

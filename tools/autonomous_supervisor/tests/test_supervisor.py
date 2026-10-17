@@ -492,4 +492,11 @@ class T(unittest.TestCase):
   self.assertEqual(runner.capabilities()["CODEX"],"AVAILABLE")
   self.s.add("small","codex",{"budgetEstimate":{"shortPercent":1,"weeklyPercent":1}},1,"C")
   self.assertEqual(self.s.pick(runner.capabilities(),runner.scheduler_policy())["id"],"C")
+ def test_budget_refresh_uses_configured_official_app_server_command(self):
+  set_execution_mode(self.s,"AUTO_HYBRID");configured=["/trusted/codex.exe","app-server","--listen","stdio://"]
+  result={"ordinaryUsageAllowed":True,"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":20,"windowDurationMins":300},"secondary":{"usedPercent":30,"windowDurationMins":10080}}}}
+  with patch("supervisor.read_rate_limits",return_value=result) as reader:
+   runner=Runner({"loop_seconds":1,"codex_budget_enabled":True,"codex_budget_refresh_seconds":0,"codex_budget_timeout_seconds":7,"codex_budget_command":configured,"codex_budget_policy":{}},self.s)
+   self.assertEqual(runner.refresh_codex_budget()["state"],"NORMAL")
+  reader.assert_called_once_with(command=configured,timeout=7.0)
 if __name__=="__main__":unittest.main()
