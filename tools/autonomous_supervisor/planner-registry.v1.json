@@ -227,7 +227,8 @@
     {
       "id": "M2-DIVEM-BOUNDARY-QA-001",
       "milestone": "M1.5",
-      "status": "PLANNED",
+      "status": "INTEGRATED",
+      "integratedSha": "6e312f9892eb39a53a3cb6ad385117e93e33ab78",
       "title": "Harden DiveM strategy response boundaries",
       "kind": "local_ai",
       "priority": 60,
@@ -671,7 +672,7 @@
     },
     {
       "id": "P0-QWEN-PERSONA-PHOTO-FIDELITY-003",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
       "replaces": ["P0-QWEN-PERSONA-PHOTO-FIDELITY-002"],
       "title": "Complete the typed Persona photo fidelity validator",
       "kind": "local_ai",
