@@ -51,7 +51,7 @@
     },
     {
       "id": "M1-LIFE-ATTENTION-POLICY-002",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
       "title": "Implement the independently specified attention policy boundary",
       "kind": "local_ai",
       "priority": 41,
@@ -72,6 +72,37 @@
         "required_changed_files": ["packages/core/src/attention-load.ts"],
         "max_repairs": 2,
         "goal": "Make the existing independent AttentionLoadPolicy boundary regression pass by changing only the implementation. Preserve the documented valid threshold relationship and all existing behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "M1-LIFE-ATTENTION-POLICY-003",
+      "status": "ACTIVE",
+      "title": "Reject non-finite attention policy values with the standard finite-number predicate",
+      "kind": "local_ai",
+      "priority": 42,
+      "sourceRequirement": "M1_CONTINUITY_USEFUL_LOCAL_CANDIDATE",
+      "targetVersion": "autonomous-supervisor-m1",
+      "acceptance": [
+        "the pre-existing independent regression test changes from RED to GREEN",
+        "Number.isFinite rejects NaN and positive or negative Infinity in every numeric policy field",
+        "mediumAt equal to highAt remains valid",
+        "unrelated attention selection behavior remains unchanged",
+        "full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "AUTONOMOUS_RUNTIME",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/attention-load.ts"],
+        "required_changed_files": ["packages/core/src/attention-load.ts"],
+        "max_repairs": 1,
+        "goal": "Change only AttentionLoadPolicy validation. Use Number.isFinite for mediumAt, highAt and dueSoonHours so NaN and both infinities fail closed. Preserve the existing lower-bound and threshold-order checks, including the valid equality mediumAt === highAt. Do not edit selection logic or tests.",
         "test_commands": [
           "TZ=UTC npm test -- --run packages/core/src/attention-load.test.ts",
           "TZ=UTC npm test -- --run",
