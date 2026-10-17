@@ -1,8 +1,10 @@
-import json,tempfile,time,unittest
+import json,os,tempfile,threading,time,unittest,urllib.request,urllib.error
+from http.server import ThreadingHTTPServer
+from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import HTML,Store,Runner,capability_status,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -13,6 +15,10 @@ class T(unittest.TestCase):
  def test_wait_until_quota_reset(self):
   self.s.add("x","shell",{"command":"true"},7,"J1");self.s.state("J1","WAITING_FOR_CODEX",not_before=time.time()+60);self.assertIsNone(self.s.pick())
  def test_quota_detection(self):self.assertTrue(quota("usage limit reached; reset later"))
+ def test_codex_zero_exit_with_limit_message_is_not_availability_proof(self):
+  self.assertFalse(codex_result_available(0,"429 rate limit reached"))
+  self.assertFalse(codex_result_available(1,"normal error"))
+  self.assertTrue(codex_result_available(0,"task finished"))
  def test_codex_transport_outage_is_capability_unavailable(self):
   self.assertTrue(codex_unavailable("workspace routing discovery failed; Reconnecting... 5/5"))
  def test_seed_store_is_idempotent_without_http_server(self):
@@ -165,6 +171,93 @@ class T(unittest.TestCase):
   self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
   set_execution_mode(self.s,"CODEX_ALLOWED")
   self.assertEqual(self.s.jobs()[0]["state"],"WAITING_FOR_CODEX");self.assertIsNone(self.s.jobs()[0]["not_before"])
+ def test_auto_hybrid_quota_cooldown_survives_restart_and_local_queue_runs(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("codex","codex",{},1,"C");self.s.add("local","local_ai",{"risk":1},2,"L")
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300,"local_ai_command":["python3","-V"],"local_ai_model":"qwen2.5-coder:7b"},self.s)
+  r.park_codex(self.s.jobs()[0],"429 usage limit reached")
+  retry=capability_status(self.s,"CODEX")["retry_at"]
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  r=Runner(r.cfg,self.s);caps=r.capabilities()
+  self.assertEqual(execution_mode(self.s),"AUTO_HYBRID")
+  self.assertEqual(caps["CODEX"],"WAITING_FOR_QUOTA")
+  self.assertEqual(self.s.pick(caps)["id"],"L")
+  self.assertEqual(capability_status(self.s,"CODEX")["retry_at"],retry)
+ def test_auto_hybrid_probe_is_due_once_and_only_success_recovers(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("codex","codex",{},1,"C")
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300},self.s)
+  r.park_codex(self.s.jobs()[0],"quota exhausted")
+  state=capability_status(self.s,"CODEX");state["retry_at"]=time.time()-1;self.s.setmeta("capability.CODEX",json.dumps(state))
+  self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()-1)
+  caps=r.capabilities()
+  self.assertEqual(caps["CODEX"],"PROBE_DUE")
+  self.assertEqual(capability_status(self.s,"CODEX")["status"],"WAITING_FOR_QUOTA")
+  self.assertEqual(self.s.pick(caps)["id"],"C")
+  self.assertEqual(r.capabilities()["CODEX"],"PROBE_DUE")
+ def test_auto_hybrid_successful_codex_review_restores_availability(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("review","local_ai",{"risk":1,"worktree_path":self.d.name},1,"L")
+  self.s.state("L","LOCAL_READY_PENDING_CODEX_REVIEW")
+  self.s.setmeta("capability.CODEX",json.dumps({"status":"WAITING_FOR_QUOTA","retry_at":time.time()-1,"reason":"quota"}))
+  class R(Runner):
+   def cmd(self,*_):return 0,"No actionable findings."
+  r=R({"loop_seconds":1},self.s)
+  r.codex_review_job(self.s.jobs()[0])
+  self.assertEqual(self.s.jobs()[0]["state"],"READY")
+  self.assertEqual(capability_status(self.s,"CODEX")["status"],"AVAILABLE")
+ def test_auto_hybrid_repeated_quota_uses_bounded_exponential_cooldown(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("codex","codex",{},1,"C")
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300},self.s)
+  r.park_codex(self.s.jobs()[0],"429 rate limit")
+  first=capability_status(self.s,"CODEX")["retry_at"]-time.time()
+  r.park_codex(self.s.jobs()[0],"429 rate limit")
+  second=capability_status(self.s,"CODEX")["retry_at"]-time.time()
+  self.assertGreater(second,first*1.8)
+  self.assertEqual(capability_status(self.s,"CODEX")["quota_failures"],2)
+ def test_auto_hybrid_network_error_does_not_claim_quota_and_risk_stays_codex(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("risky","local_ai",{"risk":2},1,"R")
+  self.s.add("safe","local_ai",{"risk":1},2,"L")
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300,"local_ai_command":["python3","-V"],"local_ai_model":"qwen2.5-coder:7b"},self.s)
+  r.park_codex(self.s.jobs()[0],"workspace routing discovery failed")
+  self.assertEqual(capability_status(self.s,"CODEX")["status"],"ERROR")
+  self.assertEqual(self.s.pick(r.capabilities())["id"],"L")
+ def test_auto_hybrid_dashboard_and_mode_transition_do_not_interrupt_running_job(self):
+  self.assertIn("Авто: Codex ↔ локальная Qwen",HTML)
+  self.assertIn("mode('AUTO_HYBRID')",HTML)
+  class P:
+   def poll(self):return None
+  self.s.add("codex","codex",{},1,"C");r=Runner({"loop_seconds":1},self.s);r.current="C";r.proc=P()
+  self.assertEqual(r.request_execution_mode("AUTO_HYBRID"),"APPLIED")
+  self.assertEqual(execution_mode(self.s),"AUTO_HYBRID")
+  self.assertIs(r.proc,r.proc)
+ def test_auto_hybrid_transport_failures_keep_retrying_without_quota_label(self):
+  set_execution_mode(self.s,"AUTO_HYBRID")
+  self.s.add("codex","codex",{},1,"C")
+  r=Runner({"loop_seconds":1,"codex_retry_seconds":300,"max_codex_transport_attempts":3},self.s)
+  job=self.s.jobs()[0];job["attempts"]=3
+  r.park_codex(job,"workspace routing discovery failed")
+  state=capability_status(self.s,"CODEX")
+  self.assertEqual(state["status"],"ERROR")
+  self.assertFalse(state["manual_hold"])
+  self.assertGreater(state["retry_at"],time.time())
+ def test_auto_hybrid_control_api_and_status_report_cooldown(self):
+  class AppStub:pass
+  server=ThreadingHTTPServer(("127.0.0.1",0),H)
+  app=AppStub();app.s=self.s;app.r=Runner({"loop_seconds":1},self.s);server.app=app
+  thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+  base=f"http://127.0.0.1:{server.server_port}"
+  try:
+   with patch.dict(os.environ,{"SUPERVISOR_CONTROL_TOKEN":"test-token"}):
+    req=urllib.request.Request(base+"/api/control",json.dumps({"action":"set_execution_mode","mode":"AUTO_HYBRID"}).encode(),{"content-type":"application/json","x-supervisor-token":"test-token"})
+    with urllib.request.urlopen(req) as response:self.assertEqual(response.status,200)
+    self.s.setmeta("capability.CODEX",json.dumps({"status":"WAITING_FOR_QUOTA","retry_at":12345,"reason":"quota"}))
+    with urllib.request.urlopen(base+"/api/status") as response:status=json.load(response)
+    self.assertEqual(status["execution_mode"],"AUTO_HYBRID")
+    self.assertEqual(status["codex_cooldown"]["retry_at"],12345)
+  finally:server.shutdown();server.server_close();thread.join()
  def test_runner_refuses_codex_process_when_local_only(self):
   set_execution_mode(self.s,"LOCAL_ONLY");r=Runner({"loop_seconds":1},self.s)
   with self.assertRaisesRegex(RuntimeError,"LOCAL_ONLY"):r.require_codex()

@@ -6,12 +6,13 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_test_integrity
 
-QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset")]
+QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset",r"\b429\b")]
 CODEX_UNAVAILABLE=[re.compile(x,re.I) for x in (r"workspace routing discovery failed",r"reconnecting\.\.\.",r"please try again later",r"status\.openai\.com",r"service unavailable")]
 def now(): return datetime.now(timezone.utc).isoformat()
 def jd(x): return json.dumps(x,ensure_ascii=False,separators=(",",":"))
 def quota(s): return any(p.search(s) for p in QUOTA)
 def codex_unavailable(s): return quota(s) or any(p.search(s) for p in CODEX_UNAVAILABLE)
+def codex_result_available(code,out):return code==0 and not codex_unavailable(out)
 def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
 def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
 def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
@@ -43,7 +44,7 @@ def eligibility_reasons(job,capabilities,states=None,clock=None):
     if state not in RUNNABLE_STATES:return ["STATE_"+state]
     reasons=[]
     for need in sorted(required_capabilities(job)):
-        if capabilities.get(need,"UNAVAILABLE")!="AVAILABLE":
+        if capabilities.get(need,"UNAVAILABLE") not in (("AVAILABLE","PROBE_DUE") if need=="CODEX" else ("AVAILABLE",)):
             reasons.append("CAPABILITY_"+need+"_"+str(capabilities.get(need,"UNAVAILABLE")))
     deadline=job.get("not_before")
     if deadline is not None and float(deadline)>(time.time() if clock is None else clock):
@@ -66,20 +67,20 @@ def capability_status(store,name,default="AVAILABLE"):
     try:return json.loads(raw)
     except:return {"status":"ERROR","reason":"invalid durable capability state"}
 def set_capability(store,name,status,**extra):store.setmeta("capability."+name,jd({"status":status,**extra,"updated_at":now()}))
-EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED"}
+EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED","AUTO_HYBRID"}
 def execution_mode(store):
     mode=store.meta("execution_mode") or "CODEX_ALLOWED"
     return mode if mode in EXECUTION_MODES else "LOCAL_ONLY"
 def set_execution_mode(store,mode):
     if mode not in EXECUTION_MODES:raise ValueError("invalid execution mode")
     previous=execution_mode(store);store.setmeta("execution_mode",mode)
-    if mode=="CODEX_ALLOWED":
-        store.release_codex_waits()
+    if mode in ("CODEX_ALLOWED","AUTO_HYBRID"):
+        if mode=="CODEX_ALLOWED" or capability_status(store,"CODEX").get("status","AVAILABLE")=="AVAILABLE":store.release_codex_waits()
         state=capability_status(store,"CODEX");state.pop("manual_hold",None)
         store.setmeta("capability.CODEX",jd(state))
     store.event(None,"EXECUTION_MODE_CHANGED",mode,{"previous":previous,"mode":mode})
     return mode
-def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE")=="AVAILABLE" for x in required_capabilities(job))
+def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE") in (("AVAILABLE","PROBE_DUE") if x=="CODEX" else ("AVAILABLE",)) for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
     if explicit:return explicit
@@ -241,12 +242,15 @@ class Runner:
             if codex.get("reason")!="forced":set_capability(self.s,"CODEX","WAITING_FOR_QUOTA",retry_at=0,reason="forced")
         elif codex.get("manual_hold"):codex_status=codex.get("status","ERROR")
         elif codex.get("status") in ("WAITING_FOR_QUOTA","ERROR") and retry>time.time():codex_status=codex["status"]
+        elif execution_mode(self.s)=="AUTO_HYBRID" and codex.get("status") in ("WAITING_FOR_QUOTA","ERROR"):
+            codex_status="PROBE_DUE"
         else:
             codex_status="AVAILABLE"
             if codex.get("status")!="AVAILABLE":set_capability(self.s,"CODEX","AVAILABLE");self.s.release_codex_waits()
         raw=self.cfg.get("local_ai_command") or []
         cmd=shlex.split(raw) if isinstance(raw,str) else list(raw)
         local="AVAILABLE" if cmd and shutil.which(str(cmd[0])) else "NOT_INSTALLED"
+        if execution_mode(self.s)=="AUTO_HYBRID" and (self.cfg.get("local_ai_model")!="qwen2.5-coder:7b" or (cmd and Path(str(cmd[0])).name=="ollama" and "qwen2.5-coder:7b" not in cmd)):local="MODEL_MISMATCH"
         # AVAILABLE means executable found; successful task execution is a
         # separate evidence dimension, not an assumption.
         old=capability_status(self.s,"LOCAL_AI")
@@ -258,12 +262,20 @@ class Runner:
         effective_codex="DISABLED_BY_USER" if execution_mode(self.s)=="LOCAL_ONLY" else codex_status
         return {"CODEX":effective_codex,"CODEX_ACTUAL":codex_status,"LOCAL_AI":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
     def require_codex(self):
-        if execution_mode(self.s)!="CODEX_ALLOWED":raise RuntimeError("Codex process blocked by LOCAL_ONLY")
+        mode=execution_mode(self.s)
+        if mode=="LOCAL_ONLY":raise RuntimeError("Codex process blocked by LOCAL_ONLY")
+        if mode=="AUTO_HYBRID" and self.capabilities()["CODEX"] not in ("AVAILABLE","PROBE_DUE"):
+            raise RuntimeError("Codex process blocked by durable cooldown")
     def park_codex(self,j,out,state="WAITING_FOR_CODEX"):
         reason="quota" if quota(out) else "transport"
-        exhausted=reason=="transport" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
-        retry=None if exhausted else time.time()+self.cfg["codex_retry_seconds"]
-        set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry or 0,reason=reason,manual_hold=exhausted)
+        exhausted=reason=="transport" and execution_mode(self.s)!="AUTO_HYBRID" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
+        prior=capability_status(self.s,"CODEX")
+        failures=(int(prior.get("quota_failures",0))+1) if reason=="quota" else 0
+        transport_failures=(int(prior.get("transport_failures",0))+1) if reason=="transport" else 0
+        cooldown=min(86400,int(self.cfg["codex_retry_seconds"])*2**min(failures-1,8)) if reason=="quota" else min(3600,int(self.cfg["codex_retry_seconds"])*2**min(transport_failures-1,5))
+        retry=None if exhausted else time.time()+cooldown
+        set_capability(self.s,"CODEX","WAITING_FOR_QUOTA" if reason=="quota" else "ERROR",retry_at=retry or 0,reason=reason,manual_hold=exhausted,quota_failures=failures,transport_failures=transport_failures)
+        self.s.event(j["id"],"CODEX_COOLDOWN",reason,{"retry_at":retry,"quota_failures":failures,"transport_failures":transport_failures,"manual_hold":exhausted})
         self.s.state(j["id"],state,"transport retry limit reached" if exhausted else reason,retry)
     def loop(self):
         self.s.setmeta("started_at",now());self.s.setmeta("status","IDLE")
@@ -399,10 +411,9 @@ class Runner:
         raw=p.get("codex_command") or default_codex_command()
         c=shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw]
         self.require_codex();code,out=self.cmd(c,wt,prompt);self.s.event(j["id"],"CODEX_EXIT",str(code),{"tail":safe_tail(out,12000)})
-        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
-        if code:
-            if codex_unavailable(out):
-                self.park_codex(j,out);return
+        if execution_mode(self.s)=="LOCAL_ONLY":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
+        if not codex_result_available(code,out):
+            if codex_unavailable(out):self.park_codex(j,out);return
             raise RuntimeError("Codex exit "+str(code))
         set_capability(self.s,"CODEX","AVAILABLE")
         self.s.state(j["id"],"TESTING")
@@ -418,10 +429,9 @@ class Runner:
         dirty=self.git(wt,["status","--porcelain"])
         self.s.state(j["id"],"CRITIC")
         self.require_codex();code,out=self.cmd(critic_command(bool(dirty),str(p.get("base_ref") or "main")),wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
-        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
+        if execution_mode(self.s)=="LOCAL_ONLY":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
+        if codex_unavailable(out):self.park_codex(j,out);return
         if code or not critic_clean(out):
-            if codex_unavailable(out):
-                self.park_codex(j,out);return
             count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
             if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
             else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -429,10 +439,9 @@ class Runner:
         if dirty:
             self.s.state(j["id"],"CRITIC")
             self.require_codex();code,out=self.cmd(["codex","exec","review","--uncommitted"],wt);self.s.event(j["id"],"CRITIC",str(code),{"tail":safe_tail(out,12000)})
-            if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
+            if execution_mode(self.s)=="LOCAL_ONLY":self.s.state(j["id"],"WAITING_FOR_CODEX","LOCAL_ONLY");return
+            if codex_unavailable(out):self.park_codex(j,out);return
             if code or not critic_clean(out):
-                if codex_unavailable(out):
-                    self.park_codex(j,out);return
                 count=int(p.get("repair_count",0))+1;p["repair_count"]=count;p["repair_prompt"]=repair_prompt(str(p.get("prompt","")),"critic review",code,out);self.s.payload(j["id"],p)
                 if count<=3:self.s.state(j["id"],"QUEUED","critic requested repair",time.time()+30)
                 else:self.s.state(j["id"],"FAILED","critic repair limit reached")
@@ -509,8 +518,8 @@ class Runner:
     def codex_review_job(self,j):
         p=j["payload"];wt=Path(p["worktree_path"]);base=resolve_base(self.s,p,self.cfg.get("default_base_ref","main"));self.s.state(j["id"],"CRITIC")
         self.require_codex();code,out=self.cmd(["codex","exec","review","--base",base],wt);self.s.event(j["id"],"CODEX_REVIEW",str(code),{"tail":safe_tail(out,12000)})
-        if execution_mode(self.s)!="CODEX_ALLOWED":self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW","LOCAL_ONLY");return
-        if code and codex_unavailable(out):
+        if execution_mode(self.s)=="LOCAL_ONLY":self.s.state(j["id"],"LOCAL_READY_PENDING_CODEX_REVIEW","LOCAL_ONLY");return
+        if codex_unavailable(out):
             self.park_codex(j,out,"LOCAL_READY_PENDING_CODEX_REVIEW");return
         if code or not critic_clean(out):self.s.state(j["id"],"FAILED","Codex review rejected local candidate");return
         set_capability(self.s,"CODEX","AVAILABLE");self.s.state(j["id"],"READY")
@@ -535,7 +544,7 @@ class Runner:
             return "ACTIVE_CODEX_STOP_REQUESTED"
         return "APPLIED"
 
-HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}.mode{background:#252b38;color:#eef2f7}.mode.active{background:#25784a;box-shadow:0 0 0 2px #55d98b inset}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=c><strong>Режим исполнения</strong><div class=row style='margin-top:10px'><button id=localmode class=mode onclick="mode('LOCAL_ONLY')">Локально · без Codex</button><button id=codexmode class=mode onclick="mode('CODEX_ALLOWED')">Codex разрешён</button></div><p id=modeinfo class=meta>Loading mode…</p></div><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
+HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}.mode{background:#252b38;color:#eef2f7}.mode.active{background:#25784a;box-shadow:0 0 0 2px #55d98b inset}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=c><strong>Режим исполнения</strong><div class=row style='margin-top:10px'><button id=localmode class=mode onclick="mode('LOCAL_ONLY')">Локально · без Codex</button><button id=codexmode class=mode onclick="mode('CODEX_ALLOWED')">Codex разрешён</button><button id=automode class=mode onclick="mode('AUTO_HYBRID')">Авто: Codex ↔ локальная Qwen</button></div><p id=modeinfo class=meta>Loading mode…</p></div><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
 const POLL_MS=4000,MAX_BACKOFF_MS=20000;let timer=null,refreshing=false,failures=0;
 let currentSnapshot=null;
 t.value=localStorage.st||'';
@@ -547,7 +556,7 @@ z.textContent='Time zone: '+zone+' ('+offset()+')';tz.textContent=z.textContent;
 async function g(url){let r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error(url+' '+r.status);return r.json()}
 async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);immediate()}
 async function mode(value){localStorage.st=t.value;let active=value==='LOCAL_ONLY'&&currentSnapshot?.current_executor==='CODEX',pending_mode=active?(confirm('Codex выполняет задачу. OK — остановить безопасно сейчас; Отмена — применить после завершения.')?'stop_active':'after_current'):'after_current';let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:'set_execution_mode',mode:value,pending_mode})});let x=await r.json();alert(x.message);immediate()}
-function render(s,j,ev){currentSnapshot=s;let cur=j.jobs.find(x=>x.id===s.current_job_id),local=s.execution_mode==='LOCAL_ONLY';localmode.classList.toggle('active',local);codexmode.classList.toggle('active',!local);modeinfo.textContent='Активен: '+s.execution_mode+' · Codex: '+(s.capabilities.CODEX_ACTUAL||s.capabilities.CODEX)+' · Local: '+(s.local_ai_proof?.model||'не настроена')+(s.pending_execution_mode?' · ожидает: '+s.pending_execution_mode:'');document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Idle reason: '+(s.idle_reason?s.idle_reason.reason:'—')+'</p><p>Blocked: '+Object.entries(s.queue.blocked_reasons||{}).map(([a,b])=>a+'='+b).join(', ')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
+function render(s,j,ev){currentSnapshot=s;let cur=j.jobs.find(x=>x.id===s.current_job_id),local=s.execution_mode==='LOCAL_ONLY';localmode.classList.toggle('active',local);codexmode.classList.toggle('active',s.execution_mode==='CODEX_ALLOWED');automode.classList.toggle('active',s.execution_mode==='AUTO_HYBRID');modeinfo.textContent='Активен: '+s.execution_mode+' · Codex: '+(s.capabilities.CODEX_ACTUAL||s.capabilities.CODEX)+' · Local: '+(s.local_ai_proof?.model||'не настроена')+(s.pending_execution_mode?' · ожидает: '+s.pending_execution_mode:'')+(s.codex_cooldown?.retry_at?' · Codex retry: '+localTime(new Date(s.codex_cooldown.retry_at*1000).toISOString()):'');document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Idle reason: '+(s.idle_reason?s.idle_reason.reason:'—')+'</p><p>Blocked: '+Object.entries(s.queue.blocked_reasons||{}).map(([a,b])=>a+'='+b).join(', ')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
 function schedule(ms=POLL_MS){if(timer!==null)clearTimeout(timer);timer=setTimeout(refresh,ms)}
 async function refresh(){if(refreshing)return;refreshing=true;try{let [s,j,ev]=await Promise.all([g('/api/status'),g('/api/jobs'),g('/api/events')]);render(s,j,ev);failures=0}catch(error){failures=Math.min(failures+1,3);u.textContent='Update retrying…'}finally{refreshing=false;schedule(Math.min(POLL_MS*Math.pow(2,failures),MAX_BACKOFF_MS))}}
 function immediate(){if(refreshing)return;if(timer!==null)clearTimeout(timer);timer=null;refresh()}
@@ -569,7 +578,7 @@ class H(BaseHTTPRequestHandler):
             try:caps=json.loads(a.s.meta("capabilities") or "{}")
             except:caps={}
             current=next((x for x in a.s.jobs() if x["id"]==(a.s.meta("current_job_id") or "")),None)
-            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),**o});return
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),"codex_cooldown":capability_status(a.s,"CODEX"),**o});return
         if self.path=="/api/jobs":
             jobs=a.s.jobs()
             for job in jobs:job["product"]=job_product(job);job["executor"]="CODEX" if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else job_executor(job)
