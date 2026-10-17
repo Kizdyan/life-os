@@ -55,7 +55,13 @@ export function evaluateBehaviorExperiment(
   const succeeded =
     experiment.direction === "decrease"
       ? measuredValue <= experiment.target
-      : measuredValue >= experiment.target;
+      : experiment.direction === "increase"
+      ? measuredValue >= experiment.target
+      : false;
+
+  if (!succeeded) {
+    throw new Error(`The experiment direction '${experiment.direction}' is not supported. Only 'increase' and 'decrease' are allowed.`);
+  }
 
   return {
     experimentId: experiment.id,

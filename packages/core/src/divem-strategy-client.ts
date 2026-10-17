@@ -69,6 +69,18 @@ export class DiveMStrategyClient implements DiveMStrategyService {
       throw new Error("DiveM assessment confidence must be between 0 and 1");
     }
 
+    if (!['strong', 'mixed', 'weak', 'unknown'].includes(payload.fit)) {
+      throw new Error("fit must be one of error");
+    }
+
+    if (payload.weak_transition !== null && !['visibility', 'contact', 'interest', 'opportunity', 'result'].includes(payload.weak_transition)) {
+      throw new Error("weak_transition must be one of error");
+    }
+
+    if (!['sufficient', 'partial', 'insufficient'].includes(payload.evidence_state)) {
+      throw new Error("evidence_state must be one of error");
+    }
+
     return {
       fit: payload.fit,
       notes: [...payload.notes],
