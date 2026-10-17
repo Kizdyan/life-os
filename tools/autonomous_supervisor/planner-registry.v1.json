@@ -606,7 +606,8 @@
     },
     {
       "id": "P0-QWEN-PERSONA-PHOTO-FIDELITY-001",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
+      "supersededBy": "P0-QWEN-PERSONA-PHOTO-FIDELITY-002",
       "title": "Enforce original-preserving Persona photo edit plans",
       "kind": "local_ai",
       "priority": 48,
@@ -628,6 +629,38 @@
         "required_changed_files": ["packages/core/src/photo-edit-policy.ts"],
         "max_repairs": 2,
         "goal": "Implement only packages/core/src/photo-edit-policy.ts for the existing independent test. Export validatePhotoEditPlan and provider-neutral plan types. Accept only exposure, contrast, saturation, tone_curve, local_light and white_balance as ordinary pixel adjustments with finite numeric amounts when present. Reject appearance-changing or unknown operations. Allow crop only when compositionChangeApproved is exactly true. Require preserveOriginal true, distinct non-empty source/output asset IDs, positive integer dimensions and output resolution equal to source resolution. Return a validated copy without mutating input. Do not edit tests or any other file.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/photo-edit-policy.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "P0-QWEN-PERSONA-PHOTO-FIDELITY-002",
+      "status": "ACTIVE",
+      "replaces": ["P0-QWEN-PERSONA-PHOTO-FIDELITY-001"],
+      "title": "Implement original-preserving Persona photo edit validation",
+      "kind": "local_ai",
+      "priority": 47,
+      "sourceRequirement": "PERSONA_PHOTO_ORIGINAL_FIDELITY",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": [
+        "the pre-existing photo edit policy regression changes from RED to GREEN",
+        "ordinary adjustments preserve the original asset and source resolution",
+        "appearance-changing and generative operations fail closed",
+        "crop requires explicit composition approval",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "PHOTO",
+        "risk": 1,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/photo-edit-policy.ts"],
+        "required_changed_files": ["packages/core/src/photo-edit-policy.ts"],
+        "max_repairs": 2,
+        "goal": "Replace only the Not implemented scaffold in packages/core/src/photo-edit-policy.ts for the existing independent test. Export validatePhotoEditPlan and provider-neutral plan types. Accept only exposure, contrast, saturation, tone_curve, local_light and white_balance as ordinary pixel adjustments with finite numeric amounts when present. Reject appearance-changing or unknown operations. Allow crop only when compositionChangeApproved is exactly true. Require preserveOriginal true, distinct non-empty source/output asset IDs, positive integer dimensions and output resolution equal to source resolution. Return a validated copy without mutating input. Do not edit tests or any other file.",
         "test_commands": [
           "TZ=UTC npm test -- --run packages/core/src/photo-edit-policy.test.ts",
           "TZ=UTC npm test -- --run",
