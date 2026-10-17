@@ -53,8 +53,16 @@ export class DiveMStrategyClient implements DiveMStrategyService {
       throw new Error("notes must be an array");
     }
 
+    if (!payload.notes.every(note => typeof note === 'string')) {
+      throw new Error("notes entries must be strings");
+    }
+
     if (!Array.isArray(payload.revision_suggestions)) {
       throw new Error("revision_suggestions must be an array");
+    }
+
+    if (!payload.revision_suggestions.every(suggestion => typeof suggestion === 'string')) {
+      throw new Error("revision_suggestions entries must be strings");
     }
 
     if (!Number.isFinite(payload.confidence) || payload.confidence < 0 || payload.confidence > 1) {

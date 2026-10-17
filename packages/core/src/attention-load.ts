@@ -11,6 +11,11 @@ export function buildAttentionDigest(input:{items:LifeItem[];now:string;maxVisib
   if(!Number.isFinite(policy.mediumAt) || policy.mediumAt < 1 || !Number.isFinite(policy.highAt) || policy.highAt < policy.mediumAt || !Number.isFinite(policy.dueSoonHours) || policy.dueSoonHours < 0) throw new Error("Invalid attention load policy");
   const now=Date.parse(input.now); if(!Number.isFinite(now)) throw new Error("Invalid current time");
   const entries=input.items.map(item=>toEntry(item,now,policy)).filter((x):x is AttentionEntry=>x!==null).sort((a,b)=>b.priority-a.priority||(a.plannedStart??"~").localeCompare(b.plannedStart??"~")||a.itemId.localeCompare(b.itemId));
+  if (input.maxVisible !== undefined) {
+    if (!Number.isFinite(input.maxVisible)) {
+      throw new Error("Invalid maxVisible before slicing");
+    }
+  }
   const max=Math.max(0,Math.floor(input.maxVisible??5));
   const visible=entries.slice(0,max); const hiddenCount=entries.length-visible.length;
   return {visible,hiddenCount,load:entries.length>=policy.highAt?"high":entries.length>=policy.mediumAt?"medium":"low",needsConsolidation:hiddenCount>0,isClinicalAssessment:false};
