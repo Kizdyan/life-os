@@ -40,7 +40,7 @@
     },
     {
       "id": "M2B",
-      "status": "PLANNED",
+      "status": "APPROVED",
       "dependsOn": [
         "M2A"
       ],
@@ -51,7 +51,7 @@
     },
     {
       "id": "M3",
-      "status": "PLANNED",
+      "status": "APPROVED",
       "dependsOn": [
         "M2B"
       ],
@@ -62,7 +62,7 @@
     },
     {
       "id": "M4",
-      "status": "PLANNED",
+      "status": "APPROVED",
       "dependsOn": [
         "M3"
       ],

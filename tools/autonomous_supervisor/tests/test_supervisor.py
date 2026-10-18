@@ -196,6 +196,14 @@ class T(unittest.TestCase):
   self.assertEqual(replenish_backlog(self.s,mission,caps),0)
   self.s.setmeta("milestone.active.M2",json.dumps({"activatedAt":"now"}))
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+ def test_approved_portfolio_program_advances_from_m2a_to_m2b(self):
+  root=Path(__file__).resolve().parents[1]
+  mission=load_planner_registry(root,json.loads((root/"mission.v1.json").read_text()))
+  self.s.setmeta("milestone.accepted.M1",json.dumps({"acceptedAt":"now"}))
+  self.s.setmeta("milestone.accepted.M1.5",json.dumps({"acceptedAt":"now"}))
+  self.s.setmeta("milestone.accepted.M2A",json.dumps({"acceptedAt":"now"}))
+  self.assertIn("M2B",advance_milestones(self.s,mission))
+  self.assertIsNotNone(self.s.meta("milestone.active.M2B"))
  def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
   self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}}
