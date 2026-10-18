@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -237,6 +237,14 @@ class T(unittest.TestCase):
   self.assertEqual(planned_job_spec(base,caps)[0],"codex")
   base["payload"]["localFallback"]={"approved":True,"risk":2}
   self.assertEqual(planned_job_spec(base,caps)[0],"codex")
+ def test_auto_integration_is_opt_in_low_risk_scoped_and_conflict_free(self):
+  job={"state":"LOCAL_VERIFIED","payload":{"auto_integrate":True,"risk":1,"allowed_files":["a.ts"]}}
+  self.assertIsNone(integration_preflight(job,"feature/runtime",["main"],["local.json"],["a.ts"]))
+  self.assertEqual(integration_preflight(job,"main",["main"],[],["a.ts"]),"PROTECTED_BRANCH")
+  self.assertEqual(integration_preflight(job,"feature/runtime",["main"],["a.ts"],["a.ts"]),"DIRTY_PATH_CONFLICT")
+  self.assertEqual(integration_preflight(job,"feature/runtime",["main"],[],["other.ts"]),"PATH_SCOPE_DENIED")
+  job["payload"]["risk"]=2
+  self.assertEqual(integration_preflight(job,"feature/runtime",["main"],[],["a.ts"]),"RISK_DENIED")
  def test_failed_latest_roadmap_does_not_busy_loop(self):
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}};caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1);jid=self.s.pick(caps)["id"];self.s.state(jid,"FAILED","bounded failure")

@@ -131,6 +131,16 @@ def planned_job_spec(item,capabilities):
         payload={**fallback,"product":payload.get("product"),"workstream":payload.get("workstream"),"planner_source_requirement":item.get("sourceRequirement"),"target_version":item.get("targetVersion"),"acceptance":fallback.get("acceptance") or item.get("acceptance",[]),"fallback_for_executor":"CODEX","original_requirement_kind":"codex","auto_integrate":True}
         payload.pop("approved",None);kind="local_ai";title=str(fallback.get("title") or title)
     return kind,payload,title
+def integration_preflight(job,branch,protected_branches,dirty_paths,candidate_paths):
+    payload=job.get("payload",{})
+    if job.get("state")!="LOCAL_VERIFIED" or payload.get("auto_integrate") is not True:return "NOT_OPTED_IN"
+    if int(payload.get("risk",99))>1:return "RISK_DENIED"
+    if branch in set(protected_branches):return "PROTECTED_BRANCH"
+    allowed={str(x) for x in payload.get("allowed_files",[])}
+    changed={str(x) for x in candidate_paths}
+    if not changed or not allowed or not changed.issubset(allowed):return "PATH_SCOPE_DENIED"
+    if changed.intersection({str(x) for x in dirty_paths}):return "DIRTY_PATH_CONFLICT"
+    return None
 def advance_milestones(store,mission):
     milestones=mission.get("plannerMilestones",[])
     if not milestones:return []
@@ -441,6 +451,38 @@ class Runner:
         def is_ancestor(candidate,current):
             return subprocess.run(["git","merge-base","--is-ancestor",candidate,current],cwd=repo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
         return reconcile_registry_outcomes(self.s,self.mission,head,is_ancestor)
+    def integrate_local_candidates(self):
+        repo=Path(self.cfg["repo_path"])
+        branch=self.git(repo,["rev-parse","--abbrev-ref","HEAD"])
+        dirty=[]
+        for line in self.git(repo,["status","--porcelain","--untracked-files=all"]).splitlines():
+            path=line[3:].split(" -> ")[-1] if len(line)>=4 else ""
+            if path:dirty.append(path)
+        for job in self.s.jobs(10000):
+            payload=job.get("payload",{});candidate=str(payload.get("candidate_sha") or "")
+            if job.get("state")!="LOCAL_VERIFIED" or payload.get("auto_integrate") is not True or not candidate:continue
+            paths=self.git(repo,["diff-tree","--no-commit-id","--name-only","-r",candidate]).splitlines()
+            denied=integration_preflight(job,branch,self.cfg.get("protected_branches",[]),dirty,paths)
+            if denied:
+                key="integration.denied."+job["id"]+"."+denied
+                if not self.s.meta(key):self.s.setmeta(key,now());self.s.event(job["id"],"INTEGRATION_DEFERRED",denied,{"candidate_sha":candidate})
+                continue
+            if subprocess.run(["git","merge-base","--is-ancestor",candidate, "HEAD"],cwd=repo).returncode==0:
+                integrated=self.git(repo,["rev-parse","HEAD"])
+            else:
+                parent=self.git(repo,["rev-parse",candidate+"^"])
+                if subprocess.run(["git","merge-base","--is-ancestor",parent,"HEAD"],cwd=repo).returncode!=0:
+                    self.s.event(job["id"],"INTEGRATION_DEFERRED","BASE_DIVERGED",{"candidate_sha":candidate});continue
+                try:self.git(repo,["cherry-pick",candidate])
+                except RuntimeError as exc:
+                    subprocess.run(["git","cherry-pick","--abort"],cwd=repo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                    self.s.event(job["id"],"INTEGRATION_DEFERRED","CHERRY_PICK_CONFLICT",{"candidate_sha":candidate,"error":safe_tail(exc,500)});continue
+                integrated=self.git(repo,["rev-parse","HEAD"])
+            payload={**payload,"integrated_sha":integrated,"integration_candidate_sha":candidate,"integration_verified_at":now()}
+            self.s.payload(job["id"],payload);self.s.state(job["id"],"INTEGRATED")
+            self.s.event(job["id"],"LOCAL_CANDIDATE_INTEGRATED",integrated,{"candidate_sha":candidate,"changed_files":paths,"branch":branch})
+            return job["id"]
+        return None
     def park_codex(self,j,out,state="WAITING_FOR_CODEX"):
         reason="quota" if quota(out) else "transport"
         exhausted=reason=="transport" and execution_mode(self.s)!="AUTO_HYBRID" and int(j.get("attempts",0))>=int(self.cfg.get("max_codex_transport_attempts",3))
@@ -461,6 +503,7 @@ class Runner:
             try:
                 caps=self.capabilities();self.s.setmeta("capabilities",jd(caps))
                 self.reconcile_integrations()
+                self.integrate_local_candidates()
                 scheduler_policy=self.scheduler_policy()
                 j=self.s.pick(caps,scheduler_policy)
                 if not j and self.mission:
