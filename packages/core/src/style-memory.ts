@@ -83,6 +83,9 @@ export async function summarizeStyleDimension(
   for (const item of items) {
     const key = item.value.trim();
     if (!key) continue;
+    if (!Number.isFinite(item.weight)) {
+      throw new Error('Invalid style observation weight');
+    }
     const current = aggregate.get(key) ?? { score: 0, samples: 0 };
     current.score += item.weight;
     current.samples += 1;
