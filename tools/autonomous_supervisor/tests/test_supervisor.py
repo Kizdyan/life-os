@@ -46,6 +46,7 @@ class T(unittest.TestCase):
   self.assertLess(len(text),5000)
  def test_critic_requires_explicit_clean_result(self):
   self.assertTrue(critic_clean("No actionable regressions were found."))
+  self.assertTrue(critic_clean("No actionable defects were identified in the current changes."))
   self.assertFalse(critic_clean("[P1] unsafe mutation"))
  def test_critic_reviews_committed_candidate_against_base(self):
   self.assertEqual(critic_command(False,"main"),["codex","exec","review","--base","main"])

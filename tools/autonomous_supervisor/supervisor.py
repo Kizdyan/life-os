@@ -16,7 +16,7 @@ def codex_unavailable(s): return quota(s) or any(p.search(s) for p in CODEX_UNAV
 def codex_result_available(code,out):return code==0 and not codex_unavailable(out)
 def default_codex_command(): return ["codex","exec","--approve-for-me","-"]
 def repair_prompt(base,command,code,out): return (base+"\n\nBOUNDED REPAIR ONLY. The previous verified command failed: "+command+" (exit "+str(code)+"). Diagnose and fix only that failure, preserve the existing bounded diff, then rerun the failing command. Evidence tail:\n"+out[-3000:])[-4800:]
-def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions)|no critical issues",out,re.I))
+def critic_clean(out): return bool(re.search(r"no actionable (?:findings|regressions|defects)|no critical issues",out,re.I))
 def critic_command(dirty,base): return ["codex","exec","review","--uncommitted"] if dirty else ["codex","exec","review","--base",base]
 def job_executor(job):
     if job.get("state")=="LOCAL_READY_PENDING_CODEX_REVIEW":return "CODEX"
