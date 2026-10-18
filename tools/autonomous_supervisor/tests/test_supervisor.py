@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -220,6 +220,23 @@ class T(unittest.TestCase):
   caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
   self.assertEqual(self.s.pick(caps)["kind"],"local_ai")
+ def test_approved_codex_requirement_uses_explicit_local_fallback_during_quota(self):
+  item={"id":"PERSONA-GAP","title":"full requirement","kind":"codex","priority":1,"status":"ACTIVE","sourceRequirement":"PERSONA-REQ","targetVersion":"persona-next","acceptance":["full acceptance"],"payload":{"product":"PERSONA","risk":2,"requires":["CODEX"],"localFallback":{"approved":True,"title":"bounded local slice","risk":1,"goal":"fix one proven boundary","allowed_files":["a.ts"],"required_changed_files":["a.ts"],"test_commands":["true"],"acceptance":["bounded evidence"]}}}
+  caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE"}
+  kind,payload,title=planned_job_spec(item,caps)
+  self.assertEqual((kind,title),("local_ai","bounded local slice"))
+  self.assertEqual(payload["planner_source_requirement"],"PERSONA-REQ")
+  self.assertEqual(payload["fallback_for_executor"],"CODEX")
+  self.assertEqual(payload["risk"],1)
+  self.assertTrue(payload["auto_integrate"])
+  self.assertEqual(replenish_backlog(self.s,{"plannerRegistry":[item]},caps),1)
+  self.assertEqual(self.s.pick(caps)["id"],"PERSONA-GAP")
+ def test_unapproved_or_high_risk_fallback_never_downgrades_codex_work(self):
+  caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
+  base={"id":"X","title":"x","kind":"codex","sourceRequirement":"R","targetVersion":"v","acceptance":["x"],"payload":{"risk":3,"localFallback":{"approved":False,"risk":1}}}
+  self.assertEqual(planned_job_spec(base,caps)[0],"codex")
+  base["payload"]["localFallback"]={"approved":True,"risk":2}
+  self.assertEqual(planned_job_spec(base,caps)[0],"codex")
  def test_failed_latest_roadmap_does_not_busy_loop(self):
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}};caps={"CODEX":"WAITING_FOR_QUOTA","LOCAL_AI":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1);jid=self.s.pick(caps)["id"];self.s.state(jid,"FAILED","bounded failure")

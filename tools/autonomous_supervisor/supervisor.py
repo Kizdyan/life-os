@@ -116,6 +116,21 @@ def job_product(job):
     if stream in {"CONTENT_CONVEYOR","ARCHETYPE_BRAND","PERSONA_INTELLIGENCE","MEDIA_INTAKE","VIDEO","CAROUSEL","PHOTO","QUALITY_COURT","PUBLISHER","METRICS","LEARNING"}:return "PERSONA"
     if stream in {"TRUTH","SYNC","PRIVACY","ERIKA","CANONICAL_INTEGRATION"}:return "LIFE_OS"
     return "SHARED"
+def planned_job_spec(item,capabilities):
+    """Select only an explicitly approved bounded local slice when Codex is unavailable.
+
+    The fallback is an independently scoped task, not a risk downgrade of the
+    original job.  Reusing the durable requirement id prevents duplicate Codex
+    and local executions for the same acceptance slot.
+    """
+    payload={**item.get("payload",{}),"planner_source_requirement":item.get("sourceRequirement"),"target_version":item.get("targetVersion"),"acceptance":item.get("acceptance",[])}
+    kind=item.get("kind","codex");title=item.get("title",item.get("id","task"))
+    fallback=payload.pop("localFallback",None)
+    codex_blocked=kind=="codex" and capabilities.get("CODEX") not in ("AVAILABLE","PROBE_DUE")
+    if codex_blocked and isinstance(fallback,dict) and fallback.get("approved") is True and int(fallback.get("risk",99))<=1 and capabilities.get("LOCAL_AI")=="AVAILABLE":
+        payload={**fallback,"product":payload.get("product"),"workstream":payload.get("workstream"),"planner_source_requirement":item.get("sourceRequirement"),"target_version":item.get("targetVersion"),"acceptance":fallback.get("acceptance") or item.get("acceptance",[]),"fallback_for_executor":"CODEX","original_requirement_kind":"codex","auto_integrate":True}
+        payload.pop("approved",None);kind="local_ai";title=str(fallback.get("title") or title)
+    return kind,payload,title
 def advance_milestones(store,mission):
     milestones=mission.get("plannerMilestones",[])
     if not milestones:return []
@@ -185,13 +200,14 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
             required=(item.get("id"),item.get("title"),item.get("sourceRequirement"),item.get("targetVersion"),item.get("acceptance"))
             status=item.get("status","ACTIVE");milestone=str(item.get("milestone") or "")
             activated=bool(milestone and store.meta("milestone.active."+milestone))
-            if item.get("kind")!="local_ai" or (status!="ACTIVE" and not (status=="PLANNED" and activated)):continue
+            if status!="ACTIVE" and not (status=="PLANNED" and activated):continue
             if not all(required) or item["id"] in by_id:continue
-            payload={**item.get("payload",{}),"planner_source_requirement":item["sourceRequirement"],"target_version":item["targetVersion"],"acceptance":item["acceptance"]}
-            probe={"id":item["id"],"state":"QUEUED","kind":"local_ai","payload":payload}
+            kind,payload,title=planned_job_spec(item,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"})
+            if kind!="local_ai":continue
+            probe={"id":item["id"],"state":"QUEUED","kind":kind,"payload":payload}
             reasons=eligibility_reasons(probe,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"},states)
             if any(not reason.startswith("DEPENDENCY_") for reason in reasons):continue
-            store.add(item["title"],"local_ai",payload,int(item.get("priority",100)),item["id"])
+            store.add(title,kind,payload,int(item.get("priority",100)),item["id"])
             store.event(item["id"],"PLANNER_SEEDED",item["sourceRequirement"],{"target_version":item["targetVersion"],"product":job_product(probe),"prepared_ahead":True})
             by_id[item["id"]]=probe;states[item["id"]]="QUEUED";active_local+=1;added+=1
         if added:return added
@@ -219,10 +235,10 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
         activated=bool(milestone and store.meta("milestone.active."+milestone))
         if status!="ACTIVE" and not (status=="PLANNED" and activated):continue
         if not all(required) or item["id"] in by_id:continue
-        payload={**item.get("payload",{}),"planner_source_requirement":item["sourceRequirement"],"target_version":item["targetVersion"],"acceptance":item["acceptance"]}
-        probe={"id":item["id"],"state":"QUEUED","kind":item.get("kind","codex"),"payload":payload}
+        kind,payload,title=planned_job_spec(item,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"})
+        probe={"id":item["id"],"state":"QUEUED","kind":kind,"payload":payload}
         if eligibility_reasons(probe,capabilities or {"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"},states):continue
-        store.add(item["title"],item.get("kind","codex"),payload,int(item.get("priority",100)),item["id"])
+        store.add(title,kind,payload,int(item.get("priority",100)),item["id"])
         store.event(item["id"],"PLANNER_SEEDED",item["sourceRequirement"],{"target_version":item["targetVersion"],"product":job_product(probe)})
         return 1
     roadmaps=[j for j in store.jobs(10000) if re.fullmatch(r"ROADMAP-\d+",j["id"])]

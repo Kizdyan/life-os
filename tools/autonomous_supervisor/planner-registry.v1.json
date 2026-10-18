@@ -222,7 +222,28 @@
           "CODEX",
           "TESTS"
         ],
-        "prompt": "Implement the smallest bounded M2B semantic-quality evidence correction in the existing Supervisor. Reproduce the repository-evidenced gap first. Ensure zero-confidence fixtures use the actual numeric zero, removed assertions cannot pass acceptance, and developer evidence remains distinct from critic evidence. Add deterministic regression tests, preserve all existing queue and execution-mode behavior, do not weaken assertions, and do not touch main, production, secrets, or unrelated worktrees."
+        "prompt": "Implement the smallest bounded M2B semantic-quality evidence correction in the existing Supervisor. Reproduce the repository-evidenced gap first. Ensure zero-confidence fixtures use the actual numeric zero, removed assertions cannot pass acceptance, and developer evidence remains distinct from critic evidence. Add deterministic regression tests, preserve all existing queue and execution-mode behavior, do not weaken assertions, and do not touch main, production, secrets, or unrelated worktrees.",
+        "localFallback": {
+          "approved": true,
+          "title": "Reject corrupt non-finite Persona style evidence",
+          "risk": 1,
+          "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+          "allowed_files": ["packages/core/src/style-memory.ts"],
+          "required_changed_files": ["packages/core/src/style-memory.ts"],
+          "max_repairs": 2,
+          "goal": "Change only summarizeStyleDimension in packages/core/src/style-memory.ts. Make the pre-existing regression pass by throwing an Error containing Invalid style observation weight when any stored observation has a non-finite weight. Preserve valid finite weights, aggregation, ordering and all public types. Do not edit tests or any other file.",
+          "acceptance": [
+            "the pre-existing non-finite weight regression changes from RED to GREEN",
+            "NaN and infinities cannot become reusable Persona style evidence",
+            "valid finite observations retain existing aggregation and ordering",
+            "focused test, full regression and TypeScript pass"
+          ],
+          "test_commands": [
+            "TZ=UTC npm test -- --run packages/core/src/style-memory.test.ts",
+            "TZ=UTC npm test -- --run",
+            "npm run typecheck"
+          ]
+        }
       }
     },
     {

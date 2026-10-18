@@ -93,4 +93,20 @@ describe("Style Memory feedback learning", () => {
       samples: 2,
     });
   });
+
+  it("rejects non-finite stored weights instead of producing false preferences", async () => {
+    const store = new MemoryStyleStore();
+    store.items.push({
+      assetId: "corrupt-observation",
+      dimension: "color",
+      value: "cinema palette",
+      signal: "specific_feedback",
+      weight: Number.NaN,
+      createdAt: "2026-09-28T22:00:00.000Z",
+    });
+
+    await expect(summarizeStyleDimension(store, "color")).rejects.toThrow(
+      "Invalid style observation weight",
+    );
+  });
 });
