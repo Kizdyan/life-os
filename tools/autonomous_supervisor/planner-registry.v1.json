@@ -221,7 +221,8 @@
         "requires": [
           "CODEX",
           "TESTS"
-        ]
+        ],
+        "prompt": "Implement the smallest bounded M2B semantic-quality evidence correction in the existing Supervisor. Reproduce the repository-evidenced gap first. Ensure zero-confidence fixtures use the actual numeric zero, removed assertions cannot pass acceptance, and developer evidence remains distinct from critic evidence. Add deterministic regression tests, preserve all existing queue and execution-mode behavior, do not weaken assertions, and do not touch main, production, secrets, or unrelated worktrees."
       }
     },
     {
@@ -287,7 +288,8 @@
         "requires": [
           "CODEX",
           "NETWORK"
-        ]
+        ],
+        "prompt": "Implement the smallest bounded M3 private iPhone Command Center slice on the existing Supervisor architecture. Reuse the authorized control endpoint and truthful durable state; do not expose the Supervisor port publicly, secrets, tokens, or private data. Add deterministic tests for authentication, stale/offline truth, execution-mode control and mobile-safe status behavior. Do not deploy, publish, touch main, or replace the current local panel."
       }
     },
     {
@@ -337,7 +339,8 @@
         "requires": [
           "CODEX",
           "TESTS"
-        ]
+        ],
+        "prompt": "Implement the smallest bounded M4 sustained-autonomy simulator and acceptance slice. Exercise durable queue replenishment, executor outage and recovery, bounded retries, budget cooldown, resource limits and honest NO_ELIGIBLE_TASKS without paid calls or production mutation. Add deterministic tests and evidence; preserve SQLite, execution modes, existing worktrees and all safety boundaries. Do not touch main, production, secrets, publishing, or unrelated worktrees."
       }
     },
     {

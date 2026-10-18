@@ -204,6 +204,15 @@ class T(unittest.TestCase):
   self.s.setmeta("milestone.accepted.M2A",json.dumps({"acceptedAt":"now"}))
   self.assertIn("M2B",advance_milestones(self.s,mission))
   self.assertIsNotNone(self.s.meta("milestone.active.M2B"))
+ def test_activated_codex_milestone_seeds_an_executable_prompt(self):
+  root=Path(__file__).resolve().parents[1]
+  mission=load_planner_registry(root,json.loads((root/"mission.v1.json").read_text()))
+  mission={**mission,"backlog":[],"fallbackBacklog":[],"continuation":None}
+  self.s.setmeta("milestone.active.M2B",json.dumps({"activatedAt":"now"}))
+  caps={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE"}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),1)
+  job=next(job for job in self.s.jobs() if job["id"]=="M2-PERSONA-SEMANTIC-GATES-001")
+  self.assertTrue(job["payload"].get("prompt"))
  def test_replenishment_uses_local_ai_when_only_codex_work_is_blocked(self):
   self.s.add("blocked","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+300)
   mission={"backlog":[],"continuation":{"title":"roadmap","kind":"local_ai","priority":9,"payload":{"risk":1,"prompt":"select one bounded gap"}}}
