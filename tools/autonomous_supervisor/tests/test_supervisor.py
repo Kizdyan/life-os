@@ -209,6 +209,7 @@ class T(unittest.TestCase):
   root=Path(__file__).resolve().parents[1]
   mission=load_planner_registry(root,json.loads((root/"mission.v1.json").read_text()))
   mission={**mission,"backlog":[],"fallbackBacklog":[],"continuation":None}
+  mission["plannerRegistry"]=[{**item,"status":"PLANNED"} if item.get("id")=="M2-PERSONA-SEMANTIC-GATES-001" else item for item in mission["plannerRegistry"]]
   self.s.setmeta("milestone.active.M2B",json.dumps({"activatedAt":"now"}))
   caps={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE"}
   self.assertEqual(replenish_backlog(self.s,mission,caps),1)
