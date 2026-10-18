@@ -204,7 +204,7 @@
       "id": "M2-PERSONA-SEMANTIC-GATES-001",
       "milestone": "M2B",
       "status": "INTEGRATED",
-      "integratedSha": "40967df6a830959e7188fe301e20a3bf7299d266",
+      "integratedSha": "40967dfcb9a42d718be4ce7e5a13203e990585ce",
       "title": "Reject misleading Persona semantic QA fixtures",
       "kind": "codex",
       "priority": 50,
