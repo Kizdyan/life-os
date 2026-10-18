@@ -171,8 +171,12 @@ function parsePlan(raw: unknown): PlannedContentDraft {
       if (!["music", "voice", "ambient", "effect"].includes(kind)) {
         throw new Error("Content planner returned invalid audio kind");
       }
+      const atMs = requireNumber(value.atMs ?? value.at_ms, "atMs");
+      if (atMs < 0) {
+        throw new Error(`Content planner audio[${index}] has invalid temporal range`);
+      }
       return {
-        atMs: requireNumber(value.atMs ?? value.at_ms, "atMs"),
+        atMs,
         kind: kind as "music" | "voice" | "ambient" | "effect",
         instruction: requireString(value.instruction, "instruction"),
       };
