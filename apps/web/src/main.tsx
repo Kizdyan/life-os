@@ -1,1 +1,3 @@
-import React from'react';import{createRoot}from'react-dom/client';import App from'./App';createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
+import React,{useEffect,useState}from'react';import{createRoot}from'react-dom/client';import App from'./App';import PersonaPhotoStudio from'./PersonaPhotoStudio';
+function Root(){const[hash,setHash]=useState(location.hash);useEffect(()=>{const update=()=>setHash(location.hash);addEventListener('hashchange',update);return()=>removeEventListener('hashchange',update)},[]);return hash==='#persona-photo'?<PersonaPhotoStudio/>:<App/>}
+createRoot(document.getElementById('root')!).render(<React.StrictMode><Root/></React.StrictMode>);if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
