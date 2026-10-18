@@ -760,7 +760,8 @@
     },
     {
       "id": "P0-QWEN-PERSONA-AUDIO-TIMELINE-001",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
+      "supersededBy": "CODEX-PERSONA-AUDIO-TIMELINE-001",
       "title": "Reject negative Persona audio timeline positions",
       "kind": "local_ai",
       "priority": 50,
@@ -786,6 +787,32 @@
           "TZ=UTC npm test -- --run",
           "npm run typecheck"
         ]
+      }
+    },
+    {
+      "id": "CODEX-PERSONA-AUDIO-TIMELINE-001",
+      "status": "ACTIVE",
+      "integratedSha": "11b0cb9205c28fa75ee9c3ca13549a9a28b62d74",
+      "replaces": ["P0-QWEN-PERSONA-AUDIO-TIMELINE-001"],
+      "title": "Verify integrated Persona audio timeline boundary",
+      "kind": "shell",
+      "priority": 49,
+      "sourceRequirement": "PERSONA_CONTENT_PLAN_TEMPORAL_INTEGRITY",
+      "targetVersion": "first-real-usable-persona",
+      "acceptance": [
+        "the failed Qwen attempt remains preserved as failed evidence",
+        "the negative-audio-timestamp regression is green on the integrated branch",
+        "the complete product regression and TypeScript typecheck pass",
+        "the implementation commit is an ancestor of the installed HEAD"
+      ],
+      "payload": {
+        "product": "PERSONA",
+        "workstream": "QUALITY_COURT",
+        "risk": 0,
+        "requires": ["SHELL", "TESTS", "TYPECHECK"],
+        "command": "git merge-base --is-ancestor 11b0cb9205c28fa75ee9c3ca13549a9a28b62d74 HEAD && TZ=UTC npm test -- --run packages/core/src/content-planner.test.ts && TZ=UTC npm test -- --run && npm run typecheck",
+        "executor_used": "SHELL",
+        "implementation_reason": "Qwen 7B exhausted bounded repairs; a separate manual implementation passed independent focused and full verification"
       }
     }
   ]
