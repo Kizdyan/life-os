@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install",
-  "buildCommand": "npm test -- apps/web/src/erika.test.ts apps/web/src/erikaSpeech.test.ts apps/web/src/localRuntime.test.ts && npm run web:build",
+  "buildCommand": "npm test -- apps/web/src/erika.test.ts apps/web/src/erikaSpeech.test.ts apps/web/src/erikaCopy.test.ts apps/web/src/localRuntime.test.ts && npm run web:build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
