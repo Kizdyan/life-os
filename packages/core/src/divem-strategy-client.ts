@@ -31,6 +31,70 @@ export interface DiveMStrategyTransport {
   }>;
 }
 
+export interface VerifiedDiagnosticInput {
+  tenantId: string;
+  authorizedTenantId: string;
+  measurements: Record<string, number>;
+}
+
+export interface VerifiedDiagnosticResult {
+  state: "ACTIONABLE" | "UNKNOWN";
+  score: number | null;
+  components: Array<{
+    name: string;
+    value: number;
+    evidenceState: "VERIFIED";
+  }>;
+  weakestComponent: string | null;
+  recommendation: string | null;
+}
+
+/**
+ * Produces a deliberately narrow diagnostic only from explicit, verified
+ * tenant-scoped measurements. Missing measurements remain unknown instead of
+ * being inferred from platform assumptions.
+ */
+export function diagnoseVerifiedMeasurements(
+  input: VerifiedDiagnosticInput,
+): VerifiedDiagnosticResult {
+  if (input.tenantId !== input.authorizedTenantId) {
+    throw new Error("tenant authorization mismatch");
+  }
+
+  const components = Object.entries(input.measurements).map(([name, value]) => {
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error("measurement must be a finite value between 0 and 1");
+    }
+    return { name, value, evidenceState: "VERIFIED" as const };
+  });
+
+  if (components.length < 2) {
+    return {
+      state: "UNKNOWN",
+      score: null,
+      components,
+      weakestComponent: null,
+      recommendation: null,
+    };
+  }
+
+  const weakestComponent = components.reduce((weakest, component) =>
+    component.value < weakest.value ? component : weakest,
+  );
+  // Keep the user-visible score deterministic across IEEE-754 addition order.
+  const score = Math.round(
+    (components.reduce((total, component) => total + component.value, 0) / components.length) * 1_000_000,
+  ) / 1_000_000;
+
+  return {
+    state: "ACTIONABLE",
+    score,
+    components,
+    weakestComponent: weakestComponent.name,
+    recommendation: `Improve ${weakestComponent.name} before changing other tactics.`,
+  };
+}
+
 export class DiveMStrategyClient implements DiveMStrategyService {
   constructor(private readonly transport: DiveMStrategyTransport) {}
 
