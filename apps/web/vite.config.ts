@@ -6,5 +6,4 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [react()],
   esbuild: { jsx: "automatic" },
-  build: { outDir: "../../dist", emptyOutDir: true },
 });
