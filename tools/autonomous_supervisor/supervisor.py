@@ -4,7 +4,7 @@ import argparse,json,os,re,shlex,shutil,signal,sqlite3,subprocess,threading,time
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_contract,validate_required_changes,validate_test_integrity
 from codex_budget import evaluate_budget,normalize_rate_limits,read_rate_limits
 
 QUOTA=[re.compile(x,re.I) for x in ("usage limit","rate limit","quota","credits? exhausted","limit.*reset",r"\b429\b")]
@@ -832,6 +832,9 @@ class Runner:
         self.require_local_ai()
         p=j["payload"]
         if int(p.get("risk",1))>1:raise RuntimeError("local AI authority denied for risk above 1")
+        try:validate_contract(p,Path(self.cfg["repo_path"]))
+        except LocalCodingError as exc:
+            message="CONTRACT_INVALID: "+str(exc);self.s.event(j["id"],"CONTRACT_INVALID",message,{"origin":"planner payload"});self.s.state(j["id"],"FAILED",message);return
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
         raw=self.cfg.get("local_ai_command") or [];cmd=prepare_command(shlex.split(raw) if isinstance(raw,str) else [str(x) for x in raw])
         if not cmd:raise RuntimeError("local AI is not configured")

@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from supervisor import H,HTML,Store,Runner,ExecutionModeConflict,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,execution_mode_snapshot,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_dependency_satisfaction,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
-from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
+from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_contract,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
  def setUp(self):self.d=tempfile.TemporaryDirectory();self.s=Store(Path(self.d.name)/"s.db")
@@ -44,6 +44,11 @@ class T(unittest.TestCase):
   text=repair_prompt("base instructions","npm test",7,"bad output")
   self.assertIn("npm test",text);self.assertIn("exit 7",text);self.assertIn("bad output",text)
   self.assertLess(len(text),5000)
+ def test_local_contract_rejects_missing_test_before_model_execution(self):
+  root=Path(self.d.name);source=root/"source.ts";source.write_text("export function moveIntent(){}")
+  task={"allowed_files":["source.ts"],"implementation_files":["source.ts"],"immutable_test_files":["missing.test.ts"],"required_exports":["moveIntent"],"test_commands":["npm test"]}
+  with self.assertRaisesRegex(LocalCodingError,"missing contract file"):
+   validate_contract(task,root)
  def test_critic_requires_explicit_clean_result(self):
   self.assertTrue(critic_clean("No actionable regressions were found."))
   self.assertTrue(critic_clean("No actionable defects were identified in the current changes."))

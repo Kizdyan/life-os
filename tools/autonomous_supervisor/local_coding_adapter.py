@@ -3,6 +3,22 @@ import hashlib,json,re
 from pathlib import Path
 
 class LocalCodingError(RuntimeError):pass
+def validate_contract(task:dict,root:Path):
+    allowed=[str(x) for x in task.get("allowed_files",[])]
+    if not allowed:raise LocalCodingError("contract has no allowed_files")
+    immutable=[str(x) for x in task.get("immutable_test_files",[])]
+    implementation=[str(x) for x in task.get("implementation_files",allowed)]
+    if set(immutable).intersection(implementation) or set(immutable).intersection(allowed):raise LocalCodingError("contract test files overlap implementation files")
+    if not set(implementation).issubset(allowed):raise LocalCodingError("contract file scope is inconsistent")
+    for rel in allowed+immutable:
+        path=(root/rel).resolve()
+        if root.resolve() not in path.parents or not path.is_file() or path.is_symlink():raise LocalCodingError("unsafe or missing contract file: "+rel)
+    for name in task.get("required_exports",[]):
+        if not isinstance(name,str) or not name.strip():raise LocalCodingError("contract has invalid required export")
+        if not any(re.search(r"\bexport\s+(?:async\s+)?(?:function|class|const|interface|type)\s+"+re.escape(name)+r"\b",(root/rel).read_text(errors="replace")) for rel in implementation):raise LocalCodingError("missing required export: "+name)
+    for command in task.get("test_commands",[]):
+        if not isinstance(command,str) or not command.strip():raise LocalCodingError("contract has invalid test command")
+    return True
 
 def classify_failure(command:str,exit_code:int,output:str)->str:
     lower=output.lower()
