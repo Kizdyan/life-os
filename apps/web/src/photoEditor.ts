@@ -6,10 +6,14 @@ export const PHOTO_PRESETS:readonly PhotoPreset[]=[
   {id:'cinema',label:'Cinema',filter:'brightness(.99) contrast(1.09) saturate(.94) sepia(.025)'},
 ];
 export type PhotoRenderPlan={sourceWidth:number;sourceHeight:number;outputWidth:number;outputHeight:number;cropApplied:false;resizeApplied:false;generativeChanges:false;preset:PhotoPresetId};
+export type CanvasPhotoExportContract={format:'image/png';samePixelDimensions:true;sourceFileModified:false;preservesExif:false;preservesIccProfile:false;preservesOriginalResolutionMetadata:false};
 export function createPhotoRenderPlan(width:number,height:number,preset:PhotoPresetId):PhotoRenderPlan{
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<=0||height<=0)throw new Error('Некорректное разрешение фотографии');
   if(!PHOTO_PRESETS.some(item=>item.id===preset))throw new Error('Неизвестный пресет');
   return{sourceWidth:width,sourceHeight:height,outputWidth:width,outputHeight:height,cropApplied:false,resizeApplied:false,generativeChanges:false,preset};
+}
+export function canvasPhotoExportContract():CanvasPhotoExportContract{
+  return{format:'image/png',samePixelDimensions:true,sourceFileModified:false,preservesExif:false,preservesIccProfile:false,preservesOriginalResolutionMetadata:false};
 }
 export function photoExportName(sourceName:string,preset:PhotoPresetId){
   const stem=sourceName.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}._-]+/gu,'-')||'photo';
