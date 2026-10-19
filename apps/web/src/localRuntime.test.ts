@@ -4,6 +4,7 @@ import {
   applyLocalOutcome,
   applyLocalPlan,
   readLocalToday,
+  readLocalItems,
   type StorageLike,
 } from './localRuntime';
 
@@ -27,6 +28,17 @@ describe('browser-local Life OS runtime',()=>{
     expect(first).toMatchObject({applied:true,replayed:false});
     expect(second).toEqual({applied:false,ids:first.ids,replayed:true});
     expect(readLocalToday(storage,'2026-10-02').map(x=>x.title)).toEqual(['Зал','Театр']);
+  });
+
+  it('shows future tasks in Tasks and on the matching Calendar date',()=>{
+    const storage=new MemoryStorage();let id=0;
+    applyLocalPlan(storage,'future',[
+      {title:'Репетиция',kind:'task',planned_start:'2026-10-20T13:00:00+03:00',planned_end:null},
+      {title:'Спектакль',kind:'task',planned_start:'2026-10-21T19:00:00+03:00',planned_end:null},
+    ],()=>`future-${++id}`);
+    expect(readLocalToday(storage,'2026-10-19')).toEqual([]);
+    expect(readLocalItems(storage).map(item=>item.title)).toEqual(['Репетиция','Спектакль']);
+    expect(readLocalItems(storage).filter(item=>item.planned_start?.slice(0,10)==='2026-10-20').map(item=>item.title)).toEqual(['Репетиция']);
   });
 
   it('marks completion without losing planned timing',()=>{
