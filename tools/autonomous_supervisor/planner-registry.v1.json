@@ -966,6 +966,48 @@
           "npm run typecheck"
         ]
       }
+    },
+    {
+      "id": "P2-DIVEM-VERIFIED-DIAGNOSTIC-001",
+      "status": "ACTIVE",
+      "title": "Produce one tenant-bound verified DiveM diagnostic",
+      "kind": "local_ai",
+      "priority": 29,
+      "sourceRequirement": "DIVEM_EXPLAINABLE_DIAGNOSTIC_V0_1",
+      "targetVersion": "divem-diagnostic-v0.1",
+      "acceptance": [
+        "the pre-existing independent diagnostic contract changes from RED to GREEN",
+        "tenant mismatch and non-finite or out-of-range values fail closed",
+        "one verified measurement remains UNKNOWN with no score or recommendation",
+        "two or more verified measurements produce only an explainable arithmetic score and weakest measured component",
+        "only the allowed source module changes; protected tests remain unchanged",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "risk": 1,
+        "auto_integrate": true,
+        "requires": [
+          "LOCAL_AI",
+          "SHELL",
+          "TESTS",
+          "TYPECHECK"
+        ],
+        "allowed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
+        "required_changed_files": [
+          "packages/core/src/divem-strategy-client.ts"
+        ],
+        "max_repairs": 1,
+        "goal": "Change only packages/core/src/divem-strategy-client.ts. Implement and export diagnoseVerifiedMeasurements(input) for the pre-existing independent test contract. It must reject tenant mismatch, reject any non-finite or out-of-range 0..1 measurement, preserve the measurement insertion order in components, return UNKNOWN with null score/weakestComponent/recommendation if fewer than two verified measurements exist, otherwise return their arithmetic mean, lowest-valued component, and exactly the recommendation required by the test. Do not edit tests, the Planner, or any other file.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
     }
   ]
 }
