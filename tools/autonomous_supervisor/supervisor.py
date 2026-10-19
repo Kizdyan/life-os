@@ -225,7 +225,10 @@ def replenish_backlog(store,mission,capabilities=None,scheduler_policy=None):
         advance_milestones(store,mission)
         jobs=store.jobs(10000);by_id={j["id"]:j for j in jobs};states={j["id"]:j["state"] for j in jobs}
         def occupies_prepared_slot(job):
-            if job["kind"]!="local_ai" or job["state"] in TERMINAL_STATES:return False
+            # A candidate awaiting independent Codex review is no longer
+            # locally executable. It must not consume the bounded LOCAL_AI
+            # backlog while Codex is disabled or cooling down.
+            if job_executor(job)!="LOCAL_AI" or job["state"] in TERMINAL_STATES:return False
             dependencies=job.get("payload",{}).get("dependencies",[])
             return not any(states.get(dep) in TERMINAL_STATES and states.get(dep) not in DEPENDENCY_SATISFIED_STATES for dep in dependencies)
         active_local=sum(1 for j in jobs if occupies_prepared_slot(j))
@@ -681,8 +684,6 @@ class Runner:
         if branch in set(self.cfg["protected_branches"]):raise RuntimeError("protected branch denied: "+branch)
         wanted=wtroot/re.sub(r"[^A-Za-z0-9._-]+","-",j["id"])
         self.s.state(j["id"],"PREPARING")
-        self.git(root,["worktree","prune"])
-
         # Reuse an already-registered supervisor worktree for this branch.
         listing=self.git(root,["worktree","list","--porcelain"]).splitlines()
         registered=[];cur={}

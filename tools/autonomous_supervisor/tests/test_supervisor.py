@@ -326,6 +326,17 @@ class T(unittest.TestCase):
   self.assertEqual(replenish_backlog(self.s,mission,caps),3)
   seeded={job["id"] for job in self.s.jobs(100)}
   self.assertTrue(required.issubset(seeded))
+ def test_codex_review_candidate_does_not_consume_local_backlog_capacity(self):
+  root=Path(__file__).resolve().parents[1]
+  mission=load_planner_registry(root,{},root/"planner-registry.v1.json")
+  self.s.add("review","local_ai",{"risk":1},1,"ROADMAP-011")
+  self.s.state("ROADMAP-011","LOCAL_READY_PENDING_CODEX_REVIEW")
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE"}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),3)
+  self.assertIn("P1-DIVEM-DIAGNOSTIC-001",{job["id"] for job in self.s.jobs(100)})
+ def test_supervisor_worktree_setup_never_prunes_unrelated_worktrees(self):
+  source=Path(__file__).resolve().parents[1]/"supervisor.py"
+  self.assertNotIn('["worktree","prune"]',source.read_text())
  def test_quality_first_addendum_is_durable_and_evidence_bound(self):
   mission=json.loads((Path(__file__).resolve().parents[1]/"mission.v1.json").read_text())
   policy=mission["qualityFirstAddendum"]
