@@ -1,1 +1,56 @@
-import{useEffect,useRef,useState}from'react';import{executeErika}from'./erika';import{applyPlan,today}from'./api';import{planCompound}from'./planner';import{autoVoice}from'./voiceController';import type{Item}from'./types';const day=(i:Item[])=>i.find(x=>x.planned_start)?.planned_start?.slice(0,10)||new Date().toISOString().slice(0,10);const iso=(d:string,t:string)=>`${d}T${t}:00+03:00`;const fp=(d:string,p:{title:string;start?:string;end?:string}[])=>[d,...p.map(x=>`${x.title.toLowerCase()}:${x.start}:${x.end}`)].join('|');export default function ErikaSheet({items,onClose,onApplied}:{items:Item[];onClose:()=>void;onApplied:()=>void}){const[text,setText]=useState(''),[message,setMessage]=useState('Слушаю…'),[busy,setBusy]=useState(false),latest=useRef('');useEffect(()=>autoVoice(t=>{latest.current=t;setText(t)},()=>void run(latest.current)),[]);async function run(value=text){if(!value.trim()||busy)return;setBusy(true);setMessage('Обрабатываю…');try{const plan=planCompound(value,items),d=day(items);if(plan.length>1||plan.some(x=>x.start)){if(plan.some(x=>!x.start||!x.end)){setMessage('Не могу безопасно разместить все пункты. Уточните время или границу дня.');return}const payload=plan.map(x=>({title:x.title,kind:'task',planned_start:iso(d,x.start!),planned_end:iso(d,x.end!)}));const result=await applyPlan(fp(d,plan),payload);const fresh=await today(d),created=result.ids.filter(id=>fresh.some(x=>x.id===id));if(created.length!==result.ids.length)throw Error('План записан не полностью — требуется повторная проверка');setMessage(`Готово. В расписание добавлено: ${created.length}.${result.replayed?' Повторная команда не создала дублей.':''}`);onApplied();return}const r=await executeErika(value,items);setMessage(r.message);if(r.understood)onApplied()}catch(e){setMessage('Не применяю изменения: '+String(e))}finally{setBusy(false)}}return <div className="sheetBackdrop" onClick={onClose}><div className="sheet" onClick={e=>e.stopPropagation()}><div className="sheetHead"><b>Эрика</b><button onClick={onClose}>×</button></div><textarea value={text} onChange={e=>{latest.current=e.target.value;setText(e.target.value)}} placeholder="Говорите свободно…"/><button className="send" disabled={busy} onClick={()=>void run()}>{busy?'Обрабатываю…':'Выполнить'}</button>{message&&<p style={{whiteSpace:'pre-line'}}>{message}</p>}</div></div>}
+import { useEffect, useRef, useState } from 'react';
+import { executeErika } from './erika';
+import { applyPlan, today } from './api';
+import { planCompound } from './planner';
+import { autoVoice } from './voiceController';
+import { createQuickCapture } from './quickCapture';
+import type { Item } from './types';
+import './erikaQuickCapture.css';
+
+function localDay() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
+const day = (items: Item[]) => items.find(x => x.planned_start)?.planned_start?.slice(0, 10) || localDay();
+const iso = (d: string, t: string) => `${d}T${t}:00+03:00`;
+const fp = (d: string, p: { title: string; start?: string; end?: string }[]) => [d, ...p.map(x => `${x.title.toLowerCase()}:${x.start}:${x.end}`)].join('|');
+
+export default function ErikaSheet({ items, onClose, onApplied }: { items: Item[]; onClose: () => void; onApplied: () => void }) {
+  const [text, setText] = useState(''), [message, setMessage] = useState('Слушаю…'), [busy, setBusy] = useState(false);
+  const [quickTitle, setQuickTitle] = useState(''), [quickDate, setQuickDate] = useState(() => day(items)), [quickTime, setQuickTime] = useState('09:00'), [quickMessage, setQuickMessage] = useState('');
+  const latest = useRef('');
+  useEffect(() => autoVoice(t => { latest.current = t; setText(t); }, () => void run(latest.current)), []);
+
+  async function run(value = text) {
+    if (!value.trim() || busy) return;
+    setBusy(true); setMessage('Обрабатываю…');
+    try {
+      const plan = planCompound(value, items), d = day(items);
+      if (plan.length > 1 || plan.some(x => x.start)) {
+        if (plan.some(x => !x.start || !x.end)) { setMessage('Не могу безопасно разместить все пункты. Уточните время или границу дня.'); return; }
+        const payload = plan.map(x => ({ title: x.title, kind: 'task', planned_start: iso(d, x.start!), planned_end: iso(d, x.end!) }));
+        const result = await applyPlan(fp(d, plan), payload), fresh = await today(d), created = result.ids.filter(id => fresh.some(x => x.id === id));
+        if (created.length !== result.ids.length) throw Error('План записан не полностью — требуется повторная проверка');
+        setMessage(`Готово. В расписание добавлено: ${created.length}.${result.replayed ? ' Повторная команда не создала дублей.' : ''}`); onApplied(); return;
+      }
+      const result = await executeErika(value, items); setMessage(result.message); if (result.understood) onApplied();
+    } catch (error) { setMessage('Не применяю изменения: ' + String(error)); } finally { setBusy(false); }
+  }
+
+  async function saveQuickCapture() {
+    try {
+      const request = createQuickCapture({ title: quickTitle, date: quickDate, time: quickTime });
+      setQuickMessage('Сохраняю…');
+      const result = await applyPlan(request.idempotencyKey, request.items), fresh = await today(quickDate);
+      if (!result.ids.every(id => fresh.some(item => item.id === id))) throw Error('Задача не подтвердилась после сохранения');
+      setQuickMessage(result.replayed ? 'Эта задача уже есть в расписании.' : 'Задача сохранена в расписании.'); setQuickTitle(''); onApplied();
+    } catch (error) { setQuickMessage(error instanceof Error ? error.message : 'Не удалось сохранить задачу'); }
+  }
+
+  return <div className="sheetBackdrop" onClick={onClose}><div className="sheet" role="dialog" aria-modal="true" aria-label="Эрика" onClick={event => event.stopPropagation()}>
+    <div className="sheetHead"><b>Эрика</b><button aria-label="Закрыть" onClick={onClose}>×</button></div>
+    <div className="quickCapture"><h2>Добавить задачу</h2><p>Сохраните одну задачу сразу или опишите день свободной фразой ниже.</p>
+      <label>Что сделать<input value={quickTitle} onChange={event => setQuickTitle(event.target.value)} placeholder="Например, репетиция вокала" autoComplete="off" /></label>
+      <div className="quickFields"><label>Дата<input aria-label="Дата новой задачи" type="date" value={quickDate} onChange={event => setQuickDate(event.target.value)} /></label><label>Время<input aria-label="Время новой задачи" type="time" value={quickTime} onChange={event => setQuickTime(event.target.value)} /></label></div>
+      <button className="send" type="button" disabled={busy} onClick={() => void saveQuickCapture()}>Сохранить задачу</button>{quickMessage && <p className="quickStatus" role="status">{quickMessage}</p>}
+    </div>
+    <textarea value={text} onChange={event => { latest.current = event.target.value; setText(event.target.value); }} placeholder="Говорите свободно…" /><button className="send" disabled={busy} onClick={() => void run()}>{busy ? 'Обрабатываю…' : 'Выполнить'}</button>{message && <p style={{ whiteSpace: 'pre-line' }}>{message}</p>}
+  </div></div>;
+}
