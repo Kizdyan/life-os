@@ -1031,6 +1031,41 @@
           "npm run typecheck"
         ]
       }
+    },
+    {
+      "id": "P2-LIFE-ERIKA-EXPLICIT-MOVE-001",
+      "status": "ACTIVE",
+      "title": "Execute one explicit Erika local move command",
+      "kind": "local_ai",
+      "priority": 28,
+      "sourceRequirement": "LIFE_OS_ERIKA_NATURAL_MOVE_COMMAND",
+      "targetVersion": "life-os-daily-driver-v0.1",
+      "acceptance": [
+        "the fixed independent Erika test changes from RED to GREEN",
+        "one explicitly named item moves through the existing local move API",
+        "ambiguous or incomplete phrasing writes nothing",
+        "only Erika source changes; the protected test remains unmodified",
+        "focused test, TypeScript and build pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "ERIKA",
+        "risk": 1,
+        "auto_integrate": true,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK", "BUILD"],
+        "allowed_files": ["apps/web/src/erika.ts"],
+        "implementation_files": ["apps/web/src/erika.ts"],
+        "immutable_test_files": ["apps/web/src/erika.test.ts"],
+        "required_exports": ["executeErika"],
+        "required_changed_files": ["apps/web/src/erika.ts"],
+        "max_repairs": 1,
+        "goal": "Change only apps/web/src/erika.ts. Make the pre-existing protected Erika test pass. Recognize only an explicit Russian move phrase containing a uniquely matched item title, ISO date YYYY-MM-DD and HH:MM. Call the existing move(item.id, ISO date-time with +03:00), return exactly the tested confirmation, and refuse ambiguous or incomplete commands before any write. Preserve existing complete/not-complete behavior. Do not edit tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run apps/web/src/erika.test.ts apps/web/src/localRuntime.move.test.ts",
+          "npm run typecheck",
+          "npm run web:build"
+        ]
+      }
     }
   ]
 }
