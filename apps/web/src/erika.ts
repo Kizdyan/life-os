@@ -115,12 +115,14 @@ export async function executeErika(text: string, items: Item[]): Promise<ErikaRe
 
   const normalized = normalize(text);
   const ranked = items.map(item => ({ item, score: score(normalized, item.title) })).sort((a, b) => b.score - a.score);
-  const item = ranked[0]?.score ? ranked[0].item : null;
-  if (!item) return { understood: false, message: "Не нашла подходящий пункт в сегодняшнем графике." };
-  if (/(?:сделал|сделано|выполнил|готово|завершил)/i.test(normalized)) {
-    await outcome(item, "complete");
-    return { understood: true, message: `✓ ${item.title} — выполнено.` };
+  const best = ranked[0];
+  if (!best?.score) return { understood: false, message: "Не нашла подходящий пункт в сегодняшнем графике." };
+  const ties = ranked.filter(entry => entry.score === best.score);
+  if (ties.length > 1) {
+    return { understood: false, message: `Уточните задачу: ${ties.map(entry => entry.item.title).join(" или ")}. Ничего не изменено.` };
   }
+  const item = best.item;
+  // Check negation BEFORE positive verbs: "не сделал" must never mark complete.
   if (/(?:не сделал|не выполнил|не успел|пропустил)/i.test(normalized)) {
     await outcome(item, "not_complete");
     return {
@@ -129,6 +131,10 @@ export async function executeErika(text: string, items: Item[]): Promise<ErikaRe
         ? `× ${item.title} — отмечено как не выполненное вовремя и перенесено дальше.`
         : `× ${item.title} — не выполнено.`,
     };
+  }
+  if (/(?:сделал|сделано|выполнил|готово|завершил)/i.test(normalized)) {
+    await outcome(item, "complete");
+    return { understood: true, message: `✓ ${item.title} — выполнено.` };
   }
   return { understood: false, message: "Пункт нашла, но не поняла действие." };
 }
