@@ -82,7 +82,7 @@ export function applyLocalOutcome(
   return{current,successor};
 }
 
-export interface LocalMoveUndo{itemId:string;before:string|undefined;after:string;revision:string}
+export interface LocalMoveUndo{itemId:string;before:string|null;after:string;revision:string}
 
 export function moveLocalItem(storage:StorageLike,itemId:string,plannedStart:string):{item:Item;undo:LocalMoveUndo}{
   if(!plannedStart)throw new Error('planned_start is required');
