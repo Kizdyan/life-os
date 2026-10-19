@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DiveMStrategyClient } from "./divem-strategy-client";
+import { diagnoseVerifiedMeasurements, DiveMStrategyClient } from "./divem-strategy-client";
 
 describe("DiveM strategy client adapter", () => {
   it("maps Life OS media request to the DiveM personal contract", async () => {
@@ -149,5 +149,54 @@ describe("DiveM strategy client adapter", () => {
       goal: "test",
       currentFocus: [],
     })).rejects.toThrow(field+" must be one of");
+  });
+});
+
+describe("evidence-bound DiveM diagnostic", () => {
+  it("derives an explainable score and one recommendation from verified measurements", () => {
+    expect(diagnoseVerifiedMeasurements({
+      tenantId: "tenant-1",
+      authorizedTenantId: "tenant-1",
+      measurements: { profile_clarity: 0.8, content_consistency: 0.4 },
+    })).toEqual({
+      state: "ACTIONABLE",
+      score: 0.6,
+      components: [
+        { name: "profile_clarity", value: 0.8, evidenceState: "VERIFIED" },
+        { name: "content_consistency", value: 0.4, evidenceState: "VERIFIED" },
+      ],
+      weakestComponent: "content_consistency",
+      recommendation: "Improve content_consistency before changing other tactics.",
+    });
+  });
+
+  it("fails closed on a tenant mismatch or non-finite/out-of-range measurements", () => {
+    expect(() => diagnoseVerifiedMeasurements({
+      tenantId: "tenant-1",
+      authorizedTenantId: "tenant-2",
+      measurements: { profile_clarity: 0.8 },
+    })).toThrow("tenant");
+
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, 1.1]) {
+      expect(() => diagnoseVerifiedMeasurements({
+        tenantId: "tenant-1",
+        authorizedTenantId: "tenant-1",
+        measurements: { profile_clarity: value },
+      })).toThrow("measurement");
+    }
+  });
+
+  it("reports UNKNOWN rather than inventing a diagnosis from insufficient evidence", () => {
+    expect(diagnoseVerifiedMeasurements({
+      tenantId: "tenant-1",
+      authorizedTenantId: "tenant-1",
+      measurements: { profile_clarity: 0.8 },
+    })).toEqual({
+      state: "UNKNOWN",
+      score: null,
+      components: [{ name: "profile_clarity", value: 0.8, evidenceState: "VERIFIED" }],
+      weakestComponent: null,
+      recommendation: null,
+    });
   });
 });
