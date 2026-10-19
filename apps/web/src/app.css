@@ -199,3 +199,29 @@ main.photoStudio { background: #f5f3ed; min-height:100dvh; max-width:760px; padd
   .photoStudio .photoDrop { min-height:208px; }
   .photoStudio .photoFeatureRow span { font-size:9px; }
 }
+
+
+/* Real-device feedback 2026-10-19: keep the empty-day experience compact and unobstructed. */
+.lifeApp::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: #f5f3ed;
+  z-index: 32;
+  pointer-events: none;
+}
+.lifeApp .overviewCard.isEmpty { min-height: 165px; padding: 20px 21px; }
+.lifeApp .overviewCard.isEmpty .overviewCopy h2 { max-width: none; font-size: 22px; margin: 10px 0 6px; }
+.lifeApp .overviewCard.isEmpty .overviewCopy p { max-width: 390px; margin: 0 0 15px; }
+.lifeApp .overviewCard.isEmpty .overviewAction { padding: 10px 13px; }
+.lifeApp .weekStripSection { margin-top: 21px; margin-bottom: 20px; }
+.lifeApp .scheduleSection { margin-top: 19px; }
+.lifeApp .floatingAdd { display:none; }
+.lifeApp .lifeDock { z-index: 40; }
+@media (max-width:420px) {
+  .lifeApp .overviewCard.isEmpty { min-height: 154px; padding: 17px 18px; }
+  .lifeApp .overviewCard.isEmpty .overviewCopy h2 { font-size: 20px; margin: 8px 0 5px; }
+  .lifeApp .overviewCard.isEmpty .overviewCopy p { margin-bottom: 11px; font-size: 12px; }
+  .lifeApp .weekStripSection { margin-top: 18px; }
+}
