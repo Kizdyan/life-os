@@ -211,16 +211,16 @@ export default function App() {
       {error && <div className="lifeAlert" role="alert">{error}<button onClick={() => {setError('');void load();}}>Повторить</button></div>}
 
       {tab === 'today' && <>
-        <section className="overviewCard" aria-label="Сводка дня">
+        <section className={'overviewCard' + (todayList.length ? '' : ' isEmpty')} aria-label="Сводка дня">
           <div className="overviewCopy">
             <span className="overline">МОЙ РИТМ</span>
             <h2>{todayList.length === 0 ? 'День открыт для планов' : countPending > 0 ? 'Сегодня есть что сделать' : 'Все планы под контролем'}</h2>
             <p>{todayList.length === 0 ? 'Добавьте первое дело — остальное соберём по шагам.' : countPending === 0 ? 'Хорошая работа. Можно немного выдохнуть.' : countPending + ' ' + (countPending === 1 ? 'дело ждёт' : 'дела ждут') + ' вашего внимания.'}</p>
             <button className="overviewAction" type="button" onClick={() => openQuick()}><Icon name="plus" size={18}/> Новая задача</button>
           </div>
-          <div className="progressRing" style={{ background: 'conic-gradient(#c6d6a7 ' + percentage + '%,rgba(255,255,255,.13) 0)' }} aria-label={'Выполнено ' + percentage + ' процентов'}>
+          {todayList.length > 0 && <div className="progressRing" style={{ background: 'conic-gradient(#c6d6a7 ' + percentage + '%,rgba(255,255,255,.13) 0)' }} aria-label={'Выполнено ' + percentage + ' процентов'}>
             <div><strong>{percentage}%</strong><small>готово</small></div>
-          </div>
+          </div>}
         </section>
         <section className="weekStripSection" aria-label="Ближайшая неделя">
           <div className="sectionHead"><h2>Неделя</h2><button type="button" onClick={() => {setTab('calendar');setMonth(todayDate.slice(0,7));}}>Весь месяц <Icon name="arrow" size={16}/></button></div>
@@ -278,7 +278,7 @@ export default function App() {
         <Icon name={icon} size={22}/><span>{label}</span>
       </button>)}
     </nav>
-    <button className="floatingAdd" type="button" aria-label="Быстро добавить задачу" onClick={() => openQuick(tab === 'calendar' ? chosenDate : todayDate)}><Icon name="plus" size={26}/></button>
+
 
     {canUndo && <div className="lifeToast" role="status"><span>Перенос сохранён</span><button onClick={() => void restoreMove()}>Отменить</button></div>}
     {moving && <div className="lifeBackdrop" onClick={() => setMoving(null)}><div className="lifeSheet" role="dialog" aria-modal="true" aria-label="Перенести задачу" onClick={e => e.stopPropagation()}>
