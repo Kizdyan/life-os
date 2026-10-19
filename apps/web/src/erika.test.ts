@@ -30,6 +30,20 @@ describe("Erika explicit local move command", () => {
     expect(move).toHaveBeenCalledWith("task-1", "2026-10-20T14:30:00+03:00");
   });
 
+  it("records negative speech as not completed, never completed", async () => {
+    outcome.mockResolvedValue({});
+    await expect(executeErika("Не сделал репетицию", [rehearsal])).resolves.toMatchObject({understood:true});
+    expect(outcome).toHaveBeenCalledWith(rehearsal, "not_complete");
+    expect(outcome).not.toHaveBeenCalledWith(rehearsal, "complete");
+  });
+
+  it("refuses equally plausible task titles instead of choosing the first", async () => {
+    const other = {...rehearsal, id:"task-2", title:"Репетиция вокала"};
+    const result = await executeErika("Не сделал репетицию", [rehearsal, other]);
+    expect(result.understood).toBe(false);
+    expect(outcome).not.toHaveBeenCalled();
+  });
+
   it("refuses ambiguous or incomplete move commands without a write", async () => {
     await expect(executeErika("Перенеси репетицию", [rehearsal])).resolves.toMatchObject({ understood: false });
     await expect(executeErika("Перенеси репетицию на 2026-10-20 в 14:30", [rehearsal, { ...rehearsal, id: "task-2" }]))
