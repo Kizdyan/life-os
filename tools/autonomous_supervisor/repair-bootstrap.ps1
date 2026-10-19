@@ -13,6 +13,10 @@ if($LASTEXITCODE -ne 0){ throw "GitHub CLI is not authenticated in WSL." }
 & wsl.exe -d $Distro -- gh auth setup-git
 if($LASTEXITCODE -ne 0){ throw "Could not configure gh as git credential helper." }
 
+Info "Repairing TRUST-001 bootstrap base to an already-local branch..."
+& wsl.exe -d $Distro -- python3 -c "import json,sqlite3,os; p=os.path.expanduser('~/.life-os-supervisor/supervisor.db'); c=sqlite3.connect(p); r=c.execute('select payload from jobs where id=?',('TRUST-001',)).fetchone(); d=json.loads(r[0]) if r else None; d and d.update({'base_ref':'feature/autonomous-supervisor-runtime-v1'}); r and c.execute('update jobs set payload=?, state=?, not_before=NULL, last_error=NULL where id=?',(json.dumps(d,ensure_ascii=False,separators=(',',':')),'QUEUED','TRUST-001')); c.commit(); c.close()"
+if($LASTEXITCODE -ne 0){ throw "Could not repair TRUST-001 bootstrap state." }
+
 Info "Restarting Supervisor with the latest code..."
 & wsl.exe -d $Distro -u root -- systemctl restart life-os-supervisor.service
 if($LASTEXITCODE -ne 0){ throw "Could not restart Supervisor." }
