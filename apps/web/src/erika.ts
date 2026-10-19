@@ -20,9 +20,11 @@ function normalize(value: string) {
 }
 
 function score(text: string, title: string) {
-  const input = new Set(normalize(text).split(" ").filter(word => word.length > 2));
-  return normalize(title).split(" ").filter(word => word.length > 2)
-    .reduce((total, word) => total + (input.has(word) ? 1 : 0), 0);
+  // Only complete title forms may authorize an action, never a single overlapping word.
+  const input = ` ${normalize(text)} `;
+  return Math.max(0, ...[...titleForms(title)]
+    .filter(form => input.includes(` ${form} `))
+    .map(form => form.split(" ").length));
 }
 
 function inflectWord(word: string, form: "base" | "accusative" | "oblique" | "instrumental") {
@@ -122,6 +124,14 @@ export async function executeErika(text: string, items: Item[]): Promise<ErikaRe
     return { understood: false, message: `Уточните задачу: ${ties.map(entry => entry.item.title).join(" или ")}. Ничего не изменено.` };
   }
   const item = best.item;
+  // A requested short title can refer to longer tasks as well. Ask rather than guess.
+  const spokenForm = [...titleForms(item.title)].find(form => ` ${normalized} `.includes(` ${form} `));
+  const broader = spokenForm && items.filter(other => other.id !== item.id &&
+    [...titleForms(other.title)].some(form => form.startsWith(`${spokenForm} `)));
+  if (broader && broader.length) return {
+    understood: false,
+    message: `Уточните задачу: ${[item, ...broader].map(entry => entry.title).join(" или ")}. Ничего не изменено.`,
+  };
   // Check negation BEFORE positive verbs: "не сделал" must never mark complete.
   if (/(?:не сделал|не выполнил|не успел|пропустил)/i.test(normalized)) {
     await outcome(item, "not_complete");
