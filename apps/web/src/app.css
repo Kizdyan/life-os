@@ -19,3 +19,152 @@ article button { cursor: pointer; }
   .time { font-size: 12px; }
   nav button, nav a { font-size: 11px; }
 }
+
+
+/* Life OS mobile product shell: deliberately scoped so Persona and DiveM remain independent. */
+main.lifeApp {
+  --paper: #f5f3ed;
+  --ink: #212922;
+  --muted: #7e857b;
+  --forest: #263f35;
+  --leaf: #8da681;
+  --line: #e5e6dd;
+  max-width: none;
+  min-height: 100dvh;
+  padding: 0 0 calc(112px + env(safe-area-inset-bottom));
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+.lifeApp button, .lifeApp input { font: inherit; }
+.lifeApp button:focus-visible, .lifeApp a:focus-visible, .lifeApp input:focus-visible {
+  outline: 3px solid #9eae92; outline-offset: 3px;
+}
+.lifeApp .lifeFrame { max-width: 850px; margin: 0 auto; padding: 26px 22px 28px; }
+.lifeApp .topBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 30px; }
+.lifeApp .brandMark { display: inline-flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 780; letter-spacing: .22em; }
+.lifeApp .brandGlyph { width: 35px; height: 35px; display: grid; place-items: center; background: var(--forest); border-radius: 11px; color: white; letter-spacing: -.08em; font-size: 18px; font-weight: 800; }
+.lifeApp .assistantPill { display: flex; gap: 9px; align-items: center; color: var(--forest); background: #e7ece3; border: 1px solid #d8e1d3; padding: 11px 16px; border-radius: 30px; font-weight: 650; font-size: 13px; cursor: pointer; }
+.lifeApp .assistantPill svg { color: #6e8868; }
+.lifeApp .pageHeader { display: flex; align-items: end; justify-content: space-between; margin: 0 0 26px; }
+.lifeApp .eyebrow { font-size: 11px; font-weight: 650; color: #758074; letter-spacing: .11em; text-transform: uppercase; margin: 0 0 7px; }
+.lifeApp h1 { font-weight: 760; font-size: clamp(33px, 5.5vw, 46px); letter-spacing: -.052em; line-height: 1.05; margin: 0 0 8px; }
+.lifeApp .pageSubtitle { margin: 0; font-size: 14px; color: #858a81; line-height: 1.5; }
+.lifeApp .overviewCard { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 208px; padding: 23px 23px; background: linear-gradient(135deg,#30493e,#1f362f); border-radius: 23px; color: #fff; position: relative; overflow: hidden; box-shadow: 0 12px 26px rgba(29,48,37,.12); }
+.lifeApp .overviewCard:after { content: ''; position: absolute; width: 240px; height: 240px; border-radius: 50%; right: -120px; top: -170px; border: 1px solid rgba(255,255,255,.12); pointer-events:none; }
+.lifeApp .overviewCopy { flex: 1; min-width: 0; position: relative; z-index: 1; }
+.lifeApp .overline { display: block; font-size: 10px; letter-spacing: .21em; font-weight: 700; color: #bac9b5; }
+.lifeApp .overviewCopy h2 { max-width: 310px; font-size: clamp(22px,3vw,27px); letter-spacing: -.037em; line-height: 1.12; margin: 14px 0 7px; font-weight: 700; }
+.lifeApp .overviewCopy p { color: #ced9ce; font-size: 12px; max-width: 230px; line-height: 1.45; margin: 0 0 20px; }
+.lifeApp .overviewAction { display: inline-flex; align-items:center; gap:7px; background:#f3f1e9; border: 0; padding: 11px 14px; border-radius: 12px; color: #263c33; font-size: 13px; font-weight: 700; cursor: pointer; }
+.lifeApp .progressRing { width: 101px; height: 101px; flex: 0 0 101px; border-radius: 50%; display: grid; place-items: center; padding: 9px; }
+.lifeApp .progressRing > div { border-radius: 50%; background:#2b4338; width:100%; height:100%; display:flex; justify-content:center; align-items:center; flex-direction:column; }
+.lifeApp .progressRing strong { font-size: 23px; font-weight: 730; line-height: 1; letter-spacing: -.03em; }
+.lifeApp .progressRing small { letter-spacing: 0; color: #bacbb9; font-size: 10px; margin-top: 4px; }
+.lifeApp .weekStripSection { margin: 27px 0 27px; display: block; }
+.lifeApp .sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 15px; }
+.lifeApp .sectionHead h2 { font-size: 20px; font-weight: 760; margin: 0; letter-spacing: -.035em; }
+.lifeApp .sectionHead button { border: 0; background: transparent; color: #526a55; font-size: 12px; font-weight: 700; display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding: 5px 0; }
+.lifeApp .quietCount { background:#eceee6; color:#6e766c; padding:7px 9px; font-size:11px; border-radius:9px; white-space:nowrap; }
+.lifeApp .weekStrip { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 6px; }
+.lifeApp .weekDay { background: #fff; border: 1px solid #ebede5; padding: 11px 2px 9px; border-radius: 13px; display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; min-width:0; color:#656e65; box-shadow:0 1px 3px rgba(31,48,37,.02); }
+.lifeApp .weekDay span { font-size: 10px; text-transform: capitalize; }
+.lifeApp .weekDay strong { font-weight:740; font-size:16px; color:#2d382f; }
+.lifeApp .weekDay.chosen { background: #e8eddf; border-color: #bcc8b2; color:#2e4537; }
+.lifeApp .weekDay i, .lifeApp .monthDay i { width: 4px; height: 4px; border-radius: 50%; background:transparent; }
+.lifeApp .weekDay i.hasTasks, .lifeApp .monthDay i.hasTasks { background:#809773; }
+.lifeApp .scheduleSection { display:block; margin: 27px 0 8px; }
+.lifeApp .taskList { display:grid; gap:8px; }
+.lifeApp .taskRow { display: flex; align-items: center; gap: 13px; background:white; border: 1px solid #e9ece4; border-radius: 16px; min-height: 75px; padding: 12px 13px; box-shadow: 0 2px 7px rgba(29,44,34,.035); }
+.lifeApp .taskRow.isDone { opacity: .65; }
+.lifeApp .taskCheck { flex:0 0 28px; width:28px; height:28px; border: 1.7px solid #a8b9a0; border-radius:9px; background: #f9faf6; cursor:pointer; color: white; display:grid; place-items:center; }
+.lifeApp .taskRow.isDone .taskCheck { background:#809575; border-color:#809575; }
+.lifeApp .taskBody { display:grid; gap:6px; flex:1; min-width:0; }
+.lifeApp .taskBody strong { font-size: 14px; color:#29382c; font-weight:690; line-height:1.3; overflow-wrap:anywhere; }
+.lifeApp .taskRow.isDone .taskBody strong { text-decoration:line-through; }
+.lifeApp .taskBody span { font-size:11px; color:#879086; }
+.lifeApp .taskMove { flex:0 0 33px; width:33px; height:33px; border:0; background:#f0f2ec; color:#4d6653; border-radius:10px; display:grid; place-items:center; cursor:pointer; }
+.lifeApp .taskSkip { flex:0 0 29px; width:29px; height:33px; border:0; background:transparent; color:#9ba49a; cursor:pointer; font-weight:800; font-size:19px; }
+.lifeApp .emptyPanel { display:grid; justify-items:center; text-align:center; border:1px dashed #dce2d7; background:#fcfcf9; border-radius:20px; padding:28px 20px; }
+.lifeApp .emptySymbol { border-radius:18px; background:#e8efe2; width:56px; height:56px; display:grid; place-items:center; color:#638365; margin-bottom:15px; }
+.lifeApp .emptyPanel strong { font-size:16px; font-weight:750; }
+.lifeApp .emptyPanel p { color:#8b9287; font-size:12px; line-height:1.55; max-width:280px; margin:7px 0 17px; }
+.lifeApp .emptyPanel button { background:#e9eee5; color:#36523b; border:0; padding:11px 16px; border-radius:10px; font-size:12px; font-weight:750; cursor:pointer; }
+.lifeApp .smallTip { display:flex; align-items:center; gap:9px; font-size:12px; color:#68786b; margin:19px 0; }
+.lifeApp .taskToolbar { display:flex; align-items:center; justify-content:space-between; margin: 10px 0 22px; }
+.lifeApp .filterGroup { background:#e8ebe3; border-radius:12px; padding:4px; display:flex; gap:3px; }
+.lifeApp .filterGroup button { border:0; background:transparent; border-radius:9px; padding:10px 12px; color:#707a70; font-size:12px; cursor:pointer; }
+.lifeApp .filterGroup button.selected { background:#fff; box-shadow:0 2px 5px #12271612; color:#2f4b36; font-weight:720; }
+.lifeApp .smallAdd { display:grid; place-items:center; border:0; border-radius:11px; background:#dce8d6; color:#38563b; width:40px; height:40px; cursor:pointer; }
+.lifeApp .monthCard { background:#fff; border:1px solid #e6e9df; border-radius:21px; padding:20px 13px 17px; display:block; box-shadow:0 5px 18px rgba(26,43,31,.035); }
+.lifeApp .monthTop { display:flex; align-items:center; justify-content:space-between; padding:0 7px 19px; }
+.lifeApp .monthTop h2 { margin:0; font-size:20px; text-transform:capitalize; letter-spacing:-.03em; }
+.lifeApp .monthArrows { display:flex; gap:6px; }
+.lifeApp .monthArrows button { border:1px solid #e5e7df; background:#f6f7f3; width:32px; height:32px; display:grid; place-items:center; border-radius:10px; cursor:pointer; }
+.lifeApp .monthGrid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+.lifeApp .weekLabel { text-align:center; font-size:10px; color:#9aa298; padding-bottom:9px; }
+.lifeApp .monthDay { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:1px; min-height:43px; border:1px solid transparent; background:transparent; border-radius:11px; font-weight:610; font-size:13px; color:#435144; cursor:pointer; }
+.lifeApp .monthDay.otherMonth { color:#bdc3ba; }
+.lifeApp .monthDay.isToday { border-color:#9cac95; }
+.lifeApp .monthDay.selected { background:#344e40; color:#fff; border-color:#344e40; }
+.lifeApp .monthDay.selected i.hasTasks { background:#b9cda7; }
+.lifeApp .calendarEmpty { border-radius:16px; border:1px dashed #dbe3d7; background:#fff; display:flex; justify-content:space-between; gap:10px; align-items:center; padding:19px; color:#7b857a; font-size:12px; }
+.lifeApp .calendarEmpty button { border:0; border-radius:9px; background:#eaf0e5; color:#426044; font-weight:720; padding:10px; cursor:pointer; }
+.lifeApp .productHub { display:grid; gap:12px; }
+.lifeApp .hubIntro { font-size:13px; color:#7b857b; line-height:1.65; margin:0 0 10px; }
+.lifeApp .hubCard { display:flex; gap:15px; align-items:center; background:#fff; border:1px solid #e8ebe4; border-radius:17px; padding:18px 16px; color:#28372d; text-decoration:none; }
+.lifeApp .hubCard > svg { margin-left:auto; color:#879885; }
+.lifeApp .hubIcon { width:45px; height:45px; background:#ebf0e8; color:#577059; border-radius:14px; display:grid; place-items:center; flex:0 0 45px; }
+.lifeApp .hubCard > div { display:grid; gap:5px; }
+.lifeApp .hubCard strong { font-size:15px; }
+.lifeApp .hubCard small { font-size:11px; letter-spacing:0; color:#8e988d; }
+.lifeApp .storagePanel { display:flex; gap:13px; padding:17px; background:#eeeae1; border-radius:15px; margin-top:16px; color:#647167; }
+.lifeApp .storagePanel svg { flex-shrink:0; }
+.lifeApp .storagePanel strong { font-size:12px; color:#405246; }
+.lifeApp .storagePanel p { font-size:11px; line-height:1.5; margin:6px 0 0; }
+.lifeApp .storageLine { text-align:center; color:#a0a59b; font-size:10px; margin:30px 0 0; letter-spacing:.01em; }
+.lifeApp .lifeDock { max-width:none; position:fixed; left:0; right:0; bottom:0; z-index:40; border-top:1px solid #e7ebe2; background:rgba(252,252,248,.96); backdrop-filter:blur(22px); box-shadow:0 -6px 30px rgba(35,53,37,.035); display:flex; align-items:center; justify-content:center; gap:0; padding:10px 8px calc(12px + env(safe-area-inset-bottom)); }
+.lifeApp .lifeDock button { display:grid; justify-items:center; gap:5px; flex:1; max-width:140px; min-height:48px; background:transparent; border:0; border-radius:12px; padding:6px 5px; color:#8e978b; font-weight:600; font-size:10px; cursor:pointer; }
+.lifeApp .lifeDock button.active { background:#eaf0e6; color:#39553f; }
+.lifeApp .lifeDock button span { white-space:nowrap; }
+.lifeApp .floatingAdd { position:fixed; z-index:35; right:max(18px,calc((100vw - 850px)/2 + 24px)); bottom:calc(85px + env(safe-area-inset-bottom)); border:0; border-radius:17px; background:#304b3c; box-shadow:0 8px 24px rgba(31,53,38,.21); width:51px; height:51px; display:grid; place-items:center; color:#fff; cursor:pointer; }
+.lifeApp .lifeAlert { padding:14px; border-radius:13px; background:#fcf1ee; color:#8a4239; font-size:12px; margin-bottom:16px; display:flex; gap:9px; justify-content:space-between; align-items:center; }
+.lifeApp .lifeAlert button { background:none; border:0; font-weight:800; color:#8a4239; cursor:pointer; }
+.lifeApp .lifeToast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(96px + env(safe-area-inset-bottom)); background:#23392f; color:white; border-radius:14px; display:flex; align-items:center; gap:19px; padding:12px 16px; z-index:110; white-space:nowrap; box-shadow:0 8px 30px #23392f40; font-size:12px; }
+.lifeApp .lifeToast button { color:#d3e1c5; background:none; font-weight:750; border:0; cursor:pointer; }
+.lifeApp .lifeBackdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:flex-end; justify-content:center; background:rgba(16,27,19,.45); }
+.lifeApp .lifeSheet { background:#fdfdfa; border-radius:25px 25px 0 0; width:100%; max-width:620px; padding:26px 22px calc(27px + env(safe-area-inset-bottom)); display:grid; gap:18px; box-shadow:0 -9px 50px #1c2c211a; max-height:calc(92dvh - env(safe-area-inset-top)); overflow-y:auto; }
+.lifeApp .sheetTitle { display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; }
+.lifeApp .sheetTitle .overline { color:#748975; }
+.lifeApp .sheetTitle h2 { margin:7px 0 0; font-size:25px; letter-spacing:-.04em; }
+.lifeApp .sheetTitle button { border:0; border-radius:10px; background:#eff1eb; width:38px; height:38px; display:grid; place-items:center; cursor:pointer; }
+.lifeApp .lifeSheet label { font-size:12px; font-weight:720; display:grid; gap:8px; color:#495e4f; }
+.lifeApp .lifeSheet input { font-size:16px; width:100%; min-height:49px; border:1px solid #dfe5da; padding:12px; border-radius:12px; background:#fff; color:#263d2b; }
+.lifeApp .sheetFields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.lifeApp .sheetSubmit { min-height:52px; border:0; border-radius:13px; background:#304b3c; color:#fff; font-weight:750; cursor:pointer; }
+.lifeApp .sheetSubmit:disabled { opacity:.55; }
+.lifeApp .sheetContext { font-weight:680; font-size:15px; margin:0; }
+.lifeApp .formError { background:#fff0eb; color:#99483b; border-radius:10px; padding:10px 12px; font-size:12px; margin:0; }
+.lifeApp .sheetBackdrop { z-index:110; }
+.lifeApp .sheetBackdrop .sheet { max-height:92dvh; overflow-y:auto; }
+@media(max-width:420px) {
+  .lifeApp .lifeFrame { padding:20px 16px 25px; }
+  .lifeApp .topBar { margin-bottom:25px; }
+  .lifeApp .pageHeader { margin-bottom:21px; }
+  .lifeApp h1 { font-size:36px; }
+  .lifeApp .overviewCard { padding:20px 18px; min-height:190px; }
+  .lifeApp .overviewCopy h2 { font-size:21px; }
+  .lifeApp .progressRing { width:84px; height:84px; flex-basis:84px; padding:8px; }
+  .lifeApp .progressRing strong { font-size:20px; }
+  .lifeApp .weekStrip { gap:5px; }
+  .lifeApp .weekDay { padding:10px 0 7px; }
+  .lifeApp .weekDay strong { font-size:14px; }
+  .lifeApp .taskRow { gap:9px; padding:12px 10px; }
+  .lifeApp .taskBody strong { font-size:13px; }
+  .lifeApp .taskMove { flex-basis:29px; width:29px; }
+  .lifeApp .calendarEmpty { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:no-preference){
+  .lifeApp .lifeDock button, .lifeApp .weekDay, .lifeApp .monthDay, .lifeApp .overviewAction { transition: background .17s, transform .17s; }
+  .lifeApp .weekDay:active, .lifeApp .overviewAction:active { transform:scale(.97); }
+}
