@@ -308,6 +308,24 @@ class T(unittest.TestCase):
   self.assertEqual(set(mission["canonicalProducts"]),{"PERSONA","LIFE_OS","DIVE_M","SHARED"})
   self.assertEqual(set(mission["continuation"]["payload"]["planning_products"]),set(mission["canonicalProducts"]))
   self.assertIn("highest-value bounded next step",mission["continuation"]["payload"]["prompt"])
+ def test_master_mission_seeds_real_local_product_work_when_codex_is_disabled(self):
+  root=Path(__file__).resolve().parents[1]
+  mission=load_planner_registry(root,{},root/"planner-registry.v1.json")
+  required={"P1-LIFE-LOCAL-MOVE-001","P1-LIFE-ERIKA-MOVE-UI-001","P1-DIVEM-DIAGNOSTIC-001"}
+  items={item["id"]:item for item in mission["plannerRegistry"]}
+  self.assertTrue(required.issubset(items))
+  for jid in required:
+   item=items[jid];payload=item["payload"]
+   self.assertEqual(item["kind"],"local_ai")
+   self.assertEqual(payload["risk"],1)
+   self.assertTrue(payload["allowed_files"])
+   self.assertTrue(payload["required_changed_files"])
+   self.assertTrue(item["acceptance"])
+   self.assertTrue(item["sourceRequirement"])
+  caps={"CODEX":"DISABLED_BY_USER","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE"}
+  self.assertEqual(replenish_backlog(self.s,mission,caps),3)
+  seeded={job["id"] for job in self.s.jobs(100)}
+  self.assertTrue(required.issubset(seeded))
  def test_quality_first_addendum_is_durable_and_evidence_bound(self):
   mission=json.loads((Path(__file__).resolve().parents[1]/"mission.v1.json").read_text())
   policy=mission["qualityFirstAddendum"]

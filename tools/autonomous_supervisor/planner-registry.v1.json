@@ -866,6 +866,106 @@
         "executor_used": "SHELL",
         "implementation_reason": "Correct the verification lineage SHA without rewriting the failed job"
       }
+    },
+    {
+      "id": "P1-LIFE-LOCAL-MOVE-001",
+      "status": "ACTIVE",
+      "title": "Persist and undo a local Life OS task move",
+      "kind": "local_ai",
+      "priority": 30,
+      "sourceRequirement": "LIFE_OS_DAILY_DRIVER_PERSISTED_MOVE",
+      "targetVersion": "life-os-daily-driver-v0.1",
+      "acceptance": [
+        "an existing item is moved without changing its identity",
+        "the new schedule survives a fresh storage read",
+        "read-after-write verifies the persisted value",
+        "undo restores the previous schedule and survives reload",
+        "stale undo fails closed",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "ERIKA",
+        "risk": 1,
+        "auto_integrate": true,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["apps/web/src/localRuntime.ts", "apps/web/src/localRuntime.test.ts"],
+        "required_changed_files": ["apps/web/src/localRuntime.ts", "apps/web/src/localRuntime.test.ts"],
+        "max_repairs": 2,
+        "goal": "Implement one bounded browser-local persistence primitive for moving an existing Life OS item and undoing that exact move. Preserve the immutable item id, store before/after evidence with a revision, verify the persisted value by reading storage after each write, reject stale undo, and add executable reload tests. Do not change unrelated planning or UI behavior and do not weaken tests.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run apps/web/src/localRuntime.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
+    },
+    {
+      "id": "P1-LIFE-ERIKA-MOVE-UI-001",
+      "status": "ACTIVE",
+      "title": "Execute one explicit Russian task-move command through Erika",
+      "kind": "local_ai",
+      "priority": 31,
+      "sourceRequirement": "LIFE_OS_ERIKA_NATURAL_MOVE_COMMAND",
+      "targetVersion": "life-os-daily-driver-v0.1",
+      "acceptance": [
+        "an explicit Russian request to move a uniquely matched item to tomorrow and a stated time is understood",
+        "ambiguous item or missing time causes no write",
+        "the command uses the durable local move primitive",
+        "read-after-write confirms the changed item",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "LIFE_OS",
+        "workstream": "ERIKA",
+        "risk": 1,
+        "auto_integrate": true,
+        "dependencies": ["P1-LIFE-LOCAL-MOVE-001"],
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["apps/web/src/api.ts", "apps/web/src/erika.ts", "apps/web/src/erika.test.ts"],
+        "required_changed_files": ["apps/web/src/api.ts", "apps/web/src/erika.ts", "apps/web/src/erika.test.ts"],
+        "max_repairs": 2,
+        "goal": "Add exactly one safe natural-language Erika command: an explicit Russian phrase that uniquely names an existing item and says to move it to tomorrow at HH:MM. Route it through the browser-local durable move primitive, perform read-after-write, preserve the same item id and refuse ambiguity or missing time without writing. Add focused tests; preserve completion and non-completion commands.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run apps/web/src/erika.test.ts apps/web/src/localRuntime.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck",
+          "npm run web:build"
+        ]
+      }
+    },
+    {
+      "id": "P1-DIVEM-DIAGNOSTIC-001",
+      "status": "ACTIVE",
+      "title": "Build one evidence-bound DiveM diagnostic result",
+      "kind": "local_ai",
+      "priority": 32,
+      "sourceRequirement": "DIVEM_EXPLAINABLE_DIAGNOSTIC_V0_1",
+      "targetVersion": "divem-diagnostic-v0.1",
+      "acceptance": [
+        "only authorized tenant data is accepted",
+        "finite verified measurements produce explainable score components",
+        "missing evidence is UNKNOWN rather than invented",
+        "recommendations cite the measured weak component",
+        "degraded or unknown evidence is not presented as an actionable diagnosis",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "payload": {
+        "product": "DIVE_M",
+        "workstream": "DIVE_M_PERSONAL",
+        "risk": 1,
+        "auto_integrate": true,
+        "requires": ["LOCAL_AI", "SHELL", "TESTS", "TYPECHECK"],
+        "allowed_files": ["packages/core/src/divem-strategy-client.ts", "packages/core/src/divem-strategy-client.test.ts"],
+        "required_changed_files": ["packages/core/src/divem-strategy-client.ts", "packages/core/src/divem-strategy-client.test.ts"],
+        "max_repairs": 2,
+        "goal": "Add a deterministic provider-neutral DiveM diagnostic function in the existing strategy client module. It must require authorizedTenantId to equal tenantId, accept only finite verified 0..1 measurements, return score null and UNKNOWN when evidence is insufficient, expose each score component and its evidence state, and produce a bounded recommendation only for the weakest measured component when the result is actionable. Add focused tests and do not invent platform data.",
+        "test_commands": [
+          "TZ=UTC npm test -- --run packages/core/src/divem-strategy-client.test.ts",
+          "TZ=UTC npm test -- --run",
+          "npm run typecheck"
+        ]
+      }
     }
   ]
 }
