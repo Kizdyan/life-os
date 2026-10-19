@@ -6,6 +6,11 @@ interface LocalState{schemaVersion:1;items:Item[];plans:Record<string,string[]>}
 const KEY='life-os:local-runtime:v1';
 const MOVE_UNDO_KEY='life-os:local-move-undo:v1';
 
+/** All locally persisted tasks, including dates outside Today. */
+export function readLocalItems(storage:StorageLike):Item[] {
+  return [...read(storage).items].sort((a,b)=>(a.planned_start??'').localeCompare(b.planned_start??''));
+}
+
 export function readLocalToday(storage:StorageLike,date:string):Item[]{
   return read(storage).items
     .filter(item=>item.planned_start?.slice(0,10)===date)
