@@ -44,6 +44,18 @@ class T(unittest.TestCase):
   text=repair_prompt("base instructions","npm test",7,"bad output")
   self.assertIn("npm test",text);self.assertIn("exit 7",text);self.assertIn("bad output",text)
   self.assertLess(len(text),5000)
+ def test_registry_rejects_invalid_versioned_successor_lineage(self):
+  registry=Path(self.d.name)/'registry.json'
+  base={"id":"FAILED-001","sourceRequirement":"LIFE-REQ","targetVersion":"life-v1"}
+  bad={"id":"RETRY-002","sourceRequirement":"OTHER-REQ","targetVersion":"life-v1","replaces":["FAILED-001"]}
+  registry.write_text(json.dumps({"items":[base,bad]}))
+  with self.assertRaisesRegex(ValueError,"lineage mismatch"):
+   load_planner_registry(Path(self.d.name),{},registry)
+  cycle={"id":"RETRY-003","sourceRequirement":"LIFE-REQ","targetVersion":"life-v1","replaces":["RETRY-004"]}
+  other={"id":"RETRY-004","sourceRequirement":"LIFE-REQ","targetVersion":"life-v1","replaces":["RETRY-003"]}
+  registry.write_text(json.dumps({"items":[cycle,other]}))
+  with self.assertRaisesRegex(ValueError,"cycle"):
+   load_planner_registry(Path(self.d.name),{},registry)
  def test_local_contract_rejects_missing_test_before_model_execution(self):
   root=Path(self.d.name);source=root/"source.ts";source.write_text("export function moveIntent(){}")
   task={"allowed_files":["source.ts"],"implementation_files":["source.ts"],"immutable_test_files":["missing.test.ts"],"required_exports":["moveIntent"],"test_commands":["npm test"]}

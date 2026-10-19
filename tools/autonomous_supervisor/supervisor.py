@@ -122,12 +122,40 @@ def set_execution_mode(store,mode,expected_revision=None,actor="owner_control"):
         capability=capability_status(store,"CODEX");capability.pop("manual_hold",None)
         store.setmeta("capability.CODEX",jd(capability))
     return {**state,"valid":True}
+def validate_versioned_successors(items):
+    by_id={str(item.get('id') or ''):item for item in items if isinstance(item,dict) and item.get('id')}
+    if len(by_id)!=len(items):raise ValueError('planner registry ids must be unique and non-empty')
+    edges={}
+    for item_id,item in by_id.items():
+        replaces=item.get('replaces',[])
+        if replaces is None:replaces=[]
+        if not isinstance(replaces,list):raise ValueError(f'{item_id}: replaces must be a list')
+        predecessors=[]
+        for predecessor in replaces:
+            predecessor=str(predecessor)
+            if predecessor==item_id:raise ValueError(f'{item_id}: successor cannot replace itself')
+            prior=by_id.get(predecessor)
+            if not prior:raise ValueError(f'{item_id}: replacement predecessor is unknown')
+            if item.get('sourceRequirement')!=prior.get('sourceRequirement') or item.get('targetVersion')!=prior.get('targetVersion'):
+                raise ValueError(f'{item_id}: successor contract lineage mismatch')
+            predecessors.append(predecessor)
+        edges[item_id]=predecessors
+    visiting=set();visited=set()
+    def visit(item_id):
+        if item_id in visiting:raise ValueError('planner successor lineage contains a cycle')
+        if item_id in visited:return
+        visiting.add(item_id)
+        for predecessor in edges[item_id]:visit(predecessor)
+        visiting.remove(item_id);visited.add(item_id)
+    for item_id in edges:visit(item_id)
+
 def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
     path=Path(configured).expanduser() if configured else root/"planner-registry.v1.json"
     if not path.is_absolute():path=(root/path).resolve()
     if not path.exists():return mission
     data=json.loads(path.read_text());items=data if isinstance(data,list) else data.get("items",[])
     if not isinstance(items,list):raise ValueError("planner registry items must be a list")
+    validate_versioned_successors(items)
     milestones=data.get("milestones",[]) if isinstance(data,dict) else []
     if not isinstance(milestones,list):raise ValueError("planner registry milestones must be a list")
     policy=data.get("policy",{}) if isinstance(data,dict) else {}
