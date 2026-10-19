@@ -17,12 +17,11 @@ export function mediaApiBase(value:string|undefined|null):string{
   return trimmed.replace(/\/+$/,'');
 }
 
-function resolvedBase(explicit:string|null|undefined):string{
+export function mediaStatusBase(explicit:string|null|undefined,configured=mediaApiBase(import.meta.env.VITE_MEDIA_API_URL),hostname=typeof location==='undefined'?'':location.hostname):string{
   if(explicit!==undefined)return mediaApiBase(explicit);
-  const configured=mediaApiBase(import.meta.env.VITE_MEDIA_API_URL);
-  // A standalone Vite preview has no server-side media boundary. Avoid a
-  // misleading 404 and present the existing not-configured state instead.
-  if(import.meta.env.DEV&&!configured)return'';
+  // A standalone local preview has no server-side media boundary. Avoid a
+  // misleading 404 and preserve the not-configured state for Media Brain.
+  if(!configured&&(hostname==='localhost'||hostname==='127.0.0.1'))return'';
   return configured||'/api';
 }
 
@@ -30,7 +29,7 @@ export async function readMediaStatus(input:{
   baseUrl?:string|null;
   fetchImpl?:typeof fetch;
 }={}):Promise<MediaUiStatus>{
-  const base=resolvedBase(input.baseUrl);
+  const base=mediaStatusBase(input.baseUrl);
   if(!base){
     return{
       state:'not_configured',connected:false,configured:false,autonomousReady:false,provider:'yandex',
@@ -57,5 +56,5 @@ export async function readMediaStatus(input:{
 }
 
 export async function beginYandexConnect(input:{baseUrl?:string|null;fetchImpl?:typeof fetch}={}):Promise<string>{
-  const base=resolvedBase(input.baseUrl);if(!base)throw new Error('Media Brain server is not configured');const fetchImpl=input.fetchImpl??fetch,response=await fetchImpl(`${base}/media/yandex/connect/start`,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/json'},credentials:'include',body:'{}'});if(!response.ok)throw new Error(`Yandex connect failed: ${response.status}`);const payload=await response.json() as{authorizationUrl?:unknown};if(typeof payload.authorizationUrl!=='string')throw new Error('Yandex OAuth URL is missing');const url=new URL(payload.authorizationUrl);if(url.protocol!=='https:'||url.hostname!=='oauth.yandex.ru')throw new Error('Yandex OAuth URL is invalid');return url.toString();
+  const base=mediaStatusBase(input.baseUrl);if(!base)throw new Error('Media Brain server is not configured');const fetchImpl=input.fetchImpl??fetch,response=await fetchImpl(`${base}/media/yandex/connect/start`,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/json'},credentials:'include',body:'{}'});if(!response.ok)throw new Error(`Yandex connect failed: ${response.status}`);const payload=await response.json() as{authorizationUrl?:unknown};if(typeof payload.authorizationUrl!=='string')throw new Error('Yandex OAuth URL is missing');const url=new URL(payload.authorizationUrl);if(url.protocol!=='https:'||url.hostname!=='oauth.yandex.ru')throw new Error('Yandex OAuth URL is invalid');return url.toString();
 }

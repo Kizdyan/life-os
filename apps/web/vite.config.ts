@@ -1,4 +1,10 @@
-import{defineConfig}from'vite';
-import react from'@vitejs/plugin-react';
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-export default defineConfig({plugins:[react()],esbuild:{jsx:'automatic'}});
+export default defineConfig({
+  root: fileURLToPath(new URL(".", import.meta.url)),
+  plugins: [react()],
+  esbuild: { jsx: "automatic" },
+  build: { outDir: "dist", emptyOutDir: true },
+});

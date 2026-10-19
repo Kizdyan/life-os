@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beginYandexConnect, mediaApiBase, readMediaStatus } from './media';
+import { beginYandexConnect, mediaApiBase, mediaStatusBase, readMediaStatus } from './media';
 
 describe('web Media Brain API boundary',()=>{
   it('treats missing server base as not configured instead of leaking browser secrets',async()=>{
@@ -15,6 +15,12 @@ describe('web Media Brain API boundary',()=>{
   it('normalizes an explicit server base without adding credentials',()=>{
     expect(mediaApiBase('https://life.example.com/api/')).toBe('https://life.example.com/api');
     expect(mediaApiBase('  /api  ')).toBe('/api');
+  });
+
+  it('does not probe an absent Media Brain API from a standalone local preview',()=>{
+    expect(mediaStatusBase(undefined,'','127.0.0.1')).toBe('');
+    expect(mediaStatusBase(undefined,'','localhost')).toBe('');
+    expect(mediaStatusBase(undefined,'','life-os-web-gray.vercel.app')).toBe('/api');
   });
 
   it('maps a safe server status payload into compact UI data',async()=>{
