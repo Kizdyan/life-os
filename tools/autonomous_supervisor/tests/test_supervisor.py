@@ -184,10 +184,11 @@ class T(unittest.TestCase):
    self.assertEqual(reconcile_dependency_satisfaction(self.s,{"plannerRegistry":[base],"plannerSatisfactionMappings":[mapping]},"head",lambda candidate,current:candidate=="good"),[])
   self.assertIsNone(self.s.meta("dependency.satisfaction.FAILED"))
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
-  root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
+  root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"plannerSatisfactionMappings":[{"failedJobId":"F"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})
   self.assertEqual(loaded["mission"],"canonical");self.assertEqual(loaded["backlog"],[1]);self.assertEqual(loaded["plannerRegistry"],[{"id":"X"}])
   self.assertEqual(loaded["plannerMilestones"],[{"id":"M2"}])
+  self.assertEqual(loaded["plannerSatisfactionMappings"],[{"failedJobId":"F"}])
   self.assertEqual(loaded["plannerPolicy"],{})
  def test_milestone_orchestrator_activates_approved_successor_once_after_evidence(self):
   self.s.add("verified","local_ai",{"executor_used":"LOCAL_AI"},1,"M1-EVIDENCE");self.s.state("M1-EVIDENCE","LOCAL_VERIFIED")

@@ -132,7 +132,9 @@ def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
     if not isinstance(milestones,list):raise ValueError("planner registry milestones must be a list")
     policy=data.get("policy",{}) if isinstance(data,dict) else {}
     if not isinstance(policy,dict):raise ValueError("planner registry policy must be an object")
-    return {**mission,"plannerRegistry":items,"plannerMilestones":milestones,"plannerPolicy":policy,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
+    mappings=data.get("plannerSatisfactionMappings",[]) if isinstance(data,dict) else []
+    if not isinstance(mappings,list):raise ValueError("planner satisfaction mappings must be a list")
+    return {**mission,"plannerRegistry":items,"plannerMilestones":milestones,"plannerPolicy":policy,"plannerSatisfactionMappings":mappings,"plannerRegistryVersion":data.get("version") if isinstance(data,dict) else None}
 def capabilities_allow(job,capabilities):return all(capabilities.get(x,"UNAVAILABLE") in (("AVAILABLE","PROBE_DUE") if x=="CODEX" else ("AVAILABLE",)) for x in required_capabilities(job))
 def job_product(job):
     explicit=job.get("payload",{}).get("product")
