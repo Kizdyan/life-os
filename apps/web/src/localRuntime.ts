@@ -76,6 +76,28 @@ export function applyLocalOutcome(
   return{current,successor};
 }
 
+export interface LocalMoveUndo{itemId:string;before:string|undefined;after:string;revision:string}
+
+export function moveLocalItem(storage:StorageLike,itemId:string,plannedStart:string):{item:Item;undo:LocalMoveUndo}{
+  if(!plannedStart)throw new Error('planned_start is required');
+  const state=read(storage);const index=state.items.findIndex(item=>item.id===itemId);
+  if(index<0)throw new Error('item not found');
+  const before=state.items[index];const revision=`${itemId}:${before.planned_start??''}:${plannedStart}`;
+  const item={...before,planned_start:plannedStart};state.items[index]=item;write(storage,state);
+  const persisted=read(storage).items.find(candidate=>candidate.id===itemId);
+  if(!persisted||persisted.planned_start!==plannedStart)throw new Error('move persistence failed');
+  return{item:persisted,undo:{itemId,before:before.planned_start,after:plannedStart,revision}};
+}
+
+export function undoLocalMove(storage:StorageLike,undo:LocalMoveUndo):Item{
+  const state=read(storage);const index=state.items.findIndex(item=>item.id===undo.itemId);
+  if(index<0||state.items[index].planned_start!==undo.after)throw new Error('stale move undo');
+  const item={...state.items[index],planned_start:undo.before};state.items[index]=item;write(storage,state);
+  const persisted=read(storage).items.find(candidate=>candidate.id===undo.itemId);
+  if(!persisted||persisted.planned_start!==undo.before)throw new Error('undo persistence failed');
+  return persisted;
+}
+
 function read(storage:StorageLike):LocalState{
   try{
     const raw=storage.getItem(KEY);
