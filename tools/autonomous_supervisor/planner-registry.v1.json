@@ -7,6 +7,29 @@
     "requireSourceTargetAndAcceptance": true,
     "doNotFabricateWork": true
   },
+  "plannerSatisfactionMappings": [
+    {
+      "failedJobId": "P1-LIFE-LOCAL-MOVE-001",
+      "successorId": "LIFE-LOCAL-MOVE-UNDO-VERIFIED-001",
+      "product": "LIFE_OS",
+      "sourceRequirement": "LIFE_OS_DAILY_DRIVER_PERSISTED_MOVE",
+      "targetVersion": "life-os-daily-driver-v0.1",
+      "acceptance": [
+        "an existing item is moved without changing its identity",
+        "the new schedule survives a fresh storage read",
+        "read-after-write verifies the persisted value",
+        "undo restores the previous schedule and survives reload",
+        "stale undo fails closed",
+        "focused regression, full regression and TypeScript pass"
+      ],
+      "integratedSha": "4f6466f0de3ad97077179375ea0a34d7133779ae",
+      "evidence": [
+        "apps/web/src/localRuntime.move.test.ts",
+        "apps/web/src/localRuntime.ts"
+      ],
+      "reason": "Later verified implementation satisfies the failed job's exact bounded acceptance contract; historical QA failure remains immutable."
+    }
+  ],
   "milestones": [
     {
       "id": "M1",
@@ -969,7 +992,7 @@
     },
     {
       "id": "P2-DIVEM-VERIFIED-DIAGNOSTIC-001",
-      "status": "ACTIVE",
+      "status": "FAILED_EVIDENCE",
       "title": "Produce one tenant-bound verified DiveM diagnostic",
       "kind": "local_ai",
       "priority": 29,

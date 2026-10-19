@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,ExecutionModeConflict,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,execution_mode_snapshot,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,ExecutionModeConflict,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,execution_mode_snapshot,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_dependency_satisfaction,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -157,6 +157,32 @@ class T(unittest.TestCase):
   summary=self.s.queue_summary(caps)
   self.assertEqual(summary["integrated"],0)
   self.assertEqual(summary["locally_verified"],0)
+ def test_verified_satisfaction_unblocks_only_contract_equivalent_failed_dependency(self):
+  self.s.add("failed move","local_ai",{"product":"LIFE_OS"},1,"FAILED-MOVE");self.s.state("FAILED-MOVE","FAILED","protected QA rejection")
+  self.s.add("erika","local_ai",{"dependencies":["FAILED-MOVE"]},2,"ERIKA")
+  self.s.add("unrelated","local_ai",{"dependencies":["OTHER-FAILED"]},3,"OTHER")
+  self.s.add("other failed","local_ai",{},1,"OTHER-FAILED");self.s.state("OTHER-FAILED","FAILED")
+  acceptance=["durable move","stale undo"]
+  mission={"plannerRegistry":[{"id":"FAILED-MOVE","sourceRequirement":"MOVE","targetVersion":"v1","acceptance":acceptance,"payload":{"product":"LIFE_OS"}}],"plannerSatisfactionMappings":[{"failedJobId":"FAILED-MOVE","successorId":"MOVE-VERIFIED","product":"LIFE_OS","sourceRequirement":"MOVE","targetVersion":"v1","acceptance":acceptance,"integratedSha":"good"}]}
+  self.assertEqual(reconcile_dependency_satisfaction(self.s,mission,"head",lambda candidate,current:candidate=="good" and current=="head"),["FAILED-MOVE"])
+  caps={"LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
+  self.assertEqual(self.s.pick(caps)["id"],"ERIKA")
+  self.assertEqual({j["id"]:j["state"] for j in self.s.jobs()}["FAILED-MOVE"],"FAILED")
+  diagnostics={item["id"]:item for item in self.s.job_diagnostics(caps)}
+  self.assertIn("DEPENDENCY_OTHER-FAILED_FAILED",diagnostics["OTHER"]["reason_not_runnable"])
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  self.assertEqual(self.s.pick(caps)["id"],"ERIKA")
+ def test_satisfaction_mapping_refuses_stale_sha_wrong_contract_and_cycle(self):
+  self.s.add("failed","local_ai",{},1,"FAILED");self.s.state("FAILED","FAILED")
+  acceptance=["a"]
+  base={"id":"FAILED","sourceRequirement":"REQ","targetVersion":"v1","acceptance":acceptance,"payload":{"product":"LIFE_OS"}}
+  for mapping in [
+   {"failedJobId":"FAILED","successorId":"FAILED","product":"LIFE_OS","sourceRequirement":"REQ","targetVersion":"v1","acceptance":acceptance,"integratedSha":"good"},
+   {"failedJobId":"FAILED","successorId":"NEW","product":"LIFE_OS","sourceRequirement":"OTHER","targetVersion":"v1","acceptance":acceptance,"integratedSha":"good"},
+   {"failedJobId":"FAILED","successorId":"NEW","product":"LIFE_OS","sourceRequirement":"REQ","targetVersion":"v1","acceptance":acceptance,"integratedSha":"stale"},
+  ]:
+   self.assertEqual(reconcile_dependency_satisfaction(self.s,{"plannerRegistry":[base],"plannerSatisfactionMappings":[mapping]},"head",lambda candidate,current:candidate=="good"),[])
+  self.assertIsNone(self.s.meta("dependency.satisfaction.FAILED"))
  def test_external_planner_registry_keeps_mission_as_canonical_base(self):
   root=Path(self.d.name);(root/"planner-registry.v1.json").write_text(json.dumps({"version":1,"milestones":[{"id":"M2"}],"items":[{"id":"X"}]}))
   loaded=load_planner_registry(root,{"mission":"canonical","backlog":[1]})

@@ -190,6 +190,33 @@ def advance_milestones(store,mission):
         decision={"activatedAt":now(),"dependsOn":sorted(deps),"acceptedEvidence":sorted(accepted),"sourceRequirement":milestone.get("sourceRequirement")}
         store.setmeta(key,jd(decision));store.event(None,"MILESTONE_ACTIVATED",mid,decision);activated.append(mid)
     return activated
+def reconcile_dependency_satisfaction(store,mission,current_head,is_ancestor):
+    """Persist narrowly verified satisfaction for a historical failed job.
+
+    This does not rewrite a QA failure. A mapping is usable only when its
+    product and full accepted contract match the original registry entry and
+    its evidence commit is an ancestor of the current checked-out source.
+    """
+    registry={str(item.get("id")):item for item in mission.get("plannerRegistry",[]) if item.get("id")}
+    jobs={job["id"]:job for job in store.jobs(10000)};changed=[]
+    mappings=mission.get("plannerSatisfactionMappings",[])
+    if not isinstance(mappings,list):return changed
+    for mapping in mappings:
+        if not isinstance(mapping,dict):continue
+        failed_id=str(mapping.get("failedJobId") or "");successor_id=str(mapping.get("successorId") or "")
+        original=registry.get(failed_id);failed=jobs.get(failed_id);sha=str(mapping.get("integratedSha") or "")
+        if not failed_id or not successor_id or successor_id==failed_id or not original or not failed or failed["state"]!="FAILED" or not sha:continue
+        payload=original.get("payload",{})
+        equivalent=(mapping.get("product")==payload.get("product") and mapping.get("sourceRequirement")==original.get("sourceRequirement") and mapping.get("targetVersion")==original.get("targetVersion") and mapping.get("acceptance")==original.get("acceptance"))
+        if not equivalent or not is_ancestor(sha,current_head):continue
+        record={"status":"VERIFIED","failedJobId":failed_id,"successorId":successor_id,"product":mapping["product"],"sourceRequirement":mapping["sourceRequirement"],"targetVersion":mapping["targetVersion"],"acceptance":mapping["acceptance"],"integratedSha":sha,"head":current_head,"verifiedAt":now(),"reason":"contract-equivalent verified successor"}
+        key="dependency.satisfaction."+failed_id
+        existing=store.meta(key)
+        try:existing_value=json.loads(existing) if existing else None
+        except:existing_value=None
+        if isinstance(existing_value,dict) and existing_value.get("integratedSha")==sha and existing_value.get("successorId")==successor_id:continue
+        store.setmeta(key,jd(record));store.event(failed_id,"DEPENDENCY_SATISFACTION_CONFIRMED",successor_id,{"integratedSha":sha,"head":current_head,"sourceRequirement":record["sourceRequirement"],"targetVersion":record["targetVersion"]});changed.append(failed_id)
+    return changed
 def reconcile_registry_outcomes(store,mission,current_head,is_ancestor):
     registry={str(item.get("id")):item for item in mission.get("plannerRegistry",[]) if item.get("id")}
     jobs={j["id"]:j for j in store.jobs(10000)};changed=[]
@@ -323,10 +350,19 @@ class Store:
         with self.l:rows=self.c.execute("SELECT * FROM jobs ORDER BY priority,created_at LIMIT ?",(n,)).fetchall()
         return [self.row(r) for r in rows]
     def row(self,r):d=dict(r);d["payload"]=json.loads(d["payload"]);return d
+    def dependency_states(self,jobs=None):
+        jobs=jobs or self.jobs(10000);states={job["id"]:job["state"] for job in jobs}
+        for job in jobs:
+            if job["state"]!="FAILED":continue
+            try:record=json.loads(self.meta("dependency.satisfaction."+job["id"]) or "null")
+            except:record=None
+            if isinstance(record,dict) and record.get("status")=="VERIFIED" and record.get("failedJobId")==job["id"]:
+                states[job["id"]]="SUPERSEDED"
+        return states
     def pick(self,capabilities=None,scheduler_policy=None):
         if capabilities is None:capabilities={"CODEX":"AVAILABLE","LOCAL_AI":"AVAILABLE","SHELL":"AVAILABLE"}
         with self.l:rows=self.c.execute("SELECT * FROM jobs WHERE state IN ('QUEUED','WAITING_FOR_CODEX','LOCAL_READY_PENDING_CODEX_REVIEW') ORDER BY priority,created_at").fetchall()
-        all_jobs=self.jobs(10000);states={j["id"]:j["state"] for j in all_jobs}
+        all_jobs=self.jobs(10000);states=self.dependency_states(all_jobs)
         eligible=[self.row(r) for r in rows if not eligibility_reasons(self.row(r),capabilities,states) and codex_budget_allows(self.row(r),scheduler_policy)]
         if not eligible:return None
         limit=int((scheduler_policy or {}).get("maxConsecutiveJobsPerProduct",0) or 0)
@@ -350,7 +386,7 @@ class Store:
             event=self.c.execute("SELECT * FROM events ORDER BY seq DESC LIMIT 1").fetchone()
         return {"counts":counts,"last_ready":None if ready is None else self.row(ready),"last_event":None if event is None else dict(event)}
     def job_diagnostics(self,capabilities):
-        jobs=self.jobs(10000);states={j["id"]:j["state"] for j in jobs}
+        jobs=self.jobs(10000);states=self.dependency_states(jobs)
         result=[]
         for j in jobs:
             reasons=eligibility_reasons(j,capabilities,states)
@@ -482,7 +518,8 @@ class Runner:
         head=subprocess.run(["git","rev-parse","HEAD"],cwd=repo,text=True,capture_output=True,check=True).stdout.strip()
         def is_ancestor(candidate,current):
             return subprocess.run(["git","merge-base","--is-ancestor",candidate,current],cwd=repo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
-        return reconcile_registry_outcomes(self.s,self.mission,head,is_ancestor)
+        satisfied=reconcile_dependency_satisfaction(self.s,self.mission,head,is_ancestor)
+        return satisfied+reconcile_registry_outcomes(self.s,self.mission,head,is_ancestor)
     def integrate_local_candidates(self):
         repo=Path(self.cfg["repo_path"])
         branch=self.git(repo,["rev-parse","--abbrev-ref","HEAD"])
