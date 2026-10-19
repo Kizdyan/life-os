@@ -7,6 +7,11 @@ describe('web Media Brain API boundary',()=>{
     expect(status).toMatchObject({state:'not_configured',connected:false,provider:'yandex'});
   });
 
+  it('treats a missing status endpoint as an unavailable server boundary',async()=>{
+    const status=await readMediaStatus({baseUrl:'/api',fetchImpl:async()=>new Response('',{status:404})});
+    expect(status).toMatchObject({state:'not_configured',connected:false,configured:false,error:null});
+  });
+
   it('normalizes an explicit server base without adding credentials',()=>{
     expect(mediaApiBase('https://life.example.com/api/')).toBe('https://life.example.com/api');
     expect(mediaApiBase('  /api  ')).toBe('/api');

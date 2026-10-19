@@ -19,7 +19,11 @@ export function mediaApiBase(value:string|undefined|null):string{
 
 function resolvedBase(explicit:string|null|undefined):string{
   if(explicit!==undefined)return mediaApiBase(explicit);
-  return mediaApiBase(import.meta.env.VITE_MEDIA_API_URL)||'/api';
+  const configured=mediaApiBase(import.meta.env.VITE_MEDIA_API_URL);
+  // A standalone Vite preview has no server-side media boundary. Avoid a
+  // misleading 404 and present the existing not-configured state instead.
+  if(import.meta.env.DEV&&!configured)return'';
+  return configured||'/api';
 }
 
 export async function readMediaStatus(input:{
