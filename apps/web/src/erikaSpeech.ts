@@ -13,7 +13,7 @@ export function routeErikaSpeech(raw: string): SpeechRoute {
     return 'clarify';
   }
   // Relative or conversational dates need semantic resolution, not planner.ts title extraction.
-  if (/\b(?:завтра|послезавтра|вчера|сегодня)(?:\s|$)/.test(text)) return 'clarify';
+  if (/(?:^|\s)(?:завтра|послезавтра|вчера|сегодня)(?:\s|$)/.test(text)) return 'clarify';
   if (/^(?:добавь|запланируй|запиши|поставь в план|мне нужно)(?:\s|$)/.test(text)) return 'plan';
   return 'existing';
 }
