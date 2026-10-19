@@ -4,7 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor import H,HTML,Store,Runner,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
+from supervisor import H,HTML,Store,Runner,ExecutionModeConflict,advance_milestones,capability_status,codex_result_available,codex_unavailable,critic_clean,critic_command,default_codex_command,execution_mode,execution_mode_snapshot,integration_preflight,job_executor,load_planner_registry,planned_job_spec,reconcile_registry_outcomes,record_local_ai_success,repair_prompt,replenish_backlog,required_capabilities,resolve_base,quota,seed_store,set_execution_mode
 from local_coding_adapter import LocalCodingError,apply_edits,build_prompt,build_repair_context,classify_failure,diff_fingerprint,order_checks,parse_response,prepare_command,validate_changed_paths,validate_required_changes,validate_test_integrity
 
 class T(unittest.TestCase):
@@ -328,7 +328,7 @@ class T(unittest.TestCase):
   set_execution_mode(self.s,"LOCAL_ONLY");self.s.add("codex","codex",{},1,"C");self.s.state("C","WAITING_FOR_CODEX",not_before=time.time()+999)
   self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
   self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
-  set_execution_mode(self.s,"CODEX_ALLOWED")
+  set_execution_mode(self.s,"CODEX_ONLY")
   self.assertEqual(self.s.jobs()[0]["state"],"WAITING_FOR_CODEX");self.assertIsNone(self.s.jobs()[0]["not_before"])
  def test_auto_hybrid_quota_cooldown_survives_restart_and_local_queue_runs(self):
   set_execution_mode(self.s,"AUTO_HYBRID")
@@ -342,6 +342,41 @@ class T(unittest.TestCase):
   self.assertEqual(caps["CODEX"],"WAITING_FOR_QUOTA")
   self.assertEqual(self.s.pick(caps)["id"],"L")
   self.assertEqual(capability_status(self.s,"CODEX")["retry_at"],retry)
+ def test_execution_mode_missing_or_corrupt_fails_closed_and_never_enables_codex(self):
+  self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
+  self.assertEqual(execution_mode_snapshot(self.s)["revision"],0)
+  self.s.setmeta("execution_mode_state","not-json")
+  self.assertEqual(execution_mode(self.s),"LOCAL_ONLY")
+  self.assertFalse(execution_mode_snapshot(self.s)["valid"])
+  with self.assertRaisesRegex(RuntimeError,"LOCAL_ONLY"):Runner({"loop_seconds":1},self.s).require_codex()
+ def test_legacy_codex_allowed_migrates_once_to_codex_only(self):
+  self.s.setmeta("execution_mode","CODEX_ALLOWED")
+  snapshot=execution_mode_snapshot(self.s)
+  self.assertEqual(snapshot["mode"],"CODEX_ONLY")
+  self.assertEqual(snapshot["revision"],1)
+  self.s.c.close();self.s=Store(Path(self.d.name)/"s.db")
+  self.assertEqual(execution_mode_snapshot(self.s),snapshot)
+ def test_mode_change_uses_revision_and_rejects_stale_concurrent_request(self):
+  initial=execution_mode_snapshot(self.s)
+  changed=set_execution_mode(self.s,"AUTO_HYBRID",expected_revision=initial["revision"],actor="owner_control")
+  self.assertEqual(changed["revision"],initial["revision"]+1)
+  with self.assertRaises(ExecutionModeConflict):
+   set_execution_mode(self.s,"CODEX_ONLY",expected_revision=initial["revision"],actor="owner_control")
+  self.assertEqual(execution_mode(self.s),"AUTO_HYBRID")
+ def test_codex_only_blocks_local_ai_at_launch_boundary(self):
+  set_execution_mode(self.s,"CODEX_ONLY")
+  runner=Runner({"loop_seconds":1,"local_ai_command":["ollama","run","qwen2.5-coder:7b"],"local_ai_model":"qwen2.5-coder:7b"},self.s)
+  with self.assertRaisesRegex(RuntimeError,"CODEX_ONLY"):runner.require_local_ai()
+ def test_pending_mode_change_also_rejects_stale_revision(self):
+  class P:
+   def poll(self):return None
+  self.s.add("codex","codex",{},1,"C")
+  runner=Runner({"loop_seconds":1},self.s);runner.current="C";runner.proc=P()
+  revision=execution_mode_snapshot(self.s)["revision"]
+  set_execution_mode(self.s,"AUTO_HYBRID",expected_revision=revision)
+  with self.assertRaises(ExecutionModeConflict):
+   runner.request_execution_mode("LOCAL_ONLY","after_current",revision)
+  self.assertIsNone(self.s.meta("pending_execution_mode"))
  def test_local_only_never_reads_codex_budget(self):
   calls=[];set_execution_mode(self.s,"LOCAL_ONLY")
   r=Runner({"loop_seconds":1,"codex_budget_enabled":True,"codex_budget_reader":lambda:calls.append(1)},self.s)
@@ -451,9 +486,10 @@ class T(unittest.TestCase):
  def test_mode_change_can_wait_for_active_codex_without_ui_only_switch(self):
   class P:
    def poll(self):return None
+  set_execution_mode(self.s,"CODEX_ONLY")
   self.s.add("codex","codex",{},1,"C");r=Runner({"loop_seconds":1},self.s);r.current="C";r.proc=P()
   self.assertEqual(r.request_execution_mode("LOCAL_ONLY","after_current"),"PENDING_AFTER_CURRENT")
-  self.assertEqual(execution_mode(self.s),"CODEX_ALLOWED");self.assertEqual(self.s.meta("pending_execution_mode"),"LOCAL_ONLY")
+  self.assertEqual(execution_mode(self.s),"CODEX_ONLY");self.assertEqual(self.s.meta("pending_execution_mode"),"LOCAL_ONLY")
  def test_failed_shell_qa_never_becomes_ready(self):
   class R(Runner):
    def cmd(self,*_):return 2,"type error"
@@ -544,3 +580,4 @@ class T(unittest.TestCase):
    self.assertEqual(runner.refresh_codex_budget()["state"],"NORMAL")
   reader.assert_called_once_with(command=configured,timeout=7.0)
 if __name__=="__main__":unittest.main()
+

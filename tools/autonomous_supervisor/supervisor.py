@@ -84,19 +84,44 @@ def reconcile_local_ai_success(store):
     if verified:
         latest=max(verified,key=lambda j:j.get("updated_at") or "")
         record_local_ai_success(store,latest["id"],latest.get("updated_at"))
-EXECUTION_MODES={"LOCAL_ONLY","CODEX_ALLOWED","AUTO_HYBRID"}
-def execution_mode(store):
-    mode=store.meta("execution_mode") or "CODEX_ALLOWED"
-    return mode if mode in EXECUTION_MODES else "LOCAL_ONLY"
-def set_execution_mode(store,mode):
+EXECUTION_MODES={"LOCAL_ONLY","CODEX_ONLY","AUTO_HYBRID"}
+class ExecutionModeConflict(RuntimeError):pass
+def _normalized_legacy_mode(mode):return "CODEX_ONLY" if mode=="CODEX_ALLOWED" else mode
+def execution_mode_snapshot(store):
+    """Read the single durable authority. Missing/corrupt state always fails closed."""
+    with store.l,store.c:
+        row=store.c.execute("SELECT v FROM meta WHERE k='execution_mode_state'").fetchone()
+        if row is not None:
+            try:
+                state=json.loads(row["v"])
+                if state.get("mode") not in EXECUTION_MODES or not isinstance(state.get("revision"),int):raise ValueError
+                return {**state,"valid":True}
+            except Exception:
+                return {"mode":"LOCAL_ONLY","revision":0,"valid":False,"reason":"INVALID_DURABLE_STATE"}
+        legacy=store.c.execute("SELECT v FROM meta WHERE k='execution_mode'").fetchone()
+        legacy_mode=_normalized_legacy_mode(legacy["v"]) if legacy else "LOCAL_ONLY"
+        valid=legacy_mode in EXECUTION_MODES
+        state={"mode":legacy_mode if valid else "LOCAL_ONLY","revision":1 if legacy else 0,"updated_at":now(),"actor":"legacy_migration" if legacy else "safe_default"}
+        store.c.execute("INSERT INTO meta(k,v,t) VALUES(?,?,?)",("execution_mode_state",jd(state),now()))
+        store.c.execute("INSERT INTO meta(k,v,t) VALUES(?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v,t=excluded.t",("execution_mode",state["mode"],now()))
+        return {**state,"valid":valid}
+def execution_mode(store):return execution_mode_snapshot(store)["mode"]
+def set_execution_mode(store,mode,expected_revision=None,actor="owner_control"):
     if mode not in EXECUTION_MODES:raise ValueError("invalid execution mode")
-    previous=execution_mode(store);store.setmeta("execution_mode",mode)
-    if mode in ("CODEX_ALLOWED","AUTO_HYBRID"):
-        if mode=="CODEX_ALLOWED" or capability_status(store,"CODEX").get("status","AVAILABLE")=="AVAILABLE":store.release_codex_waits()
-        state=capability_status(store,"CODEX");state.pop("manual_hold",None)
-        store.setmeta("capability.CODEX",jd(state))
-    store.event(None,"EXECUTION_MODE_CHANGED",mode,{"previous":previous,"mode":mode})
-    return mode
+    with store.l,store.c:
+        previous=execution_mode_snapshot(store)
+        if expected_revision is not None and int(expected_revision)!=previous["revision"]:raise ExecutionModeConflict("execution mode revision changed")
+        state={"mode":mode,"revision":previous["revision"]+1,"updated_at":now(),"actor":actor}
+        encoded=jd(state);stamp=now()
+        store.c.execute("INSERT INTO meta(k,v,t) VALUES(?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v,t=excluded.t",("execution_mode_state",encoded,stamp))
+        # Compatibility mirror; never read when the authoritative state exists.
+        store.c.execute("INSERT INTO meta(k,v,t) VALUES(?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v,t=excluded.t",("execution_mode",mode,stamp))
+        store.c.execute("INSERT INTO events(job_id,type,msg,data,created_at) VALUES(NULL,?,?,?,?)",("EXECUTION_MODE_CHANGED",mode,jd({"previous":previous["mode"],"mode":mode,"revision":state["revision"],"actor":actor}),stamp))
+    if mode in ("CODEX_ONLY","AUTO_HYBRID"):
+        if mode=="CODEX_ONLY" or capability_status(store,"CODEX").get("status","AVAILABLE")=="AVAILABLE":store.release_codex_waits()
+        capability=capability_status(store,"CODEX");capability.pop("manual_hold",None)
+        store.setmeta("capability.CODEX",jd(capability))
+    return {**state,"valid":True}
 def load_planner_registry(root:Path,mission:dict,configured=None)->dict:
     path=Path(configured).expanduser() if configured else root/"planner-registry.v1.json"
     if not path.is_absolute():path=(root/path).resolve()
@@ -431,13 +456,17 @@ class Runner:
                 "semantic_verification":self.s.meta("local_ai.semantic_verification") or "UNKNOWN"}
         if old.get("status")!=local or any(old.get(k)!=v for k,v in extras.items()):
             set_capability(self.s,"LOCAL_AI",local,**extras)
-        effective_codex="DISABLED_BY_USER" if execution_mode(self.s)=="LOCAL_ONLY" else codex_status
-        return {"CODEX":effective_codex,"CODEX_ACTUAL":codex_status,"LOCAL_AI":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
+        mode=execution_mode(self.s)
+        effective_codex="DISABLED_BY_USER" if mode=="LOCAL_ONLY" else codex_status
+        effective_local="DISABLED_BY_USER" if mode=="CODEX_ONLY" else local
+        return {"CODEX":effective_codex,"CODEX_ACTUAL":codex_status,"LOCAL_AI":effective_local,"LOCAL_AI_ACTUAL":local,"SHELL":"AVAILABLE","TESTS":"AVAILABLE","TYPECHECK":"AVAILABLE","BUILD":"AVAILABLE","FFMPEG":"AVAILABLE" if shutil.which("ffmpeg") else "UNAVAILABLE","MEDIA":"AVAILABLE","HASHING":"AVAILABLE","METADATA":"AVAILABLE","ANALYTICS":"AVAILABLE","METRICS":"AVAILABLE","SYNC":"AVAILABLE","RECONCILIATION":"AVAILABLE","PUBLISHER_PREP":"AVAILABLE","QUEUE_MAINTENANCE":"AVAILABLE","ROADMAP":"AVAILABLE","HEALTH":"AVAILABLE","GIT":"AVAILABLE","NETWORK":"AVAILABLE"}
     def require_codex(self):
         mode=execution_mode(self.s)
         if mode=="LOCAL_ONLY":raise RuntimeError("Codex process blocked by LOCAL_ONLY")
         if mode=="AUTO_HYBRID" and self.capabilities()["CODEX"] not in ("AVAILABLE","PROBE_DUE"):
             raise RuntimeError("Codex process blocked by durable cooldown")
+    def require_local_ai(self):
+        if execution_mode(self.s)=="CODEX_ONLY":raise RuntimeError("local AI process blocked by CODEX_ONLY")
     def scheduler_policy(self):
         policy=dict(self.mission.get("schedulerPolicy") or {})
         try:budget=json.loads(self.s.meta("codex.budget") or "null")
@@ -760,6 +789,7 @@ class Runner:
             self.git(wt,["commit","-m",f"auto({j['id']}): {j['title']}"])
         p["candidate_sha"]=self.git(wt,["rev-parse","HEAD"]);self.s.payload(j["id"],p);self.s.state(j["id"],"READY")
     def local_ai_job(self,j):
+        self.require_local_ai()
         p=j["payload"]
         if int(p.get("risk",1))>1:raise RuntimeError("local AI authority denied for risk above 1")
         wt=self.worktree(j);self.s.state(j["id"],"CODING",bump=True)
@@ -853,21 +883,23 @@ class Runner:
         except subprocess.TimeoutExpired:self.proc.kill()
         if cancel and self.current:self.s.state(self.current,"CANCELLED","stopped from control center")
         return True
-    def request_execution_mode(self,mode,active_policy="after_current"):
+    def request_execution_mode(self,mode,active_policy="after_current",expected_revision=None):
         if mode not in EXECUTION_MODES:raise ValueError("invalid execution mode")
+        snapshot=execution_mode_snapshot(self.s)
+        if expected_revision is not None and int(expected_revision)!=snapshot["revision"]:raise ExecutionModeConflict("execution mode revision changed")
         current=next((j for j in self.s.jobs(10000) if j["id"]==self.current),None)
         active_codex=bool(current and job_executor(current)=="CODEX" and self.proc and self.proc.poll() is None)
         if mode=="LOCAL_ONLY" and active_codex and active_policy=="after_current":
             self.s.setmeta("pending_execution_mode",mode)
-            self.s.event(None,"EXECUTION_MODE_PENDING",mode,{"current_job_id":self.current})
+            self.s.event(None,"EXECUTION_MODE_PENDING",mode,{"current_job_id":self.current,"base_revision":snapshot["revision"],"actor":"owner_control"})
             return "PENDING_AFTER_CURRENT"
-        set_execution_mode(self.s,mode);self.s.setmeta("pending_execution_mode","")
+        set_execution_mode(self.s,mode,expected_revision=expected_revision,actor="owner_control");self.s.setmeta("pending_execution_mode","")
         if mode=="LOCAL_ONLY" and active_codex and active_policy=="stop_active":
             self.stop_current(False)
             return "ACTIVE_CODEX_STOP_REQUESTED"
         return "APPLIED"
 
-HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}.mode{background:#252b38;color:#eef2f7}.mode.active{background:#25784a;box-shadow:0 0 0 2px #55d98b inset}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=c><strong>Режим исполнения</strong><div class=row style='margin-top:10px'><button id=localmode class=mode onclick="mode('LOCAL_ONLY')">Локально · без Codex</button><button id=codexmode class=mode onclick="mode('CODEX_ALLOWED')">Codex разрешён</button><button id=automode class=mode onclick="mode('AUTO_HYBRID')">Авто: Codex ↔ локальная Qwen</button></div><p id=modeinfo class=meta>Loading mode…</p></div><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
+HTML="""<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Life OS Supervisor</title><style>body{font-family:-apple-system,sans-serif;background:#0b0c10;color:#eef2f7;margin:0;padding:18px}main{max-width:900px;margin:auto}.c{background:#151821;border:1px solid #2a3040;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.p{background:#252b38;border-radius:999px;padding:6px 10px}.meta{color:#aeb8c8;font-size:13px}button,input{padding:10px;border-radius:10px;border:0}.mode{background:#252b38;color:#eef2f7}.mode.active{background:#25784a;box-shadow:0 0 0 2px #55d98b inset}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a3040;text-align:left}pre{white-space:pre-wrap}</style><main><h1>Autonomous Development</h1><div class=c><strong>Режим исполнения</strong><div class=row style='margin-top:10px'><button id=localmode class=mode onclick="mode('LOCAL_ONLY')">Локально · без Codex</button><button id=codexmode class=mode onclick="mode('CODEX_ONLY')">Codex разрешён</button><button id=automode class=mode onclick="mode('AUTO_HYBRID')">Авто: Codex ↔ локальная Qwen</button></div><p id=modeinfo class=meta>Loading mode…</p></div><div class=row><span id=u class=meta>Updated: —</span><span id=z class=meta></span></div><div id=s class=c>Loading</div><div class=c><div class=row><input id=t type=password placeholder='Control token'><button onclick=a('pause')>Pause</button><button onclick=a('resume')>Resume</button><button onclick=a('retry')>Retry</button><button onclick=a('stop')>Stop job</button></div></div><div class=c><h2>Queue</h2><div id=q></div></div><div class=c><h2>Events</h2><div id=tz class=meta></div><pre id=e></pre></div></main><script>
 const POLL_MS=4000,MAX_BACKOFF_MS=20000;let timer=null,refreshing=false,failures=0;
 let currentSnapshot=null;
 t.value=localStorage.st||'';
@@ -878,8 +910,8 @@ function clock(d){let p=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'
 z.textContent='Time zone: '+zone+' ('+offset()+')';tz.textContent=z.textContent;
 async function g(url){let r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error(url+' '+r.status);return r.json()}
 async function a(x){localStorage.st=t.value;let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:x})});alert((await r.json()).message);immediate()}
-async function mode(value){localStorage.st=t.value;let active=value==='LOCAL_ONLY'&&currentSnapshot?.current_executor==='CODEX',pending_mode=active?(confirm('Codex выполняет задачу. OK — остановить безопасно сейчас; Отмена — применить после завершения.')?'stop_active':'after_current'):'after_current';let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:'set_execution_mode',mode:value,pending_mode})});let x=await r.json();alert(x.message);immediate()}
-function render(s,j,ev){currentSnapshot=s;let cur=j.jobs.find(x=>x.id===s.current_job_id),local=s.execution_mode==='LOCAL_ONLY';localmode.classList.toggle('active',local);codexmode.classList.toggle('active',s.execution_mode==='CODEX_ALLOWED');automode.classList.toggle('active',s.execution_mode==='AUTO_HYBRID');modeinfo.textContent='Активен: '+s.execution_mode+' · Codex: '+(s.capabilities.CODEX_ACTUAL||s.capabilities.CODEX)+' · Local: '+(s.local_ai_proof?.model||'не настроена')+(s.pending_execution_mode?' · ожидает: '+s.pending_execution_mode:'')+(s.codex_cooldown?.retry_at?' · Codex retry: '+localTime(new Date(s.codex_cooldown.retry_at*1000).toISOString()):'');document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Idle reason: '+(s.idle_reason?s.idle_reason.reason:'—')+'</p><p>Blocked: '+Object.entries(s.queue.blocked_reasons||{}).map(([a,b])=>a+'='+b).join(', ')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
+async function mode(value){localStorage.st=t.value;let active=value==='LOCAL_ONLY'&&currentSnapshot?.current_executor==='CODEX',pending_mode=active?(confirm('Codex выполняет задачу. OK — остановить безопасно сейчас; Отмена — применить после завершения.')?'stop_active':'after_current'):'after_current';let r=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-supervisor-token':t.value},body:JSON.stringify({action:'set_execution_mode',mode:value,pending_mode,expected_revision:currentSnapshot?.execution_mode_revision})});let x=await r.json();alert(x.message);immediate()}
+function render(s,j,ev){currentSnapshot=s;let cur=j.jobs.find(x=>x.id===s.current_job_id),local=s.execution_mode==='LOCAL_ONLY';localmode.classList.toggle('active',local);codexmode.classList.toggle('active',s.execution_mode==='CODEX_ONLY');automode.classList.toggle('active',s.execution_mode==='AUTO_HYBRID');modeinfo.textContent='Активен: '+s.execution_mode+' · Codex: '+(s.capabilities.CODEX_ACTUAL||s.capabilities.CODEX)+' · Local: '+(s.local_ai_proof?.model||'не настроена')+(s.pending_execution_mode?' · ожидает: '+s.pending_execution_mode:'')+(s.codex_cooldown?.retry_at?' · Codex retry: '+localTime(new Date(s.codex_cooldown.retry_at*1000).toISOString()):'');document.getElementById('s').innerHTML='<div class=row><span class=p>Supervisor '+s.status+'</span><span class=p>Codex '+s.capabilities.CODEX+'</span><span class=p>Local AI '+s.capabilities.LOCAL_AI+'</span><span class=p>Deterministic AVAILABLE</span><span class=p>Heartbeat '+s.heartbeat_age_seconds+'s</span></div><p>Current: '+(cur?cur.id+' / '+cur.product+' / '+s.current_executor+' / '+cur.state:'—')+'</p><p>Idle reason: '+(s.idle_reason?s.idle_reason.reason:'—')+'</p><p>Blocked: '+Object.entries(s.queue.blocked_reasons||{}).map(([a,b])=>a+'='+b).join(', ')+'</p><p>Runnable '+s.queue.runnable+' · Waiting Codex '+s.queue.waiting_codex+' · Human '+s.queue.waiting_human+' · Ready '+s.queue.ready+'</p><p>Last ready: '+(s.last_ready?s.last_ready.id+' '+(s.last_ready.payload.candidate_sha||''):'—')+'</p>';document.getElementById('q').innerHTML='<table><tr><th>ID</th><th>Product</th><th>Executor</th><th>State</th></tr>'+j.jobs.map(x=>'<tr><td>'+x.id+'</td><td>'+x.product+'</td><td>'+x.executor+'</td><td>'+x.state+'</td></tr>').join('')+'</table>';document.getElementById('e').textContent=ev.events.map(x=>localTime(x.created_at)+' '+(x.job_id||'-')+' '+x.type+': '+x.msg).join('\\n');u.textContent='Updated: '+clock(new Date())}
 function schedule(ms=POLL_MS){if(timer!==null)clearTimeout(timer);timer=setTimeout(refresh,ms)}
 async function refresh(){if(refreshing)return;refreshing=true;try{let [s,j,ev]=await Promise.all([g('/api/status'),g('/api/jobs'),g('/api/events')]);render(s,j,ev);failures=0}catch(error){failures=Math.min(failures+1,3);u.textContent='Update retrying…'}finally{refreshing=false;schedule(Math.min(POLL_MS*Math.pow(2,failures),MAX_BACKOFF_MS))}}
 function immediate(){if(refreshing)return;if(timer!==null)clearTimeout(timer);timer=null;refresh()}
@@ -901,7 +933,8 @@ class H(BaseHTTPRequestHandler):
             try:caps=json.loads(a.s.meta("capabilities") or "{}")
             except:caps={}
             current=next((x for x in a.s.jobs() if x["id"]==(a.s.meta("current_job_id") or "")),None)
-            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":execution_mode(a.s),"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),"codex_cooldown":capability_status(a.s,"CODEX"),"codex_budget":json.loads(a.s.meta("codex.budget") or "null"),**o});return
+            mode_state=execution_mode_snapshot(a.s)
+            o=a.s.overview();self.sendj({"status":a.s.meta("status") or "UNKNOWN","heartbeat_age_seconds":age,"paused":a.s.meta("paused")=="1","execution_mode":mode_state["mode"],"execution_mode_revision":mode_state["revision"],"execution_mode_valid":mode_state["valid"],"pending_execution_mode":a.s.meta("pending_execution_mode") or None,"current_job_id":a.s.meta("current_job_id") or None,"current_executor":job_executor(current) if current else None,"capabilities":caps,"queue":a.s.queue_summary(caps),"idle_reason":json.loads(a.s.meta("scheduler.last_idle_reason") or "null"),"local_ai_proof":capability_status(a.s,"LOCAL_AI"),"codex_cooldown":capability_status(a.s,"CODEX"),"codex_budget":json.loads(a.s.meta("codex.budget") or "null"),**o});return
         if self.path=="/api/jobs":
             jobs=a.s.jobs()
             for job in jobs:job["product"]=job_product(job);job["executor"]="CODEX" if job["state"]=="LOCAL_READY_PENDING_CODEX_REVIEW" else job_executor(job)
@@ -930,7 +963,8 @@ class H(BaseHTTPRequestHandler):
             if job_executor(j)=="CODEX" and execution_mode(a.s)=="LOCAL_ONLY":self.sendj({"message":"Codex task remains waiting in LOCAL_ONLY"},409);return
             a.s.state(j["id"],"QUEUED");m="Queued "+j["id"]
         elif act=="set_execution_mode":
-            try:result=a.r.request_execution_mode(str(x.get("mode")),str(x.get("pending_mode") or "after_current"))
+            try:result=a.r.request_execution_mode(str(x.get("mode")),str(x.get("pending_mode") or "after_current"),x.get("expected_revision"))
+            except ExecutionModeConflict:self.sendj({"message":"Execution mode changed in another session; refreshed current state"},409);return
             except ValueError:self.sendj({"message":"Invalid execution mode"},400);return
             m="Execution mode "+result
         else:self.sendj({"message":"Unsupported action"},400);return
@@ -979,4 +1013,5 @@ def main():
     def sig(*_):threading.Thread(target=app.http.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,sig);signal.signal(signal.SIGINT,sig);app.run()
 if __name__=="__main__":main()
+
 
