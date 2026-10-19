@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { executeErika } from './erika';
 import { applyPlan, today, allItems } from './api';
 import { routeErikaSpeech } from './erikaSpeech';
+import { createContextualCopy } from './erikaCopy';
 import { planCompound } from './planner';
 import { autoVoice } from './voiceController';
 import { createQuickCapture } from './quickCapture';
@@ -57,9 +58,9 @@ export default function ErikaSheet({ items, onClose, onApplied }: { items: Item[
           setMessage(`«${source.title}» уже запланирована на завтра. Копию не создавала.`);
           return;
         }
-        const start = targetDate + source.planned_start.slice(10);
-        const end = source.planned_end ? targetDate + source.planned_end.slice(10) : null;
-        const result = await applyPlan(`erika-copy:${source.id}:${targetDate}`, [{title:source.title,kind:source.kind,planned_start:start,planned_end:end}]);
+        const copyRequest = createContextualCopy(source, targetDate);
+        const start = copyRequest.items[0].planned_start;
+        const result = await applyPlan(copyRequest.idempotencyKey, copyRequest.items);
         const after = await allItems();
         const copy = after.find(item => result.ids.includes(item.id) && item.title === source.title && item.planned_start === start);
         const original = after.find(item => item.id === source.id);
