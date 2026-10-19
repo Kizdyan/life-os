@@ -4,6 +4,7 @@ export interface StorageLike{getItem(key:string):string|null;setItem(key:string,
 export interface LocalPlanInput{title:string;planned_start:string;planned_end:string|null;kind?:string;carry_forward?:boolean}
 interface LocalState{schemaVersion:1;items:Item[];plans:Record<string,string[]>}
 const KEY='life-os:local-runtime:v1';
+const MOVE_UNDO_KEY='life-os:local-move-undo:v1';
 
 export function readLocalToday(storage:StorageLike,date:string):Item[]{
   return read(storage).items
@@ -86,7 +87,9 @@ export function moveLocalItem(storage:StorageLike,itemId:string,plannedStart:str
   const item={...before,planned_start:plannedStart};state.items[index]=item;write(storage,state);
   const persisted=read(storage).items.find(candidate=>candidate.id===itemId);
   if(!persisted||persisted.planned_start!==plannedStart)throw new Error('move persistence failed');
-  return{item:persisted,undo:{itemId,before:before.planned_start,after:plannedStart,revision}};
+  const undo={itemId,before:before.planned_start,after:plannedStart,revision};
+  storage.setItem(MOVE_UNDO_KEY,JSON.stringify(undo));
+  return{item:persisted,undo};
 }
 
 export function undoLocalMove(storage:StorageLike,undo:LocalMoveUndo):Item{
@@ -95,7 +98,12 @@ export function undoLocalMove(storage:StorageLike,undo:LocalMoveUndo):Item{
   const item={...state.items[index],planned_start:undo.before};state.items[index]=item;write(storage,state);
   const persisted=read(storage).items.find(candidate=>candidate.id===undo.itemId);
   if(!persisted||persisted.planned_start!==undo.before)throw new Error('undo persistence failed');
+  storage.setItem(MOVE_UNDO_KEY,'');
   return persisted;
+}
+
+export function readLocalMoveUndo(storage:StorageLike):LocalMoveUndo|null{
+  try{const value=JSON.parse(storage.getItem(MOVE_UNDO_KEY)||'null');return value&&typeof value.itemId==='string'&&typeof value.after==='string'&&typeof value.revision==='string'?value:null}catch{return null}
 }
 
 function read(storage:StorageLike):LocalState{
