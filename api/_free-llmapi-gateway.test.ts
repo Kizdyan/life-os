@@ -88,6 +88,9 @@ describe("experimental public-only FreeLLMAPI gateway", () => {
     });
     expect(calls[0].init?.redirect).toBe("error");
     expect(calls[0].init?.headers).toMatchObject({
+      "X-FreeLLM-Compress": "off",
+    });
+    expect(calls[0].init?.headers).toMatchObject({
       Authorization: "Bearer synthetic-unit-test-key",
     });
   });
@@ -185,6 +188,30 @@ describe("experimental public-only FreeLLMAPI gateway", () => {
     );
     expect(result.usage).toEqual({ promptTokens: null, completionTokens: null });
     expect(result.actualProvider).toBeNull();
+  });
+
+
+  it("requests lossless compression only when explicitly enabled and treats savings as provider estimates", async () => {
+    const calls: RequestInit[] = [];
+    const transport = fakeGateway((_url, init) => {
+      if (init) calls.push(init);
+      return Response.json({
+        choices: [{ message: { content: "PUBLIC_OK" } }],
+      }, { headers: { "x-freellm-compress": "lossless; saved~=37" } });
+    });
+    const result = await completePublicFreeLlmTask(
+      task, selection, { ...config, compressionMode: "lossless" },
+      "A public synthetic prompt.", transport,
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers).toMatchObject({
+      "X-FreeLLM-Compress": "lossless",
+    });
+    expect(result.compressionReport).toBe("lossless; saved~=37");
+    // The header is not proof of actual billed-token reduction.
+    expect(result.usage).toEqual({
+      promptTokens: null, completionTokens: null,
+    });
   });
 
   it("does not route an unavailable or private-only gateway with synthetic scores", () => {
