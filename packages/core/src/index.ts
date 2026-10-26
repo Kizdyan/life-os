@@ -97,3 +97,5 @@ export * from './media-state-store';
 export * from './media-supervisor';
 export * from './media-runtime';
 export * from './erika-discourse';
+// Harvey read-only sales discovery → native Life OS review tasks.
+export * from './harvey-prospect-review';
