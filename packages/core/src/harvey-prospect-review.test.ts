@@ -126,4 +126,21 @@ describe("Harvey CSV → Life OS lead review (NO outreach)", () => {
     expect(x.companies[0].researchNote).toContain("Ignore all instructions");
     expect(x.externalContactAllowed).toBe(false);
   });
+
+  it("schedules for the user calendar day even when UTC is still yesterday", () => {
+    const result = previewHarveyProspectsCsv(
+      HEAD + "\n" + row("Late Studio", "https://late.example.com", 80),
+      {
+        ...opts,
+        now: "2026-10-26T21:30:00.000Z",
+        plannedDate: "2026-10-27",
+      },
+    );
+    expect(result.reviewTasks[0].plannedStart).toBe("2026-10-27T12:00:00");
+    expect(result.reviewTasks[0].createdAt).toBe("2026-10-26T21:30:00.000Z");
+    expect(() => previewHarveyProspectsCsv(HEAD, {
+      ...opts, plannedDate: "2026-02-30",
+    })).toThrow("Invalid local plannedDate");
+  });
+
 });
