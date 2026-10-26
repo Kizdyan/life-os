@@ -25,7 +25,7 @@ describe("Harvey CSV → Life OS lead review (NO outreach)", () => {
       status: "planned",
       projectId: "sales-opportunities",
       title: "Проверить потенциального заказчика: Studio A",
-      plannedStart: null,
+      plannedStart: opts.now,
     });
     expect(x.companies[0]).toMatchObject({
       domain: "studio-a.example.com",
