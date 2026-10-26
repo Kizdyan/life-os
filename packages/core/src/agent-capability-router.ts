@@ -11,7 +11,30 @@ export type AgentCapability =
   | "motion_graphics"
   | "creative_direction"
   | "color_review"
-  | "subtitles";
+  | "subtitles"
+  | "photo_editing"
+  | "audio_editing"
+  | "composition"
+  | "music_theory"
+  | "score_engraving"
+  | "research"
+  | "fact_checking"
+  | "technical_writing"
+  | "creative_writing"
+  | "strategy"
+  | "marketing"
+  | "analytics"
+  | "financial_analysis"
+  | "planning"
+  | "scheduling"
+  | "education"
+  | "communication_coaching"
+  | "automation"
+  | "tool_evaluation"
+  | "quality_assurance"
+  | `custom:${string}`;
+
+export type AgentDataClass = "public" | "internal" | "sensitive";
 
 export type AgentProvider = "codex" | "claude" | "local" | "human" | "other";
 
@@ -23,12 +46,18 @@ export interface AgentProfile {
   capabilities: Partial<Record<AgentCapability, number>>;
   /** Actual installed and verified tools, not aspirational integrations. */
   tools: readonly string[];
+  /** Explicit permissions for task data. Defaults to public-only. */
+  allowedDataClasses?: readonly AgentDataClass[];
   /** Optional nonnegative tie-breaker, in arbitrary relative units. */
   relativeCost?: number;
 }
 
 export interface AgentTask {
   id: string;
+  /** Routes tasks from any product or personal workstream, not only video. */
+  projectId?: string;
+  /** Task data classification; omitted means public. */
+  dataClass?: AgentDataClass;
   requiredCapabilities: readonly AgentCapability[];
   preferredCapabilities?: readonly AgentCapability[];
   requiredTools?: readonly string[];
@@ -77,6 +106,7 @@ export function routeAgentTask(
   const tools = task.requiredTools ?? [];
   const eligible = agents.flatMap((agent) => {
     if (!agent.available || agent.id === task.independentOfAgentId) return [];
+    if (!(agent.allowedDataClasses ?? ["public"]).includes(task.dataClass ?? "public")) return [];
     if (!tools.every((tool) => agent.tools.includes(tool))) return [];
     const ratings = task.requiredCapabilities.map(
       (capability) => validRating(agent.capabilities[capability]),
