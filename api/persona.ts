@@ -1,6 +1,4 @@
 import{env,json}from'./_media-session.js';
-import{experimental_transcribe as transcribeAudio}from'ai';
-import{gateway}from'@ai-sdk/gateway';
 
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 type Slide={eyebrow:string;title:string;body:string};
@@ -30,5 +28,28 @@ async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any){
   if(kind==='generate')return {...localDraft(payload.idea,payload.assetName),executionMode:'template'};
   return {...localRevise(payload.draft,String(payload.feedback||'')),executionMode:'template'};
 }
-async function transcribe(request:Request){if(env('PERSONA_ENABLE_EXTERNAL_AI')!=='true')return json({error:'В тестовом режиме голосовое распознавание ещё не подключено. Используй текстовую правку.'},503);const form=await request.formData();const audio=form.get('audio');if(!(audio instanceof File)||!audio.size)return json({error:'audio_required'},400);const key=env('OPENAI_API_KEY')||env('openai_api_key');if(key){try{const outbound=new FormData();outbound.append('file',audio,audio.name||'voice.webm');outbound.append('model',env('PERSONA_TRANSCRIBE_MODEL')||'gpt-4o-transcribe');outbound.append('language','ru');outbound.append('prompt','Длинная разговорная русская инструкция по редактированию контента. Сохраняй весь смысл, отрицания, имена, термины и последовательность требований.');const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${key}`},body:outbound});if(r.ok){const d:any=await r.json();if(String(d.text||'').trim())return json({transcript:String(d.text).trim()})}}catch(e){console.error('persona_transcription_openai',String((e as Error)?.message||e))}}try{const bytes=new Uint8Array(await audio.arrayBuffer());const result=await transcribeAudio({model:gateway.transcriptionModel(env('PERSONA_GATEWAY_TRANSCRIBE_MODEL')||'openai/whisper-1'),audio:bytes});if(String(result.text||'').trim())return json({transcript:String(result.text).trim()})}catch(e){console.error('persona_transcription_gateway',String((e as Error)?.message||e))}return json({error:'voice_unavailable'},503)}
+async function transcribe(request:Request){
+  if(env('PERSONA_ENABLE_EXTERNAL_AI')!=='true'){
+    return json({error:'В тестовом режиме голосовое распознавание ещё не подключено. Используй текстовую правку.'},503);
+  }
+  const form=await request.formData();
+  const audio=form.get('audio');
+  if(!(audio instanceof File)||!audio.size)return json({error:'audio_required'},400);
+  const key=env('OPENAI_API_KEY')||env('openai_api_key');
+  if(!key)return json({error:'voice_provider_not_configured'},503);
+  try{
+    const outbound=new FormData();
+    outbound.append('file',audio,audio.name||'voice.webm');
+    outbound.append('model',env('PERSONA_TRANSCRIBE_MODEL')||'gpt-4o-transcribe');
+    outbound.append('language','ru');
+    const response=await fetch('https://api.openai.com/v1/audio/transcriptions',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`},body:outbound
+    });
+    if(response.ok){
+      const data:any=await response.json();
+      if(String(data.text||'').trim())return json({transcript:String(data.text).trim()});
+    }
+  }catch(e){console.error('persona_transcription',String((e as Error)?.message||e))}
+  return json({error:'voice_unavailable'},503);
+}
 export default{async fetch(request:Request){if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'POST'});const contentType=request.headers.get('content-type')||'';if(contentType.includes('multipart/form-data'))return transcribe(request);try{const body:any=await request.json();const action=String(body?.action||'plan');if(action==='plan'){const result:any=await aiOrFallback('plan',{history:body.history||[],seed:body.seed||[]});const ideas=Array.isArray(result?.ideas)?result.ideas:localIdeas(body.history||[]);return json({ideas:ideas.slice(0,24).map((x:any,i:number)=>({...x,id:String(x.id||`idea-${i+1}`),score:Number(x.score||80),status:'candidate'})),mode:result.executionMode||'template'})}if(action==='generate'){const result:any=await aiOrFallback('generate',{idea:body.idea,history:body.history||[],assetName:body.assetName||''});const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),summary:result.changeSummary||'Текстовый черновик создан; проведена формальная проверка структуры.',mode:result.executionMode||'template'})}if(action==='revise'){const result:any=await aiOrFallback('revise',{draft:body.draft,feedback:body.feedback,history:body.history||[]});const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),learnedRules:result.learnedRules||[],summary:result.changeSummary||'Текстовый черновик обновлён.',mode:result.executionMode||'template'})}return json({error:'unknown_action'},400)}catch(e){console.error('persona_route',String((e as Error)?.message||e));return json({error:'pipeline_unavailable'},503)}}};
