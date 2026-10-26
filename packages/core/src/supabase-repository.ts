@@ -31,6 +31,37 @@ export class SupabaseLifeItemRepository implements LifeItemRepository {
     return fromRow(rows[0]);
   }
 
+  /**
+   * Store human-review tasks generated from Harvey CSV in the EXISTING
+   * life_items table. Ignore conflicts: never overwrite a user's decision.
+   * This method never sends email or writes to a contact provider.
+   * RLS/owner restrictions are enforced by the existing Supabase policies.
+   */
+  async enqueueHarveyReviewTasks(
+    items: readonly LifeItem[],
+    transport: typeof fetch = fetch,
+  ): Promise<void> {
+    if (!items.length) return;
+    if (items.length > 100 || items.some(item =>
+      !item.id.startsWith('harvey:lead-review:') ||
+      item.kind !== 'task' ||
+      item.status !== 'planned' ||
+      !item.projectId?.trim()
+    )) {
+      throw new Error('Only bounded Harvey lead-review tasks may be imported');
+    }
+    const url = new URL('/rest/v1/life_items', this.config.url);
+    url.searchParams.set('on_conflict', 'id');
+    const response = await transport(url, {
+      method: 'POST',
+      headers: this.headers({ Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+      body: JSON.stringify(items.map(toRow)),
+    });
+    if (!response.ok) {
+      throw new Error(`Harvey review import failed: ${response.status}`);
+    }
+  }
+
   async commit(result: ApplyOutcomeResult): Promise<void> {
     const requests: Promise<Response>[] = [
       fetch(new URL(`/rest/v1/life_items?id=eq.${encodeURIComponent(result.current.id)}`, this.config.url), {
