@@ -58,3 +58,4 @@ export default function DataPortability(){
     {error&&<p role="alert">{error}</p>}
     <p>Файл хранится у тебя. Он может содержать личные сведения — не отправляй его посторонним. Пароли и ключи не экспортируются.</p>
   </details>;
+}
