@@ -1,1 +1,11 @@
-{"name":"Life OS","short_name":"Life OS","start_url":"/","display":"standalone","background_color":"#f7f7f5","theme_color":"#111827","lang":"ru"}
+{
+  "name": "Life OS",
+  "short_name": "Life OS",
+  "start_url": "/?local=1#today",
+  "display": "standalone",
+  "background_color": "#f7f7f5",
+  "theme_color": "#111827",
+  "lang": "ru",
+  "id": "/life-os-persona-preview",
+  "description": "Экспериментальная версия Life OS + Persona; локальные данные на устройстве"
+}

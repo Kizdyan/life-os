@@ -26,6 +26,8 @@ describe('Life OS and Persona JSX runtime rendering', () => {
     stubBrowser('#today');
     const markup = renderToString(React.createElement(App));
     expect(markup).toContain('Сегодня');
+    expect(markup).toContain('Завтра');
+    expect(markup).toContain('Резервная копия и перенос данных');
     expect(markup).toContain('Эрика');
   });
 
