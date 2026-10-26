@@ -42,6 +42,8 @@ export interface HarveyReviewPreview {
 export interface HarveyReviewOptions {
   projectId: string;
   now: string;
+  /** Calendar date in the user's locale, YYYY-MM-DD. Independent of UTC timestamps. */
+  plannedDate?: string;
   doNotContactDomains?: readonly string[];
   existingTaskIds?: ReadonlySet<string>;
   maxNewTasks?: number;
@@ -152,6 +154,16 @@ export function previewHarveyProspectsCsv(
   if (!options.projectId?.trim() || !Number.isFinite(Date.parse(options.now))) {
     throw new Error("A project ID and valid timestamp are required");
   }
+  if (options.plannedDate && (
+    !/^\d{4}-\d{2}-\d{2}$/.test(options.plannedDate) ||
+    !Number.isFinite(Date.parse(options.plannedDate + "T12:00:00Z")) ||
+    new Date(options.plannedDate + "T12:00:00Z").toISOString().slice(0, 10) !== options.plannedDate
+  )) {
+    throw new Error("Invalid local plannedDate");
+  }
+  const plannedStart = options.plannedDate
+    ? options.plannedDate + "T12:00:00"
+    : options.now;
   const maxNewTasks = options.maxNewTasks ?? 10;
   if (!Number.isInteger(maxNewTasks) || maxNewTasks < 0 || maxNewTasks > 100) {
     throw new Error("Invalid review task limit");
@@ -235,7 +247,7 @@ export function previewHarveyProspectsCsv(
       kind: "task",
       title: `Проверить потенциального заказчика: ${company.companyName} — ${company.domain}`,
       status: "planned",
-      plannedStart: options.now,
+      plannedStart,
       plannedEnd: null,
       actualStart: null,
       actualEnd: null,
