@@ -6,7 +6,7 @@
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|assets/|sw.js$|manifest.webmanifest$|favicon.ico$).*)",
       "destination": "/index.html"
     }
   ]
