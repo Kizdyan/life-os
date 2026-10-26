@@ -1,4 +1,5 @@
 import type{Item}from'./types';
+import type { LifeItem } from '../../../packages/core/src/life-item';
 
 export interface StorageLike{getItem(key:string):string|null;setItem(key:string,value:string):void}
 export interface LocalPlanInput{title:string;planned_start:string;planned_end:string|null;kind?:string;carry_forward?:boolean}
@@ -41,6 +42,33 @@ export function applyLocalPlan(
   state.plans[key]=created.map(item=>item.id);
   write(storage,state);
   return{applied:true,ids:created.map(item=>item.id),replayed:false};
+}
+
+/** Preserve Harvey lead-review items in the existing offline Life OS store. */
+export function enqueueLocalHarveyReviewTasks(
+  storage: StorageLike,
+  items: readonly LifeItem[],
+): number {
+  if (items.length > 100 || items.some(item =>
+    !item.id.startsWith('harvey:lead-review:') ||
+    item.kind !== 'task' || item.status !== 'planned' ||
+    !item.projectId?.trim() || !item.plannedStart
+  )) throw new Error('Only bounded Harvey review tasks may be imported');
+  const state = read(storage);
+  const known = new Set(state.items.map(item => item.id));
+  let created = 0;
+  for (const item of items) {
+    if (known.has(item.id)) continue;
+    state.items.push({
+      id: item.id, title: item.title, kind: item.kind, status: item.status,
+      planned_start: item.plannedStart, planned_end: item.plannedEnd,
+      carry_forward: false,
+    });
+    known.add(item.id);
+    created += 1;
+  }
+  if (created > 0) write(storage, state);
+  return created;
 }
 
 export function applyLocalOutcome(
