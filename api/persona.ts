@@ -44,7 +44,7 @@ async function freeAiGenerate(system:string,payload:any,request:Request):Promise
   if(env('PERSONA_ENABLE_FREE_AI')!=='true'||env('VERCEL_ENV')!=='preview')
     throw new Error('free_ai_disabled');
   if(!allowFreeAiRequest(request))throw new Error('free_ai_limit_6_per_hour');
-  const token=env('AI_GATEWAY_API_KEY')||env('VERCEL_OIDC_TOKEN');
+  const token=env('AI_GATEWAY_API_KEY')||request.headers.get('x-vercel-oidc-token')||env('VERCEL_OIDC_TOKEN');
   if(!token)throw new Error('free_ai_gateway_auth_missing');
   const input=JSON.stringify(payload);
   if(input.length>8000)throw new Error('free_ai_input_too_large');

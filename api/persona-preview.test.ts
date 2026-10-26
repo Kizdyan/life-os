@@ -73,4 +73,29 @@ describe('Real free model only on explicit opt-in',()=>{
     const out=await res.json();
     expect(out.error).toBe('free_ai_provider_503');
   });
+
+  it('uses the Vercel-injected function OIDC request header when env token is absent',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('AI_GATEWAY_API_KEY','');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','');
+    const draft=JSON.stringify({title:'За кулисами',caption:'Подпись',style:'old-money',
+      slides:Array.from({length:5},(_,i)=>({eyebrow:'Кадр '+i,title:'Сцена '+i,body:'Действие, свет и реплика '+i})),
+      platformNotes:{instagram:'9:16',vk:'short',youtube:'short'},assetInstruction:'Свет сбоку, вертикальная камера'});
+    const gateway=vi.fn(async (_url:string,init:any)=>{
+      expect(init.headers.Authorization).toBe('Bearer injected-vercel-oidc-test');
+      return new Response(JSON.stringify({choices:[{message:{content:draft}}]}),{status:200});
+    });
+    vi.stubGlobal('fetch',gateway);
+    const input=new Request('http://localhost/api/persona',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-vercel-oidc-token':'injected-vercel-oidc-test'},
+      body:JSON.stringify({action:'generate',engine:'free-ai',idea:{title:'За кулисами',format:'reel'}}),
+    });
+    const response=await handler.fetch(input);
+    expect(response.status).toBe(200);
+    expect((await response.json()).mode).toBe('ai');
+    expect(gateway).toHaveBeenCalledTimes(1);
+  });
+
 });
