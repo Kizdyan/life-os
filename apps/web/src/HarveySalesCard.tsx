@@ -36,9 +36,7 @@ export default function HarveySalesCard({ onAdded }: { onAdded: () => void }) {
     setError('');
     try {
       const count = await saveHarveyReviewTasks(preview.reviewTasks);
-      setSaved(count === null
-        ? 'Заявки обработаны в хранилище Life OS. Повторный импорт не перезаписывает задачи.'
-        : `Добавлено задач: ${count}. Повторный импорт не создаёт дубликаты.`);
+      setSaved(`Сохранено на этом устройстве: ${count}. Повторный импорт не создаёт дубликаты.`);
       onAdded();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Импорт не выполнен');
@@ -52,7 +50,7 @@ export default function HarveySalesCard({ onAdded }: { onAdded: () => void }) {
       <div><small>HARVEY · ПРОБНЫЙ РЕЖИМ</small><b>Поиск заказчиков</b></div>
       <span>Без рассылки</span>
     </div>
-    <p>Загрузи CSV, выгруженный из Harvey. Компании появятся на проверку в задачах Life OS. Почта не подключается, сообщения не отправляются.</p>
+    <p>Загрузи CSV, выгруженный из Harvey. Компании появятся на проверку в задачах Life OS. Почта не подключается, сообщения не отправляются. Сведения хранятся на этом устройстве.</p>
     <label className="harveyFile">
       Выбрать CSV с компаниями
       <input type="file" accept=".csv,text/csv" onChange={e => void readFile(e.target.files?.[0])} />
@@ -74,6 +72,6 @@ export default function HarveySalesCard({ onAdded }: { onAdded: () => void }) {
     </>}
     {saved && <p role="status" className="harveySuccess">{saved}</p>}
     {error && <p role="alert" className="harveyError">{error}</p>}
-    <small>Оценки Harvey не являются подтверждением качества клиента или согласием на рекламу.</small>
+    <small>Пилот работает локально: синхронизация между устройствами пока не подключена. Оценка Harvey не означает согласия на рекламу.</small>
   </aside>;
 }
