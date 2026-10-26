@@ -99,3 +99,25 @@ describe('Real free model only on explicit opt-in',()=>{
   });
 
 });
+
+describe('Preview OIDC availability diagnostic',()=>{
+  it('never returns the token itself, only availability',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('AI_GATEWAY_API_KEY','');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','');
+    const req=new Request('http://localhost/api/persona?auth_health=1',{
+      headers:{'x-vercel-oidc-token':'fake-JWT-that-must-not-escape'}});
+    const res=await handler.fetch(req);
+    expect(res.status).toBe(200);
+    const json=await res.json();
+    expect(json).toEqual({freeAiPreview:true,authReady:true,tokenIncluded:false});
+    expect(JSON.stringify(json)).not.toContain('fake-JWT');
+  });
+  it('does not expose status outside enabled preview',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','false');
+    vi.stubEnv('VERCEL_ENV','production');
+    const res=await handler.fetch(new Request('http://localhost/api/persona?auth_health=1'));
+    expect(res.status).toBe(405);
+  });
+});
