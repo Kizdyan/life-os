@@ -18,5 +18,7 @@ import{useEffect,useRef,useState}from'react';import{executeErika}from'./erika';i
     onApplied(d);
     return;
   }
-  const plan=planCompound(value,items),d=planLocalDate(new Date());
+  const d=planLocalDate(new Date());
+  const currentItems=await today(d);
+  const plan=planCompound(value,currentItems);
   if(plan.length>1||plan.some(x=>x.start)){if(plan.some(x=>!x.start||!x.end)){setMessage('Не могу безопасно разместить все пункты. Уточните время или границу дня.');return}const payload=plan.map(x=>({title:x.title,kind:'task',planned_start:planLocalDateTime(d,x.start!),planned_end:planLocalDateTime(d,x.end!)}));const result=await applyPlan(fp(d,plan),payload);const fresh=await today(d),created=result.ids.filter(id=>fresh.some(x=>x.id===id));if(created.length!==result.ids.length)throw Error('План записан не полностью — требуется повторная проверка');setMessage(`Готово. В расписание добавлено: ${created.length}.${result.replayed?' Повторная команда не создала дублей.':''}`);onApplied(d);return}const r=await executeErika(value,items);setMessage(r.message);if(r.understood)onApplied()}catch(e){setMessage('Не применяю изменения: '+String(e))}finally{setBusy(false)}}return <div className="sheetBackdrop" onClick={onClose}><div className="sheet" onClick={e=>e.stopPropagation()}><div className="sheetHead"><b>Эрика</b><button onClick={onClose}>×</button></div><textarea value={text} onChange={e=>{latest.current=e.target.value;setText(e.target.value)}} placeholder="Говорите свободно…"/><button className="send" disabled={busy} onClick={()=>void run()}>{busy?'Обрабатываю…':'Выполнить'}</button>{message&&<p style={{whiteSpace:'pre-line'}}>{message}</p>}</div></div>}
