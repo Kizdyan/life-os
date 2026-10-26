@@ -106,3 +106,117 @@ describe("provider-neutral capability routing", () => {
     expect(result.status).toBe("blocked");
   });
 });
+
+
+describe("cross-product capacity routing", () => {
+  // Scores are synthetic TEST FIXTURES, not claims about real Codex/Claude ability.
+  const agents: AgentProfile[] = [
+    {
+      id: "code-agent",
+      provider: "codex",
+      available: true,
+      capabilities: {
+        typescript: 5, architecture: 5, analytics: 4,
+        quality_assurance: 4, research: 3,
+      },
+      tools: ["git", "test_runner"],
+      allowedDataClasses: ["public", "internal"],
+    },
+    {
+      id: "creative-agent",
+      provider: "claude",
+      available: true,
+      capabilities: {
+        creative_writing: 5, composition: 4, marketing: 5,
+        strategy: 5, technical_writing: 4, research: 4,
+        education: 4, quality_assurance: 5,
+      },
+      tools: ["git", "document_editor"],
+      allowedDataClasses: ["public", "internal"],
+    },
+    {
+      id: "planning-agent",
+      provider: "local",
+      available: true,
+      capabilities: {
+        financial_analysis: 4, scheduling: 5,
+        planning: 5, analytics: 4, research: 3,
+      },
+      tools: ["calculator", "calendar"],
+      allowedDataClasses: ["public", "internal", "sensitive"],
+    },
+  ];
+
+  it("routes software, writing, music, scheduling and analytics with the same function", () => {
+    const examples = [
+      { projectId: "life-os", kind: "typescript", expected: "code-agent" },
+      { projectId: "musical", kind: "composition", expected: "creative-agent" },
+      { projectId: "career", kind: "marketing", expected: "creative-agent" },
+      { projectId: "everyday", kind: "scheduling", expected: "planning-agent" },
+      { projectId: "dive-m", kind: "analytics", expected: "code-agent" },
+    ] as const;
+    for (const example of examples) {
+      const result = routeAgentTask({
+        id: example.projectId + ":" + example.kind,
+        projectId: example.projectId,
+        requiredCapabilities: [example.kind],
+        dataClass: "public",
+        risk: "auto",
+      }, agents);
+      expect(result.agentId).toBe(example.expected);
+    }
+  });
+
+  it("blocks access to sensitive records without explicit provider permission", () => {
+    const onlyCreative = routeAgentTask({
+      id: "private-notes",
+      projectId: "personal",
+      requiredCapabilities: ["research"],
+      dataClass: "sensitive",
+      risk: "auto",
+    }, [agents[1]]);
+    expect(onlyCreative.status).toBe("blocked");
+
+    const eligible = routeAgentTask({
+      id: "private-finance",
+      projectId: "finance",
+      requiredCapabilities: ["financial_analysis"],
+      dataClass: "sensitive",
+      risk: "auto",
+    }, agents);
+    expect(eligible.agentId).toBe("planning-agent");
+  });
+
+  it("keeps consequential actions approval-gated across workstreams", () => {
+    const scheduled = routeAgentTask({
+      id: "schedule",
+      projectId: "everyday",
+      requiredCapabilities: ["scheduling"],
+      dataClass: "sensitive",
+      risk: "approval",
+    }, agents);
+    expect(scheduled.status).toBe("approval_required");
+
+    const finance = routeAgentTask({
+      id: "financial-transfer",
+      projectId: "finance",
+      requiredCapabilities: ["financial_analysis"],
+      dataClass: "sensitive",
+      risk: "approval",
+    }, agents);
+    expect(finance.status).toBe("approval_required");
+  });
+
+  it("allows a new domain capability without a per-project fork", () => {
+    const result = routeAgentTask({
+      id: "new-workstream",
+      projectId: "future-project",
+      requiredCapabilities: ["custom:3d-modelling"],
+      risk: "auto",
+    }, [{
+      ...agents[0],
+      capabilities: { "custom:3d-modelling": 5 },
+    }]);
+    expect(result.agentId).toBe("code-agent");
+  });
+});
