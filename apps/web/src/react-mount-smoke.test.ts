@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import ErikaSheet from './ErikaSheet';
-import PersonaFactory from './PersonaFactory';
+import PersonaFactory, { buildCustomPersonaIdea } from './PersonaFactory';
 import MediaBrainCard from './MediaBrainCard';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -38,5 +38,18 @@ describe('Life OS and Persona JSX runtime rendering', () => {
       onClose: () => undefined,
       onApplied: () => undefined,
     }))).toContain('Выполнить');
+  });
+});
+
+describe('Persona creative brief preservation', () => {
+  it('sends the complete long brief to the model instead of silently slicing it to 180 chars', () => {
+    const details = 'Хочу оригинальный рилс о театральной закулисной ситуации. '+
+      'Юмор естественный. '.repeat(15)+
+      'Снимать одному на iPhone. Дать конкретные кадры, реплики, свет, монтаж, финал.';
+    const idea=buildCustomPersonaIdea(details,'reel');
+    expect(idea.title.length).toBeLessThanOrEqual(91);
+    expect(idea.angle.length).toBeGreaterThan(180);
+    expect(idea.angle).toContain('конкретные кадры, реплики, свет, монтаж, финал.');
+    expect(idea.source).toBe('user');
   });
 });
