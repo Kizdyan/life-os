@@ -23,12 +23,16 @@ export interface FreeLlmGatewayConfig {
   approvedModelIds: readonly string[];
   maxOutputTokens?: number;
   timeoutMs?: number;
+  /** Compression is opt-in and cannot override gateway-wide disabled mode. */
+  compressionMode?: "off" | "lossless";
 }
 
 export interface FreeLlmCompletion {
   text: string;
   actualProvider: string | null;
   model: string | null;
+  /** Provider-reported estimate, not verified token savings. */
+  compressionReport?: string;
   usage: { promptTokens: number | null; completionTokens: number | null };
 }
 
@@ -161,7 +165,11 @@ export async function completePublicFreeLlmTask(
   try {
     response = await transport(`${origin}/v1/chat/completions`, {
       method: "POST",
-      headers: { ...authorization(config), "Content-Type": "application/json" },
+      headers: {
+        ...authorization(config),
+        "Content-Type": "application/json",
+        "X-FreeLLM-Compress": config.compressionMode ?? "off",
+      },
       body: JSON.stringify({
         model: config.modelId,
         messages: [{ role: "user", content: publicPrompt }],
@@ -188,9 +196,11 @@ export async function completePublicFreeLlmTask(
   }
   // Treat gateway-provided routing attribution as untrusted informational data.
   const routedVia = response.headers.get("x-routed-via");
+  const compressionReport = response.headers.get("x-freellm-compress");
   return {
     text,
     actualProvider: routedVia?.slice(0, 200) ?? null,
+    ...(compressionReport ? { compressionReport: compressionReport.slice(0, 160) } : {}),
     model: typeof result.model === "string" ? result.model : null,
     usage: {
       promptTokens: readTokens(result.usage?.prompt_tokens),
