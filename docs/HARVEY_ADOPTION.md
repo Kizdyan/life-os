@@ -12,11 +12,14 @@ of the publicly documented CSV shape, not a copied Python runtime.
   (`company_name`, `website`, `status`, etc.), bounds input, excludes
   opt-outs and blocked domains, deduplicates domains, ranks by Harvey's
   *unverified* score, and creates native `LifeItem` review tasks.
-- The existing `SupabaseLifeItemRepository` can persist only those review
-  items into `life_items`, with conflict-ignore to preserve user changes.
-  Existing Supabase RLS remains in force. No new database is created.
-- The existing offline `localRuntime` can persist review tasks idempotently
-  in its existing storage.
+- A `SupabaseLifeItemRepository` persistence method was prototyped with
+  mocked tests, but **the preview UI does not invoke it** until a real
+  authenticated user session exists. An anonymous publishable key must not
+  be treated as owner access through Supabase RLS. No new database is created.
+- The existing offline `localRuntime` now persists review tasks idempotently
+  in existing device-local storage regardless of the backend mode. When the
+  backend query succeeds, Today merges these locally saved review tasks into
+  the displayed list. Cross-device synchronization is **not enabled**.
 - The Today screen displays a `HarveySalesCard`: upload CSV, review up to ten
   companies, click explicitly to save review tasks. They appear under Today.
 - No SMTP, OAuth, sending, replies, enrichment, browser automation, or model
@@ -29,17 +32,21 @@ of the publicly documented CSV shape, not a copied Python runtime.
 2. On the Today screen, choose `examples/harvey-synthetic-sample.csv`.
 3. Two fictional companies should appear; an opted-out sample is excluded.
 4. Click **Добавить в задачи на проверку**.
-5. Verify exactly two native Life OS tasks appear in Today.
+5. Verify exactly two native Life OS tasks appear in Today on that device.
 6. Import the same CSV again. There should be no duplicate tasks.
 7. Check the browser network panel: no email, outreach, or third-party lead
-   service requests. Supabase may receive company-level task titles if enabled.
+   service requests. This pilot does **not** upload prospect data to Supabase.
 
 Unit tests added for import safety, CSV parsing, URL restrictions, domain
 suppression, deduplication, native/offline persistence, and denied writes.
 
-**Do not claim PASS until a runner actually executes the tests.** At time of
-writing GitHub Actions in life-os have an account-side billing/spending
-blocker. Local commands for the operator's checked-out branch:
+**Verified on Vercel Preview build for commit `edf9a1e5`:** 78 test files,
+242 tests passed; `npm run typecheck`, `npm run api:typecheck`, `npm test`
+and `npm run web:build` completed successfully. Note: Vercel's independent
+serverless API compilation emitted `TS2835` import-extension diagnostics;
+these have not been resolved. Tests and checks must run again after later changes.
+GitHub Actions still have an account-side billing/spending blocker.
+Local commands for the checked-out branch:
 
 ```bash
 npm test -- packages/core/src/harvey-prospect-review.test.ts packages/core/src/harvey-persistence.test.ts apps/web/src/harvey-local.test.ts
