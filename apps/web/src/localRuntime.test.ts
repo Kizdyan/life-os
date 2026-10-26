@@ -22,6 +22,15 @@ const plan=[
 ];
 
 describe('browser-local Life OS runtime',()=>{
+  it('rejects duplicate generated IDs without altering saved tasks',()=>{
+    const storage=new MemoryStorage();
+    applyLocalPlan(storage,'a',[plan[0]],()=>'id-fixed');
+    const before=storage.getItem('life-os:local-runtime:v1');
+    expect(()=>applyLocalPlan(storage,'b',[plan[1]],()=>'id-fixed')).toThrow('ID');
+    expect(()=>applyLocalPlan(storage,'__proto__',[plan[1]],()=>'id-new')).toThrow('ключ');
+    expect(storage.getItem('life-os:local-runtime:v1')).toBe(before);
+  });
+
   it('stores a plan idempotently and returns it for Today without cloud storage',()=>{
     const storage=new MemoryStorage();let id=0;
     const first=applyLocalPlan(storage,'plan-key',plan,()=>`local-${++id}`);

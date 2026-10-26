@@ -20,6 +20,8 @@ export function applyLocalPlan(
 ):{applied:boolean;ids:string[];replayed:boolean}{
   const key=idempotencyKey.trim();
   if(!key)throw new Error('Idempotency key is required');
+  if(key==='__proto__'||key==='constructor'||key==='prototype'||key.length>500)
+    throw new Error('Недопустимый ключ плана.');
   const state=read(storage);
   const known=state.plans[key];
   if(known)return{applied:false,ids:[...known],replayed:true};
@@ -38,6 +40,10 @@ export function applyLocalPlan(
     };
   });
 
+  const existingIds=new Set(state.items.map(x=>x.id));
+  if(created.some(x=>!x.id||existingIds.has(x.id))||
+     new Set(created.map(x=>x.id)).size!==created.length)
+    throw Error('Ошибка создания ID задачи; план не сохранён.');
   ensureNoTimeOverlap(state.items,created);
   state.items.push(...created);
   state.plans[key]=created.map(item=>item.id);
