@@ -1,3 +1,4 @@
+import React from 'react';
 import{useEffect,useMemo,useRef,useState}from'react';
 import'./persona-factory-v2.css';
 
