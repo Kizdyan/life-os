@@ -50,13 +50,13 @@ function localOrigin(endpoint: string): string {
   return url.origin;
 }
 
-function verifyConfig(config: FreeLlmGatewayConfig): string {
+function verifyConfig(config: FreeLlmGatewayConfig, requireApprovedModel = true): string {
   if (!config.enabled) throw new Error("FreeLLMAPI pilot is disabled");
   const origin = localOrigin(config.endpoint);
   if (!config.apiKey?.trim()) throw new Error("Missing local gateway key");
   if (!config.agentId?.trim()) throw new Error("Missing gateway agent identity");
-  if (!config.modelId?.trim() ||
-      !config.approvedModelIds.includes(config.modelId)) {
+  if (requireApprovedModel && (!config.modelId?.trim() ||
+      !config.approvedModelIds.includes(config.modelId))) {
     throw new Error("Gateway model has not been explicitly approved");
   }
   return origin;
@@ -70,7 +70,7 @@ function timeout(config: FreeLlmGatewayConfig): AbortSignal {
   return AbortSignal.timeout(ms);
 }
 
-function authorization(config: FreeLlmGatewayConfig): HeadersInit {
+function authorization(config: FreeLlmGatewayConfig): Record<string, string> {
   return {
     "Authorization": `Bearer ${config.apiKey}`,
     "Accept": "application/json",
@@ -103,7 +103,7 @@ export async function listLocalFreeLlmModels(
   config: FreeLlmGatewayConfig,
   transport: typeof fetch = fetch,
 ): Promise<string[]> {
-  const origin = verifyConfig(config);
+  const origin = verifyConfig(config, false);
   let response: Response;
   try {
     response = await transport(`${origin}/v1/models`, {
