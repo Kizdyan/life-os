@@ -1,0 +1,4 @@
+email,first_name,last_name,company_name,title,website,linkedin_url,industry,personalization,email_status,score,seniority,source,status,created_at
+demo@aurorastudio.example.com,Alex,Test,Aurora Studio,Manager,https://aurorastudio.example.com,,Media,"Sample only: business produces commercial videos.",verified,87,Manager,synthetic,new,2026-10-26
+demo@localagency.example.com,Sam,Sample,Local Agency,Founder,https://localagency.example.com,,Marketing,"Sample only: offers business marketing services.",verified,75,Owner,synthetic,new,2026-10-26
+demo@excluded.example.com,D,Example,Excluded Studio,Founder,https://excluded.example.com,,Media,"Synthetic opt-out case.",verified,98,Owner,synthetic,opted_out,2026-10-26
