@@ -49,3 +49,19 @@
 - Freebuff: https://github.com/CodebuffAI/freebuff (обязательно privacy review)
 - OmniRoute: https://github.com/arnoldwender/omniroute
 - Пример Shorts-конвейера: https://n8n.io/workflows/16419-generate-youtube-shorts-from-prompts-with-openai-elevenlabs-and-pexels/
+
+## Текущая реализация P1/P2 (27.10.2026)
+- `skill-admission.ts`: доказательное разрешение сторонних Skills по конкретному HTTPS-источнику, неизменяемому commit SHA, digest SHA-256, лицензии, проверке исходников, разрешённым tool scopes, персональным данным и результатам sandbox-тестов. Только после human approval локальная реализация может войти через `registerAuditedSkill`. Это **барьер регистрации**, не самостоятельный установщик и не сканер, который гарантирует безопасность. Старый `SkillRegistry.register` для доверенных внутренних Skills остаётся доступным; сторонние интеграции обязаны использовать защищённый путь.
+- `media-export-qa.ts`: отдельный fail-closed assessment результата рендера; проверяет evidence хеша и медиаметрик, вертикальность 9:16, качество звука, синхронизацию субтитров, ошибки кадра/рендера, сохранность личности, палитры и права на ассеты. Без наблюдений статус `review_required`, при нарушениях — `fail`. **Не подключён к уже существующему пути публикации**: до запуска автоматического экспорта нужно включить блокировку публикации по этому результату и проверить в интеграционных тестах.
+
+### Текущие внешние условия
+- `skills.sh` публикует CLI `npx skills find` и `npx skills add` (см. https://www.skills.sh/docs/cli), но сам предупреждает: качество и безопасность навыков не гарантируются. CLI собирает анонимную телеметрию по умолчанию; для отключения предусмотрен `DISABLE_TELEMETRY=1`. До установки смотри исходники и лицензии.
+- `Freebuff` — исследовательский кандидат, **не разрешён для приватных репозиториев**: его README описывает функции с возможным использованием контента для обучения ИИ и рекламных моделей. Источник: https://github.com/CodebuffAI/freebuff . Тест — только на отдельно созданном публичном demo без персональных данных и секретов.
+- Нет реального подключения Claude/ElevenLabs/Freebuff через эти модули; нет подтверждённого сквозного video render pipeline.
+- GitHub Actions web/core/Media Brain CI на PR #108 показывают failure; попытка получить job logs через GitHub API дала `BlobNotFound`. Vercel статусы выдают `build-rate-limit`. Причина CI не подтверждена; PR остаётся draft, merge запрещён до зелёного независимого QA.
+
+### Что требуется для acceptance
+1. Полноценный `npm test && npm run typecheck && npm run web:build` на реальном репозитории и воспроизводимая CI.
+2. Один Skill с реальным immutable commit/digest, source scan, лицензией и sandbox-бенчмарком (без ввода секретов).
+3. Один Persona MP4 с реальным ffprobe/аудио/subtitle evidence, проверкой лица человеком и тестом запрета публикации при fail.
+4. Подтверждённые provider adapters с реальными credentials/cost limits и audit trails до заявлений о работающем автономном цикле.
