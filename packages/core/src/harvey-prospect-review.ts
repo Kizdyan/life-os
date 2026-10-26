@@ -235,7 +235,7 @@ export function previewHarveyProspectsCsv(
       kind: "task",
       title: `Проверить потенциального заказчика: ${company.companyName}`,
       status: "planned",
-      plannedStart: null,
+      plannedStart: options.now,
       plannedEnd: null,
       actualStart: null,
       actualEnd: null,
