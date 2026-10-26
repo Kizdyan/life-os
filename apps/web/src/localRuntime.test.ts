@@ -5,6 +5,8 @@ import {
   applyLocalPlan,
   readLocalToday,
   deleteLocalTask,
+  editLocalTask,
+  findLocalTimeConflicts,
   type StorageLike,
 } from './localRuntime';
 
@@ -80,9 +82,82 @@ describe('browser-local Life OS runtime',()=>{
     expect(again.replayed).toBe(false);
   });
 
-  it('ignores malformed persisted state instead of crashing the app',()=>{
+  it('never silently discards or overwrites corrupted local data',()=>{
     const storage=new MemoryStorage();
     storage.setItem('life-os:local-runtime:v1','not-json');
-    expect(readLocalToday(storage,'2026-10-02')).toEqual([]);
+    expect(()=>readLocalToday(storage,'2026-10-02')).toThrow('повреждены');
+    expect(()=>applyLocalPlan(storage,'new',plan,()=>crypto.randomUUID())).toThrow('повреждены');
+    expect(storage.getItem('life-os:local-runtime:v1')).toBe('not-json');
+  });
+
+  it('refuses nonexistent task outcomes rather than inserting ghost records',()=>{
+    const storage=new MemoryStorage();
+    const missing:Item={id:'missing',title:'Неверная запись',kind:'task',status:'planned',
+      planned_start:'2026-10-02T12:00:00+03:00',planned_end:null};
+    expect(()=>applyLocalOutcome(storage,missing,'complete',()=>crypto.randomUUID())).toThrow('не найдена');
+    expect(readLocalToday(storage,'2026-10-02')).toHaveLength(0);
+  });
+
+  it('repeated carry-forward produces exactly one successor, even after reopening',()=>{
+    const storage=new MemoryStorage();
+    let n=0;
+    applyLocalPlan(storage,'carry',[{...plan[0],carry_forward:true}],()=>`id-${++n}`);
+    const initial=readLocalToday(storage,'2026-10-02')[0];
+    const first=applyLocalOutcome(storage,initial,'not_complete',()=>`id-${++n}`);
+    expect(first.successor?.id).toBe('id-2');
+    const again=applyLocalOutcome(storage,initial,'not_complete',()=>`id-${++n}`);
+    expect(again.successor).toBeNull();
+    expect(n).toBe(2);
+    expect(readLocalToday(storage,'2026-10-03')).toHaveLength(1);
+    expect(()=>applyLocalOutcome(storage,initial,'complete',()=>`id-${++n}`)).toThrow('перенесена');
+  });
+
+  it('edits title/time/day atomically and preserves completion and task ID',()=>{
+    const storage=new MemoryStorage();
+    applyLocalPlan(storage,'plan',plan,()=>crypto.randomUUID());
+    const first=readLocalToday(storage,'2026-10-02')[0];
+    applyLocalOutcome(storage,first,'complete',()=>crypto.randomUUID());
+    const edited=editLocalTask(storage,first.id,{
+      title:'Отрепетировать сцену',planned_start:'2026-10-03T10:00:00+03:00',
+      planned_end:'2026-10-03T10:30:00+03:00',
+    });
+    expect(edited.id).toBe(first.id);
+    expect(edited.status).toBe('completed');
+    expect(readLocalToday(storage,'2026-10-02').map(x=>x.title)).toEqual(['Театр']);
+    expect(readLocalToday(storage,'2026-10-03')[0].title).toBe('Отрепетировать сцену');
+    expect(readLocalToday(storage,'2026-10-03')[0].planned_end).toBe('2026-10-03T10:30:00+03:00');
+  });
+
+  it('rejects invalid time windows without changing saved state',()=>{
+    const storage=new MemoryStorage();
+    applyLocalPlan(storage,'plan',plan,()=>crypto.randomUUID());
+    const first=readLocalToday(storage,'2026-10-02')[0];
+    const before=storage.getItem('life-os:local-runtime:v1');
+    expect(()=>editLocalTask(storage,first.id,{
+      title:'Поздно',planned_start:'2026-10-02T14:00:00+03:00',
+      planned_end:'2026-10-02T13:00:00+03:00',
+    })).toThrow('позже');
+    expect(()=>applyLocalPlan(storage,'wrong',[{
+      title:'Сломано',planned_start:'abc',planned_end:null,
+    }],()=>crypto.randomUUID())).toThrow('начала');
+    expect(storage.getItem('life-os:local-runtime:v1')).toBe(before);
+  });
+
+  it('prevents accidental time collisions in edits and new Erika plans',()=>{
+    const storage=new MemoryStorage();
+    let seq=0;
+    applyLocalPlan(storage,'one',plan,()=>`id-${++seq}`);
+    const editable=readLocalToday(storage,'2026-10-02')[1];
+    const proposed={title:'Новая репетиция',planned_start:'2026-10-02T12:30:00+03:00',
+      planned_end:'2026-10-02T13:30:00+03:00'};
+    expect(findLocalTimeConflicts(storage,proposed,editable.id).map(x=>x.title)).toEqual(['Зал']);
+    const before=storage.getItem('life-os:local-runtime:v1');
+    expect(()=>editLocalTask(storage,editable.id,proposed)).toThrow('Пересечение');
+    expect(()=>applyLocalPlan(storage,'two',[proposed],()=>`id-${++seq}`)).toThrow('Пересечение');
+    expect(storage.getItem('life-os:local-runtime:v1')).toBe(before);
+    const adjacent={...proposed,planned_start:'2026-10-02T13:00:00+03:00',
+      planned_end:'2026-10-02T13:30:00+03:00'};
+    expect(findLocalTimeConflicts(storage,adjacent)).toEqual([]);
+    expect(editLocalTask(storage,editable.id,adjacent).title).toBe('Новая репетиция');
   });
 });
