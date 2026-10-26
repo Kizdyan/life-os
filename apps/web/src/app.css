@@ -41,3 +41,50 @@ article.withDelete{grid-template-columns:44px minmax(0,1fr) 38px 38px 38px;gap:7
 article .deleteTask{font-size:17px;background:#f8f7f4;border:1px solid #eceae5;line-height:1}
 article .deleteTask:focus-visible{outline:2px solid #171717;outline-offset:2px}
 article .body{min-width:0;overflow-wrap:anywhere}
+
+
+/* Reliable editable calendar and accessible compact actions for iPhone. */
+.daySwitcher input[type=date]{
+  max-width:148px;min-width:130px;min-height:40px;flex:1;
+  border:1px solid #e3e3dc;border-radius:12px;background:#fff;
+  padding:7px 9px;font:inherit;font-size:13px;color:#333;
+}
+.daySwitcher span{display:none}
+article.withTaskActions{
+  grid-template-columns:42px minmax(0,1fr) repeat(4,34px);
+  gap:5px;padding:12px 10px;
+}
+article.withTaskActions button{height:36px;border-radius:10px;min-width:0}
+article.withTaskActions .body{overflow-wrap:anywhere;min-width:0}
+article button:disabled{opacity:.35;cursor:not-allowed}
+article button:focus-visible{outline:2px solid #171717;outline-offset:2px}
+.mediaDisclosure{
+  display:block;width:100%;border:1px solid #e4e4dd;
+  background:#fff;border-radius:13px;padding:11px 15px;
+  margin:8px 0 15px;text-align:left;font:inherit;font-size:13px;
+  font-weight:650;cursor:pointer;color:#4b4b48;
+}
+.notice{display:flex;gap:8px;align-items:center;justify-content:space-between;
+  background:#edf3e9;color:#355c3b;border-radius:12px;padding:10px 12px;
+  font-size:12px;line-height:1.45}
+.notice button{border:0;border-radius:9px;background:white;color:#355c3b;
+  padding:7px 9px;font:inherit}
+.taskEditor{max-height:min(90vh,850px);overflow:auto}
+.taskEditor form{display:grid;gap:14px}
+.taskEditor form label{display:grid;gap:6px;font-size:13px;color:#444;font-weight:600}
+.taskEditor input{width:100%;min-width:0;min-height:44px;
+  border:1px solid #d6d6d0;border-radius:12px;padding:9px 12px;
+  background:white;color:#171717;font:inherit;font-weight:400}
+.taskEditorTimes{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.taskEditor .editorHint{font-size:12px;line-height:1.45;color:#686861;margin:0}
+.taskEditorActions{display:flex;gap:10px;justify-content:flex-end}
+.taskEditorActions button{border:0;border-radius:11px;padding:12px;font:inherit;
+  background:#f1f1ed;color:#171717;font-weight:650}
+.taskEditorActions button.primary{background:#171717;color:#fff}
+@media(max-width:480px){
+  .daySwitcher{gap:5px}
+  .daySwitcher button{padding:9px 11px}
+  .taskEditorTimes{grid-template-columns:1fr}
+  article.withTaskActions{grid-template-columns:36px minmax(0,1fr) repeat(4,31px);padding:10px 8px;gap:4px}
+  article.withTaskActions button{font-size:17px}
+}
