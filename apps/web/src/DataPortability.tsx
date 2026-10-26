@@ -1,26 +1,40 @@
 import React,{useState} from 'react';
-import {exportDeviceData,inspectDeviceBackup,importDeviceData,type PortableStats} from './data-portability';
+import {exportDeviceData,exportEmergencyRawData,inspectDeviceBackup,importDeviceData,type PortableStats} from './data-portability';
 
 export default function DataPortability(){
   const [raw,setRaw]=useState('');
   const [preview,setPreview]=useState<PortableStats|null>(null);
   const [message,setMessage]=useState('');
   const [error,setError]=useState('');
+  const [emergency,setEmergency]=useState(false);
 
+  function saveFile(content:string,prefix:string){
+    const file=new Blob([content],{type:'application/json'});
+    const objectUrl=URL.createObjectURL(file);
+    const link=document.createElement('a');
+    link.href=objectUrl;
+    link.download=prefix+'-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(link);
+    link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(objectUrl),10000);
+  }
   function download(){
+    setError('');setMessage('');setEmergency(false);
+    try{
+      saveFile(exportDeviceData(localStorage),'life-os-persona-backup');
+      setMessage('Архив подготовлен. Сохрани файл на устройстве: он содержит названия задач и историю идей.');
+    }catch(e){
+      setEmergency(true);
+      setError('Обычный архив не подготовлен: '+(e instanceof Error?e.message:'ошибка чтения')+
+        '. Можно сохранить исходные локальные данные без изменений.');
+    }
+  }
+  function downloadEmergency(){
     setError('');setMessage('');
     try{
-      const content=exportDeviceData(localStorage);
-      const file=new Blob([content],{type:'application/json'});
-      const objectUrl=URL.createObjectURL(file);
-      const link=document.createElement('a');
-      link.href=objectUrl;
-      link.download='life-os-persona-backup-'+new Date().toISOString().slice(0,10)+'.json';
-      document.body.appendChild(link);
-      link.click();link.remove();
-      setTimeout(()=>URL.revokeObjectURL(objectUrl),10000);
-      setMessage('Архив подготовлен. Сохрани файл на устройстве: он содержит названия задач и историю идей.');
-    }catch(e){setError(e instanceof Error?e.message:'Не удалось выгрузить файл.')}
+      saveFile(exportEmergencyRawData(localStorage),'life-os-raw-recovery');
+      setMessage('Экстренная копия исходных данных сохранена как отдельный файл. Она не импортируется автоматически: требуется восстановление структуры. Ничего не удалено.');
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить исходные данные.')}
   }
   async function choose(file?:File){
     setRaw('');setPreview(null);setMessage('');setError('');
@@ -53,6 +67,9 @@ export default function DataPortability(){
     {preview&&<div className="dataPortabilityActions">
       <p>В архиве задач: {preview.tasks}, решений Persona: {preview.ideas}. При импорте совпадающие записи не перезаписываются.</p>
       <button type="button" className="primary" onClick={restore}>Добавить данные из архива</button>
+    </div>}
+    {emergency&&<div className="dataPortabilityActions">
+      <button type="button" onClick={downloadEmergency}>Сохранить исходные повреждённые данные</button>
     </div>}
     {message&&<div role="status">{message} <button type="button" onClick={()=>location.reload()}>Обновить экран</button></div>}
     {error&&<p role="alert">{error}</p>}

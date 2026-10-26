@@ -88,6 +88,18 @@ export function exportDeviceData(storage:StorageAccess):string {
   if(new TextEncoder().encode(payload).length>MAX_BYTES)throw Error('Локальных данных больше 2 МБ.');
   return payload;
 }
+/** Emergency export for corrupted local JSON. It is NOT a normal importable backup. */
+export function exportEmergencyRawData(storage:StorageAccess):string {
+  const snapshot={
+    kind:'life-os-raw-recovery',version:1,exportedAt:new Date().toISOString(),
+    rawLocalTasks:storage.getItem(RUNTIME),
+    rawPersonaHistory:storage.getItem(HISTORY),
+  };
+  const result=JSON.stringify(snapshot,null,2);
+  if(new TextEncoder().encode(result).length>MAX_BYTES)
+    throw Error('Повреждённые локальные данные превышают 2 МБ.');
+  return result;
+}
 export function inspectDeviceBackup(raw:string):PortableStats {
   const parsed=decode(raw);
   return {tasks:parsed.state.items.length,ideas:parsed.personaHistory.length};

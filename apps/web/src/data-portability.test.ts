@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {exportDeviceData,inspectDeviceBackup,importDeviceData} from './data-portability';
+import {exportDeviceData,exportEmergencyRawData,inspectDeviceBackup,importDeviceData} from './data-portability';
 import {applyLocalPlan,applyLocalOutcome} from './localRuntime';
 class Memory {
   values=new Map<string,string>();
@@ -51,6 +51,19 @@ describe('portable local Life OS + Persona backup',()=>{
     expect(()=>importDeviceData(dest,JSON.stringify(payload))).toThrow('статус');
     expect(dest.getItem('life-os:local-runtime:v1')).toBe(before);
   });
+  it('preserves raw corrupted data without parsing it and never exports unrelated secrets',()=>{
+    const s=new Memory();
+    s.setItem('life-os:local-runtime:v1','{damaged-json');
+    s.setItem('github_token','must-not-export');
+    expect(()=>exportDeviceData(s)).toThrow();
+    const emergency=JSON.parse(exportEmergencyRawData(s));
+    expect(emergency.rawLocalTasks).toBe('{damaged-json');
+    expect(emergency.kind).toBe('life-os-raw-recovery');
+    expect(JSON.stringify(emergency)).not.toContain('must-not-export');
+    expect(()=>inspectDeviceBackup(JSON.stringify(emergency))).toThrow('совместимой');
+    expect(s.getItem('life-os:local-runtime:v1')).toBe('{damaged-json');
+  });
+
   it('rejects oversized file and a plan referencing an absent task',()=>{
     const x=new Memory();
     const payload=JSON.parse(exportDeviceData(x));
