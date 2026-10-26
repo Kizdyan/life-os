@@ -11,3 +11,5 @@ nav button:focus-visible{outline:2px solid #171717;outline-offset:3px}
 .pfCustomIdea button{background:#171717;color:white;border:0;border-radius:12px;padding:10px 13px;font:inherit;font-weight:600}
 .pfCustomIdea button:disabled{opacity:.45}
 @media(max-width:580px){.pfCustomIdea{grid-template-columns:1fr 1fr}.pfCustomIdea input{grid-column:1/-1}.pfHead h2{font-size:29px}.pipeline{grid-template-columns:repeat(4,minmax(0,1fr))}.pipe{padding:7px 4px}.pipe b{font-size:9px}.todayIdea,.captureCard,.draft{padding:16px}.todayIdea h3,.captureCard h3,.draft h3{font-size:23px}}
+
+.pfFreeAiToggle{display:flex;align-items:center;gap:9px;padding:10px 0;font-size:14px;line-height:1.4;cursor:pointer}.pfFreeAiToggle input{width:18px;height:18px;flex:none}.pfTrialBanner>span{display:block;font-size:12px;line-height:1.5}.pfTrialBanner p{margin:7px 0 0;font-size:12px}

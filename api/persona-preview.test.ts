@@ -27,3 +27,50 @@ describe('Persona accessible, no-paid-API trial',()=>{
     expect(network).not.toHaveBeenCalled();
   });
 });
+
+describe('Real free model only on explicit opt-in',()=>{
+  it('does not call gateway if preview toggle not configured',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','false');
+    vi.stubEnv('VERCEL_ENV','preview');
+    const network=vi.fn();vi.stubGlobal('fetch',network);
+    const res=await handler.fetch(request({action:'generate',engine:'free-ai',idea:{title:'Кулисы',angle:'Актёр',format:'reel'}}));
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe('free_ai_disabled');
+    expect(network).not.toHaveBeenCalled();
+  });
+  it('calls ONLY pinned zero-price AI Gateway model and returns actual AI mode',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','test-oidc-not-real');
+    const fake=JSON.stringify({title:'Репетиция',caption:'Подпись',style:'old-money',
+      slides:Array.from({length:5},(_,i)=>({eyebrow:'Кадр '+i,title:'Сцена '+i,body:'Действие, свет и реплика '+i})),
+      platformNotes:{instagram:'9:16',vk:'short',youtube:'short'},assetInstruction:'Свет сбоку, камера 35мм'});
+    const network=vi.fn(async(url:string,init:any)=>{
+      expect(url).toBe('https://ai-gateway.vercel.sh/v1/chat/completions');
+      const sent=JSON.parse(init.body);
+      expect(sent.model).toBe('nvidia/nemotron-3.5-lightning-free');
+      expect(sent.messages[1].content).toContain('Кулисы');
+      expect(sent.models).toBeUndefined();
+      return new Response(JSON.stringify({choices:[{message:{content:fake}}]}),{status:200});
+    });
+    vi.stubGlobal('fetch',network);
+    const res=await handler.fetch(request({action:'generate',engine:'free-ai',idea:{title:'Кулисы',angle:'Актёр',format:'reel'}}));
+    expect(res.status).toBe(200);
+    const out=await res.json();
+    expect(out.mode).toBe('ai');
+    expect(out.model).toBe('nvidia/nemotron-3.5-lightning-free');
+    expect(out.draft.slides).toHaveLength(5);
+    expect(network).toHaveBeenCalledTimes(1);
+  });
+  it('never silently replaces a failed real model with a template',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','test-oidc-not-real');
+    const network=vi.fn(async()=>new Response('{}',{status:503}));
+    vi.stubGlobal('fetch',network);
+    const res=await handler.fetch(request({action:'generate',engine:'free-ai',idea:{title:'Кулисы',angle:'Актёр',format:'reel'}}));
+    expect(res.status).toBe(503);
+    const out=await res.json();
+    expect(out.error).toBe('free_ai_provider_503');
+  });
+});
