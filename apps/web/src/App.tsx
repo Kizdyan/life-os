@@ -106,8 +106,8 @@ export default function App() {
       await reload(viewDateRef.current);
       setNotice('Изменение сохранено.');
     } catch (cause) {
-      setError('Статус не изменён: ' + cleanError(cause));
       await reload(viewDateRef.current);
+      setError('Статус не изменён: ' + cleanError(cause));
     } finally {
       setBusyId(null);
     }
@@ -131,13 +131,13 @@ export default function App() {
 
   function onEdited(item: Item) {
     setEditing(null);
-    setNotice('Изменения задачи сохранены.');
     const updatedDate = item.planned_start?.slice(0, 10);
     if (updatedDate && updatedDate !== viewDateRef.current) {
       chooseDate(updatedDate);
     } else {
       void reload(viewDateRef.current);
     }
+    setNotice('Изменения задачи сохранены.');
   }
 
   function onErikaApplied(changedDate?: string) {

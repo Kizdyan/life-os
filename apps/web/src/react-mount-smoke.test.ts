@@ -5,6 +5,7 @@ import App from './App';
 import ErikaSheet from './ErikaSheet';
 import PersonaFactory, { buildCustomPersonaIdea } from './PersonaFactory';
 import MediaBrainCard from './MediaBrainCard';
+import LocalTaskEditor from './LocalTaskEditor';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,6 +28,7 @@ describe('Life OS and Persona JSX runtime rendering', () => {
     const markup = renderToString(React.createElement(App));
     expect(markup).toContain('Сегодня');
     expect(markup).toContain('Завтра');
+    expect(markup).toContain('Выбрать дату расписания');
     expect(markup).toContain('Резервная копия и перенос данных');
     expect(markup).toContain('Эрика');
   });
@@ -53,5 +55,25 @@ describe('Persona creative brief preservation', () => {
     expect(idea.angle.length).toBeGreaterThan(180);
     expect(idea.angle).toContain('конкретные кадры, реплики, свет, монтаж, финал.');
     expect(idea.source).toBe('user');
+  });
+});
+
+describe('iPhone editor smoke render', () => {
+  it('renders edit form with existing title and exact start/end', () => {
+    stubBrowser('#today');
+    const item = {
+      id: 'local-edit-1', title: 'Репетиция', kind: 'task', status: 'planned' as const,
+      planned_start: '2026-10-27T11:00:00+03:00',
+      planned_end: '2026-10-27T11:30:00+03:00',
+    };
+    const markup = renderToString(React.createElement(LocalTaskEditor, {
+      item, onSaved: () => undefined, onCancel: () => undefined,
+    }));
+    expect(markup).toContain('Изменить задачу');
+    expect(markup).toContain('Репетиция');
+    expect(markup).toContain('2026-10-27');
+    expect(markup).toContain('11:00');
+    expect(markup).toContain('11:30');
+    expect(markup).toContain('Сохранить изменения');
   });
 });
