@@ -62,6 +62,30 @@ describe('Real free model only on explicit opt-in',()=>{
     expect(out.draft.slides).toHaveLength(5);
     expect(network).toHaveBeenCalledTimes(1);
   });
+  it('classifies account-level 403 access_denied without exposing provider message',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','test-oidc-not-real');
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({
+      error:{type:'access_denied',message:'secret-untrusted-provider-error-text'}
+    }),{status:403,headers:{'Content-Type':'application/json'}})));
+    const res=await handler.fetch(request({action:'generate',engine:'free-ai',
+      idea:{title:'Сценарий',format:'reel'}}));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({error:'free_ai_gateway_access_denied'});
+  });
+  it('distinguishes verification-required 403 from general access denied',async()=>{
+    vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
+    vi.stubEnv('VERCEL_ENV','preview');
+    vi.stubEnv('VERCEL_OIDC_TOKEN','test-oidc-not-real');
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({
+      error:{code:'customer_verification_required'}
+    }),{status:403,headers:{'Content-Type':'application/json'}})));
+    const res=await handler.fetch(request({action:'generate',engine:'free-ai',
+      idea:{title:'Сценарий',format:'reel'}}));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({error:'free_ai_account_verification_required'});
+  });
   it('never silently replaces a failed real model with a template',async()=>{
     vi.stubEnv('PERSONA_ENABLE_FREE_AI','true');
     vi.stubEnv('VERCEL_ENV','preview');

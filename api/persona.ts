@@ -61,7 +61,21 @@ async function freeAiGenerate(system:string,payload:any,request:Request):Promise
       signal:AbortSignal.timeout(50000),
     });
   }catch{throw new Error('free_ai_network_unavailable')}
-  if(!response.ok)throw new Error(`free_ai_provider_${response.status}`);
+  if(!response.ok) {
+    if(response.status===403) {
+      // Vercel can deny a valid OIDC team without routing to the free model.
+      // Only expose documented, allowlisted error TYPES; never echo provider
+      // messages, request bodies, headers, keys, or arbitrary details.
+      const details:any=await response.json().catch(()=>null);
+      const type=details?.error?.type;
+      const code=details?.error?.code;
+      if(type==='customer_verification_required'||code==='customer_verification_required')
+        throw new Error('free_ai_account_verification_required');
+      if(type==='access_denied'||code==='access_denied')
+        throw new Error('free_ai_gateway_access_denied');
+    }
+    throw new Error(`free_ai_provider_${response.status}`);
+  }
   const data:any=await response.json();
   const content=data.choices?.[0]?.message?.content;
   if(typeof content!=='string'||!content.trim())throw new Error('free_ai_empty_response');
