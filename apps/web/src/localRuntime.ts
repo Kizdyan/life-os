@@ -44,6 +44,22 @@ export function applyLocalPlan(
   return{applied:true,ids:created.map(item=>item.id),replayed:false};
 }
 
+/**
+ * Present device-local Harvey review tasks alongside synced Today items.
+ * A remote task with the same ID takes precedence so we never override it.
+ * No prospect information is uploaded as a side effect of rendering.
+ */
+export function mergeLocalHarveyToday(
+  remote: readonly Item[],
+  local: readonly Item[],
+): Item[] {
+  const ids = new Set(remote.map(item => item.id));
+  return [
+    ...remote,
+    ...local.filter(item => item.id.startsWith('harvey:lead-review:') && !ids.has(item.id)),
+  ].sort((a, b) => (a.planned_start ?? '').localeCompare(b.planned_start ?? ''));
+}
+
 /** Preserve Harvey lead-review items in the existing offline Life OS store. */
 export function enqueueLocalHarveyReviewTasks(
   storage: StorageLike,
