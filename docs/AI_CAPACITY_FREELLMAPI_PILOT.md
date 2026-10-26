@@ -15,6 +15,11 @@ multi-provider quota is **not** a verified entitlement of this account.
   mandatory for execution. Max response tokens and request time are bounded.
 - No automatic retries, purchases, secret logging, upstream redirects, or
   changes to Codex/Claude CLI configuration.
+- Prompt compression is explicitly **off** unless `compressionMode: "lossless"`
+  is configured for a PUBLIC task. This forwards the documented
+  `X-FreeLLM-Compress` request header and records the returned header only as
+  a provider-estimated saving. It does not establish actual saved billable tokens.
+  A disabled gateway compression policy cannot be overridden by this client.
 - `api/_free-llmapi-gateway.test.ts`: synthetic mocked integration tests,
   including private-data blocking and existing routing eligibility.
 - `tools/free-llmapi-local-probe.mjs`: a read-only model discovery probe,
