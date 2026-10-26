@@ -233,7 +233,7 @@ export function previewHarveyProspectsCsv(
     reviewTasks.push({
       id,
       kind: "task",
-      title: `Проверить потенциального заказчика: ${company.companyName}`,
+      title: `Проверить потенциального заказчика: ${company.companyName} — ${company.domain}`,
       status: "planned",
       plannedStart: options.now,
       plannedEnd: null,
