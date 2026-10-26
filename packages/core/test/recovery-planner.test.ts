@@ -8,7 +8,7 @@ describe('recovery planner',()=>{
   it('finds a full retry slot after the first miss',()=>{
     const result=planRecoverySlot({item:item(),consecutiveMisses:1,date:'2026-10-02',blocks:[{id:'busy',title:'Дело',start:'2026-10-02T09:00:00',end:'2026-10-02T10:00:00',fixed:true,sourceId:null}],normalDurationMin:60,minimumDurationMin:20,dayStart:'09:00',dayEnd:'14:00'});
     expect(result).toMatchObject({action:'retry_soon',durationMin:60});
-    expect(result?.start).toContain('2026-10-02T10:00:00');
+    expect(new Date(result!.start)).toEqual(new Date('2026-10-02T10:00:00'));
   });
 
   it('shrinks to the minimum version after repeated misses',()=>{
