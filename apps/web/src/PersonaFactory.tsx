@@ -35,7 +35,7 @@ export default function PersonaFactory(){
     <b>Выбери двигатель сценария:</b>
     <label className="pfFreeAiToggle">
       <input type="checkbox" checked={useFreeAI} onChange={e=>setUseFreeAI(e.target.checked)}/>
-      <span><strong>Настоящий ИИ (Nemotron Free)</strong> — бесплатная модель, до 6 запросов в час</span>
+      <span><strong>Настоящий ИИ (Nemotron Free)</strong> — бесплатная модель, количество запросов ограничено</span>
     </label>
     <span>{useFreeAI?'Идея, сценарий и текст правки передаются внешнему ИИ-провайдеру. Не вводи личные или секретные данные. Если модель недоступна, увидишь ошибку, не фальшивый сценарий.':'Локальный шаблон для теста интерфейса, без вызова модели. Можно включить настоящий ИИ выше.'}</span>
     <p>Фото/видео не изменяются и не загружаются на сервер. Автопубликация отключена.</p>
