@@ -3,7 +3,7 @@ import type{Item}from'./types';
 export interface StorageLike{getItem(key:string):string|null;setItem(key:string,value:string):void}
 export interface LocalPlanInput{title:string;planned_start:string;planned_end:string|null;kind?:string;carry_forward?:boolean}
 interface LocalState{schemaVersion:1;items:Item[];plans:Record<string,string[]>}
-export interface LocalEdit {title:string;planned_start:string;planned_end:string|null}
+export interface LocalEdit {title:string;planned_start:string;planned_end:string|null;resetToPlanned?:boolean}
 const KEY='life-os:local-runtime:v1';
 
 export function readLocalToday(storage:StorageLike,date:string):Item[]{
@@ -67,11 +67,15 @@ export function editLocalTask(storage:StorageLike,id:string,edit:LocalEdit):Item
   const index=state.items.findIndex(x=>x.id===id);
   if(index<0)throw new Error('Задача не найдена; обнови расписание.');
   validatePlan(edit.title,edit.planned_start,edit.planned_end);
+  const previous=state.items[index];
+  if(edit.resetToPlanned&&previous.status!=='completed'&&previous.status!=='not_completed')
+    throw Error('Возврат в план доступен только для завершённой или невыполненной задачи.');
   const revised:Item={
-    ...state.items[index],
+    ...previous,
     title:edit.title.trim(),
     planned_start:edit.planned_start,
     planned_end:edit.planned_end,
+    status:edit.resetToPlanned?'planned':previous.status,
   };
   ensureNoTimeOverlap(state.items.filter(x=>x.id!==id),[revised]);
   state.items[index]=revised;

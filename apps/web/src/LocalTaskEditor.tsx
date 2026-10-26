@@ -15,6 +15,7 @@ export default function LocalTaskEditor({ item, onCancel, onSaved }: Props) {
   const [start, setStart] = useState(item.planned_start?.slice(11, 16) || '09:00');
   const [end, setEnd] = useState(item.planned_end?.slice(11, 16) || '');
   const [error, setError] = useState('');
+  const [reset, setReset] = useState(false);
 
   function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,6 +28,7 @@ export default function LocalTaskEditor({ item, onCancel, onSaved }: Props) {
         title: title.trim(),
         planned_start: planLocalDateTime(date, start),
         planned_end: end ? planLocalDateTime(date, end) : null,
+        resetToPlanned: reset,
       };
       const saved = editLocalTask(localStorage, item.id, edit);
       onSaved(saved);
@@ -61,6 +63,12 @@ export default function LocalTaskEditor({ item, onCancel, onSaved }: Props) {
               onChange={event => setEnd(event.target.value)} />
           </label>
         </div>
+        {(item.status==='completed'||item.status==='not_completed')&&
+          <label className="taskReset">
+            <input type="checkbox" checked={reset}
+              onChange={event=>setReset(event.target.checked)}/>
+            Вернуть задачу в запланированные
+          </label>}
         <p className="editorHint">Время определяется часовым поясом устройства. Пересечения с другими запланированными задачами проверяются до сохранения.</p>
         {error && <p role="alert" className="error">{error}</p>}
         <div className="taskEditorActions">

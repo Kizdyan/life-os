@@ -88,3 +88,5 @@ article button:focus-visible{outline:2px solid #171717;outline-offset:2px}
   article.withTaskActions{grid-template-columns:36px minmax(0,1fr) repeat(4,31px);padding:10px 8px;gap:4px}
   article.withTaskActions button{font-size:17px}
 }
+
+.taskReset{display:flex!important;flex-direction:row;gap:9px;align-items:center;font-weight:600}.taskReset input{width:18px!important;min-height:18px;height:18px}

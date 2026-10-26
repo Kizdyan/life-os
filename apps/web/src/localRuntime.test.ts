@@ -143,6 +143,23 @@ describe('browser-local Life OS runtime',()=>{
     expect(storage.getItem('life-os:local-runtime:v1')).toBe(before);
   });
 
+  it('can explicitly restore a completed task to planned, with conflict checks',()=>{
+    const storage=new MemoryStorage();let n=0;
+    const ids=applyLocalPlan(storage,'first',[plan[0]],()=>`id-${++n}`).ids;
+    const task=readLocalToday(storage,'2026-10-02')[0];
+    applyLocalOutcome(storage,task,'complete',()=>`id-${++n}`);
+    const actual=editLocalTask(storage,ids[0],{
+      title:task.title,planned_start:task.planned_start!,planned_end:task.planned_end,
+      resetToPlanned:true,
+    });
+    expect(actual.status).toBe('planned');
+    expect(readLocalToday(storage,'2026-10-02')[0].status).toBe('planned');
+    expect(()=>editLocalTask(storage,ids[0],{
+      title:task.title,planned_start:task.planned_start!,planned_end:task.planned_end,
+      resetToPlanned:true,
+    })).toThrow('только для');
+  });
+
   it('prevents accidental time collisions in edits and new Erika plans',()=>{
     const storage=new MemoryStorage();
     let seq=0;
