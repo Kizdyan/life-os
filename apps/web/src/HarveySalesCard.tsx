@@ -19,9 +19,16 @@ export default function HarveySalesCard({ onAdded }: { onAdded: () => void }) {
     try {
       if (file.size > 256000) throw new Error('CSV слишком большой (макс. 256 КБ)');
       const csv = await file.text();
+      const now = new Date();
+      const localDate = [
+        String(now.getFullYear()).padStart(4, '0'),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+      ].join('-');
       const result = previewHarveyProspectsCsv(csv, {
         projectId: 'sales-opportunities',
-        now: new Date().toISOString(),
+        now: now.toISOString(),
+        plannedDate: localDate,
         maxNewTasks: 10,
       });
       setPreview(result);
