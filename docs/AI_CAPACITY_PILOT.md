@@ -1,5 +1,10 @@
 # AI Capacity / Claude + Codex pilot (non-production)
 
+**Scope: ALL user workstreams.** This file documents the media integration
+subpilot. The main portfolio policy and task taxonomy live in
+[AI_CAPACITY_OS.md](./AI_CAPACITY_OS.md). Video is just one proving ground.
+
+
 ## What was verified in this repository
 
 - `MediaBrainOrchestrator` enqueues jobs; `MediaSupervisor` runs bounded passes.
@@ -56,5 +61,5 @@ Do not assume CapCut has a supported public edit API.
 6. Measure completed accepted outputs, failed revisions, operator time,
    cost and quality against the existing baseline before broader rollout.
 
-This PR is the router and contract pilot, **not** an installed Claude,
+This PR is the cross-portfolio router and video contract pilot, **not** an installed Claude,
 CapCut, or autonomous video editing integration.
