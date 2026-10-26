@@ -43,6 +43,22 @@ export function applyLocalPlan(
   return{applied:true,ids:created.map(item=>item.id),replayed:false};
 }
 
+/** Delete only a device-local task, leaving other tasks and plan IDs intact. */
+export function deleteLocalTask(storage:StorageLike,id:string):boolean {
+  if(!id.trim())throw new Error('Task ID is required');
+  const state=read(storage);
+  if(!state.items.some(item=>item.id===id))return false;
+  state.items=state.items.filter(item=>item.id!==id);
+  for(const [key,ids] of Object.entries(state.plans)){
+    if(!ids.includes(id))continue;
+    const left=ids.filter(itemId=>itemId!==id);
+    if(left.length)state.plans[key]=left;
+    else delete state.plans[key];
+  }
+  write(storage,state);
+  return true;
+}
+
 export function applyLocalOutcome(
   storage:StorageLike,
   item:Item,

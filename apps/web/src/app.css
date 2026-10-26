@@ -36,3 +36,8 @@ nav button:focus-visible{outline:2px solid #171717;outline-offset:3px}
 .daySwitcher button.active{background:#171717;color:#fff;border-color:#171717}
 .daySwitcher button:focus-visible{outline:2px solid #171717;outline-offset:2px}
 .daySwitcher span{margin-left:auto;color:#84847d;font-size:12px;font-variant-numeric:tabular-nums}
+
+article.withDelete{grid-template-columns:44px minmax(0,1fr) 38px 38px 38px;gap:7px}
+article .deleteTask{font-size:17px;background:#f8f7f4;border:1px solid #eceae5;line-height:1}
+article .deleteTask:focus-visible{outline:2px solid #171717;outline-offset:2px}
+article .body{min-width:0;overflow-wrap:anywhere}

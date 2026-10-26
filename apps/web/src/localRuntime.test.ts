@@ -4,6 +4,7 @@ import {
   applyLocalOutcome,
   applyLocalPlan,
   readLocalToday,
+  deleteLocalTask,
   type StorageLike,
 } from './localRuntime';
 
@@ -63,6 +64,20 @@ describe('browser-local Life OS runtime',()=>{
     const result=applyLocalOutcome(storage,theatre,'not_complete',()=>`id-${++id}`);
 
     expect(result.successor?.planned_end).toBeNull();
+  });
+
+  it('deletes only the requested task and preserves other tasks safely',()=>{
+    const storage=new MemoryStorage();let count=0;
+    const result=applyLocalPlan(storage,'many',plan,()=>`id-${++count}`);
+    expect(deleteLocalTask(storage,result.ids[0])).toBe(true);
+    expect(deleteLocalTask(storage,result.ids[0])).toBe(false);
+    expect(readLocalToday(storage,'2026-10-02').map(x=>x.title)).toEqual(['Театр']);
+    const raw=JSON.parse(storage.getItem('life-os:local-runtime:v1')!);
+    expect(raw.plans.many).toEqual([result.ids[1]]);
+    expect(deleteLocalTask(storage,result.ids[1])).toBe(true);
+    expect(raw.items.length).toBe(1);
+    const again=applyLocalPlan(storage,'many',plan,()=>`id-${++count}`);
+    expect(again.replayed).toBe(false);
   });
 
   it('ignores malformed persisted state instead of crashing the app',()=>{
