@@ -59,6 +59,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  async function analyzeMusic(file:File|undefined){
   if(!file)return;
+  musicFile.current=null;
   setError('');setMusicStatus('Анализ аудио…');setMusicAccents([]);
   try{
    if(file.size>80*1024*1024)throw new Error('Аудиофайл должен быть меньше 80 МБ');
@@ -92,6 +93,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
     if(selected.every(other=>Math.abs(other.time-point.time)>=0.2))selected.push(point);
    }
    const times=selected.map(p=>Number(p.time.toFixed(3))).sort((a,b)=>a-b);
+   musicFile.current=file;
    setMusicAccents(times);setMusicStatus('Найдено музыкальных акцентов: '+times.length+'. Это кандидаты, а не обязательные склейки.');
   }catch(e){setMusicStatus('');setError(e instanceof Error?e.message:'Не удалось проанализировать музыку')}
  }
