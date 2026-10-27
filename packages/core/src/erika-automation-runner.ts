@@ -8,6 +8,8 @@ export interface AutomationJob {
   action: ActionRequest;
   dependsOn?: string[];
   maxAttempts?: number;
+  /** Optional durable sink; awaited after each terminal job state. */
+  onResult?: (result: AutomationJobResult) => Promise<void>;
 }
 export interface AutomationJobResult {
   id: string;
@@ -62,7 +64,9 @@ export class ErikaAutomationRunner {
         progressed = true;
         pending.delete(id);
         if (dependencies.some(dep => byId.get(dep)?.status !== "verified")) {
-          byId.set(id, { id, status: "blocked", attempts: 0, reason: "Dependency was not verified" });
+          const blocked: AutomationJobResult = { id, status: "blocked", attempts: 0, reason: "Dependency was not verified" };
+          await this.options.onResult?.(blocked);
+          byId.set(id, blocked);
           continue;
         }
         const cap = Math.min(3, Math.max(1, Math.floor(job.maxAttempts ?? this.options.maxAttempts ?? 1)));
@@ -82,10 +86,15 @@ export class ErikaAutomationRunner {
             result = { id, status: "failed", attempts: attempt, reason: error instanceof Error ? error.message : "Unknown failure" };
           }
         }
+        await this.options.onResult?.(result);
         byId.set(id, result);
       }
       if (!progressed) {
-        for (const id of pending.keys()) byId.set(id, { id, status: "blocked", attempts: 0, reason: "Dependency cycle" });
+        for (const id of pending.keys()) {
+          const blocked: AutomationJobResult = { id, status: "blocked", attempts: 0, reason: "Dependency cycle" };
+          await this.options.onResult?.(blocked);
+          byId.set(id, blocked);
+        }
         break;
       }
     }
