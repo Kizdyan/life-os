@@ -53,12 +53,12 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "script-completeness",
       passed:
-        (stillFormat || brief.script.length > 0) &&
+        (!stillFormat && brief.script.length > 0) &&
         brief.script.every(
           (beat) =>
             isText(beat.line) && isText(beat.action) && isPositiveDuration(beat.durationSec),
         ),
-      message: "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
+      message: stillFormat ? "Для фото и карусели требуется отдельный редактор карточек/кадров: видео-шаблон запрещён." : "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
     },
     {
       id: "shot-specificity",
