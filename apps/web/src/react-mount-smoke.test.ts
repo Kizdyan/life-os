@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import ErikaSheet from './ErikaSheet';
-import PersonaFactory, { buildCustomPersonaIdea } from './PersonaFactory';
+import PersonaFactory, { buildCustomPersonaIdea, buildPersonaProductionWorkflow, PersonaProductionBriefPanel } from './PersonaFactory';
 import MediaBrainCard from './MediaBrainCard';
 import LocalTaskEditor from './LocalTaskEditor';
 
@@ -55,6 +55,35 @@ describe('Persona creative brief preservation', () => {
     expect(idea.angle.length).toBeGreaterThan(180);
     expect(idea.angle).toContain('конкретные кадры, реплики, свет, монтаж, финал.');
     expect(idea.source).toBe('user');
+  });
+});
+
+describe('Persona Production Engine panel', () => {
+  it('shows the deterministic shot brief and editorial gate for a selected idea', () => {
+    const pipeline = buildPersonaProductionWorkflow({
+      id: 'idea-production-1',
+      title: 'Разговор о репетиции',
+      angle: 'Показываю подготовку перед записью.',
+      format: 'reel',
+      score: 90,
+    });
+    const markup = renderToString(React.createElement(PersonaProductionBriefPanel, {
+      pipeline,
+      editor: '',
+      comment: '',
+      factsChecked: false,
+      onEditorChange: () => undefined,
+      onCommentChange: () => undefined,
+      onFactsCheckedChange: () => undefined,
+      onDecision: () => undefined,
+      onRebuild: () => undefined,
+    }));
+
+    expect(pipeline.stage).toBe('QA');
+    expect(markup).toContain('Съёмочный бриф');
+    expect(markup).toContain('ДЕТЕРМИНИРОВАННЫЙ ШАБЛОН');
+    expect(markup).toContain('Нужна ручная проверка фактов');
+    expect(markup).toContain('Одобрить для съёмки');
   });
 });
 

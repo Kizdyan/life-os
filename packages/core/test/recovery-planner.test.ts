@@ -11,6 +11,11 @@ describe('recovery planner',()=>{
     expect(result?.start).toContain('2026-10-02T10:00:00');
   });
 
+  it('keeps the stated local clock when a fixed block includes an offset',()=>{
+    const result=planRecoverySlot({item:item(),consecutiveMisses:1,date:'2026-10-02',blocks:[{id:'busy',title:'Дело',start:'2026-10-02T09:00:00+03:00',end:'2026-10-02T10:00:00+03:00',fixed:true,sourceId:null}],normalDurationMin:60,minimumDurationMin:20,dayStart:'09:00',dayEnd:'14:00'});
+    expect(result?.start).toBe('2026-10-02T10:00:00');
+  });
+
   it('shrinks to the minimum version after repeated misses',()=>{
     const result=planRecoverySlot({item:item(),consecutiveMisses:2,date:'2026-10-02',blocks:[],normalDurationMin:60,minimumDurationMin:20,dayStart:'09:00',dayEnd:'12:00'});
     expect(result).toMatchObject({action:'minimum_version',durationMin:20});
