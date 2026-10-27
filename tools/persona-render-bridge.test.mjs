@@ -22,7 +22,7 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.equal(unauthorized.status,401);
   const invalid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,clips:[]})});
   assert.equal(invalid.status,400);
-  const valid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,width:1080,height:1920,fps:30,clips:[{startSec:0,durationSec:1},{startSec:0,durationSec:1}]})});
+  const valid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,width:1080,height:1920,fps:30,clips:[{startSec:0,durationSec:1},{startSec:0,durationSec:1}]})});
   assert.equal(valid.status,200);
   const data=await valid.json();
   assert.match(data.id,/^[0-9a-f-]{36}$/);
@@ -40,7 +40,7 @@ test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg'
   for(let i=0;i<50;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await delay(100)}
   assert.ok(ready,'Bridge did not start');
   const {token}=await (await fetch(base+'/health')).json();
-  const created=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,width:1080,height:1920,fps:25,clips:[{startSec:0,durationSec:0.6},{startSec:0,durationSec:0.6}]})});
+  const created=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,width:1080,height:1920,fps:25,clips:[{startSec:0,durationSec:0.6},{startSec:0,durationSec:0.6}]})});
   assert.equal(created.status,200);
   const {id}=await created.json();
   const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=160x240:rate=25','-t','1','-c:v','mpeg4','-movflags','+frag_keyframe+empty_moov','-f','mp4','pipe:1'],{maxBuffer:8*1024*1024,timeout:30000});
@@ -49,7 +49,7 @@ test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg'
    const upload=await fetch(base+'/session/'+id+'/clip/'+i,{method:'PUT',headers:{'X-Persona-Token':token},body:generated.stdout});
    assert.equal(upload.status,200,await upload.text());
   }
-  const rendered=await fetch(base+'/session/'+id+'/render',{method:'POST'});
+  const rendered=await fetch(base+'/session/'+id+'/render',{method:'POST',headers:{'X-Persona-Token':token}});
   assert.equal(rendered.status,200,await rendered.text());
   const download=await fetch(base+'/session/'+id+'/download',{headers:{'X-Persona-Token':token}});
   assert.equal(download.status,200);
