@@ -80,6 +80,8 @@ test('end-to-end local bridge renders and downloads a real MP4',{timeout:180000}
   }finally{await rm(dir,{recursive:true,force:true})}
   const lateClip=await fetch(base+'/session/'+id+'/clip/0',{method:'PUT',headers:{'X-Persona-Token':token},body:generated.stdout});
   assert.equal(lateClip.status,400);
+  const repeatedRender=await fetch(base+'/session/'+id+'/render',{method:'POST',headers:{'X-Persona-Token':token}});
+  assert.equal(repeatedRender.status,400);
   const removed=await fetch(base+'/session/'+id,{method:'DELETE',headers:{'X-Persona-Token':token}});
   assert.equal(removed.status,200);
   const gone=await fetch(base+'/session/'+id+'/download',{headers:{'X-Persona-Token':token}});
