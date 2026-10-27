@@ -19,7 +19,10 @@ export function updateDelivery(plan,{channel,status,externalPostId=null,verified
  if(!existing)throw new Error('Unknown channel');
  if(status!=='awaiting_approval'&&!plan.approved)throw new Error('Publication has not been approved');
  if(status==='published'&&(!externalPostId||!verifiedAt||!Number.isFinite(Date.parse(verifiedAt))))throw new Error('Published requires verified external post ID and timestamp');
- if(existing.status==='published'&&status!=='published')throw new Error('Published destination is immutable');
+ if(existing.status==='published'){
+  if(status!=='published'||externalPostId!==existing.externalPostId||verifiedAt!==existing.verifiedAt)throw new Error('Published destination is immutable');
+  return plan;
+ }
  return {...plan,deliveries:plan.deliveries.map(d=>d.channel!==channel?d:{
   ...d,status,externalPostId:status==='published'?externalPostId:null,
   verifiedAt:status==='published'?verifiedAt:null,lastError:error,
