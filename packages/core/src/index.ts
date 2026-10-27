@@ -93,6 +93,7 @@ export * from './content-factory';
 export * from './content-planner';
 export * from './persona-production-brief';
 export * from './persona-production-qa';
+export * from './persona-production-pipeline';
 export * from './yandex-connection';
 export * from './media-digest';
 export * from './media-state-store';
