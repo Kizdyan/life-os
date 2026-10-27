@@ -31,10 +31,18 @@ test('renders three real clips, inserts silent audio, preserves originals and wr
     const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
     assert.equal(manifest.clips.length,3);
     assert.equal(manifest.verification.passed,true);
+    assert.equal(manifest.output.audio,true);
+    assert.equal(manifest.output.width,320);
+    assert.equal(manifest.output.height,240);
     assert.ok(Math.abs(manifest.output.durationSec-2.4)<1.5);
     for(let i=0;i<3;i++)assert.deepEqual(await readFile(clips[i]),originals[i]);
     const repeat=call([project,output]);
     assert.notEqual(repeat.status,0);
     assert.match(repeat.stderr,/already exists/);
+    const invalidProject=join(dir,'invalid.json');
+    await writeFile(invalidProject,JSON.stringify({version:1,width:320,height:240,fps:25,clips:[{path:clips[0],startSec:2,durationSec:1},{path:clips[1],startSec:0,durationSec:0.8}]}));
+    const invalid=call([invalidProject,join(dir,'invalid.mp4')]);
+    assert.notEqual(invalid.status,0);
+    assert.match(invalid.stderr,/Invalid startSec/);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
