@@ -72,7 +72,8 @@ export function proposeCuts(accents, durationSec, { minShotSec = 0.55, maxShotSe
       // No musical accent: leave the edit unforced; flag a gap for editorial review.
       break;
     }
-    // Prefer a strong accent near the upper shot-length bound; avoid greedy early cuts.\n    const chosen = eligible.reduce((best,a)=>!best || a.strength>best.strength ? a : best,null);
+    // Prefer a strong accent near the upper shot-length bound; avoid greedy early cuts.
+    const chosen = eligible.reduce((best,a)=>!best || a.strength>best.strength ? a : best,null);
     cuts.push({ timeSec:chosen.timeSec, reason:'audio-accent', strength:chosen.strength });
     last = chosen.timeSec;
   }
