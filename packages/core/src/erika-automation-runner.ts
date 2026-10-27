@@ -66,7 +66,9 @@ export class ErikaAutomationRunner {
           continue;
         }
         const cap = Math.min(3, Math.max(1, Math.floor(job.maxAttempts ?? this.options.maxAttempts ?? 1)));
-        const canRetry = this.options.retryableTools?.includes(job.action.tool) === true && !!job.action.idempotencyKey;
+        const canRetry = this.options.retryableTools?.includes(job.action.tool) === true &&
+          !!job.action.idempotencyKey &&
+          job.action.risks.every(risk => risk === "read_only" || risk === "reversible");
         const attemptsAllowed = canRetry ? cap : 1;
         let result: AutomationJobResult = { id, status: "failed", attempts: 0 };
         for (let attempt = 1; attempt <= attemptsAllowed; attempt++) {
