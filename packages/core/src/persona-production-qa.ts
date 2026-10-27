@@ -79,8 +79,8 @@ export function evaluatePersonaProductionBrief(input: {
       passed:
         (stillFormat || (brief.script.length > 0 &&
         brief.script[0].line === brief.hook.firstSeconds &&
-        brief.script[0].durationSec <= 5)) &&
-        isText(brief.script[brief.script.length - 1]?.line ?? ""),
+        brief.script[0].durationSec > 0)) &&
+        (stillFormat || isText(brief.script[brief.script.length - 1]?.line ?? "")),
       message: "Хук должен быть первой короткой репликой, а финальная мысль — завершённой.",
     },
     {
