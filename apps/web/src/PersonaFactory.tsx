@@ -22,10 +22,12 @@ export function PersonaProductionBriefPanel({pipeline,editor,comment,factsChecke
  const qa=pipeline.materials.qa;
  if(!brief||!qa)return null;
  const requiresFactReview=qa.factReview.status==='requires_fact_review';
- const canApprove=editor.trim().length>0&&comment.trim().length>0&&(!requiresFactReview||factsChecked)&&pipeline.stage==='QA';
+ const dirty=pipeline.input.idea.angle.trim()!==brief.script[1]?.line?.trim()&&brief.sourceFormat!=='photo'&&brief.sourceFormat!=='carousel';
+ const canApprove=editor.trim().length>0&&comment.trim().length>0&&(!requiresFactReview||factsChecked)&&qa.status!=='needs_revision'&&!dirty&&pipeline.stage==='QA';
  return <section className="productionBrief" aria-label="Съёмочный бриф">
   <div className="productionBriefHead"><div><small>ДЕТЕРМИНИРОВАННЫЙ ШАБЛОН · БЕЗ ВЫЗОВА AI</small><h3>Съёмочный бриф</h3><p>Создан из выбранной идеи. Это не результат реального ИИ и не готовый видеомонтаж.</p></div><span className={pipeline.stage==='READY_FOR_SHOOT'?'briefReady':'briefQa'}>{pipeline.stage==='READY_FOR_SHOOT'?'Можно снимать':'На редакторской проверке'}</span></div>
   <label className="briefEdit"><span>Смысл идеи</span><textarea aria-label="Смысл идеи для съёмочного брифа" value={pipeline.input.idea.angle} onChange={e=>onAngleChange(e.target.value)}/></label>
+  {dirty&&<p role="alert" className="factReview">Идея изменена. Пересоберите бриф: прежние сценарий и QA устарели, одобрение заблокировано.</p>}
   {pipeline.stage==='QA'&&<div className="actions"><button className="ghost" onClick={onRebuild}>Обновить бриф после правки</button></div>}
   <div className="briefGrid"><article><small>СЦЕНАРИЙ</small>{brief.script.map(beat=><p key={beat.order}><b>{beat.durationSec} сек.</b> {beat.line}<span>{beat.action}</span></p>)}</article><article><small>КАДРЫ</small>{brief.shots.map(shot=><p key={shot.order}><b>{shot.durationSec} сек. · {shot.framing}</b> {shot.angle}<span>{shot.cameraMovement}; {shot.lighting}</span></p>)}</article></div>
   <div className="briefNotes"><p><b>Звук:</b> {brief.capture.audio.recording}</p><p><b>Монтаж:</b> {brief.postProduction.transitions}</p><p><b>Титры:</b> до {brief.postProduction.subtitles.maxCharactersPerLine} символов в строке.</p></div>
