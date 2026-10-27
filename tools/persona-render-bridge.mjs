@@ -74,7 +74,7 @@ const server=createServer(async(req,res)=>{
    return
   }
   if(req.method==='GET'&&match[2]==='download'){
-   if(!s.rendered)throw Error('Render not ready');
+   if(!s.rendered||s.busy)throw Error('Render not ready');
    const output=join(s.dir,'result.mp4'),size=(await stat(output)).size;
    res.writeHead(200,{'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="persona-render.mp4"','Content-Length':size});createReadStream(output).pipe(res);return
   }
