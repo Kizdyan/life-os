@@ -70,7 +70,7 @@ test('end-to-end local bridge renders and downloads a real MP4',{timeout:180000}
    const media=JSON.parse(checked.stdout);
    assert.ok(media.streams.some(v=>v.codec_type==='video'&&v.width===1080&&v.height===1920));
    assert.ok(media.streams.some(v=>v.codec_type==='audio'));
-   assert.ok(Number(media.format.duration)>0.9);
+   assert.ok(Math.abs(Number(media.format.duration)-1.2)<0.25,'Rendered duration must match two 0.6-second clips');
   }finally{await rm(dir,{recursive:true,force:true})}
   const removed=await fetch(base+'/session/'+id,{method:'DELETE',headers:{'X-Persona-Token':token}});
   assert.equal(removed.status,200);
