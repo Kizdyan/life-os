@@ -26,3 +26,18 @@ Scope: Persona Factory / Production Engine. This checklist is separate from stru
 ## Release gate
 
 Run unit tests, API typecheck, web build, browser E2E for each supported format, and one real-media QA pass with explicit author approval. Production and main remain unchanged until these gates are met.
+
+
+## Protected Preview / AI Gateway diagnostic (Codex report, 2026-10-27)
+
+Two protected Preview deployments for commit `b7830f7` were reported READY. Authenticated GET `/api/persona?auth_health=1` returned HTTP 405, `{"error":"method_not_allowed"}`, and `Allow: POST` on both.
+
+**Verified from `api/persona.ts` source:** the health handler executes only when `VERCEL_ENV === "preview"` **and** `PERSONA_ENABLE_FREE_AI === "true"`. The 405 confirms that this combined predicate did not pass; it does **not** independently establish that OIDC credentials are missing or that the AI Gateway provider rejected requests. In particular, the 405 response contains no `authReady` field.
+
+**Required separation of concerns:**
+- Add a non-sensitive GET health response for protected Preview that reports whether the free-AI feature is configured/enabled, independently from token availability; never return token values or headers.
+- Keep paid/free model invocation opt-in and gated. Do not enable the feature or modify secrets merely to make health checks pass.
+- When an authorized test is approved, verify OIDC and actual model access separately, recording HTTP status and sanitized error codes only.
+- Treat missing branch-scoped environment variables as insufficient evidence about project-level Preview variables or Vercel-provided OIDC.
+
+Status: **Preview deployment READY; protected route reachable; free-AI enablement and authentication unconfirmed; no model request made.**
