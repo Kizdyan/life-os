@@ -85,4 +85,13 @@ describe("ErikaAutomationRunner", () => {
     expect(calls).toBe(1);
     expect(result.failed).toBe(1);
   });
+  it("awaits durable checkpoints for completed and blocked jobs", async () => {
+    const saved: string[] = [];
+    const runner = new ErikaAutomationRunner({ run: async request => entry(request, "failed") }, {
+      onResult: async result => { saved.push(result.id + ":" + result.status); },
+    });
+    await runner.run([job("first"), job("second", ["first"])]);
+    expect(saved).toEqual(["first:failed", "second:blocked"]);
+  });
+
 });
