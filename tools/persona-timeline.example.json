@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "clips": [
+    {
+      "path": "./source/clip-1.mp4",
+      "startSec": 0,
+      "durationSec": 3
+    },
+    {
+      "path": "./source/clip-2.mp4",
+      "startSec": 1,
+      "durationSec": 4
+    },
+    {
+      "path": "./source/clip-3.mp4",
+      "startSec": 0,
+      "durationSec": 2
+    }
+  ]
+}
