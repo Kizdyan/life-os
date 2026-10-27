@@ -12,6 +12,7 @@ export interface PersonaProductionStructuralCheck {
     | "attention-logic"
     | "subtitle-readability"
     | "format-duration"
+    | "script-shot-sync"
     | "fact-references";
   passed: boolean;
   message: string;
@@ -102,6 +103,18 @@ export function evaluatePersonaProductionBrief(input: {
             isText(adaptation.instruction),
         ),
       message: "Платформенные адаптации должны соответствовать длительности съёмочного плана и вертикальному формату.",
+    },
+    {
+      id: "script-shot-sync",
+      passed: stillFormat
+        ? brief.script.length === 0 && brief.shots.length === 0
+        : brief.script.length === brief.shots.length &&
+          brief.script.every((beat, index) =>
+            beat.order === index + 1 &&
+            brief.shots[index]?.order === index + 1 &&
+            beat.durationSec === brief.shots[index]?.durationSec,
+          ),
+      message: "Сценарий и кадры должны иметь одинаковые порядковые номера и длительности; статичные форматы не должны выдавать видеокадры.",
     },
     {
       id: "fact-references",
