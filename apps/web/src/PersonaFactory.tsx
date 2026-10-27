@@ -2,6 +2,7 @@ import React from 'react';
 import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
+import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import{useEffect,useMemo,useRef,useState}from'react';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -88,6 +89,7 @@ export default function PersonaFactory(){
  function rejectIdea(){if(chosen)remember(chosen,'rejected');setChosen(null);setDraft(null);setQa(null);setProduction(null);setStage('strategy')}
  return <section className="personaFactoryV2">
   <header className="pfHead"><div><small>КОНТЕНТ-РЕДАКЦИЯ</small><h2>Редакция Persona</h2><p>Выбирай тему, создавай сценарии и текстовые черновики. Настоящий монтаж и публикация пока не подключены.</p></div><label className="autoToggle"><input type="checkbox" checked={autoPlan} onChange={e=>setAutoPlan(e.target.checked)}/> Автовыбор</label></header>
+  <PersonaEditorialCalendar/>
   <div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>
     <label className="pfFreeAiToggle">
