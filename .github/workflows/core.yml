@@ -40,6 +40,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Persona calendar and distribution regression tests
         run: npm run persona:core:test
+      - name: Verify real media QA on synthetic render
+        run: npm run media:verify:test
       - name: Run tests with captured diagnostics
         run: |
           set -o pipefail
