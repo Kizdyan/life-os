@@ -59,6 +59,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный проект</button>
+  <p>После обновления страницы исходные видео необходимо снова подготовить в папке source: браузер сохраняет только названия и тайминги.</p>
   <p>Для рендера помести видео в папку source рядом с JSON и выполни: npm run media:timeline -- persona-timeline.json export.mp4</p>
   {error&&<p role="alert">{error}</p>}
  </section>;
