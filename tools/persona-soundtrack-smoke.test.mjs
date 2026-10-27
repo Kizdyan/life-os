@@ -22,6 +22,11 @@ test('Persona renders a non-silent soundtrack into an MP4',{timeout:180000},asyn
   let peak=0;for(let i=0;i+1<decoded.stdout.length;i+=2)peak=Math.max(peak,Math.abs(decoded.stdout.readInt16LE(i)));
   assert.ok(peak>100,'Exported audio is silent');
   assert.ok(peak<32767,'Exported audio must not clip at full scale');
+  const samples=new Float64Array(Math.floor(decoded.stdout.length/2));
+  for(let i=0;i<samples.length;i++)samples[i]=decoded.stdout.readInt16LE(i*2)/32768;
+  const tonePower=hz=>{let re=0,im=0;for(let i=0;i<samples.length;i++){const phase=2*Math.PI*hz*i/8000;re+=samples[i]*Math.cos(phase);im+=samples[i]*Math.sin(phase)}return Math.hypot(re,im)/samples.length};
+  assert.ok(tonePower(220)>0.001,'Original source audio was lost in the mix');
+  assert.ok(tonePower(440)>0.001,'Music soundtrack was lost in the mix');
   const manifest=JSON.parse(await readFile(out+'.persona.json','utf8'));
   assert.equal(manifest.soundtrack.volume,0.8);
   assert.equal(manifest.soundtrack.originalVolume,1);
