@@ -15,7 +15,8 @@ export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(
  const upcoming=(plan.slots as Slot[]).slice(0,expanded?plan.slots.length:15);
  const [editing,setEditing]=useState<string|null>(null);
  const [idea,setIdea]=useState('');
- const [briefSlot,setBriefSlot]=useState<Slot|null>(null);
+ const [briefSlotId,setBriefSlotId]=useState<string|null>(null);
+ const briefSlot=plan.slots.find(s=>s.slotId===briefSlotId)||null;
  const brief=useMemo(()=>{if(!briefSlot)return null;let pipeline=startPersonaProductionPipeline({idea:{id:briefSlot.slotId,title:briefSlot.notes||briefSlot.purpose,angle:briefSlot.notes||briefSlot.purpose,format:briefSlot.format as 'reel'|'photo'|'carousel'}});for(let step=0;step<4;step++)pipeline=advancePersonaProductionPipeline(pipeline);return pipeline.materials.productionBrief;},[briefSlot]);
  function persist(slot:Slot){const next=[...previous.filter(s=>s.slotId!==slot.slotId),slot];setPrevious(next);try{localStorage.setItem(KEY,JSON.stringify(next))}catch{}}
  function update(slot:Slot,status:string){
@@ -30,14 +31,14 @@ export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(
   <div style={{display:'grid',gap:8}}>
    {upcoming.map(slot=><div key={slot.slotId} style={{borderBottom:'1px solid #8885',padding:'8px 0',display:'flex',gap:12,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}>
     <div><b>{slot.date} · {names[slot.format]||slot.format}</b><div style={{fontSize:12,opacity:.75}}>{slot.purpose} · {slot.platforms.join(', ')}</div></div>
-    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button type="button" className="ghost" onClick={()=>{setEditing(slot.slotId);setIdea(slot.notes||'')}}>Тема</button><button type="button" className="ghost" onClick={()=>{setBriefSlot(slot);onSelectSlot?.(slot)}}>Съёмочный план</button><label>Статус <select aria-label={'Статус '+slot.date+' '+slot.format} value={slot.status} onChange={e=>update(slot,e.target.value)}>
+    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button type="button" className="ghost" onClick={()=>{setEditing(slot.slotId);setIdea(slot.notes||'')}}>Тема</button><button type="button" className="ghost" onClick={()=>{setBriefSlotId(slot.slotId);onSelectSlot?.(slot)}}>Съёмочный план</button><label>Статус <select aria-label={'Статус '+slot.date+' '+slot.format} value={slot.status} onChange={e=>update(slot,e.target.value)}>
      <option value="planned">Запланировано</option><option value="in_production">В работе</option><option value="needs_review">На проверке</option>
     </select></label></div>{slot.notes&&<p style={{width:'100%',fontSize:13}}>Тема: {slot.notes}</p>}{editing===slot.slotId&&<div style={{width:'100%'}}><label>Идея или съёмочное задание <textarea value={idea} onChange={e=>setIdea(e.target.value)} maxLength={3000}/></label><button type="button" onClick={()=>{persist({...slot,notes:idea.trim(),status:slot.status==='planned'?'in_production':slot.status,approved:false});setEditing(null)}}>Сохранить тему</button><button type="button" className="ghost" onClick={()=>setEditing(null)}>Отмена</button></div>}
    </div>)}
   </div>
-  {briefSlot&&<div className="captureCard" aria-label="Съёмочный план для календаря"><h3>План: {briefSlot.date}</h3><p>{briefSlot.notes||briefSlot.purpose}</p>{brief?<><h4>Сценарий</h4>{brief.script.map(beat=><p key={beat.order}>{beat.durationSec} сек. · {beat.line} — {beat.action}</p>)}<h4>Кадры</h4>{brief.shots.map(shot=><p key={shot.order}>{shot.framing}: {shot.angle} · {shot.lighting}</p>)}<p>Монтаж: {brief.postProduction.transitions}</p></>:<p>Съёмочный план недоступен.</p>}<p>Это сценарный бриф, а не готовое видео. Для работы с исходниками открой редактор Persona.</p><button type="button" className="ghost" onClick={()=>setBriefSlot(null)}>Закрыть план</button></div>}
+  {briefSlot&&<div className="captureCard" aria-label="Съёмочный план для календаря"><h3>План: {briefSlot.date}</h3><p>{briefSlot.notes||briefSlot.purpose}</p>{brief?<><h4>Сценарий</h4>{brief.script.map(beat=><p key={beat.order}>{beat.durationSec} сек. · {beat.line} — {beat.action}</p>)}<h4>Кадры</h4>{brief.shots.map(shot=><p key={shot.order}>{shot.framing}: {shot.angle} · {shot.lighting}</p>)}<p>Монтаж: {brief.postProduction.transitions}</p></>:<p>Съёмочный план недоступен.</p>}<p>Это сценарный бриф, а не готовое видео. Для работы с исходниками открой редактор Persona.</p><button type="button" className="ghost" onClick={()=>setBriefSlotId(null)}>Закрыть план</button></div>}
   <button type="button" className="ghost" onClick={()=>setExpanded(v=>!v)}>{expanded?'Свернуть':'Показать все 90 дней'}</button>
-  <p>Ручная отметка «Готово» не означает одобрение: требуется QA, подтверждённый файл и решение автора.</p>
+  <p>Переход в готовность возможен только после QA, проверки файла и решения автора.</p>
   <p>Публикация требует отдельного утверждения, фактического файла и подтверждения каждой платформы. Здесь нет автоматической отправки.</p>
  </section>;
 }
