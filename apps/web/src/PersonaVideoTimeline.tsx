@@ -4,6 +4,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
  const urls=useRef(new Map<number,string>());
  const [previewId,setPreviewId]=useState<number|null>(null);
+ const [playSequence,setPlaySequence]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
@@ -65,7 +66,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
     <button type="button" onClick={()=>removeClip(clip.id)}>Удалить</button>
    </div>
   </div>)}
-  {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline preload="metadata" src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
+  <button type="button" onClick={()=>{setPlaySequence(true);setPreviewId(clips[0]?.id??null)}} disabled={clips.length<2||clips.some(c=>!urls.current.has(c.id))}>Смотреть последовательность</button>
+  {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline autoPlay={playSequence} preload="metadata" onEnded={()=>{if(!playSequence)return;const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}} src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
   <p>Итого: {clips.reduce((sum,clip)=>sum+clip.durationSec,0).toFixed(1)} сек.</p>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
