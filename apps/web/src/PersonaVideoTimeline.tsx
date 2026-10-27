@@ -7,6 +7,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [previewId,setPreviewId]=useState<number|null>(null);
  const [playSequence,setPlaySequence]=useState(false);
  const [renderState,setRenderState]=useState('');
+ const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
@@ -51,13 +52,35 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  async function renderLocal(){
+  if(rendering)return;
   if(clips.length<2||clips.some(c=>!filesById.current.has(c.id))){setError('Загрузи все исходники перед рендером');return}
   if(clips.some(c=>c.durationSec<=0||c.startSec<0||c.startSec+c.durationSec>c.sourceDuration+0.01)){setError('Проверь тайминги');return}
-  const body=new FormData();
-  body.append('project',JSON.stringify({version:1,width,height,fps,clips:clips.map((c,i)=>({path:'source/'+i+'.mp4',startSec:c.startSec,durationSec:c.durationSec}))}));
-  clips.forEach((c,i)=>body.append('clip'+i,filesById.current.get(c.id)!));
-  setError('');
-  setRenderState('Локальный обработчик ещё не подключён. Исходники подготовлены, но не отправлены.');
+  setRendering(true);setError('');
+  const base='http://127.0.0.1:47831';
+  async function request(path:string,init?:RequestInit){
+   const response=await fetch(base+path,init);
+   if(!response.ok){const info=await response.json().catch(()=>({error:'Ошибка локального сервера'}));throw new Error(info.error||'Ошибка рендера')}
+   return response;
+  }
+  try{
+   setRenderState('Подключение к локальному FFmpeg...');
+   await request('/health');
+   const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec}))};
+   const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
+   for(let i=0;i<clips.length;i++){
+    setRenderState('Загрузка исходника '+(i+1)+' из '+clips.length);
+    await request('/session/'+created.id+'/clip/'+i,{method:'PUT',body:filesById.current.get(clips[i].id)!});
+   }
+   setRenderState('FFmpeg собирает MP4...');
+   await request('/session/'+created.id+'/render',{method:'POST'});
+   setRenderState('Получение готового видео...');
+   const video=await (await request('/session/'+created.id+'/download')).blob();
+   const url=URL.createObjectURL(video),link=document.createElement('a');
+   link.href=url;link.download='persona-render.mp4';document.body.appendChild(link);link.click();link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+   setRenderState('MP4 создан и передан на скачивание. Перед публикацией требуется проверка и утверждение.');
+  }catch(e){setRenderState('');setError(e instanceof Error?e.message:'Не удалось создать MP4. Запусти локальный мост: node tools/persona-render-bridge.mjs')}
+  finally{setRendering(false)}
  }
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
@@ -72,7 +95,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  }
  return <section className="captureCard" aria-label="Монтажная последовательность Persona">
   <h3>Монтажная последовательность</h3>
-  <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Рендер прямо в браузере ещё не подключён.</p>
+  <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Для рендера из интерфейса запусти локальный мост: node tools/persona-render-bridge.mjs. Исходники передаются только на 127.0.0.1.</p>
   <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
   {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
@@ -94,7 +117,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный проект</button>
-  <button type="button" onClick={()=>void renderLocal()}>Проверить готовность исходников</button>
+  <button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Создать MP4 через локальный FFmpeg'}</button>
   {renderState&&<p role="status">{renderState}</p>}
   <p>После обновления страницы исходные видео необходимо снова подготовить в папке source: браузер сохраняет только названия и тайминги.</p>
   <p>Для рендера помести видео в папку source рядом с JSON и выполни: npm run media:timeline -- persona-timeline.json export.mp4</p>
