@@ -25,7 +25,7 @@ async function verifyVideo(path){
  const video=info.streams?.find(s=>s.codec_type==='video'),audio=info.streams?.find(s=>s.codec_type==='audio');
  if(!video)throw Error('Video stream missing');
  const blackScan=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an']);
- const silenceScan=await scan(path,['-af','silencedetect=noise=-50dB:d=2','-vn']);
+ const silenceScan=audio?await scan(path,['-af','silencedetect=noise=-50dB:d=2','-vn']):'';
  return {durationSec:Number(info.format?.duration),fps:fpsValue(video.avg_frame_rate),width:video.width,height:video.height,
   videoCodec:video.codec_name,audioCodec:audio?.codec_name,
   blackFrameCheckPassed:!blackScan.includes('black_start:'),audioCheckPassed:!!audio&&!silenceScan.includes('silence_start:')};
