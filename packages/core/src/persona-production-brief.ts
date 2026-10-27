@@ -3,6 +3,7 @@ export type PersonaIdeaFormat =
   | "photo"
   | "reel"
   | "short"
+  | "sketch"
   | "story";
 
 export interface PersonaProductionIdea {
@@ -25,6 +26,12 @@ export interface PersonaProductionBrief {
   version: 1;
   ideaId: string;
   sourceFormat: PersonaIdeaFormat;
+  /**
+   * A format-specific deliverable. Script and shots remain available for
+   * timed formats; still formats deliberately use cards or photo direction
+   * rather than pretending that a video plan exists.
+   */
+  formatPlan: PersonaFormatPlan;
   hook: {
     firstSeconds: string;
     visual: string;
@@ -73,10 +80,50 @@ export interface PersonaProductionBrief {
 }
 
 export interface PlatformAdaptation {
-  aspectRatio: "9:16";
+  aspectRatio: "9:16" | "4:5";
   durationSec: number;
   instruction: string;
 }
+
+export type PersonaFormatPlan =
+  | {
+      kind: "vertical_video";
+      targetDurationSec: number;
+      pacing: string;
+      ending: string;
+    }
+  | {
+      kind: "acting_sketch";
+      characters: Array<{ name: string; objective: string }>;
+      conflict: string;
+      comicTurn: string;
+      ending: string;
+    }
+  | {
+      kind: "carousel_cards";
+      cards: Array<{
+        order: number;
+        heading: string;
+        body: string;
+        visualDirection: string;
+      }>;
+    }
+  | {
+      kind: "photo_concept";
+      composition: string;
+      subjectAction: string;
+      lighting: string;
+      colorTreatment: string;
+    }
+  | {
+      kind: "story_sequence";
+      frames: Array<{
+        order: number;
+        durationSec: number;
+        visual: string;
+        text: string;
+      }>;
+    };
 
 /**
  * Builds a concrete, camera-ready production brief from an existing Persona
@@ -89,14 +136,18 @@ export function buildPersonaProductionBrief(
   const idea = normalizeIdea(input.idea);
   const factReferences = normalizeFacts(input.sourceFacts ?? []);
   const hook = `Сразу в кадр: «${idea.title}».`;
-  const isStill = idea.format === "photo" || idea.format === "carousel";
-  const script = isStill ? [] : buildSpokenScript(idea, hook);
+  const formatPlan = buildFormatPlan(idea, hook);
+  const script = buildScript(idea, hook, formatPlan);
+  const isStill = formatPlan.kind === "carousel_cards" || formatPlan.kind === "photo_concept";
   const shots = isStill ? [] : buildTimedShots(script);
+  const totalDurationSec = shots.reduce((sum, shot) => sum + shot.durationSec, 0);
+  const aspectRatio = isStill ? "4:5" : "9:16";
 
   return {
     version: 1,
     ideaId: idea.id,
     sourceFormat: idea.format,
+    formatPlan,
     hook: {
       firstSeconds: isStill ? idea.title : hook,
       visual: isStill ? "Статичная композиция с читаемой визуальной иерархией." : "Крупный план, взгляд в объектив до первой реплики; без заставки.",
@@ -124,18 +175,20 @@ export function buildPersonaProductionBrief(
     },
     adaptations: {
       reels: {
-        aspectRatio: "9:16",
-        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
-        instruction: "Оставить хук в первом кадре и не размещать титры под нижней панелью Reels.",
+        aspectRatio,
+        durationSec: totalDurationSec,
+        instruction: isStill
+          ? "Экспортировать карточки или фото 4:5; не обрезать лицо и ключевой текст в интерфейсе Instagram."
+          : "Оставить хук в первом кадре и не размещать титры под нижней панелью Reels.",
       },
       shorts: {
         aspectRatio: "9:16",
-        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
+        durationSec: totalDurationSec,
         instruction: "Сохранить вертикальный кадр и закончить без внешнего клиффхэнгера после завершённой мысли.",
       },
       vkClips: {
         aspectRatio: "9:16",
-        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
+        durationSec: totalDurationSec,
         instruction: "Сохранить вертикальный экспорт и проверить читаемость первого титра в ленте VK Клипов.",
       },
     },
@@ -166,7 +219,28 @@ function spokenSeconds(line: string): number {
   return Math.max(3, Math.ceil(words / 2) + 2);
 }
 
-function buildSpokenScript(idea: PersonaProductionIdea, hook: string): PersonaProductionBrief["script"] {
+function buildScript(
+  idea: PersonaProductionIdea,
+  hook: string,
+  formatPlan: PersonaFormatPlan,
+): PersonaProductionBrief["script"] {
+  if (formatPlan.kind === "carousel_cards" || formatPlan.kind === "photo_concept") return [];
+  if (formatPlan.kind === "acting_sketch") {
+    return [
+      { line: hook, action: "Первый персонаж уже действует; второй возникает в кадре без экспозиции." },
+      { line: formatPlan.conflict, action: "Сменить план на ответ второго персонажа и дать конфликту развиться." },
+      { line: formatPlan.comicTurn, action: "Сделать короткую паузу перед поворотом; реакция важнее объяснения." },
+      { line: formatPlan.ending, action: "Вернуть общий план и закончить на завершённом действии." },
+    ].map((part, index) => ({ order: index + 1, durationSec: spokenSeconds(part.line), ...part }));
+  }
+  if (formatPlan.kind === "story_sequence") {
+    return formatPlan.frames.map((frame) => ({
+      order: frame.order,
+      durationSec: frame.durationSec,
+      line: frame.text,
+      action: frame.visual,
+    }));
+  }
   const parts = [
     { line: hook, action: "Начать с конкретного визуального действия; реплика в первые секунды." },
     { line: idea.angle, action: "Показать действие или предмет, относящийся к идее; не добавлять неподтверждённых деталей." },
@@ -178,6 +252,58 @@ function buildSpokenScript(idea: PersonaProductionIdea, hook: string): PersonaPr
     line: part.line,
     action: part.action,
   }));
+}
+
+function buildFormatPlan(idea: PersonaProductionIdea, hook: string): PersonaFormatPlan {
+  switch (idea.format) {
+    case "reel":
+    case "short":
+      return {
+        kind: "vertical_video",
+        targetDurationSec: 30,
+        pacing: "Одна мысль на кадр; действие в первом плане, короткая пауза перед финалом.",
+        ending: "Завершить наблюдением или видимым результатом, не рекламным призывом.",
+      };
+    case "sketch":
+      return {
+        kind: "acting_sketch",
+        characters: [
+          { name: "Персонаж А", objective: "Начать действие немедленно." },
+          { name: "Персонаж Б", objective: "Остановить поспешное решение." },
+        ],
+        conflict: idea.angle,
+        comicTurn: "Поворот строится на том, что пауза неожиданно оказывается действием, а не отказом.",
+        ending: "Оба персонажа фиксируют новый выбор короткой реакцией без дополнительной морали.",
+      };
+    case "carousel":
+      return {
+        kind: "carousel_cards",
+        cards: [
+          { order: 1, heading: idea.title, body: "Первый тезис должен читаться за одно касание.", visualDirection: "Крупная типографика и один предмет из реального процесса." },
+          { order: 2, heading: "Наблюдение", body: idea.angle, visualDirection: "Один чистый кадр действия, без декоративного коллажа." },
+          { order: 3, heading: "Напряжение", body: "Покажите, что обычно мешает применить это на практике.", visualDirection: "Контрастный, но спокойный второй ракурс того же процесса." },
+          { order: 4, heading: "Действие", body: "Сформулируйте один небольшой шаг, который можно сделать сегодня.", visualDirection: "Руки, инструмент или заметка в кадре — без стоковых метафор." },
+          { order: 5, heading: "Финал", body: "Оставьте законченную мысль, а не просьбу о подписке.", visualDirection: "Свободное поле вокруг текста и спокойный завершающий кадр." },
+        ],
+      };
+    case "photo":
+      return {
+        kind: "photo_concept",
+        composition: "Вертикальный портрет 4:5: лицо или действие в верхних двух третях, с чистым фоном и местом для одного короткого заголовка.",
+        subjectAction: idea.angle,
+        lighting: "Один мягкий направленный источник; сохранить естественную фактуру кожи, очки и геометрию лица.",
+        colorTreatment: "Выправить только экспозицию и баланс белого; не менять внешность, черты лица или пропорции тела.",
+      };
+    case "story":
+      return {
+        kind: "story_sequence",
+        frames: [
+          { order: 1, durationSec: 4, visual: "Вертикальный крупный план без заставки.", text: hook },
+          { order: 2, durationSec: 6, visual: "Деталь реального действия или инструмента.", text: idea.angle },
+          { order: 3, durationSec: 4, visual: "Спокойный финальный кадр с безопасным полем для стикера.", text: "Закончить мысль и оставить место для ответа зрителя." },
+        ],
+      };
+  }
 }
 
 function buildTimedShots(script: PersonaProductionBrief["script"]): PersonaProductionBrief["shots"] {

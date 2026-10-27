@@ -54,14 +54,16 @@ describe("evaluatePersonaProductionBrief", () => {
     );
     expect(result).not.toHaveProperty("videoQualityScore");
   });
-  it("blocks approval of unsupported photo and carousel templates", () => {
+  it("accepts dedicated photo and carousel deliverables for editorial fact review", () => {
     for (const format of ["photo", "carousel"] as const) {
       const brief = buildPersonaProductionBrief({
         idea: { id: format, title: "Портрет", angle: "Визуальная история", format },
       });
       expect(brief.script).toHaveLength(0);
       expect(brief.shots).toHaveLength(0);
-      expect(evaluatePersonaProductionBrief({ brief, allowedFacts: [] }).status).toBe("needs_revision");
+      const result = evaluatePersonaProductionBrief({ brief, allowedFacts: [] });
+      expect(result.status).toBe("requires_fact_review");
+      expect(result.structuralChecks.find((check) => check.id === "format-deliverable")?.passed).toBe(true);
     }
   });
 

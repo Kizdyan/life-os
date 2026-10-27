@@ -12,7 +12,8 @@ export interface PersonaProductionStructuralCheck {
     | "attention-logic"
     | "subtitle-readability"
     | "format-duration"
-    | "fact-references";
+    | "fact-references"
+    | "format-deliverable";
   passed: boolean;
   message: string;
 }
@@ -47,31 +48,32 @@ export function evaluatePersonaProductionBrief(input: {
 }): PersonaProductionQaResult {
   const { brief } = input;
   const totalDurationSec = sumDurations(brief);
-  const stillFormat = brief.sourceFormat === "photo" || brief.sourceFormat === "carousel";
+  const stillFormat = brief.formatPlan.kind === "photo_concept" || brief.formatPlan.kind === "carousel_cards";
+  const timedFormat = !stillFormat;
   const unverifiedFields = collectUnverifiedFields(brief);
   const checks: PersonaProductionStructuralCheck[] = [
     {
       id: "script-completeness",
       passed:
-        (!stillFormat && brief.script.length > 0) &&
-        brief.script.every(
+        (stillFormat || brief.script.length > 0) &&
+        (stillFormat || brief.script.every(
           (beat) =>
             isText(beat.line) && isText(beat.action) && isPositiveDuration(beat.durationSec),
-        ),
-      message: stillFormat ? "Для фото и карусели требуется отдельный редактор карточек/кадров: видео-шаблон запрещён." : "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
+        )),
+      message: stillFormat ? "Для фото и карусели видео-шаблон запрещён; проверяется отдельный визуальный deliverable." : "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
     },
     {
       id: "shot-specificity",
       passed:
         (stillFormat || brief.shots.length > 0) &&
-        brief.shots.every(
+        (stillFormat || brief.shots.every(
           (shot) =>
             isPositiveDuration(shot.durationSec) &&
             isText(shot.angle) &&
             isText(shot.cameraMovement) &&
             isText(shot.lighting) &&
             isText(shot.action),
-        ),
+        )),
       message: "Каждый кадр должен содержать длительность, ракурс, движение камеры, свет и действие.",
     },
     {
@@ -94,14 +96,19 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "format-duration",
       passed:
-        (stillFormat ? totalDurationSec === 0 : totalDurationSec > 0) &&
+        (timedFormat ? totalDurationSec > 0 : totalDurationSec === 0) &&
         Object.values(brief.adaptations).every(
           (adaptation) =>
-            adaptation.aspectRatio === "9:16" &&
+            (adaptation.aspectRatio === "9:16" || adaptation.aspectRatio === "4:5") &&
             adaptation.durationSec === totalDurationSec &&
             isText(adaptation.instruction),
         ),
       message: "Платформенные адаптации должны соответствовать длительности съёмочного плана и вертикальному формату.",
+    },
+    {
+      id: "format-deliverable",
+      passed: hasCompleteFormatPlan(brief),
+      message: "Выбранный формат должен иметь собственный законченный deliverable: сцены, карточки, фотоконцепцию или кадры Stories.",
     },
     {
       id: "fact-references",
@@ -135,6 +142,27 @@ export function evaluatePersonaProductionBrief(input: {
       ],
     },
   };
+}
+
+function hasCompleteFormatPlan(brief: PersonaProductionBrief): boolean {
+  switch (brief.formatPlan.kind) {
+    case "vertical_video":
+      return isPositiveDuration(brief.formatPlan.targetDurationSec) && isText(brief.formatPlan.pacing) && isText(brief.formatPlan.ending);
+    case "acting_sketch":
+      return brief.formatPlan.characters.length >= 2 &&
+        brief.formatPlan.characters.every((character) => isText(character.name) && isText(character.objective)) &&
+        isText(brief.formatPlan.conflict) && isText(brief.formatPlan.comicTurn) && isText(brief.formatPlan.ending);
+    case "carousel_cards":
+      return brief.formatPlan.cards.length >= 3 && brief.formatPlan.cards.every((card) =>
+        Number.isInteger(card.order) && card.order > 0 && isText(card.heading) && isText(card.body) && isText(card.visualDirection),
+      );
+    case "photo_concept":
+      return isText(brief.formatPlan.composition) && isText(brief.formatPlan.subjectAction) && isText(brief.formatPlan.lighting) && isText(brief.formatPlan.colorTreatment);
+    case "story_sequence":
+      return brief.formatPlan.frames.length >= 2 && brief.formatPlan.frames.every((frame) =>
+        Number.isInteger(frame.order) && frame.order > 0 && isPositiveDuration(frame.durationSec) && isText(frame.visual) && isText(frame.text),
+      );
+  }
 }
 
 function collectUnverifiedFields(brief: PersonaProductionBrief): string[] {
