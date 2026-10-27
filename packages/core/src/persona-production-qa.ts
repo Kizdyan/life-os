@@ -47,12 +47,13 @@ export function evaluatePersonaProductionBrief(input: {
 }): PersonaProductionQaResult {
   const { brief } = input;
   const totalDurationSec = sumDurations(brief);
+  const stillFormat = brief.sourceFormat === "photo" || brief.sourceFormat === "carousel";
   const unverifiedFields = collectUnverifiedFields(brief);
   const checks: PersonaProductionStructuralCheck[] = [
     {
       id: "script-completeness",
       passed:
-        brief.script.length > 0 &&
+        (stillFormat || brief.script.length > 0) &&
         brief.script.every(
           (beat) =>
             isText(beat.line) && isText(beat.action) && isPositiveDuration(beat.durationSec),
@@ -62,7 +63,7 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "shot-specificity",
       passed:
-        brief.shots.length > 0 &&
+        (stillFormat || brief.shots.length > 0) &&
         brief.shots.every(
           (shot) =>
             isPositiveDuration(shot.durationSec) &&
@@ -76,9 +77,9 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "attention-logic",
       passed:
-        brief.script.length > 0 &&
+        (stillFormat || (brief.script.length > 0 &&
         brief.script[0].line === brief.hook.firstSeconds &&
-        brief.script[0].durationSec <= 5 &&
+        brief.script[0].durationSec <= 5)) &&
         isText(brief.script[brief.script.length - 1]?.line ?? ""),
       message: "Хук должен быть первой короткой репликой, а финальная мысль — завершённой.",
     },
@@ -93,7 +94,7 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "format-duration",
       passed:
-        totalDurationSec > 0 &&
+        (stillFormat ? totalDurationSec === 0 : totalDurationSec > 0) &&
         Object.values(brief.adaptations).every(
           (adaptation) =>
             adaptation.aspectRatio === "9:16" &&
