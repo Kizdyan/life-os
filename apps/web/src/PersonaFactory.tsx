@@ -89,7 +89,7 @@ export default function PersonaFactory(){
  function rejectIdea(){if(chosen)remember(chosen,'rejected');setChosen(null);setDraft(null);setQa(null);setProduction(null);setStage('strategy')}
  return <section className="personaFactoryV2">
   <header className="pfHead"><div><small>КОНТЕНТ-РЕДАКЦИЯ</small><h2>Редакция Persona</h2><p>Выбирай тему, создавай сценарии и текстовые черновики. Настоящий монтаж и публикация пока не подключены.</p></div><label className="autoToggle"><input type="checkbox" checked={autoPlan} onChange={e=>setAutoPlan(e.target.checked)}/> Автовыбор</label></header>
-  <PersonaEditorialCalendar/>
+  <PersonaEditorialCalendar onSelectSlot={slot=>select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}/>
   <div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>
     <label className="pfFreeAiToggle">
