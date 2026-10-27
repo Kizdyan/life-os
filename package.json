@@ -10,7 +10,7 @@
     "web:build": "vite build apps/web",
     "media:probe": "node tools/persona-media-engine.mjs probe",
     "media:render": "node tools/persona-media-engine.mjs render",
-    "media:test": "node --test tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs",
+    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs",
     "media:timeline": "node tools/persona-timeline-render.mjs",
     "media:verify": "node tools/persona-verify-render.mjs",
     "media:verify:test": "node --test tools/persona-verify-render.test.mjs",
