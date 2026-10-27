@@ -21,6 +21,7 @@ test('Persona renders a non-silent soundtrack into an MP4',{timeout:180000},asyn
   assert.equal(decoded.status,0);
   let peak=0;for(let i=0;i+1<decoded.stdout.length;i+=2)peak=Math.max(peak,Math.abs(decoded.stdout.readInt16LE(i)));
   assert.ok(peak>100,'Exported audio is silent');
+  assert.ok(peak<32767,'Exported audio must not clip at full scale');
   const manifest=JSON.parse(await readFile(out+'.persona.json','utf8'));
   assert.equal(manifest.soundtrack.volume,0.8);
   assert.equal(manifest.soundtrack.originalVolume,1);
