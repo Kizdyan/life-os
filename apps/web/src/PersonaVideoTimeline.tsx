@@ -6,6 +6,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const filesById=useRef(new Map<number,File>());
  const [previewId,setPreviewId]=useState<number|null>(null);
  const [playSequence,setPlaySequence]=useState(false);
+ const [renderState,setRenderState]=useState('');
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
@@ -49,6 +50,14 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
  function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
+ async function renderLocal(){
+  if(clips.length<2||clips.some(c=>!filesById.current.has(c.id))){setError('Загрузи все исходники перед рендером');return}
+  if(clips.some(c=>c.durationSec<=0||c.startSec<0||c.startSec+c.durationSec>c.sourceDuration+0.01)){setError('Проверь тайминги');return}
+  const body=new FormData();
+  body.append('project',JSON.stringify({version:1,width,height,fps,clips:clips.map((c,i)=>({path:'source/'+i+'.mp4',startSec:c.startSec,durationSec:c.durationSec}))}));
+  clips.forEach((c,i)=>body.append('clip'+i,filesById.current.get(c.id)!));
+  setRenderState('Локальный обработчик ещё не подключён. Исходники подготовлены, но не отправлены.');
+ }
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
   if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Повторно выберите исходные файлы.');return}
@@ -84,6 +93,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный проект</button>
+  <button type="button" onClick={()=>void renderLocal()}>Проверить готовность исходников</button>
+  {renderState&&<p role="status">{renderState}</p>}
   <p>После обновления страницы исходные видео необходимо снова подготовить в папке source: браузер сохраняет только названия и тайминги.</p>
   <p>Для рендера помести видео в папку source рядом с JSON и выполни: npm run media:timeline -- persona-timeline.json export.mp4</p>
   {error&&<p role="alert">{error}</p>}
