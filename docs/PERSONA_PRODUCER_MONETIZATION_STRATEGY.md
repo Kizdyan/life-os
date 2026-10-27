@@ -1,7 +1,7 @@
 # Persona — producer strategy and monetization brief (2026-10-27)
 
 ## North star
-Persona exists to grow **verified creative-professional income and opportunities** for an actor and musician, not to maximize posts or views in isolation.
+The Life OS ecosystem, with **DiveM leading strategy**, exists to grow **verified creative-professional income and opportunities** for an actor and musician, not to maximize posts or views in isolation.
 
 Two parallel commercial funnels:
 1. **Creator/brand**: discoverability → relevant audience → brand-fit evidence → inbound briefs → qualified paid collaboration → contracted revenue.
@@ -41,7 +41,7 @@ Do not substitute visual filler for narrative. Protect performance timing; do no
 - Month 2: compare audience and qualified-contact response by pillar; build creator/brand media kit with *real* metrics; test targeted collaboration and commercial offers.
 - Month 3: scale evidence-backed series, pitch appropriate brands/collaborators/casting contacts, optimize the two commercial funnels and review actual earnings.
 
-## Decision model (hypothesis-driven)
+## Decision model (hypothesis-driven; DiveM owns ranking and targeting)
 Every idea has:
 - objective: reach | follower_conversion | qualified_industry_attention | collaboration | brand_inquiry | music_inquiry | portfolio_proof;
 - audience: one primary segment, optional secondary;
@@ -53,7 +53,7 @@ Every idea has:
 
 Balance exploration vs exploitation. Initial content-mix ratios are hypotheses; revise based on real results. No fabricated trend popularity. Trend research must cite current examples and dates; do not claim real-time trends from static templates.
 
-## Scorecard (weekly and monthly)
+## Scorecard (weekly and monthly; DiveM owns commercial measurement)
 Awareness: reach, unique viewers, non-follower reach, qualified profile visits.
 Engagement quality: average watch time, retention curve, shares, saves, meaningful comments.
 Conversion: follows per relevant profile visit, portfolio clicks, inbound qualified messages, collaboration invitations, casting inquiries, music briefs, brand inquiries.
@@ -62,7 +62,7 @@ Production: shoot/edit hours, render QA pass rate, revision count, approved buff
 
 Use platform APIs only where officially permitted and connected. Distinguish observed, user-reported and inferred metrics. Store denominator and observation window. Do not rank an industry lead by follower count.
 
-## Commercial readiness
+## Commercial readiness (DiveM owner)
 - Public professional positioning and clear contact method.
 - Actor portfolio/showreel, credits and relevant professional materials, subject to permission.
 - Music reel with rights-cleared excerpts and commission examples.
