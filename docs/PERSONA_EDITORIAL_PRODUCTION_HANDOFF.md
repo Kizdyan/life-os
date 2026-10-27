@@ -10,13 +10,13 @@
 
 ## Tests
 - `npm run persona:core:test` — editorial slots, per-platform states and media handoff.
-- `npm run media:test` — the above plus media engine and timeline synthetic tests.
+- `npm run media:test` — the above plus media engine and timeline synthetic tests.\n- `npm run media:verify:test` — actual FFmpeg/FFprobe synthetic render verification, including missing-audio and black-frame rejection.
 - `npm test`, `npm run typecheck`, `npm run api:typecheck`, `npm run web:build` — full project gates.
 
 ## Explicitly not complete
 - No canonical Tasks/Calendar/MediaAssets synchronization or Yandex.Disk integration.
 - No actual automatic editing from arbitrary source clips; existing timeline render is CLI-based.
-- No trusted evidence-producing QA adapter connected to the handoff gate.
+- A local FFmpeg evidence-producing QA CLI exists, but no server-side evidence signing or UI approval-to-handoff adapter is connected yet.
 - No official social platform upload adapters, verified post retrieval or analytics sync.
 - No automatic publication without author approval.
 - CI must be green before merging; do not merge or deploy on the strength of added tests alone.
