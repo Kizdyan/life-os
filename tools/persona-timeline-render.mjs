@@ -69,6 +69,21 @@ async function main() {
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
     clips.push({ path, startSec, durationSec, media, sha256: await hash(path) });
   }
+  let soundtrack = null;
+  if (project.soundtrack !== undefined) {
+    if (!project.soundtrack || typeof project.soundtrack.path !== 'string') fail('Invalid soundtrack');
+    const musicPath = isAbsolute(project.soundtrack.path) ? resolve(project.soundtrack.path) : resolve(dirname(projectPath), project.soundtrack.path);
+    if (!new Set(['.mp3','.m4a','.wav','.aac','.flac','.ogg','.mp4']).has(extname(musicPath).toLowerCase())) fail('Unsupported soundtrack format');
+    const musicStat = await stat(musicPath);
+    if (!musicStat.isFile() || musicStat.size < 1 || musicStat.size > 250 * 1024 * 1024) fail('Invalid soundtrack size');
+    const info = JSON.parse(await run('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type','-of','json',musicPath]));
+    if (!info.streams?.some(s=>s.codec_type==='audio')) fail('Soundtrack has no audio');
+    const musicDuration = Number(info.format?.duration);
+    if (!Number.isFinite(musicDuration) || musicDuration <= 0 || musicDuration > 86400) fail('Invalid soundtrack duration');
+    const startSec = numeric(project.soundtrack.startSec ?? 0,'soundtrack startSec',0,musicDuration);
+    const volume = numeric(project.soundtrack.volume ?? 0.8,'soundtrack volume',0,2);
+    soundtrack = { path:musicPath,startSec,volume,sha256:await hash(musicPath) };
+  }
   const totalSec = clips.reduce((sum, clip) => sum + clip.durationSec, 0);
   if (totalSec > 900) fail('Timeline exceeds 15 minute safety limit');
   const tempDir = await mkdtemp(join(tmpdir(), 'persona-timeline-'));
@@ -95,7 +110,7 @@ async function main() {
     if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
     const toleranceSec = Math.max(0.25, totalSec * 0.06);
     if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, soundtrack, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await rename(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
