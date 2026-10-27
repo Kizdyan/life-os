@@ -40,7 +40,7 @@ const server=createServer(async(req,res)=>{
    const id=randomUUID(),dir=await mkdtemp(join(tmpdir(),'persona-bridge-'));
    await mkdir(join(dir,'source'));
    const clips=project.clips.map((c,i)=>({path:'source/'+i+'.mp4',startSec:c.startSec,durationSec:c.durationSec}));
-   const soundtrack = project.soundtrack === undefined ? undefined : {path:'soundtrack.mp3',startSec:project.soundtrack.startSec??0,volume:project.soundtrack.volume??0.8};
+   const soundtrack = project.soundtrack === undefined ? undefined : {path:'soundtrack.mp3',startSec:project.soundtrack?.startSec??0,volume:project.soundtrack?.volume??0.8};
    if (soundtrack && (!Number.isFinite(soundtrack.startSec)||soundtrack.startSec<0||!Number.isFinite(soundtrack.volume)||soundtrack.volume<0||soundtrack.volume>2)) throw Error('Invalid soundtrack settings');
    const s={id,dir,clips,project:{...project,clips,soundtrack},received:new Set(),musicReceived:false,total:0,rendered:false,busy:false,created:Date.now()};
    sessions.set(id,s);respond(res,200,{id,clips:clips.length});return
