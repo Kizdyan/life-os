@@ -26,3 +26,12 @@ test('rejects invalid channels and exposes partial failure',()=>{
  const failed=updateDelivery(plan,{channel:'tiktok',status:'manual_required',error:'provider unsupported'});
  assert.deepEqual(distributionSummary(failed).needsAttention,['tiktok']);
 });
+
+test('published confirmation is idempotent and cannot be silently replaced',()=>{
+ const plan=buildDistributionPlan({contentId:'clip-6',format:'reel',approved:true,masterSha256});
+ const published=updateDelivery(plan,{channel:'instagram',status:'published',externalPostId:'provider-001',verifiedAt:'2026-10-27T12:00:00Z'});
+ const repeat=updateDelivery(published,{channel:'instagram',status:'published',externalPostId:'provider-001',verifiedAt:'2026-10-27T12:00:00Z'});
+ assert.equal(repeat,published);
+ assert.throws(()=>updateDelivery(published,{channel:'instagram',status:'published',externalPostId:'provider-002',verifiedAt:'2026-10-27T12:00:00Z'}),/immutable/);
+ assert.throws(()=>updateDelivery(published,{channel:'instagram',status:'published',externalPostId:'provider-001',verifiedAt:'2026-10-28T12:00:00Z'}),/immutable/);
+});
