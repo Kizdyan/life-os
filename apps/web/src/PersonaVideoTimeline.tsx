@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number }
 export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
+ const urls=useRef(new Map<number,string>());
+ const [previewId,setPreviewId]=useState<number|null>(null);
+ useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
  const [error,setError]=useState('');
@@ -22,13 +25,17 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
      video.onloadedmetadata=()=>{const d=video.duration;video.removeAttribute('src');video.load();Number.isFinite(d)&&d>0?resolve(d):reject(Error('Не удалось прочитать длительность'))};
      video.onerror=()=>reject(Error('Невозможно открыть '+file.name));video.src=url;
     });
-    additions.push({id:nextId+additions.length,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
+    const id=nextId+additions.length;
+    additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
+    urls.current.set(id,URL.createObjectURL(file));
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
    finally{URL.revokeObjectURL(url)}
   }
+  if(additions.length)setPreviewId(additions[0].id);
   setClips(old=>[...old,...additions]);setNextId(id=>id+additions.length);
   event.target.value='';
  }
+ function removeClip(id:number){const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
  function change(id:number,patch:Partial<Clip>){setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
  function move(index:number,delta:number){const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  function download() {
@@ -52,9 +59,11 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    <div style={{display:'flex',gap:8}}>
     <button type="button" disabled={index===0} onClick={()=>move(index,-1)}>Выше</button>
     <button type="button" disabled={index===clips.length-1} onClick={()=>move(index,1)}>Ниже</button>
-    <button type="button" onClick={()=>setClips(items=>items.filter(item=>item.id!==clip.id))}>Удалить</button>
+    <button type="button" disabled={!urls.current.has(clip.id)} onClick={()=>setPreviewId(clip.id)}>Предпросмотр</button>
+    <button type="button" onClick={()=>removeClip(clip.id)}>Удалить</button>
    </div>
   </div>)}
+  {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline preload="metadata" src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
   <p>Итого: {clips.reduce((sum,clip)=>sum+clip.durationSec,0).toFixed(1)} сек.</p>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
