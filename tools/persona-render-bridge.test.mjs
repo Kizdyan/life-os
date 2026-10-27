@@ -25,6 +25,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.equal(unauthorized.status,401);
   const invalid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,clips:[]})});
   assert.equal(invalid.status,400);
+  const nullMusic=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,width:1080,height:1920,fps:30,clips:[{startSec:0,durationSec:1},{startSec:0,durationSec:1}],soundtrack:null})});
+  assert.equal(nullMusic.status,400);
   const valid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,width:1080,height:1920,fps:30,clips:[{startSec:0,durationSec:1},{startSec:0,durationSec:1}]})});
   assert.equal(valid.status,200);
   const data=await valid.json();
