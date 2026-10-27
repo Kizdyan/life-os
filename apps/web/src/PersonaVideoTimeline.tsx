@@ -174,7 +174,9 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
   <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
   {musicStatus&&<p role="status">{musicStatus}</p>}
-  <p>Анализ выполняется в браузере. При локальном рендере выбранная музыка добавляется в MP4 с громкостью 80%, исходный звук клипов приглушается до 20%. Проверь права на музыку и финальный звук.</p></div>
+  <label>Музыка: {Math.round(musicVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={e=>setMusicVolume(Number(e.target.value))}/></label>
+  <label>Исходный звук: {Math.round(originalVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={originalVolume} onChange={e=>setOriginalVolume(Number(e.target.value))}/></label>
+  <p>Громкость музыки и исходного звука регулируются отдельно. Перед публикацией проверь разборчивость речи и права на музыку.</p></div>
   {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
