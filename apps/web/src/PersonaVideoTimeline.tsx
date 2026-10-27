@@ -36,9 +36,10 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   setClips(old=>[...old,...additions]);setNextId(id=>id+additions.length);
   event.target.value='';
  }
- function removeClip(id:number){const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
- function change(id:number,patch:Partial<Clip>){setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
- function move(index:number,delta:number){const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
+ function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
+ function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
+ function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
+ function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
   if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Удалите старые строки и добавьте видео заново.');return}
@@ -67,7 +68,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    </div>
   </div>)}
   <button type="button" onClick={()=>{setPlaySequence(true);setPreviewId(clips[0]?.id??null)}} disabled={clips.length<2||clips.some(c=>!urls.current.has(c.id))}>Смотреть последовательность</button>
-  {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline autoPlay={playSequence} preload="metadata" onEnded={()=>{if(!playSequence)return;const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}} src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
+  {playSequence&&<button type="button" onClick={()=>setPlaySequence(false)}>Остановить последовательность</button>}
+  {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline autoPlay={playSequence} preload="metadata" onLoadedMetadata={e=>{if(playSequence){const clip=clips.find(c=>c.id===previewId);if(clip)e.currentTarget.currentTime=clip.startSec}}} onTimeUpdate={e=>{if(!playSequence)return;const clip=clips.find(c=>c.id===previewId);if(clip&&e.currentTarget.currentTime>=clip.startSec+clip.durationSec-0.04){e.currentTarget.pause();advanceSequence()}}} onEnded={()=>{if(playSequence)advanceSequence()}} src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
   <p>Итого: {clips.reduce((sum,clip)=>sum+clip.durationSec,0).toFixed(1)} сек.</p>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
