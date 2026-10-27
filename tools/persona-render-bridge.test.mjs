@@ -34,7 +34,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
  }finally{child.kill();await delay(100)}
 });
 
-test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{stdio:'ignore'}).status===0),timeout:180000},async()=>{
+test('end-to-end local bridge renders and downloads a real MP4',{timeout:180000},async()=>{
+ assert.ok(['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{stdio:'ignore'}).status===0),'FFmpeg and FFprobe are required for this integration test');
  const port=49000+Math.floor(Math.random()*1000);
  const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
  const base='http://127.0.0.1:'+port;
