@@ -90,3 +90,9 @@ article button:focus-visible{outline:2px solid #171717;outline-offset:2px}
 }
 
 .taskReset{display:flex!important;flex-direction:row;gap:9px;align-items:center;font-weight:600}.taskReset input{width:18px!important;min-height:18px;height:18px}
+
+.pfLocalImport{border:1px solid #e0dfd8;background:#faf9f6;border-radius:15px;padding:13px 14px;margin-bottom:16px;display:grid;gap:7px}
+.pfLocalImport label{display:grid;gap:8px;font-size:13px;font-weight:650}
+.pfLocalImport input{max-width:100%;font:inherit;font-size:12px}
+.pfLocalImport small{letter-spacing:normal;font-size:11px;line-height:1.5}
+.pfLocalImport [role=alert]{color:#9a3333;font-size:12px}
