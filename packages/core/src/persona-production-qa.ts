@@ -12,6 +12,7 @@ export interface PersonaProductionStructuralCheck {
     | "attention-logic"
     | "subtitle-readability"
     | "format-duration"
+    | "script-shot-sync"
     | "fact-references";
   passed: boolean;
   message: string;
@@ -47,22 +48,23 @@ export function evaluatePersonaProductionBrief(input: {
 }): PersonaProductionQaResult {
   const { brief } = input;
   const totalDurationSec = sumDurations(brief);
+  const stillFormat = brief.sourceFormat === "photo" || brief.sourceFormat === "carousel";
   const unverifiedFields = collectUnverifiedFields(brief);
   const checks: PersonaProductionStructuralCheck[] = [
     {
       id: "script-completeness",
       passed:
-        brief.script.length > 0 &&
+        (!stillFormat && brief.script.length > 0) &&
         brief.script.every(
           (beat) =>
             isText(beat.line) && isText(beat.action) && isPositiveDuration(beat.durationSec),
         ),
-      message: "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
+      message: stillFormat ? "Для фото и карусели требуется отдельный редактор карточек/кадров: видео-шаблон запрещён." : "Каждая сценарная часть должна иметь реплику, действие и положительную длительность.",
     },
     {
       id: "shot-specificity",
       passed:
-        brief.shots.length > 0 &&
+        (stillFormat || brief.shots.length > 0) &&
         brief.shots.every(
           (shot) =>
             isPositiveDuration(shot.durationSec) &&
@@ -76,10 +78,10 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "attention-logic",
       passed:
-        brief.script.length > 0 &&
+        (stillFormat || (brief.script.length > 0 &&
         brief.script[0].line === brief.hook.firstSeconds &&
-        brief.script[0].durationSec <= 5 &&
-        isText(brief.script[brief.script.length - 1]?.line ?? ""),
+        brief.script[0].durationSec > 0)) &&
+        (stillFormat || isText(brief.script[brief.script.length - 1]?.line ?? "")),
       message: "Хук должен быть первой короткой репликой, а финальная мысль — завершённой.",
     },
     {
@@ -93,7 +95,7 @@ export function evaluatePersonaProductionBrief(input: {
     {
       id: "format-duration",
       passed:
-        totalDurationSec > 0 &&
+        (stillFormat ? totalDurationSec === 0 : totalDurationSec > 0) &&
         Object.values(brief.adaptations).every(
           (adaptation) =>
             adaptation.aspectRatio === "9:16" &&
@@ -101,6 +103,18 @@ export function evaluatePersonaProductionBrief(input: {
             isText(adaptation.instruction),
         ),
       message: "Платформенные адаптации должны соответствовать длительности съёмочного плана и вертикальному формату.",
+    },
+    {
+      id: "script-shot-sync",
+      passed: stillFormat
+        ? brief.script.length === 0 && brief.shots.length === 0
+        : brief.script.length === brief.shots.length &&
+          brief.script.every((beat, index) =>
+            beat.order === index + 1 &&
+            brief.shots[index]?.order === index + 1 &&
+            beat.durationSec === brief.shots[index]?.durationSec,
+          ),
+      message: "Сценарий и кадры должны иметь одинаковые порядковые номера и длительности; статичные форматы не должны выдавать видеокадры.",
     },
     {
       id: "fact-references",

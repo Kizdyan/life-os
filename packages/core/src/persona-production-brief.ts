@@ -24,6 +24,9 @@ export interface PersonaProductionBriefInput {
 export interface PersonaProductionBrief {
   version: 1;
   ideaId: string;
+  /** Immutable snapshot of the input angle used to generate this brief. */
+  sourceAngle: string;
+  sourceTitle: string;
   sourceFormat: PersonaIdeaFormat;
   hook: {
     firstSeconds: string;
@@ -89,65 +92,23 @@ export function buildPersonaProductionBrief(
   const idea = normalizeIdea(input.idea);
   const factReferences = normalizeFacts(input.sourceFacts ?? []);
   const hook = `Сразу в кадр: «${idea.title}».`;
+  const isStill = idea.format === "photo" || idea.format === "carousel";
+  const script = isStill ? [] : buildSpokenScript(idea, hook);
+  const shots = isStill ? [] : buildTimedShots(script);
 
   return {
     version: 1,
     ideaId: idea.id,
+    sourceAngle: idea.angle,
+    sourceTitle: idea.title,
     sourceFormat: idea.format,
     hook: {
-      firstSeconds: hook,
-      visual: "Крупный план, взгляд в объектив до первой реплики; без заставки.",
-      delivery: "Начать в первые две секунды, говорить спокойно и без ускорения.",
+      firstSeconds: isStill ? idea.title : hook,
+      visual: isStill ? "Статичная композиция с читаемой визуальной иерархией." : "Крупный план, взгляд в объектив до первой реплики; без заставки.",
+      delivery: isStill ? "Текст на изображении не должен маскироваться под озвучку." : "Начать в первые две секунды, говорить спокойно и без ускорения.",
     },
-    script: [
-      {
-        order: 1,
-        durationSec: 4,
-        line: hook,
-        action: "Нажать запись, выдержать короткую паузу и произнести хук в объектив.",
-      },
-      {
-        order: 2,
-        durationSec: 18,
-        line: idea.angle,
-        action: "Показать один предмет или действие из процесса в момент объяснения; не добавлять непроверенные детали.",
-      },
-      {
-        order: 3,
-        durationSec: 8,
-        line: "Сохраните эту мысль и попробуйте применить её в своей практике.",
-        action: "Вернуться в крупный план, закончить фразу и оставить полсекунды тишины перед остановкой записи.",
-      },
-    ],
-    shots: [
-      {
-        order: 1,
-        durationSec: 4,
-        framing: "close-up",
-        angle: "На уровне глаз",
-        cameraMovement: "Статичный кадр на штативе или устойчивой опоре",
-        lighting: "Мягкий фронтальный свет под углом 45°; фон темнее лица.",
-        action: "Произнести хук без заставки и без склейки до конца фразы.",
-      },
-      {
-        order: 2,
-        durationSec: 18,
-        framing: "medium",
-        angle: "Три четверти, чтобы были видны руки и рабочее действие",
-        cameraMovement: "Один медленный переход в деталь только в момент ключевого действия",
-        lighting: "Сохранить направление света из первого кадра; избегать смешения цветовых температур.",
-        action: "Сопроводить объяснение одним демонстрационным действием из темы идеи.",
-      },
-      {
-        order: 3,
-        durationSec: 8,
-        framing: "close-up",
-        angle: "На уровне глаз",
-        cameraMovement: "Статичный кадр",
-        lighting: "Тот же мягкий ключевой свет, что в первом кадре.",
-        action: "Закончить мысль, сделать короткую паузу и остановить запись.",
-      },
-    ],
+    script,
+    shots,
     capture: {
       props: ["Телефон или камера", "Штатив или устойчивая опора", "Предмет из реального рабочего процесса, если он нужен для объяснения"],
       wardrobe: "Однотонная одежда без мелкого контрастного рисунка; выбрать то, в чём автор обычно работает.",
@@ -159,27 +120,27 @@ export function buildPersonaProductionBrief(
       },
     },
     postProduction: {
-      transitions: "Жёсткие склейки по завершённым фразам; не использовать декоративные переходы без смысловой причины.",
+      transitions: isStill ? "Не применимо к статичному изображению; нужен отдельный визуальный редактор." : "Жёсткие склейки по завершённым фразам; не использовать декоративные переходы без смысловой причины.",
       subtitles: {
         instruction: "Субтитры синхронны с речью, максимум две строки, высокий контраст и безопасные поля для интерфейса платформы.",
         maxCharactersPerLine: 42,
       },
-      color: "Нейтральная коррекция экспозиции и баланса белого; сохранить естественный тон кожи и фактуру изображения.",
+      color: "Нейтральная коррекция экспозиции и баланса белого; сохранить естественный тон кожи и фактуру изображения. Не изменять черты лица, очки и геометрию без согласования.",
     },
     adaptations: {
       reels: {
         aspectRatio: "9:16",
-        durationSec: 30,
+        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
         instruction: "Оставить хук в первом кадре и не размещать титры под нижней панелью Reels.",
       },
       shorts: {
         aspectRatio: "9:16",
-        durationSec: 30,
+        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
         instruction: "Сохранить вертикальный кадр и закончить без внешнего клиффхэнгера после завершённой мысли.",
       },
       vkClips: {
         aspectRatio: "9:16",
-        durationSec: 30,
+        durationSec: shots.reduce((sum, shot) => sum + shot.durationSec, 0),
         instruction: "Сохранить вертикальный экспорт и проверить читаемость первого титра в ленте VK Клипов.",
       },
     },
@@ -202,4 +163,36 @@ function requireText(value: string, name: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${name} must be a non-empty string`);
   return normalized;
+}
+
+/** Conservative speech estimate at 120 words/minute plus a two-second pause. */
+function spokenSeconds(line: string): number {
+  const words = line.trim().split(/\s+/u).filter(Boolean).length;
+  return Math.max(3, Math.ceil(words / 2) + 2);
+}
+
+function buildSpokenScript(idea: PersonaProductionIdea, hook: string): PersonaProductionBrief["script"] {
+  const parts = [
+    { line: hook, action: "Начать с конкретного визуального действия; реплика в первые секунды." },
+    { line: idea.angle, action: "Показать действие или предмет, относящийся к идее; не добавлять неподтверждённых деталей." },
+    { line: "Показать результат или реакцию без навязанного призыва подписаться.", action: "Завершить визуальным результатом или реакцией, а не универсальным CTA." },
+  ];
+  return parts.map((part, index) => ({
+    order: index + 1,
+    durationSec: spokenSeconds(part.line),
+    line: part.line,
+    action: part.action,
+  }));
+}
+
+function buildTimedShots(script: PersonaProductionBrief["script"]): PersonaProductionBrief["shots"] {
+  return script.map((beat, index) => ({
+    order: index + 1,
+    durationSec: beat.durationSec,
+    framing: (index === 1 ? "medium" : "close-up") as "medium" | "close-up",
+    angle: index === 1 ? "Три четверти; руки и действие в кадре" : "На уровне глаз",
+    cameraMovement: index === 1 ? "Смысловой переход на деталь" : "Статичный кадр",
+    lighting: "Единая цветовая температура; мягкий ключевой свет",
+    action: beat.action,
+  }));
 }

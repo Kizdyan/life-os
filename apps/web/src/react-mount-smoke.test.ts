@@ -77,6 +77,7 @@ describe('Persona Production Engine panel', () => {
       onFactsCheckedChange: () => undefined,
       onDecision: () => undefined,
       onRebuild: () => undefined,
+      onAngleChange: () => undefined,
     }));
 
     expect(pipeline.stage).toBe('QA');
@@ -85,6 +86,34 @@ describe('Persona Production Engine panel', () => {
     expect(markup).toContain('Нужна ручная проверка фактов');
     expect(markup).toContain('Одобрить для съёмки');
   });
+  it('disables approval for a revised angle until the production brief is rebuilt', () => {
+    const pipeline = buildPersonaProductionWorkflow({
+      id: 'stale-1',
+      title: 'Репетиция',
+      angle: 'Показываю работу.',
+      format: 'reel',
+      score: 90,
+    });
+    const stale = {
+      ...pipeline,
+      input: { ...pipeline.input, idea: { ...pipeline.input.idea, angle: 'Изменённый смысл сцены.' } },
+    };
+    const markup = renderToString(React.createElement(PersonaProductionBriefPanel, {
+      pipeline: stale,
+      editor: 'Редактор',
+      comment: 'Проверено',
+      factsChecked: true,
+      onEditorChange: () => undefined,
+      onCommentChange: () => undefined,
+      onFactsCheckedChange: () => undefined,
+      onDecision: () => undefined,
+      onRebuild: () => undefined,
+      onAngleChange: () => undefined,
+    }));
+    expect(markup).toContain('Пересоберите бриф');
+    expect(markup).toMatch(/disabled=""[^>]*>Одобрить для съёмки/);
+  });
+
 });
 
 describe('iPhone editor smoke render', () => {

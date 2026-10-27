@@ -104,4 +104,34 @@ describe("Persona production pipeline", () => {
     expect(rejected.materials.shotList).toHaveLength(3);
     expect(rejected.materials.productionBrief?.ideaId).toBe("idea-3");
   });
+  it("refuses stale approvals at the core boundary after an idea edit", () => {
+    let pipeline = startPersonaProductionPipeline({
+      idea: { id: "edited", title: "Сцена", angle: "Первоначальная идея", format: "reel" },
+    });
+    for (let i = 0; i < 4; i++) pipeline = advancePersonaProductionPipeline(pipeline);
+    pipeline = {
+      ...pipeline,
+      input: { ...pipeline.input, idea: { ...pipeline.input.idea, angle: "Новая идея" } },
+    };
+    expect(() => recordPersonaEditorialDecision(pipeline, {
+      decision: "approved", editor: "Редактор", comment: "Проверено",
+      factReviewCompleted: true, decidedAt: "2026-10-27T12:00:00.000Z",
+    })).toThrow(/idea changed/);
+  });
+
+  it.each(["title", "format"] as const)("rejects approval after changing the idea %s", (field) => {
+    let pipeline = startPersonaProductionPipeline({
+      idea: { id: "snapshot", title: "Исходная сцена", angle: "Показать действие", format: "reel" },
+    });
+    for (let i = 0; i < 4; i++) pipeline = advancePersonaProductionPipeline(pipeline);
+    const idea = field === "title"
+      ? { ...pipeline.input.idea, title: "Новый заголовок" }
+      : { ...pipeline.input.idea, format: "short" as const };
+    pipeline = { ...pipeline, input: { ...pipeline.input, idea } };
+    expect(() => recordPersonaEditorialDecision(pipeline, {
+      decision: "approved", editor: "Редактор", comment: "Проверено",
+      factReviewCompleted: true, decidedAt: "2026-10-27T12:00:00.000Z",
+    })).toThrow(/idea changed/);
+  });
+
 });
