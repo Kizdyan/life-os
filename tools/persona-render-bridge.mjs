@@ -60,7 +60,7 @@ const server=createServer(async(req,res)=>{
   }
   if(req.method==='PUT'&&match[2]==='music'){
    const length=Number(req.headers['content-length']);
-   if(!s.project.soundtrack||s.musicReceived||s.busy||!Number.isSafeInteger(length)||length<1||length>80*1024*1024||s.total+length>MAX_TOTAL)throw Error('Invalid soundtrack upload');
+   if(!s.project.soundtrack||s.musicReceived||s.rendered||s.busy||!Number.isSafeInteger(length)||length<1||length>80*1024*1024||s.total+length>MAX_TOTAL)throw Error('Invalid soundtrack upload');
    s.busy=true;const file=join(s.dir,'soundtrack.mp3');
    try{await pipeline(req,createWriteStream(file,{flags:'wx'}));if((await stat(file)).size!==length)throw Error('Upload size mismatch');s.musicReceived=true;s.total+=length;respond(res,200,{ok:true})}
    catch(e){await rm(file,{force:true});throw e}finally{s.busy=false}
