@@ -12,6 +12,16 @@ test('rejects missing timeline inputs',()=>{
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/Usage/);
 });
+test('rejects null project JSON',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-invalid-json-'));
+ try{
+  const project=join(dir,'null.json');
+  await writeFile(project,'null');
+  const result=call([project,join(dir,'out.mp4')]);
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/Expected 2/);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
 test('renders three real clips, inserts silent audio, preserves originals and writes manifest',{skip:!available},async()=>{
   const dir=await mkdtemp(join(tmpdir(),'persona-multiclip-'));
   try {
