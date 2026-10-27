@@ -28,6 +28,7 @@ test('Persona renders a non-silent soundtrack into an MP4',{timeout:180000},asyn
   assert.ok(tonePower(220)>0.001,'Original source audio was lost in the mix');
   assert.ok(tonePower(440)>0.001,'Music soundtrack was lost in the mix');
   const sourceLevel=tonePower(220),musicLevel=tonePower(440);
+  assert.ok(Number.isFinite(musicLevel/sourceLevel),'Audio balance ratio must be finite');
   assert.ok(musicLevel/sourceLevel>0.05 && musicLevel/sourceLevel<20,'Audio mix has an unexpected source/music balance');
   const manifest=JSON.parse(await readFile(out+'.persona.json','utf8'));
   assert.equal(manifest.soundtrack.volume,0.8);
