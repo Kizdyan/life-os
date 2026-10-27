@@ -40,7 +40,9 @@ const server=createServer(async(req,res)=>{
    const id=randomUUID(),dir=await mkdtemp(join(tmpdir(),'persona-bridge-'));
    await mkdir(join(dir,'source'));
    const clips=project.clips.map((c,i)=>({path:'source/'+i+'.mp4',startSec:c.startSec,durationSec:c.durationSec}));
-   const s={id,dir,clips,project:{...project,clips},received:new Set(),total:0,rendered:false,busy:false,created:Date.now()};
+   const soundtrack = project.soundtrack === undefined ? undefined : {path:'soundtrack.mp3',startSec:project.soundtrack.startSec??0,volume:project.soundtrack.volume??0.8};
+   if (soundtrack && (!Number.isFinite(soundtrack.startSec)||soundtrack.startSec<0||!Number.isFinite(soundtrack.volume)||soundtrack.volume<0||soundtrack.volume>2)) throw Error('Invalid soundtrack settings');
+   const s={id,dir,clips,project:{...project,clips,soundtrack},received:new Set(),musicReceived:false,total:0,rendered:false,busy:false,created:Date.now()};
    sessions.set(id,s);respond(res,200,{id,clips:clips.length});return
   }
   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(clip\/(\d+)|render|download))?$/);
@@ -55,8 +57,16 @@ const server=createServer(async(req,res)=>{
    catch(e){await rm(file,{force:true});throw e}finally{s.busy=false}
    return
   }
+  if(req.method==='PUT'&&match[2]==='music'){
+   const length=Number(req.headers['content-length']);
+   if(!s.project.soundtrack||s.musicReceived||s.busy||!Number.isSafeInteger(length)||length<1||length>80*1024*1024||s.total+length>MAX_TOTAL)throw Error('Invalid soundtrack upload');
+   s.busy=true;const file=join(s.dir,'soundtrack.mp3');
+   try{await pipeline(req,createWriteStream(file,{flags:'wx'}));if((await stat(file)).size!==length)throw Error('Upload size mismatch');s.musicReceived=true;s.total+=length;respond(res,200,{ok:true})}
+   catch(e){await rm(file,{force:true});throw e}finally{s.busy=false}
+   return
+  }
   if(req.method==='POST'&&match[2]==='render'){
-   if(s.busy||s.rendered||s.received.size!==s.clips.length)throw Error('Upload incomplete or render busy');
+   if(s.busy||s.rendered||s.received.size!==s.clips.length||(s.project.soundtrack&&!s.musicReceived))throw Error('Upload incomplete or render busy');
    s.busy=true;
    try{const projectPath=join(s.dir,'project.json');await writeFile(projectPath,JSON.stringify(s.project));await run([projectPath,join(s.dir,'result.mp4')]);s.rendered=true;respond(res,200,{ok:true,download:'/session/'+s.id+'/download'})}
    finally{s.busy=false}
