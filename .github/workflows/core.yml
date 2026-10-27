@@ -38,5 +38,21 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - run: npm test
-      - run: npm run typecheck
+      - name: Run tests with captured diagnostics
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/persona-ci-test.log
+      - name: Typecheck with captured diagnostics
+        if: success()
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/persona-ci-typecheck.log
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-failure-diagnostics
+          path: |
+            /tmp/persona-ci-test.log
+            /tmp/persona-ci-typecheck.log
+          if-no-files-found: warn
