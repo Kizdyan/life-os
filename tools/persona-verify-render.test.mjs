@@ -21,3 +21,21 @@ test('local QA reads real rendered video and requires author approval', {skip:!a
   assert.equal(approved.distribution.deliveries.length,4);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+test('QA rejects missing audio and fully black renders', {skip:!available},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-verify-negative-'));
+ try{
+  const silent=join(dir,'no-audio.mp4');
+  const silentRender=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=320x568:rate=30','-t','3','-c:v','libx264','-pix_fmt','yuv420p',silent],{timeout:30000,encoding:'utf8'});
+  assert.equal(silentRender.status,0,silentRender.stderr);
+  const noAudio=await verifyLocalPersonaRender({path:silent,contentId:'no-audio',format:'reel',authorApproved:true});
+  assert.equal(noAudio.handoff.passed,false);
+  assert.ok(noAudio.handoff.errors.some(e=>e.includes('audio codec')||e.includes('audio check')));
+  const black=join(dir,'black.mp4');
+  const blackRender=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','color=c=black:s=320x568:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','3','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-shortest',black],{timeout:30000,encoding:'utf8'});
+  assert.equal(blackRender.status,0,blackRender.stderr);
+  const blackQa=await verifyLocalPersonaRender({path:black,contentId:'black',format:'reel',authorApproved:true});
+  assert.equal(blackQa.handoff.passed,false);
+  assert.ok(blackQa.handoff.errors.some(e=>e.includes('black frame')));
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
