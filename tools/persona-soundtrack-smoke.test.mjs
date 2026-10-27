@@ -27,6 +27,8 @@ test('Persona renders a non-silent soundtrack into an MP4',{timeout:180000},asyn
   const tonePower=hz=>{let re=0,im=0;for(let i=0;i<samples.length;i++){const phase=2*Math.PI*hz*i/8000;re+=samples[i]*Math.cos(phase);im+=samples[i]*Math.sin(phase)}return Math.hypot(re,im)/samples.length};
   assert.ok(tonePower(220)>0.001,'Original source audio was lost in the mix');
   assert.ok(tonePower(440)>0.001,'Music soundtrack was lost in the mix');
+  const sourceLevel=tonePower(220),musicLevel=tonePower(440);
+  assert.ok(musicLevel/sourceLevel>0.05 && musicLevel/sourceLevel<20,'Audio mix has an unexpected source/music balance');
   const manifest=JSON.parse(await readFile(out+'.persona.json','utf8'));
   assert.equal(manifest.soundtrack.volume,0.8);
   assert.equal(manifest.soundtrack.originalVolume,1);
