@@ -8,8 +8,6 @@ export interface AutomationJob {
   action: ActionRequest;
   dependsOn?: string[];
   maxAttempts?: number;
-  /** Optional durable sink; awaited after each terminal job state. */
-  onResult?: (result: AutomationJobResult) => Promise<void>;
 }
 export interface AutomationJobResult {
   id: string;
@@ -30,6 +28,8 @@ export interface AutomationRunnerOptions {
   retryableTools?: readonly string[];
   /** Total attempts per job, including the first. */
   maxAttempts?: number;
+  /** Optional durable sink; awaited after each terminal job state. */
+  onResult?: (result: AutomationJobResult) => Promise<void>;
 }
 
 /**
