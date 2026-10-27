@@ -33,6 +33,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
       setPreviewId(old.id);
       continue;
     }
+    if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' уже добавлен');continue}
     const id=nextId+additions.length;
     additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
     urls.current.set(id,URL.createObjectURL(file));
