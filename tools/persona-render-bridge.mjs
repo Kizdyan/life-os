@@ -35,7 +35,7 @@ const server=createServer(async(req,res)=>{
   if(req.method==='GET'&&url.pathname==='/health'){respond(res,200,{ok:true,service:'persona-render-bridge',token});return}
   if(req.method==='POST'&&url.pathname==='/session'){
    const project=await json(req);
-   if(project.version!==1||!Array.isArray(project.clips)||project.clips.length<2||project.clips.length>30||![25,30,60].includes(project.fps)||![[1080,1920],[1920,1080]].some(([w,h])=>project.width===w&&project.height===h))throw Error('Invalid project');
+   if(!project||typeof project!=='object'||Array.isArray(project)||project.version!==1||!Array.isArray(project.clips)||project.clips.length<2||project.clips.length>30||![25,30,60].includes(project.fps)||![[1080,1920],[1920,1080]].some(([w,h])=>project.width===w&&project.height===h))throw Error('Invalid project');
    if(project.clips.some(c=>!Number.isFinite(c.startSec)||!Number.isFinite(c.durationSec)||c.startSec<0||c.durationSec<=0||c.durationSec>900))throw Error('Invalid clip timing');
    if(project.clips.reduce((a,c)=>a+c.durationSec,0)>900)throw Error('Timeline too long');
    const id=randomUUID(),dir=await mkdtemp(join(tmpdir(),'persona-bridge-'));
