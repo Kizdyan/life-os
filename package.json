@@ -13,6 +13,8 @@
     "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs",
     "media:timeline": "node tools/persona-timeline-render.mjs",
     "media:bridge": "node tools/persona-render-bridge.mjs",
+    "persona:preflight": "node tools/persona-preflight.mjs",
+    "persona:check": "npm run persona:preflight && npm run media:test && npm run web:build",
     "media:verify": "node tools/persona-verify-render.mjs",
     "media:verify:test": "node --test tools/persona-verify-render.test.mjs",
     "persona:core:test": "node --test packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs"
