@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {stat,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {evaluatePersonaMediaHandoff,buildVerifiedPersonaDeliveryInput} from '../packages/core/src/persona-media-handoff.mjs';
 import {buildDistributionPlan} from '../packages/core/src/persona-distribution-plan.mjs';
 function run(binary,args){
@@ -23,8 +24,6 @@ async function verifyVideo(path){
  const info=JSON.parse(await run('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate','-of','json',path]));
  const video=info.streams?.find(s=>s.codec_type==='video'),audio=info.streams?.find(s=>s.codec_type==='audio');
  if(!video)throw Error('Video stream missing');
- const black=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,'-vf','blackdetect=d=0.2:pix_th=0.10','-an','-f','null','-']).catch(e=>{throw Error('Black-frame scan failed: '+e.message)});
- // blackdetect reports on stderr, not stdout. A separate invocation captures diagnostics.
  const blackScan=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an']);
  const silenceScan=await scan(path,['-af','silencedetect=noise=-50dB:d=2','-vn']);
  return {durationSec:Number(info.format?.duration),fps:fpsValue(video.avg_frame_rate),width:video.width,height:video.height,
@@ -46,7 +45,7 @@ export async function verifyLocalPersonaRender({path,contentId,format='reel',aut
  if(outputPath)await writeFile(resolve(outputPath),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
  return result;
 }
-if(process.argv[1]&&resolve(process.argv[1])===resolve(new URL(import.meta.url).pathname)){
+if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
  const [path,contentId,format='reel',outputPath]=process.argv.slice(2);
  if(!path||!contentId){console.error('Usage: node tools/persona-verify-render.mjs <file.mp4> <content-id> [reel|short|story|long-video] [report.json]');process.exitCode=2}
  else verifyLocalPersonaRender({path,contentId,format,authorApproved:false,outputPath}).then(r=>{console.log(JSON.stringify({passed:r.handoff.passed,errors:r.handoff.errors,evidence:r.evidence}));if(r.handoff.errors.some(e=>!e.includes('author approval')))process.exitCode=1}).catch(e=>{console.error(e.message);process.exitCode=1});
