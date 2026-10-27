@@ -49,7 +49,7 @@ async function main() {
   const projectPath = resolve(projectArg), output = resolve(outputArg);
   if (extname(output).toLowerCase() !== '.mp4') fail('Output must be .mp4');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
-  if (project.version !== 1 || !Array.isArray(project.clips) || project.clips.length < 2 || project.clips.length > 30) fail('Expected 2–30 clips in version 1 project');
+  if (!project || typeof project !== 'object' || Array.isArray(project) || project.version !== 1 || !Array.isArray(project.clips) || project.clips.length < 2 || project.clips.length > 30) fail('Expected 2–30 clips in version 1 project');
   const width = numeric(project.width ?? 1080, 'width', 128, 3840);
   const height = numeric(project.height ?? 1920, 'height', 128, 3840);
   const fps = numeric(project.fps ?? 30, 'fps', 15, 60);
