@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number }
 export default function PersonaVideoTimeline() {
- const [clips,setClips]=useState<Clip[]>([]);
+ const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem('persona:timeline:draft:v1')||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
  const [error,setError]=useState('');
  const [width,setWidth]=useState(1080);
  const [height,setHeight]=useState(1920);
- const [nextId,setNextId]=useState(1);
+ const [nextId,setNextId]=useState(()=>{try{const items=JSON.parse(localStorage.getItem('persona:timeline:draft:v1')||'[]');return Array.isArray(items)?Math.max(0,...items.map(item=>Number(item?.id)||0))+1:1}catch{return 1}});
+ useEffect(()=>{try{localStorage.setItem('persona:timeline:draft:v1',JSON.stringify(clips))}catch{}},[clips]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30-clips.length);
   if(!files.length)return;
