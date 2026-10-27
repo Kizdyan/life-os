@@ -65,4 +65,21 @@ describe("evaluatePersonaProductionBrief", () => {
     }
   });
 
+  it("scales spoken timing with a long creative brief and synchronizes all exports", () => {
+    const brief = buildPersonaProductionBrief({
+      idea: {
+        id: "long-angle",
+        title: "Театральная сцена",
+        angle: Array.from({ length: 120 }, () => "репетиция").join(" "),
+        format: "reel",
+      },
+    });
+    expect(brief.script[1].durationSec).toBeGreaterThan(18);
+    const total = brief.script.reduce((sum, beat) => sum + beat.durationSec, 0);
+    expect(brief.shots.reduce((sum, shot) => sum + shot.durationSec, 0)).toBe(total);
+    expect(brief.adaptations.reels.durationSec).toBe(total);
+    expect(brief.adaptations.shorts.durationSec).toBe(total);
+    expect(brief.adaptations.vkClips.durationSec).toBe(total);
+  });
+
 });
