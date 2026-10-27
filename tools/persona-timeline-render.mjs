@@ -61,7 +61,7 @@ async function main() {
     if (!clip || typeof clip.path !== 'string' || !clip.path.trim()) fail('Invalid clip path at ' + index);
     const path = isAbsolute(clip.path) ? resolve(clip.path) : resolve(dirname(projectPath), clip.path);
     if (!allowed.has(extname(path).toLowerCase())) fail('Unsupported clip extension at ' + index);
-    if (path === output || path === projectPath) fail('Output cannot overwrite a source');
+    if (path === output || path === projectPath || path === output + '.persona.json') fail('Output cannot overwrite a source');
     const file = await stat(path);
     if (!file.isFile() || !file.size || file.size > 2 * 1024 ** 3) fail('Invalid clip size at ' + index);
     const media = await probe(path);
@@ -77,11 +77,11 @@ async function main() {
   try {
     const segments = [];
     for (let i = 0; i < clips.length; i++) {
-      const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.ts');
+      const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
       const videoFilter = 'scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2,setsar=1,fps=' + fps + ',format=yuv420p';
       const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
       if (!clip.media.audio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
-      args.push('-t',String(clip.durationSec),'-map','0:v:0','-map',clip.media.audio?'0:a:0':'1:a:0','-vf',videoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-shortest','-f','mpegts',segment);
+      args.push('-t',String(clip.durationSec),'-map','0:v:0','-map',clip.media.audio?'0:a:0':'1:a:0','-vf',videoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-af','aresample=async=1:first_pts=0','-shortest','-movflags','+faststart',segment);
       await run('ffmpeg', args);
       segments.push(segment);
     }
@@ -92,6 +92,7 @@ async function main() {
     args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
     await run('ffmpeg',args);
     const actual = await probe(staged);
+    if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
     const toleranceSec = Math.max(1.5, totalSec * 0.06);
     if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
     const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
