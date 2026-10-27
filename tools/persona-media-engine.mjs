@@ -65,8 +65,13 @@ async function render(input, output, start, requestedDuration) {
     const sourceHash = await sha256(input);
     const outputHash = await sha256(temp);
     const manifest = { version: 1, operation: 'trim-transcode', input: { ...source, sha256: sourceHash }, output: { ...result, input: undefined, path: output, sha256: outputHash }, settings: { startSec, durationSec, videoCodec: 'libx264', crf: 20, audioCodec: 'aac' }, verification: { passed: true, durationToleranceSec: tolerance } };
-    await writeFile(output + '.persona.json', JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
     await rename(temp, output);
+    try {
+      await writeFile(output + '.persona.json', JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+    } catch (error) {
+      await rm(output, { force: true });
+      throw error;
+    }
     return manifest;
   } finally { await rm(temp, { force: true }).catch(() => {}); }
 }
