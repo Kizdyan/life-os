@@ -42,7 +42,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
-  if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Удалите старые строки и добавьте видео заново.');return}
+  if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Повторно выберите исходные файлы.');return}
   if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
   if(new Set(clips.map(clip=>clip.name)).size!==clips.length){setError('Файлы с одинаковыми именами нужно переименовать до импорта');return}
   const project={version:1,width,height,fps,clips:clips.map(clip=>({path:'./source/'+clip.name,startSec:clip.startSec,durationSec:clip.durationSec}))};
