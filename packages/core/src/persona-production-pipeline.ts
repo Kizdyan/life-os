@@ -29,10 +29,36 @@ export interface PersonaEditorialDecision {
   comment: string;
   /** Required if QA found statements that require manual fact review. */
   factReviewCompleted?: boolean;
+  /** Rejects a decision copied from an older brief revision. */
+  expectedRevision?: number;
   decidedAt: string;
 }
 
+export type PersonaProductionRevisionEvent =
+  | "created"
+  | "qa_checked"
+  | "editorial_approved"
+  | "editorial_rejected"
+  | "revised";
+
+export interface PersonaProductionRevisionRecord {
+  revision: number;
+  event: PersonaProductionRevisionEvent;
+  stage: PersonaProductionStage;
+  detail: string;
+}
+
+export interface PersonaArchivedProductionRevision {
+  revision: number;
+  reason: string;
+  stage: PersonaProductionStage;
+  input: PersonaProductionBriefInput;
+  materials: PersonaProductionPipeline["materials"];
+}
+
 export interface PersonaProductionPipeline {
+  /** Incremented for every author edit that invalidates a reviewed brief. */
+  revision: number;
   stage: PersonaProductionStage;
   statuses: Record<PersonaProductionStage, PersonaProductionStageStatus>;
   input: PersonaProductionBriefInput;
@@ -45,6 +71,9 @@ export interface PersonaProductionPipeline {
     qa?: PersonaProductionQaResult;
     editorialDecision?: PersonaEditorialDecision;
   };
+  /** Prior materials remain auditable after a revision; nothing is discarded. */
+  archivedRevisions: PersonaArchivedProductionRevision[];
+  revisionHistory: PersonaProductionRevisionRecord[];
 }
 
 export interface StartPersonaProductionPipelineInput extends PersonaProductionBriefInput {
@@ -57,6 +86,7 @@ export function startPersonaProductionPipeline(
   input: StartPersonaProductionPipelineInput,
 ): PersonaProductionPipeline {
   return {
+    revision: 1,
     stage: "IDEA",
     statuses: {
       IDEA: "completed",
@@ -72,6 +102,8 @@ export function startPersonaProductionPipeline(
     },
     qaAllowedFacts: [...(input.qaAllowedFacts ?? input.sourceFacts ?? [])],
     materials: {},
+    archivedRevisions: [],
+    revisionHistory: [{ revision: 1, event: "created", stage: "IDEA", detail: "Draft created" }],
   };
 }
 
@@ -119,6 +151,7 @@ export function advancePersonaProductionPipeline(
           stage: "QA",
           statuses: { ...pipeline.statuses, QA: "needs_revision" },
           materials: { ...pipeline.materials, qa },
+          revisionHistory: addRevisionEvent(pipeline, "qa_checked", "QA found structural issues"),
         };
       }
       return {
@@ -131,6 +164,7 @@ export function advancePersonaProductionPipeline(
             : "awaiting_editorial_review",
         },
         materials: { ...pipeline.materials, qa },
+        revisionHistory: addRevisionEvent(pipeline, "qa_checked", "QA completed"),
       };
     }
     case "QA":
@@ -148,6 +182,13 @@ export function recordPersonaEditorialDecision(
     throw new Error("Editorial decision requires completed structural QA");
   }
   const normalized = normalizeEditorialDecision(decision);
+  const revision = currentRevision(pipeline);
+  if (
+    normalized.expectedRevision !== undefined &&
+    normalized.expectedRevision !== revision
+  ) {
+    throw new Error("Editorial decision belongs to a different revision");
+  }
   if (pipeline.materials.qa.status === "needs_revision" && normalized.decision === "approved") {
     throw new Error("A brief with failed structural QA cannot be approved");
   }
@@ -164,6 +205,7 @@ export function recordPersonaEditorialDecision(
       stage: "QA",
       statuses: { ...pipeline.statuses, QA: "needs_revision" },
       materials: { ...pipeline.materials, editorialDecision: normalized },
+      revisionHistory: addRevisionEvent(pipeline, "editorial_rejected", normalized.comment),
     };
   }
   return {
@@ -175,6 +217,51 @@ export function recordPersonaEditorialDecision(
       READY_FOR_SHOOT: "completed",
     },
     materials: { ...pipeline.materials, editorialDecision: normalized },
+    revisionHistory: addRevisionEvent(pipeline, "editorial_approved", normalized.comment),
+  };
+}
+
+/**
+ * Starts a fresh, auditable revision after an author edit. It intentionally
+ * clears the current derived materials so a prior QA or approval can never
+ * be inherited by a new wording, while retaining that material in history.
+ */
+export function revisePersonaProductionPipeline(
+  pipeline: PersonaProductionPipeline,
+  input: { angle: string; reason: string },
+): PersonaProductionPipeline {
+  const angle = requireText(input.angle, "angle");
+  const reason = requireText(input.reason, "reason");
+  const priorRevision = currentRevision(pipeline);
+  const revision = priorRevision + 1;
+  const priorInput: PersonaProductionBriefInput = {
+    idea: { ...pipeline.input.idea },
+    sourceFacts: [...(pipeline.input.sourceFacts ?? [])],
+  };
+  return {
+    ...pipeline,
+    revision,
+    stage: "IDEA",
+    statuses: initialStatuses(),
+    input: {
+      ...priorInput,
+      idea: { ...priorInput.idea, angle },
+    },
+    materials: {},
+    archivedRevisions: [
+      ...(pipeline.archivedRevisions ?? []),
+      {
+        revision: priorRevision,
+        reason,
+        stage: pipeline.stage,
+        input: priorInput,
+        materials: { ...pipeline.materials },
+      },
+    ],
+    revisionHistory: [
+      ...(pipeline.revisionHistory ?? []),
+      { revision, event: "revised", stage: "IDEA", detail: reason },
+    ],
   };
 }
 
@@ -189,6 +276,32 @@ function withStage(
     statuses: { ...pipeline.statuses, [stage]: "completed" },
     materials,
   };
+}
+
+function initialStatuses(): Record<PersonaProductionStage, PersonaProductionStageStatus> {
+  return {
+    IDEA: "completed",
+    SCRIPT: "pending",
+    SHOT_LIST: "pending",
+    PRODUCTION_BRIEF: "pending",
+    QA: "pending",
+    READY_FOR_SHOOT: "pending",
+  };
+}
+
+function currentRevision(pipeline: PersonaProductionPipeline): number {
+  return Number.isInteger(pipeline.revision) && pipeline.revision > 0 ? pipeline.revision : 1;
+}
+
+function addRevisionEvent(
+  pipeline: PersonaProductionPipeline,
+  event: Exclude<PersonaProductionRevisionEvent, "created" | "revised">,
+  detail: string,
+): PersonaProductionRevisionRecord[] {
+  return [
+    ...(pipeline.revisionHistory ?? []),
+    { revision: currentRevision(pipeline), event, stage: pipeline.stage, detail },
+  ];
 }
 
 function normalizeEditorialDecision(

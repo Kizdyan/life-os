@@ -77,7 +77,6 @@ describe('Persona Production Engine panel', () => {
       onFactsCheckedChange: () => undefined,
       onDecision: () => undefined,
       onRebuild: () => undefined,
-      onAngleChange: () => undefined,
     }));
 
     expect(pipeline.stage).toBe('QA');
@@ -108,10 +107,34 @@ describe('Persona Production Engine panel', () => {
       onFactsCheckedChange: () => undefined,
       onDecision: () => undefined,
       onRebuild: () => undefined,
-      onAngleChange: () => undefined,
     }));
     expect(markup).toContain('Пересоберите бриф');
     expect(markup).toMatch(/disabled=""[^>]*>Одобрить для съёмки/);
+  });
+
+  it('shows a dedicated carousel deliverable and the current revision to the editor', () => {
+    const pipeline = buildPersonaProductionWorkflow({
+      id: 'carousel-production-1',
+      title: 'Три точки входа',
+      angle: 'Веду автора от наблюдения к действию.',
+      format: 'carousel',
+      score: 90,
+    });
+    const markup = renderToString(React.createElement(PersonaProductionBriefPanel, {
+      pipeline,
+      editor: '',
+      comment: '',
+      factsChecked: false,
+      onEditorChange: () => undefined,
+      onCommentChange: () => undefined,
+      onFactsCheckedChange: () => undefined,
+      onDecision: () => undefined,
+      onRebuild: () => undefined,
+    }));
+
+    expect(markup).toMatch(/Ревизия\s*(?:<!-- -->)?1/);
+    expect(markup).toContain('Карточки');
+    expect(markup).toContain('Первый тезис должен читаться за одно касание.');
   });
 
 });
