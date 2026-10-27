@@ -24,7 +24,7 @@ const server=createServer(async(req,res)=>{
  if(origin&&!origins.has(origin)){respond(res,403,{error:'Origin not allowed'});return}
  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
  res.setHeader('Cache-Control','no-store');
- if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});res.end();return}
+ if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});res.end();return}
  const url=new URL(req.url||'/', 'http://127.0.0.1');
  try{
   if(req.method==='GET'&&url.pathname==='/health'){respond(res,200,{ok:true,service:'persona-render-bridge'});return}
@@ -42,6 +42,7 @@ const server=createServer(async(req,res)=>{
   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(clip\/(\d+)|render|download))?$/);
   const s=match&&sessions.get(match[1]);
   if(!s){respond(res,404,{error:'Session not found'});return}
+  if(req.method==='DELETE'&&!match[2]){if(s.busy)throw Error('Session busy');await cleanup(s);respond(res,200,{ok:true});return}
   if(req.method==='PUT'&&match[2]?.startsWith('clip/')){
    const i=Number(match[3]),length=Number(req.headers['content-length']);
    if(!Number.isInteger(i)||i<0||i>=s.clips.length||s.received.has(i)||s.busy||!Number.isSafeInteger(length)||length<1||length>MAX_CLIP||s.total+length>MAX_TOTAL)throw Error('Invalid clip upload');
