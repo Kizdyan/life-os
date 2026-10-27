@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 const host='127.0.0.1', port=Number(process.env.PERSONA_RENDER_PORT||47831);
@@ -16,7 +17,7 @@ const sessions=new Map();
 const MAX_CLIP=250*1024*1024, MAX_TOTAL=1024*1024*1024;
 function respond(res,status,data,headers={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8',...headers});res.end(JSON.stringify(data))}
 async function json(req){let chunks=[],n=0;for await(const part of req){n+=part.length;if(n>65536)throw Error('JSON too large');chunks.push(part)}return JSON.parse(Buffer.concat(chunks).toString('utf8'))}
-function run(args){return new Promise((ok,fail)=>{const p=spawn(process.execPath,[resolve('tools/persona-timeline-render.mjs'),...args],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let err='';p.stderr.on('data',b=>err=(err+b.toString()).slice(-2000));p.on('error',fail);p.on('close',code=>code===0?ok():fail(Error(err||'Render failed')))})}
+function run(args){return new Promise((ok,fail)=>{const p=spawn(process.execPath,[fileURLToPath(new URL('./persona-timeline-render.mjs',import.meta.url)),...args],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let err='';p.stderr.on('data',b=>err=(err+b.toString()).slice(-2000));p.on('error',fail);p.on('close',code=>code===0?ok():fail(Error(err||'Render failed')))})}
 async function cleanup(s){sessions.delete(s.id);await rm(s.dir,{recursive:true,force:true})}
 const server=createServer(async(req,res)=>{
  const expectedHosts=new Set(['127.0.0.1:'+port,'localhost:'+port]);
