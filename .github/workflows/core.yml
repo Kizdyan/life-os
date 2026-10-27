@@ -38,6 +38,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Persona calendar and distribution regression tests
+        run: npm run persona:core:test
       - name: Run tests with captured diagnostics
         run: |
           set -o pipefail
