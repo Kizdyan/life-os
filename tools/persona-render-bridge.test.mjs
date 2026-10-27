@@ -4,6 +4,9 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 test('local Persona bridge rejects invalid requests and accepts valid timeline sessions',async()=>{
  const port=48000+Math.floor(Math.random()*1000);
@@ -57,6 +60,17 @@ test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg'
   const bytes=new Uint8Array(await download.arrayBuffer());
   assert.ok(bytes.length>1000);
   assert.equal(String.fromCharCode(...bytes.slice(4,8)),'ftyp');
+  const dir=await mkdtemp(join(tmpdir(),'persona-bridge-test-'));
+  try{
+   const output=join(dir,'render.mp4');
+   await writeFile(output,bytes);
+   const checked=spawnSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',output],{encoding:'utf8'});
+   assert.equal(checked.status,0,checked.stderr);
+   const media=JSON.parse(checked.stdout);
+   assert.ok(media.streams.some(v=>v.codec_type==='video'&&v.width===1080&&v.height===1920));
+   assert.ok(media.streams.some(v=>v.codec_type==='audio'));
+   assert.ok(Number(media.format.duration)>0.9);
+  }finally{await rm(dir,{recursive:true,force:true})}
   const removed=await fetch(base+'/session/'+id,{method:'DELETE',headers:{'X-Persona-Token':token}});
   assert.equal(removed.status,200);
   const gone=await fetch(base+'/session/'+id+'/download',{headers:{'X-Persona-Token':token}});
