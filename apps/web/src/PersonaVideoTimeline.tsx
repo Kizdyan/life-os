@@ -9,6 +9,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [renderState,setRenderState]=useState('');
  const [musicAccents,setMusicAccents]=useState<number[]>([]);
  const musicFile=useRef<File|null>(null);
+ const [musicVolume,setMusicVolume]=useState(0.35);
+ const [originalVolume,setOriginalVolume]=useState(1);
  const [musicStatus,setMusicStatus]=useState('');
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
@@ -135,7 +137,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    const health=await (await request('/health')).json();
    if(!health.ok||typeof health.token!=='string')throw new Error('Локальный обработчик не готов');
    token=health.token;
-   const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec})),...(musicFile.current?{soundtrack:{startSec:0,volume:0.8}}:{})};
+   const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec})),...(musicFile.current?{soundtrack:{startSec:0,volume:musicVolume,originalVolume}}:{})};
    const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
    sessionId=created.id;
    for(let i=0;i<clips.length;i++){
