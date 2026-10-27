@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 test('local Persona bridge rejects invalid requests and accepts valid timeline sessions',async()=>{
  const port=48000+Math.floor(Math.random()*1000);
@@ -24,5 +25,33 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.match(data.id,/^[0-9a-f-]{36}$/);
   const premature=await fetch(base+'/session/'+data.id+'/render',{method:'POST'});
   assert.equal(premature.status,400);
+ }finally{child.kill();await delay(100)}
+});
+
+test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{stdio:'ignore'}).status===0),timeout:180000},async()=>{
+ const port=49000+Math.floor(Math.random()*1000);
+ const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
+ const base='http://127.0.0.1:'+port;
+ try{
+  let ready=false;
+  for(let i=0;i<50;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await delay(100)}
+  assert.ok(ready,'Bridge did not start');
+  const created=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,width:1080,height:1920,fps:25,clips:[{startSec:0,durationSec:0.6},{startSec:0,durationSec:0.6}]})});
+  assert.equal(created.status,200);
+  const {id}=await created.json();
+  const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=160x240:rate=25','-t','1','-c:v','mpeg4','-f','mp4','pipe:1'],{maxBuffer:8*1024*1024,timeout:30000});
+  assert.equal(generated.status,0,generated.stderr?.toString());
+  for(let i=0;i<2;i++){
+   const upload=await fetch(base+'/session/'+id+'/clip/'+i,{method:'PUT',body:generated.stdout});
+   assert.equal(upload.status,200,await upload.text());
+  }
+  const rendered=await fetch(base+'/session/'+id+'/render',{method:'POST'});
+  assert.equal(rendered.status,200,await rendered.text());
+  const download=await fetch(base+'/session/'+id+'/download');
+  assert.equal(download.status,200);
+  assert.match(download.headers.get('content-type')||'',/video\/mp4/);
+  const bytes=new Uint8Array(await download.arrayBuffer());
+  assert.ok(bytes.length>1000);
+  assert.equal(String.fromCharCode(...bytes.slice(4,8)),'ftyp');
  }finally{child.kill();await delay(100)}
 });
