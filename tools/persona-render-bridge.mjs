@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 
 const host='127.0.0.1', port=Number(process.env.PERSONA_RENDER_PORT||47831);
 const origins=new Set(['http://localhost:5173','http://127.0.0.1:5173','http://localhost:4173','http://127.0.0.1:4173']);
+const token=randomUUID();
 const sessions=new Map();
 const MAX_CLIP=250*1024*1024, MAX_TOTAL=1024*1024*1024;
 function respond(res,status,data,headers={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8',...headers});res.end(JSON.stringify(data))}
@@ -24,10 +25,13 @@ const server=createServer(async(req,res)=>{
  if(origin&&!origins.has(origin)){respond(res,403,{error:'Origin not allowed'});return}
  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
  res.setHeader('Cache-Control','no-store');
- if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});res.end();return}
+ if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Persona-Token'});res.end();return}
+ if(req.method!=='GET'||req.url!=='/health'){
+  if(req.headers['x-persona-token']!==token){respond(res,401,{error:'Invalid local render token'});return}
+ }
  const url=new URL(req.url||'/', 'http://127.0.0.1');
  try{
-  if(req.method==='GET'&&url.pathname==='/health'){respond(res,200,{ok:true,service:'persona-render-bridge'});return}
+  if(req.method==='GET'&&url.pathname==='/health'){respond(res,200,{ok:true,service:'persona-render-bridge',token});return}
   if(req.method==='POST'&&url.pathname==='/session'){
    const project=await json(req);
    if(project.version!==1||!Array.isArray(project.clips)||project.clips.length<2||project.clips.length>30||![25,30,60].includes(project.fps)||![[1080,1920],[1920,1080]].some(([w,h])=>project.width===w&&project.height===h))throw Error('Invalid project');
