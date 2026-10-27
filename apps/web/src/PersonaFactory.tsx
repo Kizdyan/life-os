@@ -3,6 +3,7 @@ import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
+import PersonaCloudPanel from './PersonaCloudPanel';
 import{useEffect,useMemo,useRef,useState}from'react';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -95,6 +96,7 @@ export default function PersonaFactory(){
  return <section className="personaFactoryV2">
   <header className="pfHead"><div><small>КОНТЕНТ-СТУДИЯ</small><h2>Создай материал</h2><p>Выбери формат и начни работу. Сценарии, фото и карусели — в браузере; MP4 на iPhone пока недоступен.</p></div><label className="autoToggle"><input type="checkbox" checked={autoPlan} onChange={e=>setAutoPlan(e.target.checked)}/> Автовыбор</label></header>
   {!chosen&&<section className="personaQuickStart" aria-label="Быстрый старт Persona"><h3>Быстрый старт</h3><div className="personaQuickStartGrid">{(['reel','photo','carousel'] as const).map(format=><button key={format} type="button" onClick={()=>select({id:crypto.randomUUID(),title:format==='reel'?'Новый Reels':format==='photo'?'Новое фото':'Новая карусель',angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}>{format==='reel'?'Создать Reels':format==='photo'?'Обработать фото':'Создать карусель'}</button>)}</div><p>Экспорт MP4 с телефона пока не подключён.</p></section>}
+  <PersonaCloudPanel/>
   <details className="personaCalendarDisclosure"><summary>Контент-план на 90 дней · открыть календарь</summary><PersonaEditorialCalendar onSelectSlot={slot=>select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}/></details>
   <div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>
