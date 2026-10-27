@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import handler from './persona';
+import handler from './persona.js';
 
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs()});
 function request(body:unknown){return new Request('http://localhost/api/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}

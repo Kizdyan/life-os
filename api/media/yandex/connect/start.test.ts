@@ -1,4 +1,4 @@
-import{afterEach,describe,expect,it}from'vitest';import handler from'./start';
+import{afterEach,describe,expect,it}from'vitest';import handler from'./start.js';
 const original={...process.env};afterEach(()=>{process.env={...original}});
 
 describe('Yandex OAuth start function',()=>{
