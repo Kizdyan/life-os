@@ -10,7 +10,7 @@ test('Persona renders a non-silent soundtrack into an MP4',{timeout:180000},asyn
  try{
   const video=join(dir,'source.mp4'),music=join(dir,'music.mp3'),project=join(dir,'project.json'),out=join(dir,'out.mp4');
   const run=(cmd,args)=>{const p=spawnSync(cmd,args,{encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024});assert.equal(p.status,0,p.stderr);return p.stdout};
-  run('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=160x240:r=25','-t','1','-c:v','mpeg4',video]);
+  run('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=160x240:r=25','-f','lavfi','-i','sine=frequency=220:sample_rate=48000','-t','1','-c:v','mpeg4','-c:a','aac',video]);
   run('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=440','-t','2','-c:a','libmp3lame',music]);
   await writeFile(project,JSON.stringify({version:1,width:320,height:480,fps:25,clips:[{path:video,durationSec:0.6},{path:video,durationSec:0.6}],soundtrack:{path:music,startSec:0.2,volume:0.8,originalVolume:1}}));
   run(process.execPath,['tools/persona-timeline-render.mjs',project,out]);
