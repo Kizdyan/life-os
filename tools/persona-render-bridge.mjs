@@ -27,7 +27,7 @@ const server=createServer(async(req,res)=>{
  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
  res.setHeader('Cache-Control','no-store');
  if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Persona-Token'});res.end();return}
- if(req.method!=='GET'||req.url!=='/health'){
+ if(req.method!=='GET'||new URL(req.url||'/', 'http://127.0.0.1').pathname!=='/health'){
   if(req.headers['x-persona-token']!==token){respond(res,401,{error:'Invalid local render token'});return}
  }
  const url=new URL(req.url||'/', 'http://127.0.0.1');
