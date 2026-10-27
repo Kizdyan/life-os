@@ -24,6 +24,8 @@ export interface PersonaProductionBriefInput {
 export interface PersonaProductionBrief {
   version: 1;
   ideaId: string;
+  /** Immutable snapshot of the input angle used to generate this brief. */
+  sourceAngle: string;
   sourceFormat: PersonaIdeaFormat;
   hook: {
     firstSeconds: string;
@@ -96,6 +98,7 @@ export function buildPersonaProductionBrief(
   return {
     version: 1,
     ideaId: idea.id,
+    sourceAngle: idea.angle,
     sourceFormat: idea.format,
     hook: {
       firstSeconds: isStill ? idea.title : hook,
