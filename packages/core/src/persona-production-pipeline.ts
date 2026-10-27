@@ -148,7 +148,9 @@ export function recordPersonaEditorialDecision(
     throw new Error("Editorial decision requires completed structural QA");
   }
   const normalized = normalizeEditorialDecision(decision);
-  if (normalized.decision === "approved" && pipeline.input.idea.angle.trim() !== pipeline.materials.productionBrief?.sourceAngle) {
+  if (normalized.decision === "approved" && (pipeline.input.idea.angle.trim() !== pipeline.materials.productionBrief?.sourceAngle ||
+      pipeline.input.idea.title.trim() !== pipeline.materials.productionBrief?.sourceTitle ||
+      pipeline.input.idea.format !== pipeline.materials.productionBrief?.sourceFormat)) {
     throw new Error("The idea changed after the brief was generated; rebuild and rerun QA");
   }
   if (pipeline.materials.qa.status === "needs_revision" && normalized.decision === "approved") {
