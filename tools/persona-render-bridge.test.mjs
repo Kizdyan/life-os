@@ -21,6 +21,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.equal(forbidden.status,403);
   const origin=await fetch(base+'/health',{headers:{Origin:'https://untrusted.example'}});
   assert.equal(origin.status,403);
+  const healthQuery=await fetch(base+'/health?check=1');
+  assert.equal(healthQuery.status,200);
   const unauthorized=await fetch(base+'/session',{method:'POST',body:'{}'});
   assert.equal(unauthorized.status,401);
   const invalid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,clips:[]})});
