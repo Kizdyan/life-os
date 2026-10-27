@@ -18,6 +18,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.equal(forbidden.status,403);
   const origin=await fetch(base+'/health',{headers:{Origin:'https://untrusted.example'}});
   assert.equal(origin.status,403);
+  const unauthorized=await fetch(base+'/session',{method:'POST',body:'{}'});
+  assert.equal(unauthorized.status,401);
   const invalid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Token':token},body:JSON.stringify({version:1,clips:[]})});
   assert.equal(invalid.status,400);
   const valid=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,width:1080,height:1920,fps:30,clips:[{startSec:0,durationSec:1},{startSec:0,durationSec:1}]})});
@@ -55,5 +57,9 @@ test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg'
   const bytes=new Uint8Array(await download.arrayBuffer());
   assert.ok(bytes.length>1000);
   assert.equal(String.fromCharCode(...bytes.slice(4,8)),'ftyp');
+  const removed=await fetch(base+'/session/'+id,{method:'DELETE',headers:{'X-Persona-Token':token}});
+  assert.equal(removed.status,200);
+  const gone=await fetch(base+'/session/'+id+'/download',{headers:{'X-Persona-Token':token}});
+  assert.equal(gone.status,404);
  }finally{child.kill();await delay(100)}
 });
