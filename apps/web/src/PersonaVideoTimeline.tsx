@@ -62,11 +62,13 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    if(!response.ok){const info=await response.json().catch(()=>({error:'Ошибка локального сервера'}));throw new Error(info.error||'Ошибка рендера')}
    return response;
   }
+  let sessionId:string|undefined;
   try{
    setRenderState('Подключение к локальному FFmpeg...');
    await request('/health');
    const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec}))};
    const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
+   sessionId=created.id;
    for(let i=0;i<clips.length;i++){
     setRenderState('Загрузка исходника '+(i+1)+' из '+clips.length);
     await request('/session/'+created.id+'/clip/'+i,{method:'PUT',body:filesById.current.get(clips[i].id)!});
@@ -80,7 +82,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    window.setTimeout(()=>URL.revokeObjectURL(url),60000);
    setRenderState('MP4 создан и передан на скачивание. Перед публикацией требуется проверка и утверждение.');
   }catch(e){setRenderState('');setError(e instanceof Error?e.message:'Не удалось создать MP4. Запусти локальный мост: npm run media:bridge')}
-  finally{setRendering(false)}
+  finally{if(sessionId){try{await request('/session/'+sessionId,{method:'DELETE'})}catch{}}setRendering(false)}
  }
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
