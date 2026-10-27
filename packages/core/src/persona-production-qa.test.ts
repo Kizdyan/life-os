@@ -82,4 +82,23 @@ describe("evaluatePersonaProductionBrief", () => {
     expect(brief.adaptations.vkClips.durationSec).toBe(total);
   });
 
+  it("rejects script and shot duration drift even when total export duration matches", () => {
+    const brief = buildPersonaProductionBrief({
+      idea: { id: "sync-1", title: "Репетиция", angle: "Действие в кадре", format: "reel" },
+    });
+    brief.script[1].durationSec += 3;
+    const result = evaluatePersonaProductionBrief({ brief, allowedFacts: [] });
+    expect(result.status).toBe("needs_revision");
+    expect(result.structuralChecks.find(check => check.id === "script-shot-sync")?.passed).toBe(false);
+  });
+
+  it("rejects duplicate shot order while preserving duration", () => {
+    const brief = buildPersonaProductionBrief({
+      idea: { id: "sync-2", title: "Скетч", angle: "Показываю сцену", format: "reel" },
+    });
+    brief.shots[1].order = 1;
+    const result = evaluatePersonaProductionBrief({ brief, allowedFacts: [] });
+    expect(result.structuralChecks.find(check => check.id === "script-shot-sync")?.passed).toBe(false);
+  });
+
 });
