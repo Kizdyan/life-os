@@ -45,7 +45,7 @@ const server=createServer(async(req,res)=>{
    const s={id,dir,clips,project:{...project,clips,soundtrack},received:new Set(),musicReceived:false,total:0,rendered:false,busy:false,created:Date.now()};
    sessions.set(id,s);respond(res,200,{id,clips:clips.length});return
   }
-  const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(clip\/(\d+)|render|download))?$/);
+  const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(clip\/(\d+)|music|render|download))?$/);
   const s=match&&sessions.get(match[1]);
   if(!s){respond(res,404,{error:'Session not found'});return}
   if(req.method==='DELETE'&&!match[2]){if(s.busy)throw Error('Session busy');await cleanup(s);respond(res,200,{ok:true});return}
