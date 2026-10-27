@@ -79,7 +79,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    link.href=url;link.download='persona-render.mp4';document.body.appendChild(link);link.click();link.remove();
    window.setTimeout(()=>URL.revokeObjectURL(url),60000);
    setRenderState('MP4 создан и передан на скачивание. Перед публикацией требуется проверка и утверждение.');
-  }catch(e){setRenderState('');setError(e instanceof Error?e.message:'Не удалось создать MP4. Запусти локальный мост: node tools/persona-render-bridge.mjs')}
+  }catch(e){setRenderState('');setError(e instanceof Error?e.message:'Не удалось создать MP4. Запусти локальный мост: npm run media:bridge')}
   finally{setRendering(false)}
  }
  function download() {
@@ -117,6 +117,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный проект</button>
+  <p>Для создания MP4 открой второй терминал в папке проекта и выполни <code>npm run media:bridge</code>. FFmpeg и FFprobe должны быть установлены на компьютере. Веб-интерфейс запускай локально через <code>npm run web:dev</code>.</p>
   <button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Создать MP4 через локальный FFmpeg'}</button>
   {renderState&&<p role="status">{renderState}</p>}
   <p>После обновления страницы исходные видео необходимо снова подготовить в папке source: браузер сохраняет только названия и тайминги.</p>
