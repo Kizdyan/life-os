@@ -16,7 +16,8 @@ describe("buildPersonaProductionBrief", () => {
     expect(brief.hook.firstSeconds).toContain("Разбор репетиционного приёма");
     expect(brief.script.map((beat) => beat.action)).not.toContain("");
     expect(brief.shots).toHaveLength(3);
-    expect(brief.shots.reduce((total, shot) => total + shot.durationSec, 0)).toBe(30);
+    expect(brief.shots.reduce((total, shot) => total + shot.durationSec, 0)).toBe(brief.script.reduce((total, beat) => total + beat.durationSec, 0));
+    expect(brief.shots.every((shot, index) => shot.durationSec === brief.script[index].durationSec)).toBe(true);
     expect(brief.capture).toMatchObject({
       lighting: expect.any(String),
       audio: expect.objectContaining({ recording: expect.any(String) }),
