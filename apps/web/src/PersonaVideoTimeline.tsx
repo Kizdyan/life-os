@@ -8,6 +8,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [playSequence,setPlaySequence]=useState(false);
  const [renderState,setRenderState]=useState('');
  const [musicAccents,setMusicAccents]=useState<number[]>([]);
+ const musicFile=useRef<File|null>(null);
  const [musicStatus,setMusicStatus]=useState('');
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
@@ -134,13 +135,14 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    const health=await (await request('/health')).json();
    if(!health.ok||typeof health.token!=='string')throw new Error('Локальный обработчик не готов');
    token=health.token;
-   const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec}))};
+   const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec})),...(musicFile.current?{soundtrack:{startSec:0,volume:0.8}}:{})};
    const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
    sessionId=created.id;
    for(let i=0;i<clips.length;i++){
     setRenderState('Загрузка исходника '+(i+1)+' из '+clips.length);
     await request('/session/'+created.id+'/clip/'+i,{method:'PUT',body:filesById.current.get(clips[i].id)!});
    }
+   if(musicFile.current){setRenderState('Передача музыкальной дорожки...');await request('/session/'+created.id+'/music',{method:'PUT',body:musicFile.current});}
    setRenderState('FFmpeg собирает MP4...');
    await request('/session/'+created.id+'/render',{method:'POST'});
    setRenderState('Получение готового видео...');
@@ -170,7 +172,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
   <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
   {musicStatus&&<p role="status">{musicStatus}</p>}
-  <p>Анализ выполняется в браузере. Музыка пока не добавляется в экспортируемый MP4: меняются только границы клипов. Проверь их вручную.</p></div>
+  <p>Анализ выполняется в браузере. При локальном рендере выбранная музыка добавляется в MP4 с громкостью 80%, исходный звук клипов приглушается до 20%. Проверь права на музыку и финальный звук.</p></div>
   {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
