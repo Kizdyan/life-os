@@ -93,7 +93,7 @@ async function main() {
     await run('ffmpeg',args);
     const actual = await probe(staged);
     if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
-    const toleranceSec = Math.max(1.5, totalSec * 0.06);
+    const toleranceSec = Math.max(0.25, totalSec * 0.06);
     if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
     const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await rename(staged,output);
