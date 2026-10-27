@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 test('local Persona bridge rejects invalid requests and accepts valid timeline sessions',async()=>{
  const port=48000+Math.floor(Math.random()*1000);
- const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
+ const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{cwd:tmpdir(),env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
  const base='http://127.0.0.1:'+port;
  try{
   let ready=false;
