@@ -17,7 +17,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [nextId,setNextId]=useState(()=>{try{const items=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(items)?Math.max(0,...items.map(item=>Number(item?.id)||0))+1:1}catch{return 1}});
  useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(clips))}catch{}},[clips,storageKey]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
-  const files=Array.from(event.target.files||[]).slice(0,30-clips.length);
+  const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
   const additions:Clip[]=[];
   for(const file of files) {
@@ -37,6 +37,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
       continue;
     }
     if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' уже добавлен');continue}
+    if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
     const id=nextId+additions.length;
     additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
     urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
