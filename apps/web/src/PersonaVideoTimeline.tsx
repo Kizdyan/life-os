@@ -40,6 +40,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function move(index:number,delta:number){const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
+  if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Удалите старые строки и добавьте видео заново.');return}
   if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
   if(new Set(clips.map(clip=>clip.name)).size!==clips.length){setError('Файлы с одинаковыми именами нужно переименовать до импорта');return}
   const project={version:1,width,height,fps,clips:clips.map(clip=>({path:'./source/'+clip.name,startSec:clip.startSec,durationSec:clip.durationSec}))};
@@ -52,6 +53,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <h3>Монтажная последовательность</h3>
   <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Рендер прямо в браузере ещё не подключён.</p>
   <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
+  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена в текущем сеансе. Черновик таймингов сохранился, но видео нужно добавить заново.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
    <label>Начало, сек. <input type="number" min="0" max={clip.sourceDuration} step="0.1" value={clip.startSec} onChange={e=>change(clip.id,{startSec:Number(e.target.value)})}/></label>
