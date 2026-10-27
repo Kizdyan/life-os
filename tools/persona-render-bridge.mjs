@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Local-only Persona rendering bridge. Run: node tools/persona-render-bridge.mjs
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { createWriteStream, createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,8 @@ async function json(req){let chunks=[],n=0;for await(const part of req){n+=part.
 function run(args){return new Promise((ok,fail)=>{const p=spawn(process.execPath,[resolve('tools/persona-timeline-render.mjs'),...args],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let err='';p.stderr.on('data',b=>err=(err+b.toString()).slice(-2000));p.on('error',fail);p.on('close',code=>code===0?ok():fail(Error(err||'Render failed')))})}
 async function cleanup(s){sessions.delete(s.id);await rm(s.dir,{recursive:true,force:true})}
 const server=createServer(async(req,res)=>{
+ const expectedHosts=new Set(['127.0.0.1:'+port,'localhost:'+port]);
+ if(!expectedHosts.has(req.headers.host)){respond(res,403,{error:'Host not allowed'});return}
  const origin=req.headers.origin;
  if(origin&&!origins.has(origin)){respond(res,403,{error:'Origin not allowed'});return}
  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
@@ -57,8 +59,8 @@ const server=createServer(async(req,res)=>{
   }
   if(req.method==='GET'&&match[2]==='download'){
    if(!s.rendered)throw Error('Render not ready');
-   const bytes=await readFile(join(s.dir,'result.mp4'));
-   res.writeHead(200,{'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="persona-render.mp4"','Content-Length':bytes.length});res.end(bytes);return
+   const output=join(s.dir,'result.mp4'),size=(await stat(output)).size;
+   res.writeHead(200,{'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="persona-render.mp4"','Content-Length':size});createReadStream(output).pipe(res);return
   }
   respond(res,404,{error:'Unknown route'})
  }catch(e){respond(res,400,{error:e instanceof Error?e.message:'Request failed'})}
