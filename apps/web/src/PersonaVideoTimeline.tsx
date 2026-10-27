@@ -56,6 +56,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   const body=new FormData();
   body.append('project',JSON.stringify({version:1,width,height,fps,clips:clips.map((c,i)=>({path:'source/'+i+'.mp4',startSec:c.startSec,durationSec:c.durationSec}))}));
   clips.forEach((c,i)=>body.append('clip'+i,filesById.current.get(c.id)!));
+  setError('');
   setRenderState('Локальный обработчик ещё не подключён. Исходники подготовлены, но не отправлены.');
  }
  function download() {
