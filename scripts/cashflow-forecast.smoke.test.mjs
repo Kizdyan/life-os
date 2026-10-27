@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { forecastCashflow } from '../packages/core/src/cashflow-forecast.ts';
+const once=(id,date,amount,direction='expense')=>({id,title:id,firstDate:date,direction,amountKopecks:amount,recurrence:'once',mandatory:true});
+const run=(entries,balance=10000,fromDate='2026-10-01',throughDate='2026-12-31')=>forecastCashflow({entries,startingBalanceKopecks:balance,fromDate,throughDate});
+test('does not invent transactions or mutate the source inputs',()=>{const x=once('a','2026-10-02',120);const r=run([x]); assert.equal(r.occurrences.length,1);assert.equal(x.firstDate,'2026-10-02');assert.equal(r.simulationOnly,true)});
+test('preserves kopecks in integer arithmetic',()=>{const r=run([once('a','2026-10-02',305),once('b','2026-10-03',125,'income')]);assert.equal(r.endingBalanceKopecks,9820)});
+test('flags projected shortfall',()=>{const r=run([once('rent','2026-10-02',12000)]);assert.equal(r.firstShortfallDate,'2026-10-02');assert.equal(r.lowestBalanceKopecks,-2000)});
+test('orders expenses before income on same date for risk monitoring',()=>{const r=run([once('in','2026-10-02',10000,'income'),once('out','2026-10-02',15000)]);assert.equal(r.firstShortfallDate,'2026-10-02');assert.equal(r.endingBalanceKopecks,5000)});
+test('clamps month end repeats correctly',()=>{const r=run([{...once('sub','2026-01-31',100),recurrence:'monthly'}],10000,'2026-01-01','2026-03-31');assert.deepEqual(r.occurrences.map(x=>x.date),['2026-01-31','2026-02-28','2026-03-31'])});
+test('does not duplicate once on future periods',()=>{assert.equal(run([once('a','2026-10-02',100)]).occurrences.length,1)});
+test('supports weekly expenses and optional end date',()=>{const r=run([{...once('weekly','2026-10-01',100),recurrence:'weekly',endDate:'2026-10-15'}]);assert.equal(r.occurrences.length,3)});
+test('rejects invalid dates',()=>assert.throws(()=>run([once('x','2026-02-30',100)])));
+test('rejects invalid amounts and duplicate IDs',()=>{assert.throws(()=>run([once('x','2026-10-01',0)]));assert.throws(()=>run([once('x','2026-10-01',100),once('x','2026-10-02',100)]))});
+test('rejects unreasonable forecasting horizons',()=>assert.throws(()=>run([],10000,'2026-01-01','2028-01-01')));
