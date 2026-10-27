@@ -80,7 +80,7 @@ async function main() {
     if (!info.streams?.some(s=>s.codec_type==='audio')) fail('Soundtrack has no audio');
     const musicDuration = Number(info.format?.duration);
     if (!Number.isFinite(musicDuration) || musicDuration <= 0 || musicDuration > 86400) fail('Invalid soundtrack duration');
-    const startSec = numeric(project.soundtrack.startSec ?? 0,'soundtrack startSec',0,musicDuration);
+    const startSec = numeric(project.soundtrack.startSec ?? 0,'soundtrack startSec',0,Math.max(0,musicDuration-0.001));
     const volume = numeric(project.soundtrack.volume ?? 0.8,'soundtrack volume',0,2);
     const originalVolume = numeric(project.soundtrack.originalVolume ?? 0.2,'original volume',0,2);
     soundtrack = { path:musicPath,startSec,volume,originalVolume,sha256:await hash(musicPath) };
