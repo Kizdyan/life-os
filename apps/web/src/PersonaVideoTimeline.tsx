@@ -57,15 +57,20 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   if(clips.some(c=>c.durationSec<=0||c.startSec<0||c.startSec+c.durationSec>c.sourceDuration+0.01)){setError('Проверь тайминги');return}
   setRendering(true);setError('');
   const base='http://127.0.0.1:47831';
+  let token='';
   async function request(path:string,init?:RequestInit){
-   const response=await fetch(base+path,init);
+   const headers=new Headers(init?.headers);
+   if(token)headers.set('X-Persona-Token',token);
+   const response=await fetch(base+path,{...init,headers});
    if(!response.ok){const info=await response.json().catch(()=>({error:'Ошибка локального сервера'}));throw new Error(info.error||'Ошибка рендера')}
    return response;
   }
   let sessionId:string|undefined;
   try{
    setRenderState('Подключение к локальному FFmpeg...');
-   await request('/health');
+   const health=await (await request('/health')).json();
+   if(!health.ok||typeof health.token!=='string')throw new Error('Локальный обработчик не готов');
+   token=health.token;
    const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec}))};
    const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
    sessionId=created.id;
