@@ -19,7 +19,18 @@ export type PersonaProductionStage =
 export type PersonaProductionStageStatus =
   | "pending"
   | "completed"
-  | "needs_revision";
+  | "needs_revision"
+  | "awaiting_editorial_review"
+  | "requires_fact_review";
+
+export interface PersonaEditorialDecision {
+  decision: "approved" | "rejected";
+  editor: string;
+  comment: string;
+  /** Required if QA found statements that require manual fact review. */
+  factReviewCompleted?: boolean;
+  decidedAt: string;
+}
 
 export interface PersonaProductionPipeline {
   stage: PersonaProductionStage;
@@ -32,6 +43,7 @@ export interface PersonaProductionPipeline {
     shotList?: PersonaProductionBrief["shots"];
     productionBrief?: PersonaProductionBrief;
     qa?: PersonaProductionQaResult;
+    editorialDecision?: PersonaEditorialDecision;
   };
 }
 
@@ -111,11 +123,12 @@ export function advancePersonaProductionPipeline(
       }
       return {
         ...pipeline,
-        stage: "READY_FOR_SHOOT",
+        stage: "QA",
         statuses: {
           ...pipeline.statuses,
-          QA: "completed",
-          READY_FOR_SHOOT: "completed",
+          QA: qa.status === "requires_fact_review"
+            ? "requires_fact_review"
+            : "awaiting_editorial_review",
         },
         materials: { ...pipeline.materials, qa },
       };
@@ -124,6 +137,45 @@ export function advancePersonaProductionPipeline(
     case "READY_FOR_SHOOT":
       return pipeline;
   }
+}
+
+/** Records a named human decision; only an approval can release a shoot-ready brief. */
+export function recordPersonaEditorialDecision(
+  pipeline: PersonaProductionPipeline,
+  decision: PersonaEditorialDecision,
+): PersonaProductionPipeline {
+  if (pipeline.stage !== "QA" || !pipeline.materials.qa) {
+    throw new Error("Editorial decision requires completed structural QA");
+  }
+  const normalized = normalizeEditorialDecision(decision);
+  if (pipeline.materials.qa.status === "needs_revision" && normalized.decision === "approved") {
+    throw new Error("A brief with failed structural QA cannot be approved");
+  }
+  if (
+    normalized.decision === "approved" &&
+    pipeline.materials.qa.factReview.status === "requires_fact_review" &&
+    normalized.factReviewCompleted !== true
+  ) {
+    throw new Error("Fact review must be completed before approval");
+  }
+  if (normalized.decision === "rejected") {
+    return {
+      ...pipeline,
+      stage: "QA",
+      statuses: { ...pipeline.statuses, QA: "needs_revision" },
+      materials: { ...pipeline.materials, editorialDecision: normalized },
+    };
+  }
+  return {
+    ...pipeline,
+    stage: "READY_FOR_SHOOT",
+    statuses: {
+      ...pipeline.statuses,
+      QA: "completed",
+      READY_FOR_SHOOT: "completed",
+    },
+    materials: { ...pipeline.materials, editorialDecision: normalized },
+  };
 }
 
 function withStage(
@@ -137,4 +189,19 @@ function withStage(
     statuses: { ...pipeline.statuses, [stage]: "completed" },
     materials,
   };
+}
+
+function normalizeEditorialDecision(
+  decision: PersonaEditorialDecision,
+): PersonaEditorialDecision {
+  const editor = requireText(decision.editor, "editor");
+  const comment = requireText(decision.comment, "comment");
+  const decidedAt = requireText(decision.decidedAt, "decidedAt");
+  return { ...decision, editor, comment, decidedAt };
+}
+
+function requireText(value: string, name: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`${name} must be a non-empty string`);
+  return normalized;
 }

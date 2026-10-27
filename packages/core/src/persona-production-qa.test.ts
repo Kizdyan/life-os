@@ -3,7 +3,7 @@ import { buildPersonaProductionBrief } from "./persona-production-brief";
 import { evaluatePersonaProductionBrief } from "./persona-production-qa";
 
 describe("evaluatePersonaProductionBrief", () => {
-  it("passes a structurally complete brief but leaves editorial judgement pending", () => {
+  it("requires fact review for free-form script claims even when the structure is complete", () => {
     const brief = buildPersonaProductionBrief({
       idea: {
         id: "idea-1",
@@ -19,8 +19,10 @@ describe("evaluatePersonaProductionBrief", () => {
       allowedFacts: ["Автор репетирует музыкальный материал."],
     });
 
-    expect(result.status).toBe("pass");
+    expect(result.status).toBe("requires_fact_review");
     expect(result.structuralChecks.every((check) => check.passed)).toBe(true);
+    expect(result.factReview.unverifiedFields).toContain("script[1].line");
+    expect(result.factReview.message).toContain("не доказывает отсутствие выдуманных фактов");
     expect(result.editorialReview.state).toBe("pending");
     expect(result.editorialReview.questions).toContain(
       "Сохраняет ли материал индивидуальность автора?",

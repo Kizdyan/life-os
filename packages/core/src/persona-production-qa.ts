@@ -1,6 +1,9 @@
 import type { PersonaProductionBrief } from "./persona-production-brief";
 
-export type PersonaProductionQaStatus = "pass" | "needs_revision";
+export type PersonaProductionQaStatus =
+  | "pass"
+  | "needs_revision"
+  | "requires_fact_review";
 
 export interface PersonaProductionStructuralCheck {
   id:
@@ -17,6 +20,12 @@ export interface PersonaProductionStructuralCheck {
 export interface PersonaProductionQaResult {
   status: PersonaProductionQaStatus;
   structuralChecks: PersonaProductionStructuralCheck[];
+  factReview: {
+    status: "not_required" | "requires_fact_review";
+    /** Fields with author- or model-supplied wording that structure cannot verify. */
+    unverifiedFields: string[];
+    message: string;
+  };
   /**
    * These questions require a human editorial decision. They are deliberately
    * not collapsed into an automatic quality score.
@@ -38,6 +47,7 @@ export function evaluatePersonaProductionBrief(input: {
 }): PersonaProductionQaResult {
   const { brief } = input;
   const totalDurationSec = sumDurations(brief);
+  const unverifiedFields = collectUnverifiedFields(brief);
   const checks: PersonaProductionStructuralCheck[] = [
     {
       id: "script-completeness",
@@ -99,9 +109,21 @@ export function evaluatePersonaProductionBrief(input: {
     },
   ];
 
+  const structuralPass = checks.every((check) => check.passed);
   return {
-    status: checks.every((check) => check.passed) ? "pass" : "needs_revision",
+    status: !structuralPass
+      ? "needs_revision"
+      : unverifiedFields.length > 0
+        ? "requires_fact_review"
+        : "pass",
     structuralChecks: checks,
+    factReview: {
+      status: unverifiedFields.length > 0 ? "requires_fact_review" : "not_required",
+      unverifiedFields,
+      message: unverifiedFields.length > 0
+        ? "Структурная проверка не доказывает отсутствие выдуманных фактов в этих авторских утверждениях; нужна ручная сверка источников."
+        : "Свободных фактических утверждений, требующих отдельной сверки, не обнаружено.",
+    },
     editorialReview: {
       state: "pending",
       questions: [
@@ -112,6 +134,17 @@ export function evaluatePersonaProductionBrief(input: {
       ],
     },
   };
+}
+
+function collectUnverifiedFields(brief: PersonaProductionBrief): string[] {
+  const fields: string[] = [];
+  if (isText(brief.hook.firstSeconds)) fields.push("hook.firstSeconds");
+  for (const [index, beat] of brief.script.entries()) {
+    if (isText(beat.line) && beat.line !== "Сохраните эту мысль и попробуйте применить её в своей практике.") {
+      fields.push(`script[${index}].line`);
+    }
+  }
+  return fields;
 }
 
 function sumDurations(brief: PersonaProductionBrief): number {
