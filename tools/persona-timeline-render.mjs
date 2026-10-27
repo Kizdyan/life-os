@@ -110,7 +110,7 @@ async function main() {
       const assembled=join(tempDir,'assembled.mp4');
       await run('ffmpeg',[...args.slice(0,-1),assembled]);
       const filter='[0:a]volume='+soundtrack.originalVolume+'[original];[1:a]volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0[a]';
-      await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-ss',String(soundtrack.startSec),'-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
+      await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
     } else await run('ffmpeg',args);
     const actual = await probe(staged);
     if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
