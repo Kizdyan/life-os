@@ -26,6 +26,13 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
      video.onloadedmetadata=()=>{const d=video.duration;video.removeAttribute('src');video.load();Number.isFinite(d)&&d>0?resolve(d):reject(Error('Не удалось прочитать длительность'))};
      video.onerror=()=>reject(Error('Невозможно открыть '+file.name));video.src=url;
     });
+    const old=clips.find(clip=>clip.name===file.name&&!urls.current.has(clip.id));
+    if(old){
+      if(Math.abs(old.sourceDuration-duration)>0.5){setError('Длительность файла '+file.name+' отличается от сохранённого исходника');continue}
+      urls.current.set(old.id,URL.createObjectURL(file));
+      setPreviewId(old.id);
+      continue;
+    }
     const id=nextId+additions.length;
     additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
     urls.current.set(id,URL.createObjectURL(file));
@@ -55,7 +62,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <h3>Монтажная последовательность</h3>
   <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Рендер прямо в браузере ещё не подключён.</p>
   <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
-  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена в текущем сеансе. Черновик таймингов сохранился, но видео нужно добавить заново.</p>}
+  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
    <label>Начало, сек. <input type="number" min="0" max={clip.sourceDuration} step="0.1" value={clip.startSec} onChange={e=>change(clip.id,{startSec:Number(e.target.value)})}/></label>
