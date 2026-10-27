@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const SAMPLE_RATE = 11025;
 const HOP = 256;
