@@ -3,9 +3,10 @@ interface Clip { id:number; name:string; startSec:number; durationSec:number; so
 export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
  const urls=useRef(new Map<number,string>());
+ const filesById=useRef(new Map<number,File>());
  const [previewId,setPreviewId]=useState<number|null>(null);
  const [playSequence,setPlaySequence]=useState(false);
- useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear()},[]);
+ useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState(30);
  const [error,setError]=useState('');
@@ -29,14 +30,14 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
     const old=clips.find(clip=>clip.name===file.name&&!urls.current.has(clip.id));
     if(old){
       if(Math.abs(old.sourceDuration-duration)>0.5){setError('Длительность файла '+file.name+' отличается от сохранённого исходника');continue}
-      urls.current.set(old.id,URL.createObjectURL(file));
+      urls.current.set(old.id,URL.createObjectURL(file));filesById.current.set(old.id,file);
       setPreviewId(old.id);
       continue;
     }
     if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' уже добавлен');continue}
     const id=nextId+additions.length;
     additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
-    urls.current.set(id,URL.createObjectURL(file));
+    urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
    finally{URL.revokeObjectURL(url)}
   }
@@ -45,7 +46,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   event.target.value='';
  }
  function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
- function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
+ function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
  function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  function download() {
