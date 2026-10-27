@@ -105,7 +105,12 @@ async function main() {
     for (const segment of segments) args.push('-i',segment);
     const concat = segments.map((_, i) => '[' + i + ':v:0][' + i + ':a:0]').join('') + 'concat=n=' + segments.length + ':v=1:a=1[v][a]';
     args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
-    await run('ffmpeg',args);
+    if (soundtrack) {
+      const assembled=join(tempDir,'assembled.mp4');
+      await run('ffmpeg',[...args.slice(0,-1),assembled]);
+      const filter='[0:a]volume=0.2[original];[1:a]volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0[a]';
+      await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-ss',String(soundtrack.startSec),'-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
+    } else await run('ffmpeg',args);
     const actual = await probe(staged);
     if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
     const toleranceSec = Math.max(0.25, totalSec * 0.06);
