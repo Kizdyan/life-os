@@ -35,6 +35,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   assert.equal(valid.status,200);
   const data=await valid.json();
   assert.match(data.id,/^[0-9a-f-]{36}$/);
+  const missingSession=await fetch(base+'/session/00000000-0000-4000-8000-000000000000/download',{headers:{'X-Persona-Token':token}});
+  assert.equal(missingSession.status,404);
   const premature=await fetch(base+'/session/'+data.id+'/render',{method:'POST',headers:{'X-Persona-Token':token}});
   assert.equal(premature.status,400);
  }finally{child.kill();await delay(100)}
