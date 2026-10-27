@@ -7,6 +7,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [previewId,setPreviewId]=useState<number|null>(null);
  const [playSequence,setPlaySequence]=useState(false);
  const [renderState,setRenderState]=useState('');
+ const [musicAccents,setMusicAccents]=useState<number[]>([]);
+ const [musicStatus,setMusicStatus]=useState('');
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
@@ -52,6 +54,66 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
  function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
+ async function analyzeMusic(file:File|undefined){
+  if(!file)return;
+  setError('');setMusicStatus('Анализ аудио…');setMusicAccents([]);
+  try{
+   if(file.size>80*1024*1024)throw new Error('Аудиофайл должен быть меньше 80 МБ');
+   const AudioContextCtor=window.AudioContext;
+   if(!AudioContextCtor)throw new Error('Браузер не поддерживает анализ аудио');
+   const context=new AudioContextCtor();
+   let audio:AudioBuffer;
+   try{audio=await context.decodeAudioData(await file.arrayBuffer())}finally{await context.close()}
+   const rate=audio.sampleRate, hop=Math.max(256,Math.round(rate*0.025)), windowSize=hop*2;
+   const channels=Array.from({length:audio.numberOfChannels},(_,i)=>audio.getChannelData(i));
+   const rms:number[]=[];
+   for(let pos=0;pos+windowSize<audio.length;pos+=hop){
+    let sum=0;
+    for(let j=pos;j<pos+windowSize;j+=2){
+     let value=0;for(const channel of channels)value+=channel[j]/channels.length;
+     sum+=value*value;
+    }
+    rms.push(Math.sqrt(sum/Math.ceil(windowSize/2)));
+   }
+   const flux=rms.map((v,i)=>Math.max(0,v-(rms[i-1]??0)));
+   const points:{time:number;strength:number}[]=[];
+   for(let i=12;i<flux.length-12;i++){
+    const local=flux.slice(i-12,i+13);
+    const mean=local.reduce((a,b)=>a+b,0)/local.length;
+    const variance=local.reduce((a,b)=>a+(b-mean)**2,0)/local.length;
+    if(flux[i]>Math.max(0.002,mean+1.2*Math.sqrt(variance))&&flux[i]>=flux[i-1]&&flux[i]>flux[i+1])
+     points.push({time:i*hop/rate,strength:flux[i]});
+   }
+   const selected:{time:number;strength:number}[]=[];
+   for(const point of points.sort((a,b)=>b.strength-a.strength)){
+    if(selected.every(other=>Math.abs(other.time-point.time)>=0.2))selected.push(point);
+   }
+   const times=selected.map(p=>Number(p.time.toFixed(3))).sort((a,b)=>a-b);
+   setMusicAccents(times);setMusicStatus('Найдено музыкальных акцентов: '+times.length+'. Это кандидаты, а не обязательные склейки.');
+  }catch(e){setMusicStatus('');setError(e instanceof Error?e.message:'Не удалось проанализировать музыку')}
+ }
+ function alignCutsToMusic(){
+  if(!musicAccents.length||clips.length<2){setError('Нет музыкальных акцентов или недостаточно клипов');return}
+  const total=clips.reduce((s,c)=>s+c.durationSec,0);
+  const boundaries:number[]=[];let cumulative=0;
+  for(const clip of clips.slice(0,-1)){cumulative+=clip.durationSec;boundaries.push(cumulative)}
+  const used=new Set<number>();let previous=0;
+  const snapped:number[]=[];
+  for(let i=0;i<boundaries.length;i++){
+   const target=boundaries[i];
+   const remaining=clips.length-i-1;
+   const candidates=musicAccents.filter(t=>!used.has(t)&&t>previous+0.25&&t<total-remaining*0.25&&Math.abs(t-target)<=0.65);
+   if(!candidates.length){setError('Не удалось согласовать все склейки с акцентами в пределах 0,65 сек. Таймлайн не изменён.');return}
+   const chosen=candidates.reduce((best,t)=>Math.abs(t-target)<Math.abs(best-target)?t:best);
+   snapped.push(chosen);used.add(chosen);previous=chosen;
+  }
+  const lengths=clips.map((_,i)=>Number(((snapped[i]??total)-(snapped[i-1]??0)).toFixed(3)));
+  if(lengths.some((length,i)=>length<0.25||length>clips[i].sourceDuration-clips[i].startSec+0.001)){
+   setError('Для выбранных музыкальных акцентов не хватает исходного видео. Таймлайн не изменён.');return;
+  }
+  setClips(old=>old.map((clip,i)=>({...clip,durationSec:lengths[i]})));
+  setError('');setMusicStatus('Границы клипов скорректированы по музыкальным акцентам. Проверь монтаж перед рендером.');
+ }
  async function renderLocal(){
   if(rendering)return;
   if(clips.length<2||clips.some(c=>!filesById.current.has(c.id))){setError('Загрузи все исходники перед рендером');return}
@@ -105,6 +167,10 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <h3>Монтажная последовательность</h3>
   <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Для рендера из интерфейса запусти локальный мост: node tools/persona-render-bridge.mjs. Исходники передаются только на 127.0.0.1.</p>
   <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
+  <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
+  <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
+  {musicStatus&&<p role="status">{musicStatus}</p>}
+  <p>Анализ выполняется в браузере. Музыка пока не добавляется в экспортируемый MP4: меняются только границы клипов. Проверь их вручную.</p></div>
   {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
