@@ -43,7 +43,9 @@ jobs:
       - name: Persona calendar and distribution regression tests
         run: npm run persona:core:test
       - name: Verify full Persona media pipeline with real FFmpeg
-        run: npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+        run: |
+          set -o pipefail
+          npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
       - name: Run tests with captured diagnostics
         run: |
           set -o pipefail
