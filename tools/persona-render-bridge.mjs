@@ -52,7 +52,7 @@ const server=createServer(async(req,res)=>{
   if(req.method==='DELETE'&&!match[2]){if(s.busy)throw Error('Session busy');await cleanup(s);respond(res,200,{ok:true});return}
   if(req.method==='PUT'&&match[2]?.startsWith('clip/')){
    const i=Number(match[3]),length=Number(req.headers['content-length']);
-   if(!Number.isInteger(i)||i<0||i>=s.clips.length||s.received.has(i)||s.busy||!Number.isSafeInteger(length)||length<1||length>MAX_CLIP||s.total+length>MAX_TOTAL)throw Error('Invalid clip upload');
+   if(!Number.isInteger(i)||i<0||i>=s.clips.length||s.received.has(i)||s.rendered||s.busy||!Number.isSafeInteger(length)||length<1||length>MAX_CLIP||s.total+length>MAX_TOTAL)throw Error('Invalid clip upload');
    s.busy=true;const file=join(s.dir,'source',i+'.mp4');
    try{await pipeline(req,createWriteStream(file,{flags:'wx'}));if((await stat(file)).size!==length)throw Error('Upload size mismatch');s.received.add(i);s.total+=length;respond(res,200,{ok:true,index:i})}
    catch(e){await rm(file,{force:true});throw e}finally{s.busy=false}
