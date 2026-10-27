@@ -39,7 +39,7 @@ test('end-to-end local bridge renders and downloads a real MP4',{skip:!['ffmpeg'
   const created=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,width:1080,height:1920,fps:25,clips:[{startSec:0,durationSec:0.6},{startSec:0,durationSec:0.6}]})});
   assert.equal(created.status,200);
   const {id}=await created.json();
-  const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=160x240:rate=25','-t','1','-c:v','mpeg4','-f','mp4','pipe:1'],{maxBuffer:8*1024*1024,timeout:30000});
+  const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=160x240:rate=25','-t','1','-c:v','mpeg4','-movflags','+frag_keyframe+empty_moov','-f','mp4','pipe:1'],{maxBuffer:8*1024*1024,timeout:30000});
   assert.equal(generated.status,0,generated.stderr?.toString());
   for(let i=0;i<2;i++){
    const upload=await fetch(base+'/session/'+id+'/clip/'+i,{method:'PUT',body:generated.stdout});
