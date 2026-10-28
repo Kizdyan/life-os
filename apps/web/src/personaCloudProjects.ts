@@ -15,9 +15,16 @@ function endpoint(c:CloudCredentials,path:string){
  if(!c.publishableKey||!c.accessToken||c.accessToken===c.publishableKey)throw Error('Sign in before syncing projects');
  return new URL(path,base).toString();
 }
+export class PersonaCloudRequestError extends Error {
+ constructor(public readonly status:number,message:string){super(message);this.name='PersonaCloudRequestError'}
+}
 async function request<T>(c:CloudCredentials,path:string,body?:unknown):Promise<T>{
  const response=await fetch(endpoint(c,path),{method:body===undefined?'GET':'POST',headers:{apikey:c.publishableKey,Authorization:'Bearer '+c.accessToken,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
- if(!response.ok)throw Error('Persona cloud request failed ('+response.status+'). Local draft was not changed.');
+ if(!response.ok){
+  const status=response.status;
+  const message=status===401?'Сессия истекла или недействительна. Войди заново. Локальный черновик сохранён.':status===403?'Нет доступа к облачному проекту. Локальный черновик сохранён.':status===409?'Конфликт версий: облачный проект изменился. Обнови данные перед повторным сохранением. Локальный черновик сохранён.':status===429?'Слишком много запросов. Повтори позже. Локальный черновик сохранён.':'Ошибка облака ('+status+'). Локальный черновик сохранён.';
+  throw new PersonaCloudRequestError(status,message);
+ }
  return response.json() as Promise<T>;
 }
 export function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
