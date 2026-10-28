@@ -101,6 +101,10 @@ export async function inspectLocalSkillDirectory(directory) {
       totalBytes += data.length;
       files.push({ path: subpath, sizeBytes: data.length, sha256: SHA(data) });
       contentByPath.set(subpath, text);
+      if (/\.(?:js|jsx|mjs|cjs|ts|tsx)$/i.test(subpath) &&
+          /\bfetch\s*\(|@maptiler\/sdk|https?:\/\/(?:api\.maptiler\.com|tile\.googleapis\.com)/i.test(text)) {
+        findings.push(issue(subpath, 'external_network_dependency', 'review'));
+      }
       for (const [rule, regex, severity] of RULES) {
         if (regex.test(text)) findings.push(issue(subpath, rule, severity));
       }
