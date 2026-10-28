@@ -16,7 +16,6 @@ const MAX_FILE_BYTES = 512_000;
 const TEXT_FILE = /(?:\.(?:md|mdx|txt|json|yaml|yml|toml|js|jsx|mjs|cjs|ts|tsx|py|sh|bash|ps1|bat|css|html|xml|sql|svg|geojson)|^Dockerfile$|^Makefile$)$/i;
 const RULES = [
   ['remote_shell', /(?:curl|wget)[^\n]{0,300}\|\s*(?:sudo\s+)?(?:sh|bash)\b/i, 'block'],
-  ['embedded_svg_script', /<script\b|\bonload\s*=|(?:xlink:)?href\s*=\s*["']\s*javascript:/i, 'block'],
   ['approval_bypass', /ignore (?:all )?(?:previous|prior|system) instructions|bypass (?:security|human )?approval/i, 'block'],
   ['destructive_root', /\brm\s+-[rRfF]{1,5}\s+\/(?:\s|$)/m, 'block'],
   ['secrets_access', /(?:process\.env|os\.environ|\.aws\/credentials|\.ssh\/id_|\bprintenv\b)/i, 'review'],
@@ -86,9 +85,21 @@ export async function inspectLocalSkillDirectory(directory) {
         findings.push(issue(subpath, 'embedded_null_byte', 'block'));
         continue;
       }
+      let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(data); }
+      catch {
+        inventoryComplete = false;
+        findings.push(issue(subpath, 'invalid_utf8', 'block'));
+        continue;
+      }
+      // SVG payloads may contain executable markup. Search only actual SVG
+      // resources, not documentation that merely discusses <script> tags.
+      if (/\.svg$/i.test(subpath) &&
+          /<script\b|\bon[a-z]+\s*=|(?:xlink:)?href\s*=\s*["']\s*javascript:|<foreignObject\b/i.test(text)) {
+        findings.push(issue(subpath, 'embedded_svg_script', 'block'));
+      }
       totalBytes += data.length;
       files.push({ path: subpath, sizeBytes: data.length, sha256: SHA(data) });
-      const text = data.toString('utf8');
       contentByPath.set(subpath, text);
       for (const [rule, regex, severity] of RULES) {
         if (regex.test(text)) findings.push(issue(subpath, rule, severity));
