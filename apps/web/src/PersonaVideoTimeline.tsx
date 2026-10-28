@@ -171,7 +171,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  }
  return <section className="captureCard" aria-label="Монтажная последовательность Persona">
   <h3>Монтажная последовательность</h3>
-  <p>Собери порядок и тайминги клипов. Сейчас интерфейс экспортирует монтажный проект JSON, а MP4 создаётся локальной командой FFmpeg. Для рендера из интерфейса запусти локальный мост: node tools/persona-render-bridge.mjs. Исходники передаются только на 127.0.0.1.</p>
+  <p>Добавь видео, выбери порядок и настрой длину клипов. Монтажный план сохраняется на этом устройстве.</p>
   <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
   <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
   <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
@@ -198,12 +198,11 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <p>Итого: {clips.reduce((sum,clip)=>sum+clip.durationSec,0).toFixed(1)} сек.</p>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
-  <button type="button" className="primary" onClick={download}>Сохранить монтажный проект</button>
-  <p>Для создания MP4 открой второй терминал в папке проекта и выполни <code>npm run media:bridge</code>. FFmpeg и FFprobe должны быть установлены на компьютере. Веб-интерфейс запускай локально через <code>npm run web:dev</code>.</p>
-  <button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Создать MP4 через локальный FFmpeg'}</button>
+  <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>
+  <p>Экспорт MP4 на iPhone пока недоступен. План можно продолжить на совместимом компьютере.</p>
   {renderState&&<p role="status">{renderState}</p>}
-  <p>После обновления страницы исходные видео необходимо снова подготовить в папке source: браузер сохраняет только названия и тайминги.</p>
-  <p>Для рендера помести видео в папку source рядом с JSON и выполни: npm run media:timeline -- persona-timeline.json export.mp4</p>
+  <p>После перезагрузки выбери исходные видео повторно: браузер хранит их названия, порядок и тайминги, но не сами файлы.</p>
+  <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
   {error&&<p role="alert">{error}</p>}
  </section>;
 }

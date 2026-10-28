@@ -30,7 +30,7 @@ export default function App() {
   const [viewDate, setViewDate] = useState(() => planLocalDate(new Date()));
   const viewDateRef = useRef(viewDate);
   const [page, setPage] = useState<'today' | 'persona'>(() =>
-    location.hash === '#persona' ? 'persona' : 'today');
+    location.hash.startsWith('#persona') ? 'persona' : 'today');
   const [items, setItems] = useState<Item[]>(() => cachedToday(planLocalDate(new Date())));
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -73,7 +73,7 @@ export default function App() {
   }, [viewDate]);
 
   useEffect(() => {
-    const sync = () => setPage(location.hash === '#persona' ? 'persona' : 'today');
+    const sync = () => setPage(location.hash.startsWith('#persona') ? 'persona' : 'today');
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
   }, []);

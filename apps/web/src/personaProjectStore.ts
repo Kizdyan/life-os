@@ -17,6 +17,7 @@ export type PersonaProject={
  socialCaptions:unknown|null;
  stage:PersonaProjectStage;
  qa:unknown|null;
+ lastOpenStep?:string;
  createdAt:string;
  updatedAt:string;
  schemaVersion:1;
@@ -33,7 +34,7 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isProject(value:unknown):value is PersonaProject{
  if(!value||typeof value!=='object')return false;
  const project=value as Partial<PersonaProject>;
- return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs);
+ return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string');
 }
 function emptyCollection():PersonaProjectCollection{return {schemaVersion:1,activeProjectId:null,projects:[]}}
 function readCollection(storage:PersonaProjectStorage):PersonaProjectCollection|null{
