@@ -19,6 +19,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
  const [fps,setFps]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).fps);
  const [error,setError]=useState('');
+ const [notice,setNotice]=useState('');
  const [width,setWidth]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).width);
  const [height,setHeight]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).height);
  useEffect(()=>{try{localStorage.setItem(settingsKey,JSON.stringify({width,height,fps}))}catch{}},[width,height,fps,settingsKey]);
@@ -169,14 +170,16 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  }
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
-  if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Повторно выберите исходные файлы.');return}
-  if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
-  if(new Set(clips.map(clip=>clip.name)).size!==clips.length){setError('Файлы с одинаковыми именами нужно переименовать до импорта');return}
+   if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
+  if(new Set(clips.map(clip=>clip.name.toLocaleLowerCase())).size!==clips.length){setError('Файлы с одинаковыми именами нужно переименовать до импорта');return}
+  if(clips.some(clip=>!clip.name||clip.name==='.'||clip.name==='..'||/[\\/\x00-\x1f]/.test(clip.name))){setError('Недопустимое имя исходного файла в монтажном плане');return}
   const project={version:1,width,height,fps,clips:clips.map(clip=>({path:'./source/'+clip.name,startSec:clip.startSec,durationSec:clip.durationSec}))};
   const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);const link=document.createElement('a');
   link.href=url;link.download='persona-timeline.json';document.body.appendChild(link);link.click();link.remove();
   window.setTimeout(()=>URL.revokeObjectURL(url),60000);setError('');
+  const missing=clips.filter(clip=>!filesById.current.has(clip.id)).length;
+  setNotice(missing?('План сохранён без '+missing+' исходников. Их потребуется снова выбрать или скопировать в папку source при рендере.'):'Монтажный план сохранён. Видео в JSON не включены.');
  }
  return <section className="captureCard" aria-label="Монтажная последовательность Persona">
   <h3>Монтажная последовательность</h3>
@@ -208,7 +211,8 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>
-  <p>Экспорт MP4 на iPhone пока недоступен. План можно продолжить на совместимом компьютере.</p>
+  <p>Экспорт MP4 на iPhone пока недоступен. JSON можно скачать и без повторной загрузки исходников; самих видео он не содержит.</p>
+  {notice&&<p role="status">{notice}</p>}
   {renderState&&<p role="status">{renderState}</p>}
   <p>После перезагрузки выбери исходные видео повторно: браузер сохраняет названия, размер, порядок, тайминги и параметры экспорта, но не сами видеофайлы. Перед рендером проверь соответствие кадров исходникам.</p>
   <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
