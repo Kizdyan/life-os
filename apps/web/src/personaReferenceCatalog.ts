@@ -37,7 +37,7 @@ export function normalizedReferenceStem(name:string):string {
   return name.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
 }
 export function referenceId(item: Pick<ReferenceItem,'name'|'type'|'sizeBytes'|'sha256'|'lastModified'>): string {
-  return JSON.stringify([item.name,item.type,item.sizeBytes,item.sha256,item.lastModified]);
+  return JSON.stringify([item.name,item.type,item.sizeBytes,item.sha256 ?? ('unhashed:'+String(item.lastModified ?? 'unknown'))]);
 }
 export function suggestedReferenceCategory(name:string):ReferenceCategory {
   const lower=name.toLowerCase();
