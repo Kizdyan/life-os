@@ -144,3 +144,25 @@ describe('Persona cloud writes stay explicit and revision-aware',()=>{
   await expect(updateCloudProject(credentials,{projectId:valid.id,expectedRevision:2,snapshot:{},mutationKey:'update-3'})).rejects.toMatchObject({status:409});
  });
 });
+
+describe('Persona cloud project safety limit',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const credentials={url:'https://example.supabase.co',publishableKey:'public-key',accessToken:'user-jwt'};
+ it('accepts exactly 1000 projects after checking that no extra record exists',async()=>{
+  const fetchMock=vi.fn().mockImplementation(async(url:string)=>{
+   const offset=Number(new URL(url).searchParams.get('offset'));
+   return {ok:true,json:async()=>offset===1000?[]:Array.from({length:50},(_,i)=>({...valid,id:'id-'+(offset+i)}))};
+  });
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(listCloudProjects(credentials)).resolves.toHaveLength(1000);
+  expect(fetchMock).toHaveBeenCalledTimes(21);
+  expect(fetchMock.mock.calls[20][0]).toContain('limit=1&offset=1000');
+ });
+ it('rejects 1001 projects rather than returning an incomplete list',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async(url:string)=>{
+   const offset=Number(new URL(url).searchParams.get('offset'));
+   return {ok:true,json:async()=>offset===1000?[{...valid,id:'overflow'}]:Array.from({length:50},(_,i)=>({...valid,id:'id-'+(offset+i)}))};
+  }));
+  await expect(listCloudProjects(credentials)).rejects.toThrow(/слишком большой/);
+ });
+});
