@@ -188,6 +188,7 @@ export function inspectSkillFiles(files: readonly SkillTextFile[], inventoryComp
       ["Network transmission", /(?:curl|wget)[^\n]{0,300}(?:--data|--upload-file|-X\s+POST)/i, "review"],
       ["Dynamic execution", /(?:child_process|subprocess|\beval\s*\(|\bexec\s*\()/i, "review"],
       ["Global package installation", /\b(?:npm|pnpm|yarn)\s+(?:install|add)\s+-g\b/i, "review"],
+      ["Skill installer with automatic global confirmation", /\b(?:npx\s+)?skills\s+add[^\n]{0,160}(?:-g\b|--global|--yes|-y\b)/i, "review"],
     ];
     for (const [rule, pattern, severity] of checks) {
       if (pattern.test(file.content)) findings.push({ path: file.path, rule, severity });
