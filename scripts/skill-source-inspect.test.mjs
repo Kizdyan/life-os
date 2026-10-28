@@ -104,3 +104,19 @@ test('An SVG event handler is blocked, even if not named onload',async()=>fixtur
  assert.ok(result.findings.some(x=>x.rule==='embedded_svg_script'));
  assert.equal(result.staticCheckPassed,false);
 }));
+
+test('Flags externally keyed map services in Remotion code for explicit review',async()=>fixture(async dir=>{
+ await writeFile(join(dir,'SKILL.md'),'# Maps\n');
+ await writeFile(join(dir,'MapTiler.tsx'),'const key = process.env.REMOTION_MAPTILER_KEY;\nconst url = "https://api.maptiler.com/tiles?key=" + key;\n');
+ const r=await inspectLocalSkillDirectory(dir);
+ assert.ok(r.findings.some(x=>x.rule==='external_network_dependency'));
+ assert.ok(r.findings.some(x=>x.rule==='secrets_access'));
+ assert.equal(r.staticCheckPassed,false);
+ assert.equal(r.humanReviewRequired,true);
+}));
+test('Documents mentioning MapTiler URLs do not claim executable network dependencies',async()=>fixture(async dir=>{
+ await writeFile(join(dir,'SKILL.md'),'# Maps\n');
+ await writeFile(join(dir,'readme.md'),'See https://api.maptiler.com for public documentation.');
+ const r=await inspectLocalSkillDirectory(dir);
+ assert.ok(!r.findings.some(x=>x.rule==='external_network_dependency'));
+}));
