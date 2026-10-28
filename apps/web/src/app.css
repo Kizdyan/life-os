@@ -29,3 +29,18 @@
 .referencePreviewHead b{overflow-wrap:anywhere}
 .referencePreview img,.referencePreview video{display:block;max-width:100%;width:100%;max-height:60vh;object-fit:contain;border-radius:10px;background:#f0f0ee}
 @media(max-width:380px){header h1{font-size:29px}.erika{padding:10px 12px;font-size:12px}.referenceStats b{font-size:19px}.referenceStats span{font-size:10px}}
+
+
+.referenceSearch{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,1fr);gap:10px}
+.referenceSearch label{display:grid;gap:5px;font-size:12px;color:#666}
+.referenceSearch input,.referenceSearch select{width:100%;min-width:0;font:inherit;font-size:14px;padding:10px;border:1px solid #ddd;border-radius:12px;background:#fff;color:#171717}
+.referencePlan{display:grid;gap:12px;background:#fff;border:1px solid #e8e8e2;border-radius:18px;padding:16px;min-width:0}
+.referencePlan h3{margin:0 0 6px}
+.referencePlan p{font-size:13px;line-height:1.5;color:#555;margin:0}
+.referencePlan>button{border:0;border-radius:12px;background:#171717;color:#fff;padding:12px;font:inherit;font-size:13px;font-weight:600}
+.referencePlanItems{display:grid;gap:7px;max-height:300px;overflow-y:auto}
+.referencePlanItems>div{min-width:0;display:grid;gap:4px;background:#f7f7f5;border-radius:10px;padding:10px}
+.referencePlanItems span{font-size:12px;color:#777;overflow-wrap:anywhere}
+.referencePlanItems b{font-size:13px;overflow-wrap:anywhere}
+.referencePlanItems em{font-size:12px;color:#855527;font-style:normal}
+@media(max-width:350px){.referenceSearch{grid-template-columns:1fr}}
