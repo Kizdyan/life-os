@@ -66,6 +66,8 @@ describe('Life OS and Persona JSX runtime rendering', () => {
     const markup = renderToString(React.createElement(PersonaFactory));
     expect(markup).toContain('Назад');
     expect(markup).toContain('Продолжить');
+    expect(markup).toContain('Сохранено на этом устройстве');
+    expect(markup).not.toContain('strategy');
   });
 });
 
