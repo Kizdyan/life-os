@@ -54,3 +54,9 @@ test('Symlinks cannot be used to smuggle data from outside',()=>fixture(async(ro
 test('Cannot verify another repository path by traversal',()=>fixture(async(root,dir,sha)=>{
  await assert.rejects(()=>verifySkillCheckout(root,'../test-skill',sha),/Unsafe skill subdirectory/);
 }));
+
+test('Embedded nested Git metadata is rejected rather than omitted',()=>fixture(async(root,dir,sha)=>{
+ await mkdir(join(dir,'.git'));
+ await writeFile(join(dir,'.git','config'),'untrusted metadata');
+ await assert.rejects(()=>verifySkillCheckout(root,'skills/test-skill',sha),/inventory differs/);
+}));
