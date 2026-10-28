@@ -5,7 +5,7 @@ export type CloudCredentials={url:string;publishableKey:string;accessToken:strin
 export function parseCloudProject(value:unknown):CloudProject{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Unexpected Persona cloud response: project object required. Local draft was not changed.');
  const p=value as Record<string,unknown>;
- if(typeof p.id!=='string'||!p.id||typeof p.owner_id!=='string'||!p.owner_id||typeof p.local_project_key!=='string'||typeof p.title!=='string'||!Number.isInteger(p.revision)||Number(p.revision)<0||typeof p.updated_at!=='string'||!('snapshot' in p))throw Error('Unexpected Persona cloud response: project fields missing. Local draft was not changed.');
+ if(typeof p.id!=='string'||!p.id.trim()||typeof p.owner_id!=='string'||!p.owner_id.trim()||typeof p.local_project_key!=='string'||typeof p.title!=='string'||!p.title.trim()||!Number.isSafeInteger(p.revision)||Number(p.revision)<0||typeof p.updated_at!=='string'||!Number.isFinite(Date.parse(p.updated_at))||!('snapshot' in p))throw Error('Unexpected Persona cloud response: project fields missing. Local draft was not changed.');
  return p as CloudProject;
 }
 
