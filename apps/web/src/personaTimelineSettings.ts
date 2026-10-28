@@ -114,6 +114,23 @@ export function constrainPersonaTimelineClip(
   return { ...candidate, startSec, durationSec };
 }
 
+export function constrainPersonaTimelineCaption(
+  caption: PersonaTimelineCaption,
+  patch: Pick<PersonaTimelineCaption, 'startSec'> | Pick<PersonaTimelineCaption, 'endSec'>,
+  timelineDuration: number,
+): PersonaTimelineCaption {
+  const maximum = Number.isFinite(timelineDuration) ? Math.max(0.1, timelineDuration) : 0.1;
+  const candidate = { ...caption, ...patch };
+  if ('startSec' in patch) {
+    const startSec = Number(Math.min(Math.max(0, candidate.startSec), Math.max(0, maximum - 0.1)).toFixed(3));
+    const endSec = Number(Math.max(startSec + 0.1, Math.min(caption.endSec, maximum)).toFixed(3));
+    return { ...candidate, startSec, endSec };
+  }
+  const endSec = Number(Math.min(Math.max(caption.startSec + 0.1, candidate.endSec), maximum).toFixed(3));
+  const startSec = Number(Math.min(Math.max(0, caption.startSec), endSec - 0.1).toFixed(3));
+  return { ...candidate, startSec, endSec };
+}
+
 export function matchesPersonaTimelineSource(saved: PersonaTimelineClip, candidate: SourceIdentity): boolean {
   const isLegacy = saved.bytes === 0 && saved.mime === 'video/unknown' && saved.lastModified === 0;
   if (saved.name !== candidate.name || Math.abs(saved.sourceDuration - candidate.sourceDuration) > 0.5) return false;

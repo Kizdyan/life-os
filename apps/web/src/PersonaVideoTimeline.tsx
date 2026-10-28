@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { constrainPersonaTimelineClip, createPersonaTimelineSettings, matchesPersonaTimelineSource, validatePersonaTimelineSettings, type PersonaTimelineClip, type PersonaTimelineMusic, type PersonaTimelineSettings } from './personaTimelineSettings';
+import { constrainPersonaTimelineCaption, constrainPersonaTimelineClip, createPersonaTimelineSettings, matchesPersonaTimelineSource, validatePersonaTimelineSettings, type PersonaTimelineCaption, type PersonaTimelineClip, type PersonaTimelineMusic, type PersonaTimelineSettings } from './personaTimelineSettings';
 import { readVideoDuration, timelineClipDuration } from './personaVideoMetadata';
 
 type Clip = PersonaTimelineClip;
@@ -33,6 +33,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  const [musicVolume,setMusicVolume]=useState(()=>initial.current?.music?.volume??0.35);
  const [originalVolume,setOriginalVolume]=useState(()=>initial.current?.music?.originalVolume??1);
  const [musicMeta,setMusicMeta]=useState<PersonaTimelineMusic|null>(()=>initial.current?.music??null);
+ const [captions,setCaptions]=useState<PersonaTimelineCaption[]>(()=>initial.current?.captions??[]);
  const [musicStatus,setMusicStatus]=useState('');
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
@@ -42,9 +43,9 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  const [width,setWidth]=useState<1080|1920>(()=>initial.current?.width??1080);
  const [height,setHeight]=useState<1920|1080>(()=>initial.current?.height??1920);
  useEffect(()=>{
-  const snapshot={...createPersonaTimelineSettings(clips,{width,height,fps}),music:musicMeta,captions:initial.current?.captions??[]};
+  const snapshot={...createPersonaTimelineSettings(clips,{width,height,fps}),music:musicMeta,captions:captions.filter(caption=>caption.text.trim().length>0)};
   onTimelineChange?.(validatePersonaTimelineSettings(snapshot));
- },[clips,width,height,fps,musicMeta,onTimelineChange]);
+ },[clips,width,height,fps,musicMeta,captions,onTimelineChange]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
@@ -77,6 +78,14 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  function removeClip(id:string){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
  function change(id:string,patch:Pick<Clip,'startSec'>|Pick<Clip,'durationSec'>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?constrainPersonaTimelineClip(item,patch):item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
+ const timelineDuration=clips.reduce((sum,clip)=>sum+clip.durationSec,0);
+ function addCaption(){
+  if(timelineDuration<0.1){setError('Сначала добавь видеофрагмент для субтитров');return}
+  setCaptions(items=>[...items,{id:newClipId(),text:'Новый титр',startSec:0,endSec:Number(Math.min(2,timelineDuration).toFixed(3))}]);
+ }
+ function changeCaption(id:string,patch:Pick<PersonaTimelineCaption,'startSec'>|Pick<PersonaTimelineCaption,'endSec'>){
+  setCaptions(items=>items.map(caption=>caption.id===id?constrainPersonaTimelineCaption(caption,patch,timelineDuration):caption));
+ }
  async function analyzeMusic(file:File|undefined){
   if(!file)return;
   musicFile.current=null;
@@ -217,7 +226,8 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   {playSequence&&<button type="button" onClick={()=>setPlaySequence(false)}>Остановить последовательность</button>}
   {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline autoPlay={playSequence} preload="metadata" onLoadedMetadata={e=>{if(playSequence){const clip=clips.find(c=>c.id===previewId);if(clip)e.currentTarget.currentTime=clip.startSec}}} onTimeUpdate={e=>{if(!playSequence)return;const clip=clips.find(c=>c.id===previewId);if(clip&&e.currentTarget.currentTime>=clip.startSec+clip.durationSec-0.04){e.currentTarget.pause();advanceSequence()}}} onEnded={()=>{if(playSequence)advanceSequence()}} src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
   <p>Предпросмотр не является готовым MP4: переходы между файлами могут иметь паузы.</p>
-  <p>Итого: {clips.reduce((sum,clip)=>sum+clip.durationSec,0).toFixed(1)} сек.</p>
+  <p>Итого: {timelineDuration.toFixed(1)} сек.</p>
+  <section className="personaCaptionEditor" aria-label="Субтитры"><h4>Субтитры</h4><p>Добавь текст и время показа. Субтитры сохраняются в плане; текущий локальный рендер пока не прожигает их в MP4.</p><button type="button" disabled={timelineDuration<0.1} onClick={addCaption}>Добавить субтитр</button>{captions.map((caption,index)=><div className="personaCaptionItem" key={caption.id}><label>Текст {index+1}<textarea value={caption.text} onChange={e=>setCaptions(items=>items.map(item=>item.id===caption.id?{...item,text:e.target.value}:item))}/></label><div><label>С {caption.startSec.toFixed(1)} сек.<input type="number" min="0" max={timelineDuration} step="0.1" value={caption.startSec} onChange={e=>changeCaption(caption.id,{startSec:Number(e.target.value)})}/></label><label>До {caption.endSec.toFixed(1)} сек.<input type="number" min="0.1" max={timelineDuration} step="0.1" value={caption.endSec} onChange={e=>changeCaption(caption.id,{endSec:Number(e.target.value)})}/></label></div><button type="button" onClick={()=>setCaptions(items=>items.filter(item=>item.id!==caption.id))}>Удалить субтитр</button></div>)}</section>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>

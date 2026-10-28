@@ -3,6 +3,7 @@ import {
   createPersonaTimelineSettings,
   matchesPersonaTimelineSource,
   constrainPersonaTimelineClip,
+  constrainPersonaTimelineCaption,
   validatePersonaTimelineSettings,
 } from './personaTimelineSettings';
 
@@ -48,5 +49,12 @@ describe('Persona timeline settings', () => {
 
     expect(constrainPersonaTimelineClip(clip, { durationSec: 0 })).toMatchObject({ startSec: 0.2, durationSec: 0.1 });
     expect(constrainPersonaTimelineClip(clip, { startSec: 1 })).toMatchObject({ startSec: 1, durationSec: 0.16 });
+  });
+
+  it('keeps caption times inside the edited timeline', () => {
+    const caption = { id: 'caption-1', text: 'Первый титр', startSec: 0.2, endSec: 0.8 };
+
+    expect(constrainPersonaTimelineCaption(caption, { startSec: 2 }, 2.4)).toMatchObject({ startSec: 2, endSec: 2.1 });
+    expect(constrainPersonaTimelineCaption(caption, { endSec: 0 }, 2.4)).toMatchObject({ startSec: 0.2, endSec: 0.3 });
   });
 });
