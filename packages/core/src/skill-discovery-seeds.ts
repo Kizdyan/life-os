@@ -9,8 +9,8 @@ export const SKILL_DIRECTORY_SEED: readonly SkillDirectoryRecord[] = [
   {
     id: "remotion-best-practices", title: "Remotion Best Practices",
     description: "Remotion video compositions, animation, editing workflow and rendering",
-    sourceUrl: "https://github.com/remotion-dev/remotion",
-    sourceRevision: "1ecfb05e4c913de7117940aab9d347647853fa57", skillPath: "packages/skills/skills/remotion-best-practices",
+    sourceUrl: "https://github.com/remotion-dev/skills",
+    sourceRevision: "30d4553ecd46fbc5212fd0ff006ae43af522158b", skillPath: "skills/remotion-best-practices",
     manifestSha256: null, domains: ["video", "design"],
     supportedAgents: ["claude-code", "codex", "cursor"],
     advertisedTools: ["remotion"], requestedPermissions: [], license: null,
