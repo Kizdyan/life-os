@@ -105,6 +105,22 @@ describe("Skill Intelligence: source inspection", () => {
       { path: "SKILL.md", content: "hi" }, { path: "../outside.txt", content: "a" },
     ], true).findings.some(x => x.rule === "Unsafe or duplicate package path")).toBe(true);
   });
+  it("blocks missing linked skill instructions and traversal", () => {
+    const missing = inspectSkillFiles([{ path: "SKILL.md",
+      content: "[Creation](./remotion-create/SKILL.md)" }], true);
+    expect(missing.findings.some(x => x.rule.includes("Missing linked skill resource"))).toBe(true);
+    const escaped = inspectSkillFiles([{ path: "SKILL.md",
+      content: "[Outside](../other-skill/SKILL.md)" }], true);
+    expect(escaped.findings.some(x => x.rule.includes("escapes reviewed"))).toBe(true);
+  });
+  it("accepts complete referenced documentation without treating it as human approval", () => {
+    const inspection = inspectSkillFiles([
+      { path: "SKILL.md", content: "[Rendering](./render.md)" },
+      { path: "render.md", content: "# Render\nPreview before exporting." },
+    ], true);
+    expect(inspection.staticCheckPassed).toBe(true);
+    expect(inspection.humanReviewRequired).toBe(true);
+  });
   it("rejects missing SKILL.md and oversized sources", () => {
     expect(inspectSkillFiles([{ path: "README.md", content: "hi" }], true).staticCheckPassed).toBe(false);
     expect(inspectSkillFiles([{ path: "SKILL.md", content: "x".repeat(1_000_001) }], true)
@@ -123,6 +139,9 @@ describe("Skill Intelligence: planned routes", () => {
   it("cannot use fabricated provenance or mismatch manifest digest", () => {
     expect(plan({ record: { ...record, manifestSha256: "c".repeat(64) } }).status).toBe("blocked");
     expect(plan({ record: { ...record, sourceUrl: "https://github.com/other/repo" } }).status).toBe("blocked");
+  });
+  it("blocks mismatched catalog license and reviewed license", () => {
+    expect(plan({ record: { ...record, license: "Apache-2.0" } }).status).toBe("blocked");
   });
   it("requires all declared requested permissions to be reviewed", () => {
     expect(plan({ record: { ...record, requestedPermissions: ["network.write"] } }).status).toBe("blocked");
