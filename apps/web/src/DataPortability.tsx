@@ -22,7 +22,7 @@ export default function DataPortability(){
     setError('');setMessage('');setEmergency(false);
     try{
       saveFile(exportDeviceData(localStorage),'life-os-persona-backup');
-      setMessage('Архив подготовлен. Сохрани файл на устройстве: он содержит названия задач и историю идей.');
+      setMessage('Архив подготовлен. Он содержит задачи, историю идей и проекты Persona с этого адреса.');
     }catch(e){
       setEmergency(true);
       setError('Обычный архив не подготовлен: '+(e instanceof Error?e.message:'ошибка чтения')+
@@ -51,13 +51,13 @@ export default function DataPortability(){
     setError('');
     try{
       const result=importDeviceData(localStorage,raw);
-      setMessage('Добавлено задач: '+result.tasks+'; решений Persona: '+result.ideas+'. Существующие записи сохранены.');
+      setMessage('Добавлено задач: '+result.tasks+'; решений Persona: '+result.ideas+'; проектов Persona: '+result.projects+'. Существующие записи сохранены.');
       setRaw('');setPreview(null);
     }catch(e){setError(e instanceof Error?e.message:'Не удалось восстановить данные.')}
   }
   return <details className="dataPortability">
     <summary>Резервная копия и перенос данных</summary>
-    <p>Тестовая версия: задачи и история решений Persona хранятся только в этом браузере и на этом адресе. При переходе на другой адрес их нужно переносить вручную. Облачной синхронизации нет.</p>
+    <p>Задачи, история и проекты Persona хранятся только в этом браузере и на этом адресе. Сохрани архив перед очисткой Safari, сменой preview-домена или обновлением устройства. Облачной синхронизации нет.</p>
     <div className="dataPortabilityActions">
       <button type="button" onClick={download}>Сохранить архив</button>
       <label>Выбрать архив
@@ -65,7 +65,7 @@ export default function DataPortability(){
       </label>
     </div>
     {preview&&<div className="dataPortabilityActions">
-      <p>В архиве задач: {preview.tasks}, решений Persona: {preview.ideas}. При импорте совпадающие записи не перезаписываются.</p>
+      <p>В архиве задач: {preview.tasks}, решений Persona: {preview.ideas}, проектов Persona: {preview.projects}. При импорте совпадающие записи не перезаписываются.</p>
       <button type="button" className="primary" onClick={restore}>Добавить данные из архива</button>
     </div>}
     {emergency&&<div className="dataPortabilityActions">

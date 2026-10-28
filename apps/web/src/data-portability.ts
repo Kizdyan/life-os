@@ -1,4 +1,5 @@
 import type { Item, Status } from './types';
+import {PERSONA_PROJECTS_KEY,validatePersonaProjectCollection,type PersonaProjectCollection} from './personaProjectStore';
 
 const RUNTIME='life-os:local-runtime:v1';
 const HISTORY='lifeos:persona:idea-history:v2';
@@ -10,8 +11,8 @@ type StorageAccess=Pick<Storage,'getItem'|'setItem'> & {removeItem?:(name:string
 
 interface State {schemaVersion:1;items:Item[];plans:Record<string,string[]>}
 interface HistoryEntry {title:string;status:'later'|'used'|'rejected'}
-interface Portable {kind:typeof KIND;version:1;exportedAt:string;state:State;personaHistory:HistoryEntry[]}
-export interface PortableStats { tasks:number; ideas:number }
+interface Portable {kind:typeof KIND;version:1;exportedAt:string;state:State;personaHistory:HistoryEntry[];personaProjects:PersonaProjectCollection}
+export interface PortableStats { tasks:number; ideas:number; projects:number }
 
 function object(value:unknown):Record<string,unknown> {
   if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Повреждённый формат резервной копии.');
@@ -65,6 +66,9 @@ function history(value:unknown):HistoryEntry[] {
     return {title:text(v.title,3000),status:v.status};
   });
 }
+function personaProjects(value:unknown):PersonaProjectCollection {
+ try{return validatePersonaProjectCollection(value)}catch{throw Error('Несовместимый формат проектов Persona.')}
+}
 function decode(textValue:string):Portable {
   if(new TextEncoder().encode(textValue).length>MAX_BYTES)throw Error('Архив больше 2 МБ.');
   let decoded:unknown;
@@ -72,14 +76,16 @@ function decode(textValue:string):Portable {
   const v=object(decoded);
   if(v.kind!==KIND||v.version!==1||typeof v.exportedAt!=='string')
     throw Error('Файл не является совместимой копией Life OS.');
-  return {kind:KIND,version:1,exportedAt:v.exportedAt,state:state(v.state),personaHistory:history(v.personaHistory)};
+ return {kind:KIND,version:1,exportedAt:v.exportedAt,state:state(v.state),personaHistory:history(v.personaHistory),personaProjects:v.personaProjects===undefined?{schemaVersion:1,activeProjectId:null,projects:[]}:personaProjects(v.personaProjects)};
 }
 function readStored(storage:StorageAccess):Portable {
   const raw=storage.getItem(RUNTIME);
   const oldHistory=storage.getItem(HISTORY);
   const basic=raw===null?{schemaVersion:1,items:[],plans:{}}:JSON.parse(raw);
   const ideas=oldHistory===null?[]:JSON.parse(oldHistory);
-  return {kind:KIND,version:1,exportedAt:new Date().toISOString(),state:state(basic),personaHistory:history(ideas)};
+  const storedProjects=storage.getItem(PERSONA_PROJECTS_KEY);
+  const projects=storedProjects===null?{schemaVersion:1,activeProjectId:null,projects:[]}:personaProjects(JSON.parse(storedProjects));
+  return {kind:KIND,version:1,exportedAt:new Date().toISOString(),state:state(basic),personaHistory:history(ideas),personaProjects:projects};
 }
 
 /** Export ONLY local tasks and Persona idea decisions, never API keys or cloud tokens. */
@@ -94,6 +100,7 @@ export function exportEmergencyRawData(storage:StorageAccess):string {
     kind:'life-os-raw-recovery',version:1,exportedAt:new Date().toISOString(),
     rawLocalTasks:storage.getItem(RUNTIME),
     rawPersonaHistory:storage.getItem(HISTORY),
+    rawPersonaProjects:storage.getItem(PERSONA_PROJECTS_KEY),
   };
   const result=JSON.stringify(snapshot,null,2);
   if(new TextEncoder().encode(result).length>MAX_BYTES)
@@ -102,7 +109,7 @@ export function exportEmergencyRawData(storage:StorageAccess):string {
 }
 export function inspectDeviceBackup(raw:string):PortableStats {
   const parsed=decode(raw);
-  return {tasks:parsed.state.items.length,ideas:parsed.personaHistory.length};
+  return {tasks:parsed.state.items.length,ideas:parsed.personaHistory.length,projects:parsed.personaProjects.projects.length};
 }
 
 /** Merge by ID/title, never replace a user's existing state or credentials. */
@@ -127,16 +134,26 @@ export function importDeviceData(storage:StorageAccess,raw:string):PortableStats
     titles.add(key);return true;
   });
   const mergedHistory=[...current.personaHistory,...newHistory];
+  const projectIds=new Set(current.personaProjects.projects.map(project=>project.id));
+  const addedProjects=incoming.personaProjects.projects.filter(project=>!projectIds.has(project.id));
+  if(current.personaProjects.projects.length+addedProjects.length>MAX_ITEMS)throw Error('Слишком много проектов Persona для объединения.');
+  const allProjects=[...current.personaProjects.projects,...addedProjects];
+  const mergedProjects:PersonaProjectCollection={
+    schemaVersion:1,
+    activeProjectId:current.personaProjects.activeProjectId??(incoming.personaProjects.activeProjectId&&allProjects.some(project=>project.id===incoming.personaProjects.activeProjectId)?incoming.personaProjects.activeProjectId:null),
+    projects:allProjects,
+  };
   const mergedState:State={
     schemaVersion:1,items:[...current.state.items,...added],plans:validPlans,
   };
-  const prevState=storage.getItem(RUNTIME),prevHistory=storage.getItem(HISTORY);
-  const nextState=JSON.stringify(mergedState),nextHistory=JSON.stringify(mergedHistory);
-  if(new TextEncoder().encode(nextState+nextHistory).length>MAX_BYTES)
+  const prevState=storage.getItem(RUNTIME),prevHistory=storage.getItem(HISTORY),prevProjects=storage.getItem(PERSONA_PROJECTS_KEY);
+  const nextState=JSON.stringify(mergedState),nextHistory=JSON.stringify(mergedHistory),nextProjects=JSON.stringify(mergedProjects);
+  if(new TextEncoder().encode(nextState+nextHistory+nextProjects).length>MAX_BYTES)
     throw Error('Недостаточно места для объединённого архива.');
   try{
     storage.setItem(RUNTIME,nextState);
     storage.setItem(HISTORY,nextHistory);
+    storage.setItem(PERSONA_PROJECTS_KEY,nextProjects);
   }catch(e){
     // Best effort rollback for localStorage quota/browser-denial errors.
     try{
@@ -144,8 +161,10 @@ export function importDeviceData(storage:StorageAccess,raw:string):PortableStats
       else storage.setItem(RUNTIME,prevState);
       if(prevHistory===null)storage.removeItem?.(HISTORY);
       else storage.setItem(HISTORY,prevHistory);
+      if(prevProjects===null)storage.removeItem?.(PERSONA_PROJECTS_KEY);
+      else storage.setItem(PERSONA_PROJECTS_KEY,prevProjects);
     }catch{}
     throw Error('Не удалось записать данные браузера. Оригинальный архив сохранён.');
   }
-  return {tasks:added.length,ideas:newHistory.length};
+  return {tasks:added.length,ideas:newHistory.length,projects:addedProjects.length};
 }

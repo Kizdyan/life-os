@@ -19,8 +19,8 @@ describe('Life OS and Persona JSX runtime rendering', () => {
   it('renders Persona route without React is not defined', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(App));
-    expect(markup).toContain('Редакция Persona');
-    expect(markup).toContain('Своя идея');
+    expect(markup).toContain('Создать Reels');
+    expect(markup).toContain('Мои проекты');
   });
 
   it('renders Today route without React is not defined', () => {
@@ -35,13 +35,39 @@ describe('Life OS and Persona JSX runtime rendering', () => {
 
   it('mounts the individual Persona, Erika and Media Brain components', () => {
     stubBrowser('#today');
-    expect(renderToString(React.createElement(PersonaFactory))).toContain('Редакция Persona');
+    expect(renderToString(React.createElement(PersonaFactory))).toContain('Создать Reels');
     expect(renderToString(React.createElement(MediaBrainCard))).toContain('Контент-контур');
     expect(renderToString(React.createElement(ErikaSheet, {
       items: [],
       onClose: () => undefined,
       onApplied: () => undefined,
     }))).toContain('Выполнить');
+  });
+
+  it('renders a dedicated project workspace instead of one anonymous draft', () => {
+    stubBrowser('#persona');
+    const markup = renderToString(React.createElement(PersonaFactory));
+    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Создать Reels');
+  });
+
+  it('opens Persona on a compact mobile home screen', () => {
+    stubBrowser('#persona');
+    const markup = renderToString(React.createElement(PersonaFactory));
+    expect(markup).toContain('Продолжить последний проект');
+    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Резервная копия и перенос данных');
+  });
+
+  it('renders project navigation with explicit previous and next actions', () => {
+    stubBrowser('#persona/project/project-1');
+    const project = { id: 'project-1', title: 'Мой Reels', contentType: 'reel', sourceIdea: 'Идея', script: null, shootingPlan: null, editPlan: null, timeline: null, mediaAssets: [], cloudAssetRefs: [], processing: null, captions: null, socialCaptions: null, stage: 'strategy', qa: null, createdAt: '2026-10-28T10:00:00.000Z', updatedAt: '2026-10-28T10:00:00.000Z', schemaVersion: 1, revision: 1 };
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'lifeos:persona:projects:v1' ? JSON.stringify({ schemaVersion: 1, activeProjectId: 'project-1', projects: [project] }) : null, setItem: () => undefined, removeItem: () => undefined });
+    const markup = renderToString(React.createElement(PersonaFactory));
+    expect(markup).toContain('Назад');
+    expect(markup).toContain('Продолжить');
+    expect(markup).toContain('Сохранено на этом устройстве');
+    expect(markup).not.toContain('strategy');
   });
 });
 

@@ -1,1 +1,35 @@
-{"name":"life-os","private":true,"type":"module","scripts":{"test":"vitest run","typecheck":"tsc --noEmit","api:typecheck":"tsc -p api/tsconfig.json --noEmit","web:dev":"vite apps/web","web:build":"vite build apps/web","media:probe":"node tools/persona-media-engine.mjs probe","media:render":"node tools/persona-media-engine.mjs render","media:test":"node --test tools/persona-media-engine.test.mjs"},"dependencies":{"@vitejs/plugin-react":"^5.0.0","vite":"^7.1.0","react":"^19.1.1","react-dom":"^19.1.1"},"devDependencies":{"@types/node":"^24.5.2","@types/react":"^19.1.10","@types/react-dom":"^19.1.7","typescript":"^5.9.2","vitest":"^3.2.4"}}
+{
+  "name": "life-os",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --exclude '**/*.test.mjs'",
+    "typecheck": "tsc --noEmit",
+    "api:typecheck": "tsc -p api/tsconfig.json --noEmit",
+    "web:dev": "vite apps/web",
+    "web:build": "vite build apps/web",
+    "media:probe": "node tools/persona-media-engine.mjs probe",
+    "media:render": "node tools/persona-media-engine.mjs render",
+    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs",
+    "media:timeline": "node tools/persona-timeline-render.mjs",
+    "media:bridge": "node tools/persona-render-bridge.mjs",
+    "persona:preflight": "node tools/persona-preflight.mjs",
+    "persona:check": "npm run persona:preflight && npm run media:test && npm run web:build",
+    "media:verify": "node tools/persona-verify-render.mjs",
+    "media:verify:test": "node --test tools/persona-verify-render.test.mjs",
+    "persona:core:test": "node --test packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

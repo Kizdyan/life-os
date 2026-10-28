@@ -10,6 +10,7 @@ on:
       - "src/**"
       - "supabase/**"
       - "scripts/**"
+      - "tools/**"
       - "package.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
@@ -21,6 +22,7 @@ on:
       - "src/**"
       - "supabase/**"
       - "scripts/**"
+      - "tools/**"
       - "package.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
@@ -38,5 +40,31 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - run: npm test
-      - run: npm run typecheck
+      - name: Persona calendar and distribution regression tests
+        run: |
+          set -o pipefail
+          npm run persona:core:test 2>&1 | tee /tmp/persona-ci-core.log
+      - name: Verify full Persona media pipeline with real FFmpeg
+        run: |
+          set -o pipefail
+          npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+      - name: Run tests with captured diagnostics
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/persona-ci-test.log
+      - name: Typecheck with captured diagnostics
+        if: success()
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/persona-ci-typecheck.log
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-failure-diagnostics
+          path: |
+            /tmp/persona-ci-core.log
+            /tmp/persona-ci-media.log
+            /tmp/persona-ci-test.log
+            /tmp/persona-ci-typecheck.log
+          if-no-files-found: warn
