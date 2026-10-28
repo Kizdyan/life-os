@@ -15,7 +15,14 @@ const SAFE_SUBPATH=/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
 const BAD_SEGMENTS=new Set(['.','..']);
 function runGit(root,args){
   const result=spawnSync('git',['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',root,...args],{
-    encoding:null,timeout:20000,maxBuffer:3_000_000,env:{...process.env,GIT_NO_REPLACE_OBJECTS:'1',GIT_OPTIONAL_LOCKS:'0',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'},
+    encoding:null,timeout:20000,maxBuffer:3_000_000,env:{
+      PATH:process.env.PATH??'', SystemRoot:process.env.SystemRoot??'',
+      TMP:process.env.TMP??'', TEMP:process.env.TEMP??'',
+      GIT_NO_REPLACE_OBJECTS:'1',GIT_OPTIONAL_LOCKS:'0',
+      GIT_CONFIG_NOSYSTEM:'1',
+      GIT_CONFIG_GLOBAL:process.platform==='win32'?'NUL':'/dev/null',
+      GIT_CONFIG_COUNT:'0',LC_ALL:'C',
+    },
   });
   if(result.error||result.status!==0)throw new Error('Git source verification failed: '+(result.error?.message??result.stderr?.toString('utf8').slice(-500)));
   return result.stdout;
