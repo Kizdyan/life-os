@@ -157,7 +157,7 @@ describe("Skill Intelligence: source inspection", () => {
   });
   it("rejects missing SKILL.md and oversized sources", () => {
     expect(inspectSkillFiles([{ path: "README.md", content: "hi" }], true).staticCheckPassed).toBe(false);
-    expect(inspectSkillFiles([{ path: "SKILL.md", content: "x".repeat(1_000_001) }], true)
+    expect(inspectSkillFiles([{ path: "SKILL.md", content: "x".repeat(3_000_001) }], true)
       .findings.some(x => x.rule === "Skill source exceeds inspection limit")).toBe(true);
   });
 });
@@ -176,6 +176,22 @@ describe("Skill Intelligence: planned routes", () => {
   });
   it("blocks mismatched catalog license and reviewed license", () => {
     expect(plan({ record: { ...record, license: "Apache-2.0" } }).status).toBe("blocked");
+  });
+  it("rejects permission declarations absent from reviewer request even if preapproved", () => {
+    const divergentAdmission = {
+      ...admission, review: {
+        ...admission.review, requestedPermissions: [],
+        approvedPermissions: ["media.read"],
+      },
+    };
+    expect(plan({ admission: divergentAdmission }).status).toBe("blocked");
+    expect(plan({ admission: { ...admission, review: {
+      ...admission.review, requestedPermissions: ["media.read", "media.write"],
+      approvedPermissions: ["media.read", "media.write"],
+    } } }).status).toBe("blocked");
+  });
+  it("blocks inconsistent file counts between content inspection and package attestation", () => {
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, scannedFiles: 2 } }).status).toBe("blocked");
   });
   it("requires all declared requested permissions to be reviewed", () => {
     expect(plan({ record: { ...record, requestedPermissions: ["network.write"] } }).status).toBe("blocked");
@@ -212,7 +228,7 @@ describe("Skill Intelligence: planned routes", () => {
       { path: "scripts/prep.mjs", content: "// only local demonstration" },
     ], true);
     const reviewedAudit = {
-      ...cleanSourceAudit, staticCheckPassed: false,
+      ...cleanSourceAudit, scannedFiles: 2, staticCheckPassed: false,
       findings: [{ path: "scripts/prep.mjs", rule: "executable_helper_requires_review", severity: "review" }],
     };
     expect(plan({ inspection: inspected, sourceAudit: reviewedAudit }).status).toBe("blocked");
