@@ -3,6 +3,7 @@ import {
   classifyReferenceFile, referenceGroups,
   type ReferenceEntry, type ReferenceGroup
 } from './referenceLibraryBrowser';
+import {buildReferenceManifest,suggestReferenceOrganization} from './referenceOrganization';
 
 const HASH_LIMIT_BYTES=64*1024*1024;
 const MAX_FILES=100;
@@ -35,6 +36,9 @@ export default function ReferenceLibrary() {
   const [progress,setProgress]=useState('');
   const [error,setError]=useState('');
   const [previewId,setPreviewId]=useState<number|null>(null);
+  const [search,setSearch]=useState('');
+  const [kindFilter,setKindFilter]=useState<'all'|ReferenceEntry['kind']>('all');
+  const [showPlan,setShowPlan]=useState(false);
   const [previewUrl,setPreviewUrl]=useState<string|null>(null);
   const scanRef=useRef(0);
   useEffect(()=>()=>{scanRef.current+=1},[]);
@@ -47,6 +51,8 @@ export default function ReferenceLibrary() {
     return ()=>{URL.revokeObjectURL(url);};
   },[files,previewId]);
   const groups=useMemo(()=>referenceGroups(entries),[entries]);
+  const proposals=useMemo(()=>suggestReferenceOrganization(entries),[entries]);
+  const shown=useMemo(()=>entries.filter(item=>(kindFilter==='all'||item.kind===kindFilter)&&item.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())),[entries,kindFilter,search]);
   const counts=useMemo(()=>({video:entries.filter(x=>x.kind==='video').length,image:entries.filter(x=>x.kind==='image').length,document:entries.filter(x=>x.kind==='document').length}),[entries]);
   const skipped=entries.filter(x=>x.hashStatus!=='verified').length;
   const preview=previewId===null?null:entries.find(x=>x.id===previewId)??null;
@@ -56,7 +62,7 @@ export default function ReferenceLibrary() {
     const extra=(event.currentTarget.files?.length??0)-selected.length;
     event.currentTarget.value='';
     const scan=++scanRef.current;
-    setFiles(selected);setEntries([]);setPreviewId(null);setError('');
+    setFiles(selected);setEntries([]);setPreviewId(null);setShowPlan(false);setError('');
     if(!selected.length){setProgress('');setBusy(false);return;}
     setBusy(true);
     const scanned:ReferenceEntry[]=[];
@@ -77,6 +83,16 @@ export default function ReferenceLibrary() {
     setProgress('');
     setBusy(false);
     if(extra>0)setError('Показаны первые '+MAX_FILES+' файлов. Остальные '+extra+' нужно выбрать отдельно.');
+  }
+  function exportPlan(){
+    if(busy||!entries.length)return;
+    const manifest=buildReferenceManifest(entries,new Date().toISOString());
+    const blob=new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;link.download='persona-reference-plan.json';
+    document.body.appendChild(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),60000);
   }
   return <section className="referenceLibrary" aria-label="Библиотека референсов">
     <div className="referenceIntro">
@@ -102,11 +118,35 @@ export default function ReferenceLibrary() {
         У {skipped} файлов хеш не вычислен. Для файлов больше 64 МБ это ограничение защищает память iPhone.
         Такие файлы не считаются точными дублями, даже если имена совпадают.
       </p>}
-      <h3>Выбранные файлы</h3>
-      <div className="referenceFiles">{entries.map(file=><div key={file.id} className="referenceFile">
+      <div className="referenceSearch"><label>Поиск по названию
+        <input type="search" placeholder="Например, кадр или репетиция" value={search} onChange={e=>setSearch(e.target.value)} />
+      </label><label>Тип
+        <select value={kindFilter} onChange={e=>setKindFilter(e.target.value as typeof kindFilter)}>
+          <option value="all">Все файлы</option><option value="video">Видео</option>
+          <option value="image">Фото</option><option value="document">Документы</option><option value="other">Другие</option>
+        </select>
+      </label></div>
+      <h3>Выбранные файлы ({shown.length} из {entries.length})</h3>
+      {!shown.length&&<p className="referenceMuted">По запросу ничего не найдено.</p>}
+      <div className="referenceFiles">{shown.map(file=><div key={file.id} className="referenceFile">
         <div><b>{file.name}</b><span>{label[file.kind]} · {formatSize(file.sizeBytes)} · {file.hashStatus==='verified'?'SHA-256 проверен':'Без проверки SHA-256'}</span></div>
         {['image','video'].includes(file.kind)&&<button type="button" onClick={()=>setPreviewId(file.id)}>Просмотр</button>}
       </div>)}</div>
+      <div className="referencePlan">
+        <div><h3>Предварительный план организации</h3>
+          <p>План предлагает папки и уникальные имена, но ничего не переносит и не переименовывает. Точные копии помечены для ручной проверки.</p>
+        </div>
+        <button type="button" onClick={()=>setShowPlan(v=>!v)}>{showPlan?'Скрыть предложения':'Посмотреть предложения'}</button>
+        {showPlan&&<>
+          <div className="referencePlanItems">{proposals.map(proposal=><div key={proposal.id}>
+            <span>{proposal.originalName}</span>
+            <b>{proposal.proposedRelativePath}</b>
+            {proposal.duplicateReviewRequired&&<em>Содержимое совпадает — проверить вручную</em>}
+          </div>)}</div>
+          <button type="button" onClick={exportPlan}>Скачать план JSON</button>
+          <p className="referenceMuted">JSON сохраняется только по твоему действию. Это список предложений, не команда на изменение файлов.</p>
+        </>}
+      </div>
     </>}
     {previewUrl&&preview&&<div className="referencePreview" aria-label="Предпросмотр файла">
       <div className="referencePreviewHead"><b>{preview.name}</b><button type="button" onClick={()=>setPreviewId(null)}>Закрыть</button></div>
