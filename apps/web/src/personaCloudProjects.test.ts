@@ -81,3 +81,28 @@ describe('Persona cloud HTTP errors',()=>{
   }
  });
 });
+
+describe('Persona cloud project pagination',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const credentials={url:'https://example.supabase.co',publishableKey:'public-key',accessToken:'user-jwt'};
+ it('loads a second page when the first page contains 50 projects',async()=>{
+  const first=Array.from({length:50},(_,i)=>({...valid,id:'id-'+i}));
+  const second=[{...valid,id:'id-50'}];
+  const fetchMock=vi.fn().mockResolvedValueOnce({ok:true,json:async()=>first}).mockResolvedValueOnce({ok:true,json:async()=>second});
+  vi.stubGlobal('fetch',fetchMock);
+  const result=await listCloudProjects(credentials);
+  expect(result).toHaveLength(51);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[0][0]).toContain('offset=0');
+  expect(fetchMock.mock.calls[1][0]).toContain('offset=50');
+ });
+ it('rejects a page larger than the requested limit',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>Array.from({length:51},()=>valid)}));
+  await expect(listCloudProjects(credentials)).rejects.toThrow(/page limit exceeded/);
+ });
+ it('does not silently return partial results if a later page fails',async()=>{
+  const first=Array.from({length:50},()=>valid);
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce({ok:true,json:async()=>first}).mockResolvedValueOnce({ok:false,status:500}));
+  await expect(listCloudProjects(credentials)).rejects.toThrow(/Ошибка облака/);
+ });
+});
