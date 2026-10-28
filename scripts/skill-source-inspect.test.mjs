@@ -81,3 +81,26 @@ test('SVG event handlers and script content are rejected',async()=>fixture(async
  assert.ok(r.findings.some(x=>x.rule==='embedded_svg_script'));
  assert.equal(r.staticCheckPassed,false);
 }));
+
+test('Rejects invalid UTF-8 without treating corrupt file as inspected',async()=>fixture(async dir=>{
+ await writeFile(join(dir,'SKILL.md'),'# Safe\\n');
+ await writeFile(join(dir,'corrupt.md'),Buffer.from([0x23,0x20,0xc3,0x28,0x0a]));
+ const result=await inspectLocalSkillDirectory(dir);
+ assert.equal(result.inventoryComplete,false);
+ assert.equal(result.scannedFiles,1);
+ assert.equal(result.staticCheckPassed,false);
+ assert.ok(result.findings.some(x=>x.rule==='invalid_utf8'));
+}));
+test('An HTML script mentioned in Markdown is not misclassified as active SVG',async()=>fixture(async dir=>{
+ await writeFile(join(dir,'SKILL.md'),'# Safe\\n');
+ await writeFile(join(dir,'documentation.md'),'Discuss the HTML tag <script>, do not execute it.\\n');
+ const result=await inspectLocalSkillDirectory(dir);
+ assert.equal(result.staticCheckPassed,true);
+}));
+test('An SVG event handler is blocked, even if not named onload',async()=>fixture(async dir=>{
+ await writeFile(join(dir,'SKILL.md'),'# Safe\\n');
+ await writeFile(join(dir,'icon.svg'),'<svg><rect onclick="alert(1)"/></svg>');
+ const result=await inspectLocalSkillDirectory(dir);
+ assert.ok(result.findings.some(x=>x.rule==='embedded_svg_script'));
+ assert.equal(result.staticCheckPassed,false);
+}));
