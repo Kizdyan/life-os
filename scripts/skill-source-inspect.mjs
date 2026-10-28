@@ -41,7 +41,9 @@ export async function inspectLocalSkillDirectory(directory) {
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const subpath = relative ? posix.join(relative, entry.name) : entry.name;
       if (entry.name === '.git') {
-        // A Git checkout is metadata, not part of the agent Skill package.
+        // A Skill subfolder must never hide a nested repository or Git metadata.
+        inventoryComplete = false;
+        findings.push(issue(subpath, 'embedded_git_metadata', 'block'));
         continue;
       }
       const fullPath = join(abs, entry.name);
