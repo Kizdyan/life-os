@@ -60,3 +60,11 @@ test('Embedded nested Git metadata is rejected rather than omitted',()=>fixture(
  await writeFile(join(dir,'.git','config'),'untrusted metadata');
  await assert.rejects(()=>verifySkillCheckout(root,'skills/test-skill',sha),/inventory differs/);
 }));
+
+test('Hostile Git environment variables cannot redirect local read-only verification',()=>fixture(async(root,dir,sha)=>{
+ const result=spawnSync(process.execPath,[join(process.cwd(),'scripts','skill-source-verify-git.mjs'),root,'skills/test-skill',sha],{
+  encoding:'utf8',timeout:30000,env:{...process.env,GIT_DIR:'/nonexistent/fake-git-dir',GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'core.fsmonitor',GIT_CONFIG_VALUE_0:'!false'},
+ });
+ assert.equal(result.status,0,result.stderr);
+ assert.equal(JSON.parse(result.stdout).revisionVerified,true);
+}));
