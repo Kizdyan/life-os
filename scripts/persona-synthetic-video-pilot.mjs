@@ -42,7 +42,7 @@ export async function renderSyntheticPilot(output) {
     '[a]loudnorm=I=-16:TP=-2:LRA=7[an]',
   ].join(';');
   run('ffmpeg',[
-    '-hide_banner','-loglevel','error','-y',
+    '-hide_banner','-loglevel','error','-n',
     '-f','lavfi','-i','testsrc=size=720x1280:rate=30:duration=2',
     '-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=2',
     '-f','lavfi','-i','testsrc=size=720x1280:rate=30:duration=2',
