@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number }
+import {loadPersonaTimelineSettings,validateReattachedVideo} from './personaTimelineSettings';
+interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number; sourceSizeBytes?:number }
 export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
+ const settingsKey='persona:timeline:settings:v1:'+projectId;
  const urls=useRef(new Map<number,string>());
  const filesById=useRef(new Map<number,File>());
  const [previewId,setPreviewId]=useState<number|null>(null);
@@ -15,18 +17,21 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
  const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
- const [fps,setFps]=useState(30);
+ const [fps,setFps]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).fps);
  const [error,setError]=useState('');
- const [width,setWidth]=useState(1080);
- const [height,setHeight]=useState(1920);
+ const [width,setWidth]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).width);
+ const [height,setHeight]=useState<number>(()=>loadPersonaTimelineSettings(localStorage,settingsKey).height);
+ useEffect(()=>{try{localStorage.setItem(settingsKey,JSON.stringify({width,height,fps}))}catch{}},[width,height,fps,settingsKey]);
  const [nextId,setNextId]=useState(()=>{try{const items=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(items)?Math.max(0,...items.map(item=>Number(item?.id)||0))+1:1}catch{return 1}});
  useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(clips))}catch{}},[clips,storageKey]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
   const additions:Clip[]=[];
+  const reattached=new Map<number,number>();
   for(const file of files) {
-   if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
+   const supportedVideo=file.type.startsWith('video/')||(file.type===''&&/\.(mp4|mov|m4v|webm)$/i.test(file.name));
+   if(!supportedVideo||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
    const url=URL.createObjectURL(file);
    try {
     const duration=await new Promise<number>((resolve,reject)=>{
@@ -36,21 +41,25 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
     });
     const old=clips.find(clip=>clip.name===file.name&&!urls.current.has(clip.id));
     if(old){
-      if(Math.abs(old.sourceDuration-duration)>0.5){setError('Длительность файла '+file.name+' отличается от сохранённого исходника');continue}
+      const check=validateReattachedVideo(old,file,duration);
+      if(!check.ok){setError(check.reason+': '+file.name);continue}
       urls.current.set(old.id,URL.createObjectURL(file));filesById.current.set(old.id,file);
+      reattached.set(old.id,file.size);
+      if(old.sourceSizeBytes===undefined)setError(check.reason+': '+file.name);
       setPreviewId(old.id);
       continue;
     }
     if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' уже добавлен');continue}
     if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
     const id=nextId+additions.length;
-    additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
+    additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration,sourceSizeBytes:file.size});
     urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
    finally{URL.revokeObjectURL(url)}
   }
   if(additions.length)setPreviewId(additions[0].id);
-  setClips(old=>[...old,...additions]);setNextId(id=>id+additions.length);
+  if(additions.length||reattached.size)setClips(old=>[...old.map(clip=>reattached.has(clip.id)?{...clip,sourceSizeBytes:reattached.get(clip.id)}:clip),...additions]);
+  if(additions.length)setNextId(id=>id+additions.length);
   event.target.value='';
  }
  function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
@@ -179,7 +188,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Музыка: {Math.round(musicVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={e=>setMusicVolume(Number(e.target.value))}/></label>
   <label>Исходный звук: {Math.round(originalVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={originalVolume} onChange={e=>setOriginalVolume(Number(e.target.value))}/></label>
   <p>Громкость музыки и исходного звука регулируются отдельно. Перед публикацией проверь разборчивость речи и права на музыку.</p></div>
-  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
+  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Выбери их повторно: проверяются имя, длительность и сохранённый размер файла, но это не доказательство идентичности содержимого.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
    <label>Начало, сек. <input type="number" min="0" max={clip.sourceDuration} step="0.1" value={clip.startSec} onChange={e=>change(clip.id,{startSec:Number(e.target.value)})}/></label>
@@ -201,7 +210,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>
   <p>Экспорт MP4 на iPhone пока недоступен. План можно продолжить на совместимом компьютере.</p>
   {renderState&&<p role="status">{renderState}</p>}
-  <p>После перезагрузки выбери исходные видео повторно: браузер хранит их названия, порядок и тайминги, но не сами файлы.</p>
+  <p>После перезагрузки выбери исходные видео повторно: браузер сохраняет названия, размер, порядок, тайминги и параметры экспорта, но не сами видеофайлы. Перед рендером проверь соответствие кадров исходникам.</p>
   <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
   {error&&<p role="alert">{error}</p>}
  </section>;
