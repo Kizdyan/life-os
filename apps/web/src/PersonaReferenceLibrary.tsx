@@ -41,6 +41,8 @@ export default function PersonaReferenceLibrary({onBack}:{onBack:()=>void}) {
   function persist(items:ReferenceItem[],success:string) {
     const next:ReferenceCatalog={schemaVersion:1,items};
     try{
+      const previous=localStorage.getItem(REFERENCE_LIBRARY_KEY);
+      if(previous!==null) localStorage.setItem(REFERENCE_LIBRARY_KEY+':previous',previous);
       localStorage.setItem(REFERENCE_LIBRARY_KEY,JSON.stringify(next));
       setCatalog(next);
       setStatus(success);
