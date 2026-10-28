@@ -12,6 +12,8 @@ export interface ExternalSkillProvenance {
   sourceUrl: string;
   sourceRevision: string;
   contentSha256: string;
+  /** Optional in legacy callers; required for new source-attested routing. */
+  bundleSha256?: string;
   license: string | null;
 }
 export interface ExternalSkillRiskReview {
@@ -60,6 +62,9 @@ export function assessSkillAdmission(candidate: ExternalSkillCandidate): SkillAd
   }
   if (!GIT_COMMIT.test(p.sourceRevision)) blocked.push("Immutable source commit required");
   if (!SHA256.test(p.contentSha256)) blocked.push("SHA-256 file digest required");
+  if (p.bundleSha256 !== undefined && !SHA256.test(p.bundleSha256)) {
+    blocked.push("Invalid source bundle SHA-256 digest");
+  }
   if (!p.license?.trim() || !r.licenseAccepted) pending.push("License must be reviewed");
   if (!r.reviewedSource || !r.automatedScanPassed || !r.reviewerId?.trim()) {
     pending.push("Human source review, reviewer identity and security scan required");
