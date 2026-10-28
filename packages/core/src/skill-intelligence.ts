@@ -245,8 +245,16 @@ export function planSkillRoute(input: {
   }
   if ((task.classification === "personal" || task.classification === "restricted") &&
       !admission.review.handlesPersonalData) blockers.push("Sensitive-data handling not reviewed");
-  if (!inspection.inventoryComplete || !inspection.staticCheckPassed || inspection.findings.length) {
-    blockers.push("Complete clean source inspection required");
+  const acceptedInspection = new Set(admission.review.acknowledgedFindings ?? []);
+  const pendingInspection = inspection.findings.filter(finding =>
+    finding.severity !== "review" ||
+    !acceptedInspection.has(finding.path + "::" + finding.rule));
+  if (!inspection.inventoryComplete || pendingInspection.length > 0 ||
+      (!inspection.staticCheckPassed && inspection.findings.length === 0) ||
+      (inspection.findings.length > 0 &&
+       (!admission.humanApproved || !admission.review.reviewedSource ||
+        !admission.review.reviewerId?.trim()))) {
+    blockers.push("Unreviewed or blocking static inspection finding");
   }
   const sourceDecision = assessLocalSkillSourceEvidence(record, admission, sourceAudit);
   if (!sourceDecision.verified) blockers.push(...sourceDecision.reasons);
