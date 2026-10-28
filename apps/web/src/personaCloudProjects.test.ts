@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {listCloudProjects,parseCloudProject,PersonaCloudRequestError} from './personaCloudProjects';
+import {createCloudProject,updateCloudProject,listCloudProjects,parseCloudProject,PersonaCloudRequestError} from './personaCloudProjects';
 
 const valid={
  id:'6d6f6b66-1000-4000-8000-000000000001',
@@ -104,5 +104,43 @@ describe('Persona cloud project pagination',()=>{
   const first=Array.from({length:50},()=>valid);
   vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce({ok:true,json:async()=>first}).mockResolvedValueOnce({ok:false,status:500}));
   await expect(listCloudProjects(credentials)).rejects.toThrow(/Ошибка облака/);
+ });
+});
+
+describe('Persona cloud writes stay explicit and revision-aware',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const credentials={url:'https://example.supabase.co',publishableKey:'public-key',accessToken:'user-jwt'};
+ it('creates with a stable request key and sends the exact snapshot',async()=>{
+  const fetchMock=vi.fn().mockResolvedValue({ok:true,json:async()=>valid});
+  vi.stubGlobal('fetch',fetchMock);
+  const snapshot={stage:'needs_assets',clips:[1,2]};
+  await expect(createCloudProject(credentials,{localKey:'local-1',title:'Новый Reels',snapshot,requestKey:'create-1'})).resolves.toEqual(valid);
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/rpc/persona_create_project'),expect.objectContaining({
+   method:'POST',body:JSON.stringify({p_local_project_key:'local-1',p_title:'Новый Reels',p_snapshot:snapshot,p_request_key:'create-1'})
+  }));
+ });
+ it('updates with expected revision and mutation key',async()=>{
+  const fetchMock=vi.fn().mockResolvedValue({ok:true,json:async()=>({...valid,revision:3})});
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(updateCloudProject(credentials,{projectId:valid.id,expectedRevision:2,snapshot:valid.snapshot,mutationKey:'update-1'})).resolves.toMatchObject({revision:3});
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/rpc/persona_update_project'),expect.objectContaining({
+   body:JSON.stringify({p_project_id:valid.id,p_expected_revision:2,p_snapshot:valid.snapshot,p_mutation_key:'update-1'})
+  }));
+ });
+ it('rejects missing idempotency key without sending a request',async()=>{
+  const fetchMock=vi.fn();
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(createCloudProject(credentials,{localKey:'local-1',title:'Draft',snapshot:{},requestKey:''})).rejects.toThrow(/Missing project identity/);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
+ it('rejects invalid revision without sending a request',async()=>{
+  const fetchMock=vi.fn();
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(updateCloudProject(credentials,{projectId:valid.id,expectedRevision:-1,snapshot:{},mutationKey:'update-2'})).rejects.toThrow(/Invalid project revision/);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
+ it('does not treat revision conflict as a successful write',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:409}));
+  await expect(updateCloudProject(credentials,{projectId:valid.id,expectedRevision:2,snapshot:{},mutationKey:'update-3'})).rejects.toMatchObject({status:409});
  });
 });
