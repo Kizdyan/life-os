@@ -4,6 +4,7 @@
  * Catalog descriptions are untrusted claims, not proof of capabilities.
  */
 import { assessSkillAdmission, type ExternalSkillCandidate } from "./skill-admission";
+import { assessLocalSkillSourceEvidence, type LocalSkillSourceAudit } from "./skill-source-evidence";
 import { routeAICapability, type AICapabilityProvider, type AICapabilityTask, type CapabilityDomain, type DataClassification } from "./ai-capacity-routing";
 
 export type SkillAgent = "claude-code" | "codex" | "cursor" | "opencode";
@@ -218,11 +219,13 @@ export function planSkillRoute(input: {
   record: SkillDirectoryRecord;
   admission: ExternalSkillCandidate;
   inspection: SkillInspection;
+  /** Read-only measured local package report; no direct installation. */
+  sourceAudit: LocalSkillSourceAudit;
   binding: SkillRouteBinding;
   task: AICapabilityTask;
   providers: readonly AICapabilityProvider[];
 }): SkillRoutePlan {
-  const { record, admission, inspection, binding, task, providers } = input;
+  const { record, admission, inspection, sourceAudit, binding, task, providers } = input;
   const base: Omit<SkillRoutePlan, "status" | "reasons"> = {
     skillId: record.id, selectedProviderId: null, pinnedSourceUrl: null,
     mayInstallAutomatically: false, mayExecuteAutomatically: false,
@@ -245,6 +248,8 @@ export function planSkillRoute(input: {
   if (!inspection.inventoryComplete || !inspection.staticCheckPassed || inspection.findings.length) {
     blockers.push("Complete clean source inspection required");
   }
+  const sourceDecision = assessLocalSkillSourceEvidence(record, admission, sourceAudit);
+  if (!sourceDecision.verified) blockers.push(...sourceDecision.reasons);
   if (blockers.length) return { ...base, status: "blocked", reasons: blockers };
   const decision = assessSkillAdmission(admission);
   if (!decision.allowedToRegister) return {
