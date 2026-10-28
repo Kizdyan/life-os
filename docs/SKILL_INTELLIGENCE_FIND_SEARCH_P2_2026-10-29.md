@@ -39,3 +39,16 @@ The pinned `vercel-labs/skills@699d35b21bd3c97dbc0edeae062b2698898bb2e5` file `s
 - Official API: https://skills.sh/docs/api
 - Official CLI: https://github.com/vercel-labs/skills/blob/main/docs/commands.md
 - Upstream source: https://github.com/vercel-labs/skills/blob/699d35b21bd3c97dbc0edeae062b2698898bb2e5/skills/find-skills/SKILL.md
+
+## Repo-local first-party discovery Skill
+
+A new **first-party instruction-only** Skill is mirrored into the supported repository locations:
+
+- `.agents/skills/life-os-skill-discovery/SKILL.md` — Codex
+- `.claude/skills/life-os-skill-discovery/SKILL.md` — Claude Code
+
+Both are byte-identical, use the checked-in read-only CLI, and explicitly forbid global/unattended installs. Neither is the unreviewed upstream Vercel `find-skills` package. Discovery by a real agent still needs a fresh checkout and a confirmed agent session. In particular Claude OAuth remains unresolved; **no actual Claude invocation has been verified**.
+
+- `npm run skills:discovery:test` runs the catalog client tests plus four local skill-manifest checks.
+- Remote GitHub file checks confirmed the two Skill manifests are identical, have valid YAML frontmatter, mention human approval, contain no global unattended install command, and point to the existing `skills:find` script (5/5 checks).
+- The newly added local manifesto test file has **not** been executed against an exact full checkout here; the 10/10 reported above apply specifically to the catalog module.
