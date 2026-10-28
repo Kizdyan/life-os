@@ -19,7 +19,7 @@ const admission: ExternalSkillCandidate = {
   provenance: {
     id: record.id, sourceUrl: record.sourceUrl,
     sourceRevision: record.sourceRevision!, contentSha256: record.manifestSha256!,
-    license: "MIT",
+    license: "MIT", bundleSha256: "c".repeat(64),
   },
   review: {
     reviewedSource: true, licenseAccepted: true, automatedScanPassed: true,
@@ -46,8 +46,17 @@ const provider: AICapabilityProvider = {
 const cleanInspection = inspectSkillFiles([
   { path: "SKILL.md", content: "# Video editing\nUse verified local tools." },
 ], true);
+const cleanSourceAudit = {
+  schemaVersion: 1,
+  manifestSha256: record.manifestSha256,
+  bundleSha256: admission.provenance.bundleSha256!,
+  inventoryComplete: true, staticCheckPassed: true,
+  scannedFiles: 1, findings: [], revisionVerified: true,
+  installationPerformed: false, executionPerformed: false,
+};
 const plan = (overrides: Partial<Parameters<typeof planSkillRoute>[0]> = {}) =>
   planSkillRoute({ record, admission, inspection: cleanInspection,
+    sourceAudit: cleanSourceAudit,
     binding: { agent: "codex", providerId: provider.id },
     task, providers: [provider], ...overrides });
 
@@ -163,6 +172,16 @@ describe("Skill Intelligence: planned routes", () => {
   it("requires verified provider identity and real measured readiness", () => {
     expect(plan({ binding: { agent: "codex", providerId: "nonexistent" } }).status).toBe("no_verified_provider");
     expect(plan({ providers: [{ ...provider, readiness: "unverified" }] }).status).toBe("no_verified_provider");
+  });
+  it("does not permit unverified local SHA-256 or absent source revision checks", () => {
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, revisionVerified: false } }).status).toBe("blocked");
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, manifestSha256: "d".repeat(64) } }).status).toBe("blocked");
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, bundleSha256: "e".repeat(64) } }).status).toBe("blocked");
+    expect(plan({ admission: { ...admission, provenance: { ...admission.provenance, bundleSha256: undefined } } }).status).toBe("blocked");
+  });
+  it("requires a complete clean local inventory before routing", () => {
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, inventoryComplete: false } }).status).toBe("blocked");
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, findings: [{ path: "x", rule: "symlink_not_allowed", severity: "block" }] } }).status).toBe("blocked");
   });
   it("never bypasses approval-tier action policy", () => {
     const result = plan({ task: { ...task, autonomy: "APPROVAL" } });
