@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Bounded, read-only catalog search for PUBLIC generic tasks only. No installation. */
 import { pathToFileURL } from 'node:url';
+import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { searchSkillCatalog } from './skill-catalog-find.mjs';
 
@@ -46,10 +47,15 @@ export async function searchSkillTopics({ topics = SKILL_TOPIC_QUERIES, token, p
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv.length !== 2) {
-    console.error('Usage: npm run skills:batch (uses eight non-sensitive public search topics)');
+  const args = process.argv.slice(2);
+  if (args.length !== 0 && (args.length !== 2 || args[0] !== '--out' || !args[1])) {
+    console.error('Usage: npm run skills:batch -- [--out new-report.json]');
     process.exitCode = 2;
   } else searchSkillTopics({ token: process.env.VERCEL_OIDC_TOKEN })
-    .then(report => process.stdout.write(JSON.stringify(report, null, 2) + '\n'))
-    .catch(() => { console.error('Catalog batch search failed: verify Vercel OIDC, network, and quota'); process.exitCode = 1; });
+    .then(async report => {
+      const json = JSON.stringify(report, null, 2) + '\n';
+      if (args.length) await writeFile(resolve(args[1]), json, { flag: 'wx' });
+      else process.stdout.write(json);
+    })
+    .catch(() => { console.error('Catalog batch search failed: verify Vercel OIDC, network, quota and output path'); process.exitCode = 1; });
 }
