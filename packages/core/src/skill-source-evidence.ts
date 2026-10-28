@@ -33,10 +33,25 @@ export function assessLocalSkillSourceEvidence(
   const reasons: string[] = [];
   if (!report) return { verified: false, reasons: ["Local package hash audit missing"] };
   if (report.schemaVersion !== 1) reasons.push("Unsupported package audit version");
-  if (!report.inventoryComplete || !report.staticCheckPassed ||
+  if (!report.inventoryComplete ||
       !Number.isSafeInteger(report.scannedFiles) || report.scannedFiles < 1 ||
-      !Array.isArray(report.findings) || report.findings.length > 0) {
-    reasons.push("Local source inventory incomplete or contains findings");
+      !Array.isArray(report.findings)) {
+    reasons.push("Local source inventory incomplete or invalid");
+  }
+  const findings = Array.isArray(report.findings) ? report.findings : [];
+  const accepted = new Set(candidate.review.acknowledgedFindings ?? []);
+  for (const finding of findings) {
+    const key = finding.path + "::" + finding.rule;
+    if (finding.severity !== "review" || !accepted.has(key)) {
+      reasons.push("Unresolved or blocking source finding: " + key);
+    }
+  }
+  if (!report.staticCheckPassed && findings.length === 0) {
+    reasons.push("Static scan did not pass even without reported findings");
+  }
+  if (findings.length && (!candidate.humanApproved ||
+      !candidate.review.reviewedSource || !candidate.review.reviewerId?.trim())) {
+    reasons.push("Source findings require identified human reviewer and final approval");
   }
   if (!report.revisionVerified ||
       report.verificationMethod !== "pinned-local-git-tree-blob" ||
