@@ -10,7 +10,8 @@
     "web:build": "vite build apps/web",
     "persona:qa": "node --experimental-strip-types scripts/persona-video-qa.mjs",
     "skills:inspect": "node scripts/skill-source-inspect.mjs",
-    "qa:local": "node --experimental-strip-types --test scripts/persona-video-measure.test.mjs scripts/persona-video-qa.test.mjs scripts/skill-source-inspect.test.mjs"
+    "qa:local": "node --experimental-strip-types --test scripts/persona-video-measure.test.mjs scripts/persona-video-qa.test.mjs scripts/skill-source-inspect.test.mjs scripts/skill-source-verify-git.test.mjs",
+    "skills:verify-source": "node scripts/skill-source-verify-git.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
