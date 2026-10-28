@@ -102,3 +102,4 @@ export * from './skill-admission';
 export * from './media-export-qa';
 export * from './skill-intelligence';
 export * from './skill-discovery-seeds';
+export * from './skill-source-evidence';
