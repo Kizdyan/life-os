@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {DEFAULT_TIMELINE_SETTINGS,loadPersonaTimelineSettings,validateReattachedVideo} from './personaTimelineSettings';
+import {DEFAULT_TIMELINE_SETTINGS,hasValidTimelineBounds,loadPersonaTimelineSettings,validateReattachedVideo} from './personaTimelineSettings';
 
 function store(raw:string|null):Pick<Storage,'getItem'>{
  return {getItem:()=>raw};
@@ -33,5 +33,16 @@ describe('Persona saved video source reattachment',()=>{
   const result=validateReattachedVideo({name:'original.mov',sourceDuration:12.4},{name:'original.mov',size:42000},12.4);
   expect(result.ok).toBe(true);
   expect(result.reason).toContain('Старый проект');
+ });
+});
+
+describe('Persona trim bounds',()=>{
+ const clip={startSec:0.5,durationSec:1.0,sourceDuration:2};
+ it('accepts a valid independently trimmed clip',()=>expect(hasValidTimelineBounds(clip)).toBe(true));
+ it('rejects edits past source end',()=>expect(hasValidTimelineBounds({...clip,startSec:1.5})).toBe(false));
+ it('rejects NaN, infinite positions, and empty durations',()=>{
+  expect(hasValidTimelineBounds({...clip,startSec:NaN})).toBe(false);
+  expect(hasValidTimelineBounds({...clip,durationSec:Infinity})).toBe(false);
+  expect(hasValidTimelineBounds({...clip,durationSec:0})).toBe(false);
  });
 });
