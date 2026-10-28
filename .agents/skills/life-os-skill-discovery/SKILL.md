@@ -22,11 +22,11 @@ Use the existing Skill Intelligence system; do not install untrusted `find-skill
 
 ## Multi-domain research and review (project-local only)
 
-For a controlled eight-domain candidate search, use \`npm run skills:batch -- --out <new-report.json>\` ONLY after valid Vercel OIDC credentials and permission for a public-query catalog lookup are available. Never put personal information into search terms.
+For a controlled eight-domain candidate search, use `npm run skills:batch -- --out <new-report.json>` ONLY after valid Vercel OIDC credentials and permission for a public-query catalog lookup are available. Never put personal information into search terms.
 
-Run \`npm run skills:queue -- <batch-report.json> --out <new-queue.json>\` to create a deterministic offline shortlist. Its scores mean only discovery relevance: nothing is approved, installed, executed, or ready for private material.
+Run `npm run skills:queue -- <batch-report.json> --out <new-queue.json>` to create a deterministic offline shortlist. Its scores mean only discovery relevance: nothing is approved, installed, executed, or ready for private material.
 
-For a previously obtained and independently trusted source checkout whose HEAD is an exact pinned commit, run \`npm run skills:review-source -- <checkout> <skill-subpath> <commit> <new-review.json>\`. The generated review packet is a human decision aid, not the decision. Never approve its own findings or perform unattended global installation.
+For a previously obtained and independently trusted source checkout whose HEAD is an exact pinned commit, run `npm run skills:review-source -- <checkout> <skill-subpath> <commit> <new-review.json>`. The generated review packet is a human decision aid, not the decision. Never approve its own findings or perform unattended global installation.
 
 If Codex or Claude lacks OAuth, OIDC, permissions, network, or the required binaries, report the blocked capability rather than implying the new skill works in that agent.
 
