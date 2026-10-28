@@ -194,6 +194,10 @@ export function inspectSkillFiles(files: readonly SkillTextFile[], inventoryComp
     for (const [rule, pattern, severity] of checks) {
       if (pattern.test(file.content)) findings.push({ path: file.path, rule, severity });
     }
+    if (/\.(?:js|jsx|mjs|cjs|ts|tsx)$/i.test(file.path) &&
+        /\bfetch\s*\(|@maptiler\/sdk|https?:\/\/(?:api\.maptiler\.com|tile\.googleapis\.com)/i.test(file.content)) {
+      findings.push({ path: file.path, rule: "External network dependency requires review", severity: "review" });
+    }
     if (/\.(?:sh|py|js|cjs|mjs|ts|ps1|bat)$/i.test(file.path)) {
       findings.push({ path: file.path, rule: "Executable source requires independent review", severity: "review" });
     }
