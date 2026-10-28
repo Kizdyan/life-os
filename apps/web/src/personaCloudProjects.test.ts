@@ -130,13 +130,13 @@ describe('Persona cloud writes stay explicit and revision-aware',()=>{
  it('rejects missing idempotency key without sending a request',async()=>{
   const fetchMock=vi.fn();
   vi.stubGlobal('fetch',fetchMock);
-  await expect(createCloudProject(credentials,{localKey:'local-1',title:'Draft',snapshot:{},requestKey:''})).rejects.toThrow(/Missing project identity/);
+  expect(()=>createCloudProject(credentials,{localKey:'local-1',title:'Draft',snapshot:{},requestKey:''})).toThrow(/Missing project identity/);
   expect(fetchMock).not.toHaveBeenCalled();
  });
  it('rejects invalid revision without sending a request',async()=>{
   const fetchMock=vi.fn();
   vi.stubGlobal('fetch',fetchMock);
-  await expect(updateCloudProject(credentials,{projectId:valid.id,expectedRevision:-1,snapshot:{},mutationKey:'update-2'})).rejects.toThrow(/Invalid project revision/);
+  expect(()=>updateCloudProject(credentials,{projectId:valid.id,expectedRevision:-1,snapshot:{},mutationKey:'update-2'})).toThrow(/Invalid project revision/);
   expect(fetchMock).not.toHaveBeenCalled();
  });
  it('does not treat revision conflict as a successful write',async()=>{
