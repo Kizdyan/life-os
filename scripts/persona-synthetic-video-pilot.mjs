@@ -8,7 +8,7 @@
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
-import {writeFile} from 'node:fs/promises';
+import {writeFile,lstat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 
 function run(command, args, timeout = 120000) {
@@ -33,8 +33,17 @@ async function sha256(file) {
   for await (const chunk of createReadStream(file))hash.update(chunk);
   return hash.digest('hex');
 }
+async function ensureAbsent(path) {
+  try { await lstat(path); } catch(error) {
+    if(error?.code === 'ENOENT') return;
+    throw error;
+  }
+  throw new Error('Output already exists: ' + path);
+}
 export async function renderSyntheticPilot(output) {
   const file=resolve(output);
+  await ensureAbsent(file);
+  await ensureAbsent(file+'.qa.json');
   const filter=[
     '[0:v]format=yuv420p,drawtext=text=TAKE_01:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=120[v0]',
     '[2:v]hue=h=60,format=yuv420p,drawtext=text=TAKE_02:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=120[v1]',
@@ -72,7 +81,7 @@ export async function renderSyntheticPilot(output) {
       'identity and palette review','integration with assessPersonaReelExport',
       'actual Remotion-based A/B test'],
   };
-  await writeFile(file+'.qa.json',JSON.stringify(report,null,2)+'\n');
+  await writeFile(file+'.qa.json',JSON.stringify(report,null,2)+'\n',{flag:'wx'});
   return report;
 }
 if(process.argv[1] && import.meta.url===new URL('file://'+resolve(process.argv[1])).href) {
