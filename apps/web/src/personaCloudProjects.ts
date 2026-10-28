@@ -42,10 +42,10 @@ export async function listCloudProjects(c:CloudCredentials):Promise<CloudProject
  throw Error('Список облачных проектов слишком большой для безопасной загрузки. Ничего не было удалено.');
 }
 export function createCloudProject(c:CloudCredentials,p:{localKey:string;title:string;snapshot:unknown;requestKey:string}){
- if(!p.localKey||!p.title||!p.requestKey)throw Error('Missing project identity');
+ if(!p.localKey.trim()||!p.title.trim()||!p.requestKey.trim())throw Error('Missing project identity');
  return request<unknown>(c,'/rest/v1/rpc/persona_create_project',{p_local_project_key:p.localKey,p_title:p.title,p_snapshot:p.snapshot,p_request_key:p.requestKey}).then(parseCloudProject);
 }
 export function updateCloudProject(c:CloudCredentials,p:{projectId:string;expectedRevision:number;snapshot:unknown;mutationKey:string}){
- if(!p.projectId||!Number.isInteger(p.expectedRevision)||p.expectedRevision<0||!p.mutationKey)throw Error('Invalid project revision');
+ if(!p.projectId.trim()||!Number.isSafeInteger(p.expectedRevision)||p.expectedRevision<0||!p.mutationKey.trim())throw Error('Invalid project revision');
  return request<unknown>(c,'/rest/v1/rpc/persona_update_project',{p_project_id:p.projectId,p_expected_revision:p.expectedRevision,p_snapshot:p.snapshot,p_mutation_key:p.mutationKey}).then(parseCloudProject);
 }
