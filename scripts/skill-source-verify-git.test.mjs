@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {verifySkillCheckout} from './skill-source-verify-git.mjs';
 function git(root,args){
@@ -62,7 +63,7 @@ test('Embedded nested Git metadata is rejected rather than omitted',()=>fixture(
 }));
 
 test('Hostile Git environment variables cannot redirect local read-only verification',()=>fixture(async(root,dir,sha)=>{
- const result=spawnSync(process.execPath,[join(process.cwd(),'scripts','skill-source-verify-git.mjs'),root,'skills/test-skill',sha],{
+ const result=spawnSync(process.execPath,[fileURLToPath(new URL('./skill-source-verify-git.mjs',import.meta.url)),root,'skills/test-skill',sha],{
   encoding:'utf8',timeout:30000,env:{...process.env,GIT_DIR:'/nonexistent/fake-git-dir',GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'core.fsmonitor',GIT_CONFIG_VALUE_0:'!false'},
  });
  assert.equal(result.status,0,result.stderr);
