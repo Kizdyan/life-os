@@ -32,6 +32,9 @@ const audit = {
   inventoryComplete: true, staticCheckPassed: true,
   scannedFiles: 2, findings: [],
   revisionVerified: true,
+  verificationMethod: "pinned-local-git-tree-blob",
+  sourceRevision: record.sourceRevision,
+  sourceSkillPath: record.skillPath,
   installationPerformed: false, executionPerformed: false,
 };
 describe("Local source evidence: metadata and SHA attestation", () => {
@@ -59,6 +62,17 @@ describe("Local source evidence: metadata and SHA attestation", () => {
     expect(assessLocalSkillSourceEvidence(record, admission, { ...audit, findings: [
       { path: "script.sh", rule: "untrusted", severity: "block" },
     ] }).verified).toBe(false);
+  });
+  it("rejects forged boolean without an attested Git tree and exact skill path", () => {
+    expect(assessLocalSkillSourceEvidence(record, admission, {
+      ...audit, verificationMethod: undefined,
+    }).verified).toBe(false);
+    expect(assessLocalSkillSourceEvidence(record, admission, {
+      ...audit, sourceRevision: "f".repeat(40),
+    }).verified).toBe(false);
+    expect(assessLocalSkillSourceEvidence(record, admission, {
+      ...audit, sourceSkillPath: "skills/other",
+    }).verified).toBe(false);
   });
   it("requires exact revision provenance match", () => {
     expect(assessLocalSkillSourceEvidence(record, {
