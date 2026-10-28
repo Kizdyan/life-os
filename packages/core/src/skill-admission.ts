@@ -25,6 +25,11 @@ export interface ExternalSkillRiskReview {
   requestedPermissions: string[];
   approvedPermissions: string[];
   unresolvedFindings: string[];
+  /**
+   * Explicit reviewer acknowledgements keyed as path::rule.
+   * Never overrides severity=block. Optional for trusted internal callers.
+   */
+  acknowledgedFindings?: string[];
   handlesPersonalData: boolean;
   externalDataTransferApproved: boolean;
   additionalSideEffectApproval: boolean;
@@ -70,6 +75,11 @@ export function assessSkillAdmission(candidate: ExternalSkillCandidate): SkillAd
     pending.push("Human source review, reviewer identity and security scan required");
   }
   if (r.unresolvedFindings.length > 0) blocked.push("Security findings must be resolved");
+  if (r.acknowledgedFindings &&
+      (new Set(r.acknowledgedFindings).size !== r.acknowledgedFindings.length ||
+       r.acknowledgedFindings.some(key => !key.trim() || key.length > 400))) {
+    blocked.push("Invalid or duplicate security finding acknowledgements");
+  }
   const requested = new Set(r.requestedPermissions);
   const approved = new Set(r.approvedPermissions);
   if (requested.size !== r.requestedPermissions.length ||
