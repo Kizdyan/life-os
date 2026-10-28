@@ -10,12 +10,13 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { basename, posix, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const MAX_FILES = 80;
-const MAX_BYTES = 1_000_000;
-const MAX_FILE_BYTES = 200_000;
-const TEXT_FILE = /(?:\.(?:md|mdx|txt|json|yaml|yml|toml|js|jsx|mjs|cjs|ts|tsx|py|sh|bash|ps1|bat|css|html|xml|sql)|^Dockerfile$|^Makefile$)$/i;
+const MAX_FILES = 300;
+const MAX_BYTES = 3_000_000;
+const MAX_FILE_BYTES = 512_000;
+const TEXT_FILE = /(?:\.(?:md|mdx|txt|json|yaml|yml|toml|js|jsx|mjs|cjs|ts|tsx|py|sh|bash|ps1|bat|css|html|xml|sql|svg|geojson)|^Dockerfile$|^Makefile$)$/i;
 const RULES = [
   ['remote_shell', /(?:curl|wget)[^\n]{0,300}\|\s*(?:sudo\s+)?(?:sh|bash)\b/i, 'block'],
+  ['embedded_svg_script', /<script\b|\bonload\s*=|(?:xlink:)?href\s*=\s*["']\s*javascript:/i, 'block'],
   ['approval_bypass', /ignore (?:all )?(?:previous|prior|system) instructions|bypass (?:security|human )?approval/i, 'block'],
   ['destructive_root', /\brm\s+-[rRfF]{1,5}\s+\/(?:\s|$)/m, 'block'],
   ['secrets_access', /(?:process\.env|os\.environ|\.aws\/credentials|\.ssh\/id_|\bprintenv\b)/i, 'review'],
