@@ -28,6 +28,11 @@ describe('Persona cloud project response validation',()=>{
   {revision:-1},
   {revision:1.5},
   {revision:'2'},
+  {revision:Number.MAX_SAFE_INTEGER+1},
+  {id:'   '},
+  {owner_id:'   '},
+  {title:'   '},
+  {updated_at:'not-a-date'},
   {updated_at:undefined},
   {snapshot:undefined}
  ])('rejects invalid or missing fields: %j',(patch)=>{
