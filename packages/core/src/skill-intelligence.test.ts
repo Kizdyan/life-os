@@ -52,6 +52,9 @@ const cleanSourceAudit = {
   bundleSha256: admission.provenance.bundleSha256!,
   inventoryComplete: true, staticCheckPassed: true,
   scannedFiles: 1, findings: [], revisionVerified: true,
+  verificationMethod: "pinned-local-git-tree-blob",
+  sourceRevision: record.sourceRevision,
+  sourceSkillPath: record.skillPath,
   installationPerformed: false, executionPerformed: false,
 };
 const plan = (overrides: Partial<Parameters<typeof planSkillRoute>[0]> = {}) =>
@@ -194,6 +197,10 @@ describe("Skill Intelligence: planned routes", () => {
     expect(plan({ sourceAudit: { ...cleanSourceAudit, manifestSha256: "d".repeat(64) } }).status).toBe("blocked");
     expect(plan({ sourceAudit: { ...cleanSourceAudit, bundleSha256: "e".repeat(64) } }).status).toBe("blocked");
     expect(plan({ admission: { ...admission, provenance: { ...admission.provenance, bundleSha256: undefined } } }).status).toBe("blocked");
+  });
+  it("never trusts a bare source-verification boolean without Git proof metadata", () => {
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, verificationMethod: undefined } }).status).toBe("blocked");
+    expect(plan({ sourceAudit: { ...cleanSourceAudit, sourceSkillPath: "skills/another" } }).status).toBe("blocked");
   });
   it("requires a complete clean local inventory before routing", () => {
     expect(plan({ sourceAudit: { ...cleanSourceAudit, inventoryComplete: false } }).status).toBe("blocked");
