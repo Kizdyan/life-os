@@ -83,6 +83,11 @@ export function loadPersonaProjects(storage:PersonaProjectStorage,newId:()=>stri
  return migrated;
 }
 
+export function validatePersonaProjectSnapshot(value:unknown):PersonaProject{
+ if(!isProject(value))throw new Error('invalid_persona_project_snapshot');
+ return value;
+}
+
 export function savePersonaProject(storage:PersonaProjectStorage,project:PersonaProject,activeProjectId=project.id):PersonaProjectCollection{
  if(!isProject(project))throw new Error('invalid_persona_project');
  const current=readCollection(storage)??emptyCollection();
