@@ -16,6 +16,10 @@ export interface LocalSkillSourceAudit {
   scannedFiles: number;
   findings: Array<{ path: string; rule: string; severity: string }>;
   revisionVerified: boolean;
+  /** Produced by the local read-only pinned Git object verifier, not by directory scan. */
+  verificationMethod?: string;
+  sourceRevision?: string;
+  sourceSkillPath?: string;
   installationPerformed: boolean;
   executionPerformed: boolean;
 }
@@ -34,8 +38,11 @@ export function assessLocalSkillSourceEvidence(
       !Array.isArray(report.findings) || report.findings.length > 0) {
     reasons.push("Local source inventory incomplete or contains findings");
   }
-  if (!report.revisionVerified) {
-    reasons.push("Independent source commit verification not recorded");
+  if (!report.revisionVerified ||
+      report.verificationMethod !== "pinned-local-git-tree-blob" ||
+      report.sourceRevision !== record.sourceRevision ||
+      report.sourceSkillPath !== record.skillPath) {
+    reasons.push("Pinned local Git source attestation missing or does not match catalog record");
   }
   if (report.installationPerformed || report.executionPerformed) {
     reasons.push("Inspection must precede any third-party installation or execution");
