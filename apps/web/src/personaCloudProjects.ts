@@ -30,10 +30,12 @@ async function request<T>(c:CloudCredentials,path:string,body?:unknown):Promise<
 export async function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
  const pageSize=50;
  const projects:CloudProject[]=[];
- for(let offset=0;offset<1000;offset+=pageSize){
-  const value=await request<unknown>(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc,id.asc&limit='+pageSize+'&offset='+offset);
+ for(let offset=0;offset<=1000;offset+=pageSize){
+  const limit=offset===1000?1:pageSize;
+  const value=await request<unknown>(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc,id.asc&limit='+limit+'&offset='+offset);
   if(!Array.isArray(value))throw Error('Unexpected Persona cloud response: project list required.');
-  if(value.length>pageSize)throw Error('Unexpected Persona cloud response: page limit exceeded.');
+  if(value.length>limit)throw Error('Unexpected Persona cloud response: page limit exceeded.');
+  if(offset===1000){if(value.length===0)return projects;break;}
   projects.push(...value.map(parseCloudProject));
   if(value.length<pageSize)return projects;
  }
