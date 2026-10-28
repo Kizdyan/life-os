@@ -101,3 +101,4 @@ export * from './ai-capacity-routing';
 export * from './skill-admission';
 export * from './media-export-qa';
 export * from './skill-intelligence';
+export * from './skill-discovery-seeds';
