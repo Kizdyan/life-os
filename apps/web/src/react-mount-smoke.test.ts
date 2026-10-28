@@ -43,6 +43,13 @@ describe('Life OS and Persona JSX runtime rendering', () => {
       onApplied: () => undefined,
     }))).toContain('Выполнить');
   });
+
+  it('renders a dedicated project workspace instead of one anonymous draft', () => {
+    stubBrowser('#persona');
+    const markup = renderToString(React.createElement(PersonaFactory));
+    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Новый проект');
+  });
 });
 
 describe('Persona creative brief preservation', () => {

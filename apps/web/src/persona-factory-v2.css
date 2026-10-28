@@ -7,4 +7,6 @@
 .personaQuickStartGrid button{min-height:52px;border:0;border-radius:14px;background:#171717;color:#fff;font:inherit;font-size:15px;font-weight:650;padding:10px;cursor:pointer}
 .personaQuickStartGrid button:last-child{grid-column:1/-1;background:#efeee9;color:#222}
 .personaQuickStart p{font-size:12px;line-height:1.4;color:#777;margin:12px 0 0}
+.personaProjects{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 18px;padding:14px 16px;border:1px solid #e6e4df;border-radius:18px;background:#fff}.personaProjects>div:first-child{display:grid;gap:3px}.personaProjects small{color:#777;font-size:12px}.personaProjects .actions{margin:0;justify-content:flex-end}.personaProjects .actions button{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:600px){.pfHead{margin-bottom:16px}.pfHead h2{font-size:27px;margin:6px 0}.pfHead p{font-size:13px;line-height:1.4}.personaFactoryV2 .pfHead small{font-size:10px}.personaQuickStart{padding:14px}.personaQuickStart h3{font-size:19px}}
+@media(max-width:600px){.personaProjects{display:grid}.personaProjects .actions{justify-content:flex-start}.personaProjects .actions button{min-height:44px;max-width:100%}}
