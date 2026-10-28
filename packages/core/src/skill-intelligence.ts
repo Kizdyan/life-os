@@ -68,8 +68,8 @@ export interface SkillRoutePlan {
 const SHA256 = /^[a-f0-9]{64}$/i;
 const COMMIT = /^[a-f0-9]{40}$/i;
 const ID = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
-const MAX_FILES = 80;
-const MAX_CONTENT_BYTES = 1_000_000;
+const MAX_FILES = 300;
+const MAX_CONTENT_BYTES = 3_000_000;
 
 function canonicalRepo(url: string): boolean {
   try {
