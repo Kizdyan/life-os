@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {loadPersonaTimelineSettings,validateReattachedVideo} from './personaTimelineSettings';
+import {hasValidTimelineBounds,loadPersonaTimelineSettings,validateReattachedVideo} from './personaTimelineSettings';
 interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number; sourceSizeBytes?:number }
 export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
@@ -132,7 +132,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  async function renderLocal(){
   if(rendering)return;
   if(clips.length<2||clips.some(c=>!filesById.current.has(c.id))){setError('Загрузи все исходники перед рендером');return}
-  if(clips.some(c=>c.durationSec<=0||c.startSec<0||c.startSec+c.durationSec>c.sourceDuration+0.01)){setError('Проверь тайминги');return}
+  if(clips.some(c=>!hasValidTimelineBounds(c))){setError('Проверь тайминги');return}
   setRendering(true);setError('');
   const base='http://127.0.0.1:47831';
   let token='';
@@ -170,7 +170,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
  }
  function download() {
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
-   if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
+   if(clips.some(clip=>!hasValidTimelineBounds(clip))){setError('Проверь временные границы клипов');return}
   if(new Set(clips.map(clip=>clip.name.toLocaleLowerCase())).size!==clips.length){setError('Файлы с одинаковыми именами нужно переименовать до импорта');return}
   if(clips.some(clip=>!clip.name||clip.name==='.'||clip.name==='..'||/[\\/\x00-\x1f]/.test(clip.name))){setError('Недопустимое имя исходного файла в монтажном плане');return}
   const project={version:1,width,height,fps,clips:clips.map(clip=>({path:'./source/'+clip.name,startSec:clip.startSec,durationSec:clip.durationSec}))};
