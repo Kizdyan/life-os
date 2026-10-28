@@ -1,5 +1,5 @@
-import {describe,expect,it} from 'vitest';
-import {parseCloudProject} from './personaCloudProjects';
+import {afterEach,describe,expect,it,vi} from 'vitest';
+import {listCloudProjects,parseCloudProject} from './personaCloudProjects';
 
 const valid={
  id:'6d6f6b66-1000-4000-8000-000000000001',
@@ -34,5 +34,30 @@ describe('Persona cloud project response validation',()=>{
   const candidate={...valid,...patch};
   if('snapshot' in patch&&patch.snapshot===undefined)delete (candidate as Partial<typeof valid>).snapshot;
   expect(()=>parseCloudProject(candidate)).toThrow(/Unexpected Persona cloud response/);
+ });
+});
+
+describe('Persona cloud project list',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const credentials={url:'https://example.supabase.co',publishableKey:'public-key',accessToken:'user-jwt'};
+ it('rejects malformed server list instead of showing an empty library',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({error:'bad shape'})}));
+  await expect(listCloudProjects(credentials)).rejects.toThrow(/project list required/);
+ });
+ it('rejects a malformed item within an otherwise valid list',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>[valid,{id:'invalid'}]}));
+  await expect(listCloudProjects(credentials)).rejects.toThrow(/project fields missing/);
+ });
+ it('accepts valid list and sends the user token',async()=>{
+  const fetchMock=vi.fn().mockResolvedValue({ok:true,json:async()=>[valid]});
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(listCloudProjects(credentials)).resolves.toEqual([valid]);
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/rest/v1/persona_projects?'),expect.objectContaining({headers:expect.objectContaining({Authorization:'Bearer user-jwt'})}));
+ });
+ it('does not make requests without a user token',async()=>{
+  const fetchMock=vi.fn();
+  vi.stubGlobal('fetch',fetchMock);
+  await expect(listCloudProjects({...credentials,accessToken:'public-key'})).rejects.toThrow(/Sign in/);
+  expect(fetchMock).not.toHaveBeenCalled();
  });
 });
