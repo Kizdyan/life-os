@@ -136,6 +136,22 @@ describe("Skill Intelligence: source inspection", () => {
     expect(inspection.staticCheckPassed).toBe(true);
     expect(inspection.humanReviewRequired).toBe(true);
   });
+  it("handles official-scale 144-file source evidence without raising limits indefinitely", () => {
+    const files = [
+      { path: "SKILL.md", content: "# Router" },
+      { path: "data.geojson", content: "x".repeat(330_000) },
+      ...Array.from({ length: 142 }, (_, i) => ({
+        path: "notes-" + i + ".md", content: "x".repeat(6_000),
+      })),
+    ];
+    const result = inspectSkillFiles(files, true);
+    expect(result.filesReviewed).toBe(144);
+    expect(result.staticCheckPassed).toBe(true);
+    expect(result.humanReviewRequired).toBe(true);
+    expect(inspectSkillFiles(Array.from({ length: 301 }, (_, i) => ({
+      path: "f-" + i + ".md", content: "safe",
+    })), true).staticCheckPassed).toBe(false);
+  });
   it("rejects missing SKILL.md and oversized sources", () => {
     expect(inspectSkillFiles([{ path: "README.md", content: "hi" }], true).staticCheckPassed).toBe(false);
     expect(inspectSkillFiles([{ path: "SKILL.md", content: "x".repeat(1_000_001) }], true)
