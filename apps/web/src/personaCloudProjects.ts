@@ -27,11 +27,17 @@ async function request<T>(c:CloudCredentials,path:string,body?:unknown):Promise<
  }
  return response.json() as Promise<T>;
 }
-export function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
- return request<unknown>(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc&limit=50').then(value=>{
+export async function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
+ const pageSize=50;
+ const projects:CloudProject[]=[];
+ for(let offset=0;offset<1000;offset+=pageSize){
+  const value=await request<unknown>(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc,id.asc&limit='+pageSize+'&offset='+offset);
   if(!Array.isArray(value))throw Error('Unexpected Persona cloud response: project list required.');
-  return value.map(parseCloudProject);
- });
+  if(value.length>pageSize)throw Error('Unexpected Persona cloud response: page limit exceeded.');
+  projects.push(...value.map(parseCloudProject));
+  if(value.length<pageSize)return projects;
+ }
+ throw Error('Список облачных проектов слишком большой для безопасной загрузки. Ничего не было удалено.');
 }
 export function createCloudProject(c:CloudCredentials,p:{localKey:string;title:string;snapshot:unknown;requestKey:string}){
  if(!p.localKey||!p.title||!p.requestKey)throw Error('Missing project identity');
