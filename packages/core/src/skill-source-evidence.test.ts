@@ -74,6 +74,30 @@ describe("Local source evidence: metadata and SHA attestation", () => {
       ...audit, sourceSkillPath: "skills/other",
     }).verified).toBe(false);
   });
+  it("requires explicit acknowledgement and identified final reviewer for nonblocking findings", () => {
+    const reviewedAudit = { ...audit, staticCheckPassed: false, findings: [
+      { path: "scripts/prep.mjs", rule: "executable_helper_requires_review", severity: "review" },
+    ] };
+    expect(assessLocalSkillSourceEvidence(record, admission, reviewedAudit).verified).toBe(false);
+    expect(assessLocalSkillSourceEvidence(record, {
+      ...admission, review: { ...admission.review,
+        acknowledgedFindings: ["scripts/prep.mjs::executable_helper_requires_review"],
+      },
+    }, reviewedAudit).verified).toBe(true);
+    expect(assessLocalSkillSourceEvidence(record, {
+      ...admission, humanApproved: false, review: { ...admission.review,
+        acknowledgedFindings: ["scripts/prep.mjs::executable_helper_requires_review"],
+      },
+    }, reviewedAudit).verified).toBe(false);
+  });
+  it("never accepts severity=block even if the reviewer tries to acknowledge it", () => {
+    const blockedAudit = { ...audit, staticCheckPassed: false,
+      findings: [{ path: "SKILL.md", rule: "remote_shell", severity: "block" }] };
+    const reviewed = { ...admission, review: { ...admission.review,
+      acknowledgedFindings: ["SKILL.md::remote_shell"],
+    } };
+    expect(assessLocalSkillSourceEvidence(record, reviewed, blockedAudit).verified).toBe(false);
+  });
   it("requires exact revision provenance match", () => {
     expect(assessLocalSkillSourceEvidence(record, {
       ...admission, provenance: { ...admission.provenance, sourceRevision: "f".repeat(40) },
