@@ -10,9 +10,12 @@
     "web:build": "vite build apps/web",
     "persona:qa": "node --experimental-strip-types scripts/persona-video-qa.mjs",
     "skills:inspect": "node scripts/skill-source-inspect.mjs",
-    "qa:local": "node --experimental-strip-types --test scripts/remotion-skill-review.test.mjs scripts/skill-source-inspect.test.mjs scripts/skill-source-verify-git.test.mjs scripts/persona-video-measure.test.mjs scripts/persona-video-qa.test.mjs",
+    "qa:local": "node --experimental-strip-types --test scripts/remotion-skill-review.test.mjs scripts/skill-source-inspect.test.mjs scripts/skill-source-verify-git.test.mjs scripts/persona-video-measure.test.mjs scripts/persona-video-qa.test.mjs scripts/skill-catalog-find.test.mjs scripts/skill-discovery-manifests.test.mjs",
     "skills:verify-source": "node scripts/skill-source-verify-git.mjs",
-    "skills:review-remotion": "node scripts/remotion-skill-review.mjs"
+    "skills:review-remotion": "node scripts/remotion-skill-review.mjs",
+    "skills:find": "node scripts/skill-catalog-find.mjs",
+    "skills:find:test": "node --test scripts/skill-catalog-find.test.mjs",
+    "skills:discovery:test": "node --test scripts/skill-catalog-find.test.mjs scripts/skill-discovery-manifests.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
