@@ -1,6 +1,14 @@
 /** Opt-in, authenticated Persona project transport. No anonymous writes or implicit migration. */
 export type CloudProject={id:string;owner_id:string;local_project_key:string;title:string;snapshot:unknown;revision:number;updated_at:string};
 export type CloudCredentials={url:string;publishableKey:string;accessToken:string};
+/** Validate untrusted RPC responses before treating a cloud write as successful. */
+export function parseCloudProject(value:unknown):CloudProject{
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Unexpected Persona cloud response: project object required. Local draft was not changed.');
+ const p=value as Record<string,unknown>;
+ if(typeof p.id!=='string'||!p.id||typeof p.owner_id!=='string'||!p.owner_id||typeof p.local_project_key!=='string'||typeof p.title!=='string'||!Number.isInteger(p.revision)||Number(p.revision)<0||typeof p.updated_at!=='string'||!('snapshot' in p))throw Error('Unexpected Persona cloud response: project fields missing. Local draft was not changed.');
+ return p as CloudProject;
+}
+
 function endpoint(c:CloudCredentials,path:string){
  const base=new URL(c.url);
  if(base.protocol!=='https:')throw Error('Cloud sync requires HTTPS');
@@ -17,9 +25,9 @@ export function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
 }
 export function createCloudProject(c:CloudCredentials,p:{localKey:string;title:string;snapshot:unknown;requestKey:string}){
  if(!p.localKey||!p.title||!p.requestKey)throw Error('Missing project identity');
- return request<CloudProject>(c,'/rest/v1/rpc/persona_create_project',{p_local_project_key:p.localKey,p_title:p.title,p_snapshot:p.snapshot,p_request_key:p.requestKey});
+ return request<unknown>(c,'/rest/v1/rpc/persona_create_project',{p_local_project_key:p.localKey,p_title:p.title,p_snapshot:p.snapshot,p_request_key:p.requestKey}).then(parseCloudProject);
 }
 export function updateCloudProject(c:CloudCredentials,p:{projectId:string;expectedRevision:number;snapshot:unknown;mutationKey:string}){
  if(!p.projectId||!Number.isInteger(p.expectedRevision)||p.expectedRevision<0||!p.mutationKey)throw Error('Invalid project revision');
- return request<CloudProject>(c,'/rest/v1/rpc/persona_update_project',{p_project_id:p.projectId,p_expected_revision:p.expectedRevision,p_snapshot:p.snapshot,p_mutation_key:p.mutationKey});
+ return request<unknown>(c,'/rest/v1/rpc/persona_update_project',{p_project_id:p.projectId,p_expected_revision:p.expectedRevision,p_snapshot:p.snapshot,p_mutation_key:p.mutationKey}).then(parseCloudProject);
 }
