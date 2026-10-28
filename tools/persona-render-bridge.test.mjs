@@ -1,12 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { request } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+function requestWithHost(url, host) {
+ return new Promise((resolve, reject) => {
+  const req=request(url,{headers:{Host:host}},res=>{
+   res.resume();
+   res.on('end',()=>resolve(res.statusCode));
+  });
+  req.on('error',reject);
+  req.end();
+ });
+}
 
 test('local Persona bridge rejects invalid requests and accepts valid timeline sessions',async()=>{
  const port=48000+Math.floor(Math.random()*1000);
@@ -17,8 +29,8 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
   for(let i=0;i<40;i++){try{const r=await fetch(base+'/health');if(r.ok){ready=true;break}}catch{}await delay(100)}
   assert.ok(ready,'Local bridge did not start');
   const {token}=await (await fetch(base+'/health')).json();
-  const forbidden=await fetch(base+'/health',{headers:{Host:'untrusted.example'}});
-  assert.equal(forbidden.status,403);
+  const forbidden=await requestWithHost(base+'/health','untrusted.example');
+  assert.equal(forbidden,403);
   const origin=await fetch(base+'/health',{headers:{Origin:'https://untrusted.example'}});
   assert.equal(origin.status,403);
   const healthQuery=await fetch(base+'/health?check=1');
