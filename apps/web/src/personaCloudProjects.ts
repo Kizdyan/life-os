@@ -21,7 +21,10 @@ async function request<T>(c:CloudCredentials,path:string,body?:unknown):Promise<
  return response.json() as Promise<T>;
 }
 export function listCloudProjects(c:CloudCredentials):Promise<CloudProject[]>{
- return request(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc&limit=50');
+ return request<unknown>(c,'/rest/v1/persona_projects?select=id,owner_id,local_project_key,title,snapshot,revision,updated_at&order=updated_at.desc&limit=50').then(value=>{
+  if(!Array.isArray(value))throw Error('Unexpected Persona cloud response: project list required.');
+  return value.map(parseCloudProject);
+ });
 }
 export function createCloudProject(c:CloudCredentials,p:{localKey:string;title:string;snapshot:unknown;requestKey:string}){
  if(!p.localKey||!p.title||!p.requestKey)throw Error('Missing project identity');
