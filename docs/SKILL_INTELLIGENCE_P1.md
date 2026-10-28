@@ -7,7 +7,7 @@
 ## Что добавлено
 - `skill-intelligence.ts`: детерминированный поиск по локальному каталогу, определение совместимости агента/задачи, предварительный статический анализ файлов и план запуска через проверенный `routeAICapability()` и существующий `assessSkillAdmission()`.
 - `skill-discovery-seeds.ts`: **ровно два исследовательских источника**, не обещание полного зеркала skills.sh:
-  1. Remotion Best Practices: `https://github.com/remotion-dev/remotion/blob/main/packages/skills/skills/remotion-best-practices/SKILL.md`
+  1. Remotion Best Practices: `https://github.com/remotion-dev/skills/blob/30d4553ecd46fbc5212fd0ff006ae43af522158b/skills/remotion-best-practices/SKILL.md`
   2. Find Skills: `https://github.com/vercel-labs/skills/blob/main/skills/find-skills/SKILL.md`
 - `skill-intelligence.test.ts`: тесты каталогизации, статической проверки и барьеров политики.
 
@@ -40,7 +40,7 @@
 - https://github.com/vercel-labs/skills
 - https://github.com/vercel-labs/skills/blob/main/docs/commands.md
 - https://skills.sh/docs
-- https://github.com/remotion-dev/remotion/blob/main/packages/skills/skills/remotion-best-practices/SKILL.md
+- https://github.com/remotion-dev/skills/blob/30d4553ecd46fbc5212fd0ff006ae43af522158b/skills/remotion-best-practices/SKILL.md
 
 ## Следующий практический сценарий
 Исследовать Remotion на нечастном тестовом проекте: базовый рендер vs рендер с правилами Skill; измерить стабильность, длительность, ошибки, титры/синхронизацию, кадровые артефакты; сравнить с уже имеющимся `media-export-qa`. После успешного пилота оценить UI-каталог на iPhone в актуальной ветке Persona без переноса пользовательских медиа в GitHub.
@@ -61,3 +61,6 @@ node --test scripts/skill-source-inspect.test.mjs
 Добавлен `skill-source-evidence.ts` и подключён к `planSkillRoute()`. Вход `sourceAudit` теперь обязателен для планирования и должен соответствовать review-происхождению по двум хешам, полноте инвентаризации и проверенной ревизии. В `ExternalSkillProvenance.bundleSha256` добавлено необязательное поле для обратной совместимости; **новый маршрут без него блокируется**. Даже положительный результат маршрутизатора остаётся *manual_install_review*, не разрешает установку или выполнение. Обновлены тестовые фикстуры и добавлены дополнительные unit-тесты.
 
 Локально проверено: `node --test scripts/skill-source-inspect.test.mjs` — **6/6 PASS** в изолированном тестовом каталоге Node 22.16.0. Это не заменяет `npm test`, `npm run typecheck` и полный GitHub CI. Remotion CLI в тестовой среде отсутствует, сетевой DNS доступ к npm registry отсутствует; **реальный A/B рендер Remotion пока не запускался**. Все признаки реального подключения/публикации должны оставаться неготовыми до независимого QA.
+
+## Уточнение официального Remotion источника
+Подтверждённая инструкция по установке агентских навыков: `https://www.remotion.dev/docs/ai/skills`. Используем отдельный официальный `remotion-dev/skills`, pinned commit `30d4553ecd46fbc5212fd0ff006ae43af522158b`. Внутренняя копия навыков из монорепозитория `remotion-dev/remotion` не идентична установочному пакету; три проверенные ссылки `remotion-create/REFERENCE.md`, `remotion-render/REFERENCE.md`, `remotion-captions/REFERENCE.md` в standalone версии существуют. Это не завершённый аудит всего пакета и не разрешение на установку.
