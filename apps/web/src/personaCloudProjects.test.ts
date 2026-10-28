@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {listCloudProjects,parseCloudProject} from './personaCloudProjects';
+import {listCloudProjects,parseCloudProject,PersonaCloudRequestError} from './personaCloudProjects';
 
 const valid={
  id:'6d6f6b66-1000-4000-8000-000000000001',
@@ -59,5 +59,25 @@ describe('Persona cloud project list',()=>{
   vi.stubGlobal('fetch',fetchMock);
   await expect(listCloudProjects({...credentials,accessToken:'public-key'})).rejects.toThrow(/Sign in/);
   expect(fetchMock).not.toHaveBeenCalled();
+ });
+});
+
+describe('Persona cloud HTTP errors',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const credentials={url:'https://example.supabase.co',publishableKey:'public-key',accessToken:'user-jwt'};
+ it.each([
+  [401,'Сессия истекла'],
+  [403,'Нет доступа'],
+  [409,'Конфликт версий'],
+  [429,'Слишком много запросов'],
+  [500,'Ошибка облака']
+ ])('reports status %i without overwriting local data',async(status,fragment)=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status}));
+  try{await listCloudProjects(credentials);throw Error('Expected cloud request to fail')}catch(error){
+   expect(error).toBeInstanceOf(PersonaCloudRequestError);
+   expect((error as PersonaCloudRequestError).status).toBe(status);
+   expect((error as Error).message).toContain(fragment);
+   expect((error as Error).message).toContain('Локальный черновик сохранён');
+  }
  });
 });
