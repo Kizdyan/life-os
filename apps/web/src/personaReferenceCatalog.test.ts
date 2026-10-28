@@ -56,6 +56,15 @@ describe('Persona reference library safety',()=>{
     expect(restored.items).toEqual(merged);
   });
 
+  it('merges the same hashed reference from scanner and iPhone without false duplicate',()=>{
+    const scan=file('clip.mp4',SHA_A);
+    const phone=makeReferenceItem({name:'clip.mp4',type:'video',sizeBytes:100,
+      sha256:SHA_A,lastModified:1710000000000,source:'files'});
+    const merged=mergeReferenceItems([scan],[phone]);
+    expect(merged).toHaveLength(1);
+    expect(analyzeReferenceDuplicates(merged).exact).toHaveLength(0);
+  });
+
   it('does not silently interpret malformed storage as valid',()=>{
     expect(readReferenceCatalog('{broken').items).toEqual([]);
     expect(readReferenceCatalog(JSON.stringify({schemaVersion:99,items:[]})).items).toEqual([]);
