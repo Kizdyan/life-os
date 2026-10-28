@@ -123,6 +123,44 @@ export function recommendSkills(records: readonly SkillDirectoryRecord[], query:
 }
 
 /**
+ * Detect dangling documentation dependencies and traversal out of the inspected
+ * package. Repository-relative links and external resources are never assumed
+ * audited: they must be resolved in a separate independent source review.
+ */
+function inspectDocumentationLinks(file: SkillTextFile, present: ReadonlySet<string>): SkillInspectionFinding[] {
+  if (!/\.md$/i.test(file.path)) return [];
+  const findings: SkillInspectionFinding[] = [];
+  const markdownLink = /\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  for (const match of file.content.matchAll(markdownLink)) {
+    const raw = match[1];
+    if (/^(?:https?:\/\/|mailto:|#)/i.test(raw)) continue;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("/")) {
+      findings.push({ path: file.path, rule: "Unreviewed absolute documentation dependency", severity: "block" });
+      continue;
+    }
+    let relative: string;
+    try { relative = decodeURIComponent(raw.split(/[?#]/, 1)[0]); }
+    catch { findings.push({ path: file.path, rule: "Malformed documentation link", severity: "block" }); continue; }
+    const parts = file.path.split("/").slice(0, -1);
+    let traversal = false;
+    for (const segment of relative.split("/")) {
+      if (segment === "." || segment === "") continue;
+      if (segment === "..") {
+        if (!parts.length) { traversal = true; break; }
+        parts.pop();
+      } else parts.push(segment);
+    }
+    const resolved = parts.join("/");
+    if (traversal) {
+      findings.push({ path: file.path, rule: "Reference escapes reviewed skill package: " + raw, severity: "block" });
+    } else if (!present.has(resolved)) {
+      findings.push({ path: file.path, rule: "Missing linked skill resource: " + raw, severity: "block" });
+    }
+  }
+  return findings;
+}
+
+/**
  * Static triage over an explicitly supplied FULL file inventory.
  * This does not detect every prompt injection, malware or supply-chain risk.
  */
@@ -158,6 +196,9 @@ export function inspectSkillFiles(files: readonly SkillTextFile[], inventoryComp
       findings.push({ path: file.path, rule: "Executable source requires independent review", severity: "review" });
     }
   }
+  for (const file of files) {
+    if (seen.has(file.path)) findings.push(...inspectDocumentationLinks(file, seen));
+  }
   if (manifestCount !== 1) findings.push({ path: "SKILL.md", rule: "Exactly one root SKILL.md required", severity: "block" });
   if (totalBytes > MAX_CONTENT_BYTES) findings.push({ path: "*", rule: "Skill source exceeds inspection limit", severity: "block" });
   if (!inventoryComplete) findings.push({ path: "*", rule: "Unverified file inventory completeness", severity: "block" });
@@ -189,7 +230,8 @@ export function planSkillRoute(input: {
   if (record.id !== admission.provenance.id ||
       record.sourceUrl !== admission.provenance.sourceUrl ||
       record.sourceRevision !== admission.provenance.sourceRevision ||
-      record.manifestSha256 !== admission.provenance.contentSha256) {
+      record.manifestSha256 !== admission.provenance.contentSha256 ||
+      record.license !== admission.provenance.license) {
     blockers.push("Catalog metadata does not match reviewed provenance");
   }
   if (!record.domains.includes(task.domain)) blockers.push("Task domain not advertised");
