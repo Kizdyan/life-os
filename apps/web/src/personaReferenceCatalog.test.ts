@@ -67,7 +67,7 @@ describe('Persona reference library safety',()=>{
     vi.stubGlobal('localStorage',{getItem:()=>null,setItem:()=>undefined});
     const markup=renderToString(React.createElement(PersonaFactory));
     expect(markup).toContain('Библиотека референсов');
-    expect(markup).toContain('Подтвердить');
+    expect(markup).toContain('Импортировать отчёт сканера');
     expect(markup).toContain('Сортировка');
     expect(markup).toContain('Исходники не перемещаются');
   });
