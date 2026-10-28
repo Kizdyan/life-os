@@ -19,7 +19,7 @@ describe('Life OS and Persona JSX runtime rendering', () => {
   it('renders Persona route without React is not defined', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(App));
-    expect(markup).toContain('Редакция Persona');
+    expect(markup).toContain('Создай материал');
     expect(markup).toContain('Своя идея');
   });
 
@@ -35,7 +35,7 @@ describe('Life OS and Persona JSX runtime rendering', () => {
 
   it('mounts the individual Persona, Erika and Media Brain components', () => {
     stubBrowser('#today');
-    expect(renderToString(React.createElement(PersonaFactory))).toContain('Редакция Persona');
+    expect(renderToString(React.createElement(PersonaFactory))).toContain('Создай материал');
     expect(renderToString(React.createElement(MediaBrainCard))).toContain('Контент-контур');
     expect(renderToString(React.createElement(ErikaSheet, {
       items: [],
