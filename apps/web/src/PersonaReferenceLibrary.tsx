@@ -25,6 +25,7 @@ export default function PersonaReferenceLibrary({onBack}:{onBack:()=>void}) {
   const [category,setCategory]=useState<ReferenceCategory|'all'>('all');
   const [sort,setSort]=useState<'name'|'size'|'kind'>('name');
   const [busy,setBusy]=useState(false);
+  const [visibleLimit,setVisibleLimit]=useState(80);
   const [status,setStatus]=useState('');
   const {exact,candidates}=useMemo(()=>analyzeReferenceDuplicates(catalog.items),[catalog.items]);
   const filtered=useMemo(()=>{
@@ -170,7 +171,7 @@ export default function PersonaReferenceLibrary({onBack}:{onBack:()=>void}) {
     </div>}
     <div className="referenceResults"><h3>Каталог · {filtered.length}</h3>
       {!filtered.length&&<p>Здесь пока нет подходящих материалов. Добавьте исходники или измените фильтры.</p>}
-      {filtered.map(item=><article key={item.id} className="referenceCard">
+      {filtered.slice(0,visibleLimit).map(item=><article key={item.id} className="referenceCard">
         <div className="referenceCardTop"><span className="referenceKind">{item.type==='video'?'Видео':item.type==='image'?'Фото':'Документ'}</span><span>{fileSize(item.sizeBytes)}</span></div>
         <h4 title={item.name}>{item.name}</h4>
         <p>{item.sha256?'SHA-256 проверяемый':'Без полного SHA-256 · точный дубль не подтверждён'} · {item.source==='inventory'?'Сканер':'Устройство'}</p>
@@ -179,6 +180,7 @@ export default function PersonaReferenceLibrary({onBack}:{onBack:()=>void}) {
         </select></label>
         <small>{pendingCategories[item.id]!==undefined?'Изменение ожидает подтверждения':item.reviewed?'Категория проверена':'Категория предложена по названию — проверьте'}</small>
       </article>)}
+      {filtered.length>visibleLimit&&<button type="button" className="ghost" onClick={()=>setVisibleLimit(x=>x+80)}>Показать ещё ({filtered.length-visibleLimit})</button>}
     </div>
     {(exact.length>0||candidates.length>0)&&<details className="referenceDuplicates">
       <summary>Проверить повторы ({exact.length} точных групп, {candidates.length} предположительных)</summary>
