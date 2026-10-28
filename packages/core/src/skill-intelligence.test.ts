@@ -99,6 +99,12 @@ describe("Skill Intelligence: source inspection", () => {
       "Secret access", "Executable source requires independent review",
     ]));
   });
+  it("flags global auto-confirm skill installation instructions", () => {
+    const report = inspectSkillFiles([{ path: "SKILL.md",
+      content: "npx skills add owner/repo@skill -g -y" }], true);
+    expect(report.findings.some(x => x.rule.includes("automatic global confirmation"))).toBe(true);
+    expect(report.staticCheckPassed).toBe(false);
+  });
   it("rejects incomplete inventories and traversal paths", () => {
     expect(inspectSkillFiles([{ path: "SKILL.md", content: "hi" }], false).staticCheckPassed).toBe(false);
     expect(inspectSkillFiles([
