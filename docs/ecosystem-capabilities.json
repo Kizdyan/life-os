@@ -1,0 +1,577 @@
+{
+  "schemaVersion": 1,
+  "lastReviewed": "2026-10-28",
+  "statusDisclaimer": "draft=code in open PR, not merged or deployed; partial=some pieces reported; research/planned not live; source_inspected is not end-to-end tested",
+  "domains": {
+    "persona": "Persona",
+    "ai": "AI Capacity OS / Erika",
+    "life": "Life OS / career / finance / health"
+  },
+  "capabilities": [
+    {
+      "id": 1,
+      "domain": "persona",
+      "title": "Умная библиотека фото, видео и дубликатов",
+      "status": "draft",
+      "priority": "P0",
+      "pr": 117,
+      "dependsOn": [],
+      "nextAction": "Добавить read-only просмотр и утверждаемую сортировку в iPhone UI",
+      "acceptance": "На iPhone загружаются файлы, отображаются типы, точные SHA-повторы и предполагаемые похожие; удаление и перенос невозможны без отдельного подтверждения",
+      "evidence": "source_inspected"
+    },
+    {
+      "id": 2,
+      "domain": "persona",
+      "title": "Учёт источников, авторства и прав",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Добавить provenance к исходникам и экспорту",
+      "acceptance": "У каждого ассета есть источник, автор, статус прав; неизвестные права блокируют публикацию",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 3,
+      "domain": "persona",
+      "title": "Автоматический лист визуального стиля",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Связать референсы с проверяемыми цветовыми правилами",
+      "acceptance": "Стиль имеет утверждаемые референсы, допускает сравнение до/после и не изменяет лицо",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 4,
+      "domain": "persona",
+      "title": "Подробный операторский бриф для iPhone",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        5
+      ],
+      "nextAction": "Превратить сценарий в список кадров, света, звука и реквизита",
+      "acceptance": "Бриф можно открыть на iPhone и отметить реальные кадры",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 5,
+      "domain": "persona",
+      "title": "Сценарии под актёрские амплуа",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Привязать сценарии к утверждённой актёрской идентичности",
+      "acceptance": "Выдаётся редактируемый сценарий с ролями, действиями и таймкодами",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 6,
+      "domain": "persona",
+      "title": "Содержательные хуки для Reels",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        5
+      ],
+      "nextAction": "Добавить три альтернативных начала к сценарию",
+      "acceptance": "Хуки содержат конкретное обещание зрителю и допускают ручной выбор",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 7,
+      "domain": "persona",
+      "title": "Темы для сохранений и пересылок",
+      "status": "planned",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        6
+      ],
+      "nextAction": "Добавить гипотезы пользы и share/save",
+      "acceptance": "Показывается гипотеза и фактические метрики после публикации",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 8,
+      "domain": "persona",
+      "title": "Анализ удачных роликов и адаптация идей",
+      "status": "research",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Определить права и методику сравнения публичных референсов",
+      "acceptance": "Есть атрибутированная карточка референса и оригинальная адаптация без копирования",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 9,
+      "domain": "persona",
+      "title": "Транскрипция и разметка речи",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Проверить локальный транскрипт на реальных клипах",
+      "acceptance": "Таймкоды проверяются на записи, ошибки можно исправить",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 10,
+      "domain": "persona",
+      "title": "Смысловой монтаж и B-roll",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        9,
+        19
+      ],
+      "nextAction": "Строить редактируемый EDL из транскрипта и сценария",
+      "acceptance": "Монтажный план редактируется до запуска рендера и полностью воспроизводим",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 11,
+      "domain": "persona",
+      "title": "Обнаружение сцен и планов",
+      "status": "planned",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Проверить обнаружение сцен на коротком тесте",
+      "acceptance": "Сцены привязаны к таймкодам; ложные срабатывания оцениваются",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 12,
+      "domain": "persona",
+      "title": "Маскирование человека и текст за ним",
+      "status": "planned",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Тестировать маски без изменения идентичности",
+      "acceptance": "Проверено отсутствие артефактов на лице и очках на контрольных кадрах",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 13,
+      "domain": "persona",
+      "title": "Анимированные титры и Remotion-шаблоны",
+      "status": "research",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Проверить один изолированный шаблон",
+      "acceptance": "Видео и исходный шаблон воспроизводимы без платной зависимости",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 14,
+      "domain": "persona",
+      "title": "Субтитры с проверкой синхронизации",
+      "status": "draft",
+      "priority": "P1",
+      "pr": 108,
+      "dependsOn": [
+        9,
+        19
+      ],
+      "nextAction": "Подключить QA субтитров к экспорту",
+      "acceptance": "Субтитры попадают в MP4 и подтверждены измерением синхронизации",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 15,
+      "domain": "persona",
+      "title": "Цветокоррекция с сохранением внешности",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Собрать эталоны и тесты неизменности лица",
+      "acceptance": "Человек утверждает сравнение исходника и результата, кожа и очки не дорисованы",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 16,
+      "domain": "persona",
+      "title": "Контроль громкости и звука",
+      "status": "draft",
+      "priority": "P1",
+      "pr": 108,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Встроить fail-closed аудио QA в экспорт",
+      "acceptance": "Проверены loudness, пики и разборчивость речи на реальном файле",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 17,
+      "domain": "persona",
+      "title": "Версии для Instagram, VK и YouTube",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Сделать воспроизводимые экспортные профили",
+      "acceptance": "Экспортируются утверждённые размеры, кодеки и субтитры для площадок",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 18,
+      "domain": "persona",
+      "title": "Автоматические карусели",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Проверить последовательную сборку и ручное утверждение",
+      "acceptance": "На iPhone создаётся корректная карусель без модификации лица",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 19,
+      "domain": "persona",
+      "title": "Полный видеоконвейер до готового MP4",
+      "status": "partial",
+      "priority": "P0",
+      "pr": 115,
+      "dependsOn": [],
+      "nextAction": "Два настоящих файла → trim → reorder → preview → MP4 на iPhone",
+      "acceptance": "На физическом iPhone два пользовательских клипа проходят экспорт, загрузку и ffprobe/визуальное QA",
+      "evidence": "source_inspected"
+    },
+    {
+      "id": 20,
+      "domain": "persona",
+      "title": "Согласование публикаций и полезных комментариев",
+      "status": "partial",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        19
+      ],
+      "nextAction": "Сохранить обязательное ручное подтверждение",
+      "acceptance": "Ничего не публикуется и не комментируется без явного approval",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 21,
+      "domain": "persona",
+      "title": "Аналитика просмотров, подписок, заявок и дохода",
+      "status": "partial",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        20
+      ],
+      "nextAction": "Подключить только авторизованные источники метрик",
+      "acceptance": "Отчёт показывает источник и дату чисел; не подменяет реальную статистику",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 22,
+      "domain": "ai",
+      "title": "Динамический выбор модели по качеству и цене",
+      "status": "draft",
+      "priority": "P1",
+      "pr": 108,
+      "dependsOn": [],
+      "nextAction": "Подключить проверенные реальные адаптеры и замеры",
+      "acceptance": "Выбор основан на доступности, качестве, цене, приватности и реальном benchmark",
+      "evidence": "source_inspected"
+    },
+    {
+      "id": 23,
+      "domain": "ai",
+      "title": "FreeLLMAPI / OmniRoute и учёт бесплатных квот",
+      "status": "research",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        22
+      ],
+      "nextAction": "Сравнить изолированно FreeLLMAPI с маршрутизацией без секретов",
+      "acceptance": "Лимиты, правила провайдеров, стоимость и передача данных подтверждены испытаниями",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 24,
+      "domain": "ai",
+      "title": "Долговременная память ИИ-агентов",
+      "status": "partial",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Аудировать существующую память до новых интеграций",
+      "acceptance": "Проверены точность восстановления, изоляция чувствительных данных и удаление",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 25,
+      "domain": "ai",
+      "title": "Сжатие контекста через Headroom",
+      "status": "research",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        22
+      ],
+      "nextAction": "Провести измеримый benchmark на обезличенных задачах",
+      "acceptance": "Показаны реальные токены, потери точности и стоимость относительно baseline",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 26,
+      "domain": "ai",
+      "title": "Реестр skills и безопасная установка",
+      "status": "draft",
+      "priority": "P1",
+      "pr": 108,
+      "dependsOn": [],
+      "nextAction": "Проверить project-local find-skills и admission gate вместе",
+      "acceptance": "Найденный навык не исполняется до проверки источника, прав и approval",
+      "evidence": "source_inspected"
+    },
+    {
+      "id": 27,
+      "domain": "ai",
+      "title": "MCP GitHub, Supabase и другие интеграции",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        26
+      ],
+      "nextAction": "Ограничить права каждого адаптера",
+      "acceptance": "Подтверждён scope доступа; production и секреты требуют approval",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 28,
+      "domain": "ai",
+      "title": "Observer, QA, retries и Undo",
+      "status": "partial",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Подключить подтверждение результата сквозного задания",
+      "acceptance": "Результат проверен Observer, ошибки видны, откат возможен",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 29,
+      "domain": "ai",
+      "title": "Распределение задач по стоимости",
+      "status": "draft",
+      "priority": "P2",
+      "pr": 108,
+      "dependsOn": [
+        22
+      ],
+      "nextAction": "Проверить стоимости на реальных исполнениях",
+      "acceptance": "Для каждой задачи видны расходы, выбранная модель и доказательство результата",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 30,
+      "domain": "ai",
+      "title": "Nimble/Firecrawl для открытых данных",
+      "status": "research",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        27
+      ],
+      "nextAction": "Проверить условия, расходы и одну публичную страницу",
+      "acceptance": "Результат содержит атрибуцию, не собирает частные контакты",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 31,
+      "domain": "ai",
+      "title": "Локальные модели, AirLLM и Qwen",
+      "status": "research",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [
+        22
+      ],
+      "nextAction": "Сравнить с имеющейся Qwen на реальном ПК",
+      "acceptance": "Есть измерения скорости, RAM/VRAM, качества и стоимости",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 32,
+      "domain": "ai",
+      "title": "n8n + ElevenLabs для Shorts",
+      "status": "research",
+      "priority": "P3",
+      "pr": null,
+      "dependsOn": [
+        19,
+        27
+      ],
+      "nextAction": "Проверить права на голос и стоимость",
+      "acceptance": "Создаётся утверждённый черновик, внешняя публикация только вручную",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 33,
+      "domain": "ai",
+      "title": "Автоматический браузерный QA и контроль сборок",
+      "status": "partial",
+      "priority": "P0",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Восстановить CI и реальные мобильные smoke-тесты",
+      "acceptance": "Чистый CI запускается и проходит; браузерный сценарий не подменяется сборкой",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 34,
+      "domain": "ai",
+      "title": "Freebuff и экспериментальные coding agents",
+      "status": "research",
+      "priority": "P3",
+      "pr": null,
+      "dependsOn": [
+        22
+      ],
+      "nextAction": "Исследовать только публичный обезличенный sandbox",
+      "acceptance": "Нет доступа к приватным репозиториям, данным и секретам без отдельного решения",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 35,
+      "domain": "life",
+      "title": "Прогноз доходов, расходов и кассовых разрывов",
+      "status": "draft",
+      "priority": "P1",
+      "pr": 111,
+      "dependsOn": [],
+      "nextAction": "Подключить симулятор к ручным данным и экрану Life OS",
+      "acceptance": "Суммы в копейках и даты проверены; пользователь видит источник и предупреждения",
+      "evidence": "source_inspected"
+    },
+    {
+      "id": 36,
+      "domain": "life",
+      "title": "Сценарии погашения долгов",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [
+        35
+      ],
+      "nextAction": "Добавить сценарии и стоимость процентов без транзакций",
+      "acceptance": "Показываются сроки, проценты, ограничения и возможные кассовые разрывы",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 37,
+      "domain": "life",
+      "title": "Поиск и отслеживание оплачиваемых заказов",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Создать воронку подтверждённых заказов по профессиям",
+      "acceptance": "Есть источник вакансии/заказа, статус отклика, дедлайн; контакты только по разрешению",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 38,
+      "domain": "life",
+      "title": "Цели по системе 9×9",
+      "status": "planned",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Определить адаптируемую модель без лишней сложности",
+      "acceptance": "Цели связаны с недельными действиями и подтверждаемыми результатами",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 39,
+      "domain": "life",
+      "title": "Эксперименты на уверенность и инициативность",
+      "status": "partial",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Связать добровольные эксперименты с журналом",
+      "acceptance": "Эксперимент обратим и не интерпретируется как диагноз",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 40,
+      "domain": "life",
+      "title": "Актёрские упражнения и анализ сыгранных сцен",
+      "status": "planned",
+      "priority": "P1",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Добавить разбор пробы по действиям, дикции и драматургии",
+      "acceptance": "Выводы подкреплены конкретными таймкодами и редактируются актёром",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 41,
+      "domain": "life",
+      "title": "Журнал тренировок и восстановления",
+      "status": "partial",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Добавить фактические подходы и субъективное восстановление",
+      "acceptance": "Видно нагрузку и самочувствие без автоматической медицинской диагностики",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 42,
+      "domain": "life",
+      "title": "Библиотека книг, фильмов и рекомендаций",
+      "status": "planned",
+      "priority": "P2",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Сделать единый сохранённый каталог и поиск",
+      "acceptance": "Есть добавление, статус, источники и поиск без дублирования",
+      "evidence": "user_reported"
+    },
+    {
+      "id": 43,
+      "domain": "life",
+      "title": "ИИ-трейдинг и торговые сигналы",
+      "status": "deferred",
+      "priority": "P3",
+      "pr": null,
+      "dependsOn": [],
+      "nextAction": "Не подключать без отдельной строгой финансовой и правовой оценки",
+      "acceptance": "Нет торговых транзакций, сигналов для реальных денег и доступа к брокеру",
+      "evidence": "user_reported"
+    }
+  ]
+}
