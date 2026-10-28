@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState,type ChangeEvent} from 'react';
 import {
   classifyReferenceFile, referenceGroups,
   type ReferenceEntry, type ReferenceGroup
@@ -51,7 +51,7 @@ export default function ReferenceLibrary() {
   const skipped=entries.filter(x=>x.hashStatus!=='verified').length;
   const preview=previewId===null?null:entries.find(x=>x.id===previewId)??null;
 
-  async function chooseFiles(event:React.ChangeEvent<HTMLInputElement>) {
+  async function chooseFiles(event:ChangeEvent<HTMLInputElement>) {
     const selected=Array.from(event.currentTarget.files??[]).slice(0,MAX_FILES);
     const extra=(event.currentTarget.files?.length??0)-selected.length;
     event.currentTarget.value='';
