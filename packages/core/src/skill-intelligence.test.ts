@@ -206,6 +206,26 @@ describe("Skill Intelligence: planned routes", () => {
     expect(plan({ sourceAudit: { ...cleanSourceAudit, inventoryComplete: false } }).status).toBe("blocked");
     expect(plan({ sourceAudit: { ...cleanSourceAudit, findings: [{ path: "x", rule: "symlink_not_allowed", severity: "block" }] } }).status).toBe("blocked");
   });
+  it("requires reviewer acknowledgement for helpers while preserving a manual-only route", () => {
+    const inspected = inspectSkillFiles([
+      { path: "SKILL.md", content: "# audited package" },
+      { path: "scripts/prep.mjs", content: "// only local demonstration" },
+    ], true);
+    const reviewedAudit = {
+      ...cleanSourceAudit, staticCheckPassed: false,
+      findings: [{ path: "scripts/prep.mjs", rule: "executable_helper_requires_review", severity: "review" }],
+    };
+    expect(plan({ inspection: inspected, sourceAudit: reviewedAudit }).status).toBe("blocked");
+    const acknowledgements = [
+      "scripts/prep.mjs::Executable source requires independent review",
+      "scripts/prep.mjs::executable_helper_requires_review",
+    ];
+    const result = plan({ inspection: inspected, sourceAudit: reviewedAudit, admission: {
+      ...admission, review: { ...admission.review, acknowledgedFindings: acknowledgements },
+    } });
+    expect(result.status).toBe("manual_install_review");
+    expect(result.mayExecuteAutomatically).toBe(false);
+  });
   it("never bypasses approval-tier action policy", () => {
     const result = plan({ task: { ...task, autonomy: "APPROVAL" } });
     expect(result.status).toBe("approval_required");
