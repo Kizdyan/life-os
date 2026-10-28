@@ -37,3 +37,10 @@ export function validateReattachedVideo(
     ?'Старый проект не содержит размер файла — дополнительно проверь правильность исходника'
     :'Имя, размер и длительность совпадают; содержимое байт-в-байт не проверено'};
 }
+
+export function hasValidTimelineBounds(clip:{startSec:number;durationSec:number;sourceDuration:number}):boolean {
+  return Number.isFinite(clip.startSec)&&Number.isFinite(clip.durationSec)&&
+    Number.isFinite(clip.sourceDuration)&&clip.sourceDuration>0&&
+    clip.startSec>=0&&clip.durationSec>=0.02&&
+    clip.startSec+clip.durationSec<=clip.sourceDuration+0.01;
+}
