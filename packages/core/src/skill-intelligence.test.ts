@@ -101,6 +101,16 @@ describe("Skill Intelligence: source inspection", () => {
     expect(report.staticCheckPassed).toBe(false);
     expect(report.findings.filter(x => x.severity === "block").length).toBeGreaterThanOrEqual(2);
   });
+  it("flags MapTiler API code for manual network and credential review", () => {
+    const report = inspectSkillFiles([
+      { path: "SKILL.md", content: "# Maps" },
+      { path: "samples/render.tsx", content: "const token=process.env.REMOTION_MAPTILER_KEY; fetch('https://api.maptiler.com/tiles?key='+token);" },
+    ], true);
+    expect(report.findings.map(f => f.rule)).toEqual(expect.arrayContaining([
+      "External network dependency requires review", "Secret access",
+    ]));
+    expect(report.staticCheckPassed).toBe(false);
+  });
   it("flags executable helpers and secret access for independent review", () => {
     const report = inspectSkillFiles([
       { path: "SKILL.md", content: "Use the helper." },
