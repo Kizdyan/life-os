@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Deterministic, offline-only triage of discovery reports; never treats catalog metadata as provenance. */
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -87,11 +87,17 @@ export function createSkillReviewQueue(batch, { limit = 50 } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [file] = process.argv.slice(2);
-  if (process.argv.length !== 3) { console.error('Usage: npm run skills:queue -- batch-report.json'); process.exitCode = 2; }
-  else readFile(resolve(file)).then(data => {
+  const args = process.argv.slice(2), [file] = args;
+  const out = args.length === 3 && args[1] === '--out' && args[2] ? args[2] : null;
+  if (args.length !== 1 && !out) {
+    console.error('Usage: npm run skills:queue -- batch-report.json [--out new-queue.json]');
+    process.exitCode = 2;
+  } else readFile(resolve(file)).then(data => {
     if (data.byteLength > 1_500_000) throw Error('Batch report exceeds size limit');
     return createSkillReviewQueue(JSON.parse(data.toString('utf8')));
-  }).then(queue => process.stdout.write(JSON.stringify(queue, null, 2) + '\n'))
-    .catch(() => { console.error('Invalid or untrusted discovery report'); process.exitCode = 1; });
+  }).then(async queue => {
+    const json = JSON.stringify(queue, null, 2) + '\n';
+    if (out) await writeFile(resolve(out), json, { flag: 'wx' });
+    else process.stdout.write(json);
+  }).catch(() => { console.error('Invalid report or queue output path'); process.exitCode = 1; });
 }
