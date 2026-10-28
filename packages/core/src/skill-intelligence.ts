@@ -240,6 +240,12 @@ export function planSkillRoute(input: {
   }
   if (!record.domains.includes(task.domain)) blockers.push("Task domain not advertised");
   if (!record.supportedAgents.includes(binding.agent)) blockers.push("Agent not supported by skill");
+  const catalogPermissions = new Set(record.requestedPermissions);
+  const reviewedPermissions = new Set(admission.review.requestedPermissions);
+  if (catalogPermissions.size !== reviewedPermissions.size ||
+      [...catalogPermissions].some(permission => !reviewedPermissions.has(permission))) {
+    blockers.push("Catalog skill permissions do not match reviewed requested permissions");
+  }
   if (record.requestedPermissions.some(p => !admission.review.approvedPermissions.includes(p))) {
     blockers.push("Requested skill permissions are not approved");
   }
@@ -255,6 +261,9 @@ export function planSkillRoute(input: {
        (!admission.humanApproved || !admission.review.reviewedSource ||
         !admission.review.reviewerId?.trim()))) {
     blockers.push("Unreviewed or blocking static inspection finding");
+  }
+  if (inspection.filesReviewed !== sourceAudit.scannedFiles) {
+    blockers.push("Source and static inspection file counts do not match");
   }
   const sourceDecision = assessLocalSkillSourceEvidence(record, admission, sourceAudit);
   if (!sourceDecision.verified) blockers.push(...sourceDecision.reasons);
