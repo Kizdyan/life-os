@@ -36,14 +36,19 @@ function isProject(value:unknown):value is PersonaProject{
  const project=value as Partial<PersonaProject>;
  return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string');
 }
+export function validatePersonaProjectCollection(value:unknown):PersonaProjectCollection{
+ const parsed=value as Partial<PersonaProjectCollection>;
+ if(!parsed||typeof parsed!=='object'||parsed.schemaVersion!==1||!Array.isArray(parsed.projects)||!parsed.projects.every(isProject)||!(typeof parsed.activeProjectId==='string'||parsed.activeProjectId===null))throw new Error('invalid_persona_project_collection');
+ if(parsed.projects.length>2000||new Set(parsed.projects.map(project=>project.id)).size!==parsed.projects.length)throw new Error('invalid_persona_project_collection');
+ if(parsed.activeProjectId!==null&&!parsed.projects.some(project=>project.id===parsed.activeProjectId))throw new Error('invalid_persona_project_collection');
+ return {schemaVersion:1,activeProjectId:parsed.activeProjectId,projects:parsed.projects};
+}
 function emptyCollection():PersonaProjectCollection{return {schemaVersion:1,activeProjectId:null,projects:[]}}
 function readCollection(storage:PersonaProjectStorage):PersonaProjectCollection|null{
  const raw=storage.getItem(PERSONA_PROJECTS_KEY);
  if(raw===null)return null;
  try{
-  const parsed=JSON.parse(raw) as Partial<PersonaProjectCollection>;
-  if(parsed.schemaVersion!==1||!Array.isArray(parsed.projects)||!parsed.projects.every(isProject)||!(typeof parsed.activeProjectId==='string'||parsed.activeProjectId===null))throw new Error('invalid_project_collection');
-  return {schemaVersion:1,activeProjectId:parsed.activeProjectId,projects:parsed.projects};
+  return validatePersonaProjectCollection(JSON.parse(raw));
  }catch{
   storage.setItem(CORRUPT_KEY,raw);
   storage.removeItem(PERSONA_PROJECTS_KEY);

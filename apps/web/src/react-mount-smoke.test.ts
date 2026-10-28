@@ -56,6 +56,7 @@ describe('Life OS and Persona JSX runtime rendering', () => {
     const markup = renderToString(React.createElement(PersonaFactory));
     expect(markup).toContain('Продолжить последний проект');
     expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Резервная копия и перенос данных');
   });
 
   it('renders project navigation with explicit previous and next actions', () => {
