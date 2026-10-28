@@ -1,61 +1,81 @@
 import React, { useEffect, useRef, useState } from 'react';
-interface Clip { id:number; name:string; startSec:number; durationSec:number; sourceDuration:number }
-export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
+import { constrainPersonaTimelineClip, createPersonaTimelineSettings, matchesPersonaTimelineSource, validatePersonaTimelineSettings, type PersonaTimelineClip, type PersonaTimelineMusic, type PersonaTimelineSettings } from './personaTimelineSettings';
+import { readVideoDuration, timelineClipDuration } from './personaVideoMetadata';
+
+type Clip = PersonaTimelineClip;
+function legacyClips(storageKey:string):Clip[]{
+ try{
+  const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');
+  if(!Array.isArray(raw))return [];
+  return raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30).map(item=>({id:'legacy-'+item.id,name:item.name,bytes:0,mime:'video/unknown',lastModified:0,sourceDuration:item.sourceDuration,startSec:item.startSec,durationSec:item.durationSec}));
+ }catch{return []}
+}
+function timelineFrom(value:unknown,fallback:Clip[]):PersonaTimelineSettings{
+ try{return validatePersonaTimelineSettings(value)}catch{return createPersonaTimelineSettings(fallback)}
+}
+async function fingerprintFile(file:File):Promise<string|undefined>{
+ if(!crypto.subtle||file.size>20*1024*1024)return undefined;
+ const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+ return 'sha256:'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+function newClipId(){return typeof crypto.randomUUID==='function'?crypto.randomUUID():'clip-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
+
+export default function PersonaVideoTimeline({projectId,initialTimeline,onTimelineChange}:{projectId:string;initialTimeline?:unknown;onTimelineChange?:(timeline:PersonaTimelineSettings)=>void}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
- const urls=useRef(new Map<number,string>());
- const filesById=useRef(new Map<number,File>());
- const [previewId,setPreviewId]=useState<number|null>(null);
+ const initial=useRef<PersonaTimelineSettings|null>(null);if(initial.current===null)initial.current=timelineFrom(initialTimeline,legacyClips(storageKey));
+ const urls=useRef(new Map<string,string>());
+ const filesById=useRef(new Map<string,File>());
+ const [previewId,setPreviewId]=useState<string|null>(null);
  const [playSequence,setPlaySequence]=useState(false);
  const [renderState,setRenderState]=useState('');
  const [musicAccents,setMusicAccents]=useState<number[]>([]);
  const musicFile=useRef<File|null>(null);
- const [musicVolume,setMusicVolume]=useState(0.35);
- const [originalVolume,setOriginalVolume]=useState(1);
+ const [musicVolume,setMusicVolume]=useState(()=>initial.current?.music?.volume??0.35);
+ const [originalVolume,setOriginalVolume]=useState(()=>initial.current?.music?.originalVolume??1);
+ const [musicMeta,setMusicMeta]=useState<PersonaTimelineMusic|null>(()=>initial.current?.music??null);
  const [musicStatus,setMusicStatus]=useState('');
  const [rendering,setRendering]=useState(false);
  useEffect(()=>()=>{for(const url of urls.current.values())URL.revokeObjectURL(url);urls.current.clear();filesById.current.clear()},[]);
- const [clips,setClips]=useState<Clip[]>(()=>{try{const raw=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(raw)?raw.filter(item=>typeof item?.name==='string'&&Number.isFinite(item?.durationSec)&&Number.isFinite(item?.sourceDuration)&&Number.isFinite(item?.startSec)&&Number.isInteger(item?.id)).slice(0,30):[]}catch{return []}});
- const [fps,setFps]=useState(30);
+ const [clips,setClips]=useState<Clip[]>(()=>initial.current?.clips??[]);
+ const [fps,setFps]=useState<25|30|60>(()=>initial.current?.fps??30);
  const [error,setError]=useState('');
- const [width,setWidth]=useState(1080);
- const [height,setHeight]=useState(1920);
- const [nextId,setNextId]=useState(()=>{try{const items=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(items)?Math.max(0,...items.map(item=>Number(item?.id)||0))+1:1}catch{return 1}});
- useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(clips))}catch{}},[clips,storageKey]);
+ const [width,setWidth]=useState<1080|1920>(()=>initial.current?.width??1080);
+ const [height,setHeight]=useState<1920|1080>(()=>initial.current?.height??1920);
+ useEffect(()=>{
+  const snapshot={...createPersonaTimelineSettings(clips,{width,height,fps}),music:musicMeta,captions:initial.current?.captions??[]};
+  onTimelineChange?.(validatePersonaTimelineSettings(snapshot));
+ },[clips,width,height,fps,musicMeta,onTimelineChange]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
   const additions:Clip[]=[];
   for(const file of files) {
    if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
-   const url=URL.createObjectURL(file);
    try {
-    const duration=await new Promise<number>((resolve,reject)=>{
-     const video=document.createElement('video');video.preload='metadata';
-     video.onloadedmetadata=()=>{const d=video.duration;video.removeAttribute('src');video.load();Number.isFinite(d)&&d>0?resolve(d):reject(Error('Не удалось прочитать длительность'))};
-     video.onerror=()=>reject(Error('Невозможно открыть '+file.name));video.src=url;
-    });
-    const old=clips.find(clip=>clip.name===file.name&&!urls.current.has(clip.id));
+    const duration=await readVideoDuration(file);
+    const fingerprint=await fingerprintFile(file).catch(()=>undefined);
+    const candidate={name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,sourceDuration:duration,fingerprint};
+    const old=clips.find(clip=>!urls.current.has(clip.id)&&matchesPersonaTimelineSource(clip,candidate));
     if(old){
-      if(Math.abs(old.sourceDuration-duration)>0.5){setError('Длительность файла '+file.name+' отличается от сохранённого исходника');continue}
       urls.current.set(old.id,URL.createObjectURL(file));filesById.current.set(old.id,file);
+      setClips(items=>items.map(clip=>clip.id===old.id?{...clip,...candidate}:clip));
       setPreviewId(old.id);
       continue;
     }
-    if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' уже добавлен');continue}
+    if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' не совпадает с сохранённым исходником. Переименуйте его или создайте отдельный клип.');continue}
     if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
-    const id=nextId+additions.length;
-    additions.push({id,name:file.name,startSec:0,durationSec:Math.min(10,Math.floor(duration*10)/10),sourceDuration:duration});
+    const id=newClipId();
+    additions.push({id,...candidate,startSec:0,durationSec:timelineClipDuration(duration)});
     urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
-   finally{URL.revokeObjectURL(url)}
   }
   if(additions.length)setPreviewId(additions[0].id);
-  setClips(old=>[...old,...additions]);setNextId(id=>id+additions.length);
+  setClips(old=>[...old,...additions]);
   event.target.value='';
  }
  function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
- function removeClip(id:number){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
- function change(id:number,patch:Partial<Clip>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?{...item,...patch}:item))}
+ function removeClip(id:string){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
+ function change(id:string,patch:Pick<Clip,'startSec'>|Pick<Clip,'durationSec'>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?constrainPersonaTimelineClip(item,patch):item))}
  function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  async function analyzeMusic(file:File|undefined){
   if(!file)return;
@@ -94,6 +114,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
    }
    const times=selected.map(p=>Number(p.time.toFixed(3))).sort((a,b)=>a-b);
    musicFile.current=file;
+   setMusicMeta({name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,volume:musicVolume,originalVolume});
    setMusicAccents(times);setMusicStatus('Найдено музыкальных акцентов: '+times.length+'. Это кандидаты, а не обязательные склейки.');
   }catch(e){setMusicStatus('');setError(e instanceof Error?e.message:'Не удалось проанализировать музыку')}
  }
@@ -176,10 +197,11 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
   <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
   {musicStatus&&<p role="status">{musicStatus}</p>}
-  <label>Музыка: {Math.round(musicVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={e=>setMusicVolume(Number(e.target.value))}/></label>
-  <label>Исходный звук: {Math.round(originalVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={originalVolume} onChange={e=>setOriginalVolume(Number(e.target.value))}/></label>
+  <label>Музыка: {Math.round(musicVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={e=>{const volume=Number(e.target.value);setMusicVolume(volume);setMusicMeta(meta=>meta?{...meta,volume}:meta)}}/></label>
+  <label>Исходный звук: {Math.round(originalVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={originalVolume} onChange={e=>{const volume=Number(e.target.value);setOriginalVolume(volume);setMusicMeta(meta=>meta?{...meta,originalVolume:volume}:meta)}}/></label>
   <p>Громкость музыки и исходного звука регулируются отдельно. Перед публикацией проверь разборчивость речи и права на музыку.</p></div>
-  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников не загружена. Повторно выбери файлы с прежними именами: тайминги и порядок сохранятся, если длительность совпадает.</p>}
+  {clips.some(clip=>!urls.current.has(clip.id))&&<p role="alert">Часть исходников недоступна после перезагрузки. Повторно выбери те же файлы: порядок и тайминги сохранены, но другой файл с тем же именем не будет принят.</p>}
+  {musicMeta&&!musicFile.current&&<p role="alert">Музыкальная дорожка не хранится в проекте. Повторно выбери «{musicMeta.name}», прежде чем создавать MP4.</p>}
   {clips.map((clip,index)=><div key={clip.id} style={{borderBottom:'1px solid #999',padding:'12px 0'}}>
    <b>{index+1}. {clip.name}</b><p>Исходник: {clip.sourceDuration.toFixed(1)} сек.</p>
    <label>Начало, сек. <input type="number" min="0" max={clip.sourceDuration} step="0.1" value={clip.startSec} onChange={e=>change(clip.id,{startSec:Number(e.target.value)})}/></label>

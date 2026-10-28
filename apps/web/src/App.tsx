@@ -238,7 +238,7 @@ export default function App() {
     {erika && <ErikaSheet items={items} onClose={() => setErika(false)} onApplied={onErikaApplied}/>}
     {editing && <LocalTaskEditor item={editing}
       onCancel={() => setEditing(null)} onSaved={onEdited}/>}
-    <nav aria-label="Разделы приложения">
+    <nav className="appNavigation" aria-label="Разделы приложения">
       <button className={page==='today'?'selected':''} aria-current={page==='today'?'page':undefined}
         onClick={() => {setPage('today'); location.hash='today';}}>Сегодня</button>
       <button className={page==='persona'?'selected':''} aria-current={page==='persona'?'page':undefined}
