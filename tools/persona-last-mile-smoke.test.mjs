@@ -58,7 +58,12 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
   });
   assert.equal(result.status,'awaiting-author-review');
   assert.equal(result.distributionAllowed,false);
-  assert.equal(result.events.length,6);
+  assert.equal(result.events.length,7);
+ assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
+  const captions=await readFile(result.subtitleDraft.srtPath,'utf8');
+  assert.match(captions,/Я актёр/);
+  assert.match(captions,/И у нас есть проблема/);
+  assert.equal(JSON.parse(await readFile(result.subtitleDraft.reviewPath,'utf8')).status,'needs-human-review');
   const generated=await stat(result.output);
   assert.ok(generated.size>10000);
   const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type,codec_name,width,height:format=duration','-of','json',result.output],{encoding:'utf8'});
