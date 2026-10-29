@@ -26,6 +26,28 @@ test('Whisper JSON parser reads timestamped tokens and rejects invalid offsets',
  assert.equal(result[3].endSec,2);
  assert.throws(()=>parseWhisperJson(whisper([['Ура',0,16]]),2),/outside source/);
 });
+test('whisper.cpp JSON-full falls back to segment offsets when token offsets are absent',()=>{
+ const data={transcription:[{
+  text:' Я актёр. И ещё пишу музыку.',offsets:{from:500,to:2800},
+  tokens:[{text:' Я',id:1,p:.9},{text:' актёр',id:2,p:.9},{text:' музыку',id:3,p:.9}]
+ }]};
+ const segments=parseWhisperJson(data,4);
+ assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.'}]);
+ const matched=chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
+   {id:'take-real-json',durationSec:4,segments}
+ ]);
+ assert.equal(matched[0].sourceId,'take-real-json');
+ assert.ok(matched[0].durationSec>2);
+});
+test('mixed token timestamps cannot silently truncate spoken segment',()=>{
+ const data={transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:1800},
+  tokens:[{text:' И',offsets:{from:300,to:400}}, {text:' у нас есть проблема.'}]
+ }]};
+ const parts=parseWhisperJson(data,3);
+ assert.equal(parts.length,1);
+ assert.match(parts[0].text,/проблема/);
+});
 test('Picks cleaner complete spoken take, detects missing dialogue and prevents reused overlap',()=>{
  const sources=[
   {id:'takeA_bad',durationSec:5,segments:parseWhisperJson(whisper([['Я',.1,.2],['актёр',.25,.5],['ну',.6,.7],['пишу',.8,1],['музыку',1.1,1.5]]),5)},
