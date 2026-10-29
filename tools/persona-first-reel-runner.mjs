@@ -60,7 +60,17 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
  await mkdir(root,{recursive:false});
  const events=[];
  try{
-  const evidence=await analyze(resolve(sources),join(root,'evidence'));
+  // One explicitly selected video may replace a hand-written sources.json.
+  // Never scan a directory or silently add unrelated private media.
+  const input=resolve(sources);
+  const singleFile=new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase());
+  let sourcesManifest=input;
+  if(singleFile){
+   sourcesManifest=join(root,'sources.generated.json');
+   await writeFile(sourcesManifest,JSON.stringify({version:1,sources:[{id:'single',path:input}]},null,2)+'\n',{flag:'wx'});
+   events.push('single_video_manifest_created');
+  }
+  const evidence=await analyze(sourcesManifest,join(root,'evidence'));
   events.push('media_evidence_generated');
   const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
   events.push('offline_asr_completed');
