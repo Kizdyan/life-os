@@ -76,6 +76,14 @@ test('One MP4 becomes a two-shot timeline while preserving its original bytes',{
    {beat:1,sourceId:'one',startSec:0.1,durationSec:1.2,confidence:.95,transcript:'Я актёр. И ещё пишу музыку.',reason:'First standalone line in same continuous recording'},
    {beat:2,sourceId:'one',startSec:2.8,durationSec:1.2,confidence:.93,transcript:'И у нас есть проблема.',reason:'Second standalone line later in recording'}
   ]});
+  const overlapping={version:1,analysisPath:analyzed.analysis,briefPath:brief,choices:[
+   {beat:1,sourceId:'one',startSec:0.1,durationSec:1.2,confidence:.95,transcript:'Я актёр. И ещё пишу музыку.',reason:'First standalone line in same continuous recording'},
+   {beat:2,sourceId:'one',startSec:0.8,durationSec:1.2,confidence:.93,transcript:'И у нас есть проблема.',reason:'Overlapping proposed clip that must be rejected'}
+  ]};
+  await mk(choice,overlapping);
+  await assert.rejects(()=>assemble(choice,join(d,'overlap.json')),/Overlapping choices/);
+  await assert.rejects(()=>stat(join(d,'overlap.json')),/ENOENT/);
+  await mk(choice,{...overlapping,choices:[overlapping.choices[0],{...overlapping.choices[1],startSec:2.8}]});
   const assembled=await assemble(choice,join(d,'timeline.json'));
   assert.equal(assembled.clips,2);
   const timeline=JSON.parse(await readFile(assembled.project,'utf8'));
