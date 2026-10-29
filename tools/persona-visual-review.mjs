@@ -98,6 +98,9 @@ export function makeVisualHtml(pack){
   'const link=document.createElement("a");link.href=url;link.download="visual-framing.reviewed.json";link.click();',
   'setTimeout(()=>URL.revokeObjectURL(url),1000);});'
  ].join('\n');
+ const continuity=(pack.continuityWarnings??[]).map(w=>
+  '<li>Склейка '+w.fromBeat+' → '+w.toBeat+': средняя яркость изменилась на '+
+   escapeHtml(w.yavgDelta)+' YAVG. Это сигнал для ручного просмотра, а не автоматическая ошибка.</li>').join('');
  const embedded=embedJson({scenes:pack.scenes.map(s=>({beat:s.beat,sourceSha256:s.sourceSha256,originalFraming:s.originalFraming}))});
  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
   '<title>Persona · визуальный контроль</title><style>'+
@@ -110,6 +113,7 @@ export function makeVisualHtml(pack){
   'button{font:inherit;padding:12px 22px;border-radius:8px} @media(max-width:600px){.layout{grid-template-columns:1fr}.phone{margin:auto}}'+
   '</style></head><body><h1>Persona · визуальная приёмка 9:16</h1>'+
   '<p class="muted">Сравни кадрирование и исходный цвет. Это только контрольные стоп-кадры, не анализ актёрской игры или резкости глаз. Никаких изменений внешности и автоматической публикации.</p>'+
+  (continuity?'<h2>Возможные различия между сценами</h2><ul>'+continuity+'</ul>':'')+
   cards+'<button id="save">Сохранить ручное кадрирование</button>'+
   '<p class="muted">Экспортируется JSON для новой версии монтажа. Публикация не разрешается.</p>'+
   '<script type="application/json" id="data">'+embedded+'</script><script>'+browserScript+'</script></body></html>';
