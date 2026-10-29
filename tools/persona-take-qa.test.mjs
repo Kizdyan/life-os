@@ -9,6 +9,15 @@ test('parse grounded metrics, not subjective acting scores',()=>{
  assert.deepEqual(r.warnings,['audio_near_digital_ceiling','black_video_intervals','low_average_luma_review']);
  assert.ok(!('actingScore' in r));
 });
+test('silent audio and too quiet audio are flagged, not presented as intelligible speech',()=>{
+ const silent=parseTakeDiagnostics('lavfi.signalstats.YAVG=110','max_volume: -inf dB',3,true);
+ assert.ok(silent.warnings.includes('audio_silent_track_review'));
+ assert.equal(silent.audioPeakDb,null);
+ const quiet=parseTakeDiagnostics('lavfi.signalstats.YAVG=100','max_volume: -44.1 dB',3,true);
+ assert.ok(quiet.warnings.includes('audio_very_low_peak_review'));
+ const noMeasurement=parseTakeDiagnostics('lavfi.signalstats.YAVG=90','',3,true);
+ assert.ok(noMeasurement.warnings.includes('audio_peak_unavailable_review'));
+});
 test('reject source slices that intersect black frame intervals',()=>{
  const intervals=[{startSec:1,endSec:2.5}];
  assert.equal(overlapsBlackInterval(.3,1.6,intervals),true);
