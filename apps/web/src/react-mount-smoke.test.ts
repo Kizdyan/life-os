@@ -140,6 +140,23 @@ describe('Persona Production Engine panel', () => {
     expect(markup).toMatch(/disabled=""[^>]*>Одобрить для съёмки/);
   });
 
+  it('renders per-shot controls for an imported brief without presenting it as an AI result', () => {
+    const pipeline = buildPersonaProductionWorkflow({
+      id: 'editable-brief', title: 'Один день между театром и музыкой',
+      angle: 'Соединить две профессии одной историей', format: 'reel', score: 90,
+    });
+    const markup = renderToString(React.createElement(PersonaProductionBriefPanel as any, {
+      pipeline, editor: '', comment: '', factsChecked: false,
+      onEditorChange: () => undefined, onCommentChange: () => undefined,
+      onFactsCheckedChange: () => undefined, onDecision: () => undefined,
+      onRebuild: () => undefined, onAngleChange: () => undefined,
+      onBriefChange: () => undefined,
+    }));
+    expect(markup).toContain('Редактировать реплику 1');
+    expect(markup).toContain('Съёмочное указание 1');
+    expect(markup).toContain('Правка сбросит предыдущее утверждение');
+  });
+
 });
 
 describe('iPhone editor smoke render', () => {
