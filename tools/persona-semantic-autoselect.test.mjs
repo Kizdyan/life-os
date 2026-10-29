@@ -48,6 +48,18 @@ test('mixed token timestamps cannot silently truncate spoken segment',()=>{
  assert.equal(parts.length,1);
  assert.match(parts[0].text,/проблема/);
 });
+test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
+ const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[
+  {text:' Компо',offsets:{from:0,to:400}},
+  {text:'зитор',offsets:{from:400,to:900}},
+  {text:' сочиняет',offsets:{from:900,to:1400}},
+  {text:'.',offsets:{from:1400,to:1500}}
+ ]}]};
+ const segments=parseWhisperJson(data,2);
+ assert.deepEqual(segments.map(x=>x.text),['Композитор','сочиняет.']);
+ const choice=chooseForBrief({script:[{order:1,line:'Композитор сочиняет.'}]},[{id:'take',durationSec:2,segments}]);
+ assert.equal(choice[0].sourceId,'take');
+});
 test('Picks cleaner complete spoken take, detects missing dialogue and prevents reused overlap',()=>{
  const sources=[
   {id:'takeA_bad',durationSec:5,segments:parseWhisperJson(whisper([['Я',.1,.2],['актёр',.25,.5],['ну',.6,.7],['пишу',.8,1],['музыку',1.1,1.5]]),5)},
