@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "kind": "persona-creative-profile-v1",
+  "description": "Production guardrails, not a personality model or an automated artistic rating.",
+  "immutableIdentity": [
+    "face",
+    "glasses",
+    "facial_geometry",
+    "body_proportions",
+    "natural_skin_tone"
+  ],
+  "editingPreferences": {
+    "preserveActingPauses": true,
+    "meaningBeforeRhythm": true,
+    "noGenerativeRetouch": true,
+    "preserveOriginalMusicTails": true,
+    "doNotOverlayCaptionsOnFaceOrPianoKeys": true
+  },
+  "reviewCategories": [
+    "performance",
+    "framing",
+    "glasses",
+    "skinTone",
+    "captions",
+    "sound",
+    "cutRhythm",
+    "musicTail"
+  ],
+  "notice": "Author preferences are explicit constraints. Image fidelity and performance still require visual/manual review."
+}
