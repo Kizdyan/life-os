@@ -113,7 +113,7 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof source.id==='string'&&!sources.has(source.id)&&typeof source.path==='string'&&/^[a-f0-9]{64}$/.test(source.sha256), 'Invalid analysis source');
     sources.set(source.id,source);
   }
-  const checkedSources=new Set(), clips=[],audit=[];
+  const checkedSources=new Set(), clips=[],audit=[],usedIntervals=[];
   for(let i=0;i<d.choices.length;i++){
     const c=d.choices[i],beat=brief.script[i],shot=brief.shots[i];
     assert(c?.beat===i+1 && beat?.order===i+1 && shot?.order===i+1, 'Beat order mismatch');
@@ -126,11 +126,13 @@ async function assemble(decisionsArg, projectArg) {
     assert(overlap>=0.45, 'Beat ' + (i + 1) + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
     const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
+    assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
     if(!checkedSources.has(src.id)){
       const file=await stat(src.path);
       assert(file.isFile()&&file.size===src.bytes&&(await sha256(src.path))===src.sha256, 'Source modified since evidence capture');
       checkedSources.add(src.id);
     }
+    usedIntervals.push({id:c.sourceId,startSec:c.startSec,endSec:c.startSec+c.durationSec});
     clips.push({path:src.path,startSec:c.startSec,durationSec:c.durationSec});
     audit.push({beat:i+1,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,reason:c.reason});
   }
