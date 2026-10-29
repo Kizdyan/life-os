@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+/**
+ * Explicit, offline intake for A01/B01 self-recorded takes.
+ * Reuses Persona's existing evidence, SHA-256, video and audio QA.
+ * Never scans directories, uploads media, modifies originals or publishes.
+ *
+ * node tools/persona-shoot-intake.mjs <new-output-dir> A01=<video> B01=<video> [A01=<video> ...]
+ */
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { analyze } from './persona-semantic-montage.mjs';
+
+const briefPath=resolve(dirname(fileURLToPath(import.meta.url)),'../docs/persona-two-line-live-asr-check-2026-10-29.json');
+const fail=m=>{throw Error(m)};
+const allowedExtensions=/\.(?:mp4|mov|mkv|webm|m4v)$/i;
+
+export function parseShootInputs(labeledFiles){
+ if(!Array.isArray(labeledFiles)||labeledFiles.length<2||labeledFiles.length>12)
+  fail('Select 2-12 explicit take files, at least one A01 and one B01');
+ const counts={A01:0,B01:0},seen=new Set(),sources=[];
+ for(const input of labeledFiles){
+  if(typeof input!=='string')fail('Expected A01=<path> or B01=<path>');
+  const match=/^(A01|B01)=(.+)$/i.exec(input);
+  if(!match||!match[2].trim())fail('Expected A01=<video path> or B01=<video path>');
+  const beat=match[1].toUpperCase(),path=resolve(match[2].trim());
+  if(!allowedExtensions.test(path))fail('Only video source files are accepted');
+  const key=process.platform==='win32'?path.toLowerCase():path;
+  if(seen.has(key))fail('A video must not be assigned twice');
+  seen.add(key);
+  if(++counts[beat]>6)fail('At most six takes per scene');
+  sources.push({id:beat+'_take'+String(counts[beat]).padStart(2,'0'),path});
+ }
+ if(!counts.A01||!counts.B01)fail('At least one A01 and one B01 required');
+ return {version:1,sources};
+}
+export function createIntakeReport(analysis,manifestPath){
+ if(analysis?.kind!=='persona-evidence-v1'||!Array.isArray(analysis.sources))
+  fail('Unexpected Persona evidence report');
+ const takes=analysis.sources.map(source=>{
+  const warnings=[...(source.technicalQuality?.warnings??[])];
+  if(!source.hasAudio)warnings.push('cannot_transcribe_without_audio');
+  if(source.width>source.height)warnings.push('coded_orientation_review_phone_rotation_possible');
+  if(source.durationSec<2)warnings.push('short_take_review');
+  if(source.hasAudio&&source.technicalQuality?.audioPeakDb===null)warnings.push('audio_peak_unavailable_review');
+  return {id:source.id,sourceFile:source.path,bytes:source.bytes,sha256:source.sha256,
+   durationSec:source.durationSec,width:source.width,height:source.height,hasAudio:source.hasAudio,
+   audioPeakDb:source.technicalQuality?.audioPeakDb??null,
+   meanLuma:source.technicalQuality?.meanLuma??null,
+   blackIntervals:source.technicalQuality?.blackIntervals??[],
+   previewFrames:source.frames??[],warnings,
+   assessment:warnings.length?'technical_warnings_require_review':'basic_technical_signals_ok_not_creative_approval'};
+ });
+ return {version:1,kind:'persona-shoot-intake-v1',status:'needs-human-review',sourceManifest:manifestPath,
+  briefPath,sourceCount:takes.length,takes,
+  notes:[
+   'Local-only technical preflight. No cloud upload, ASR, editing or publication.',
+   'Audio peaks are not speech intelligibility or loudness; video luma is not accurate skin color or focus.',
+   'Preview frames require personal review for framing, eyes, glasses, skin, acting and expression.',
+   'Before montage verify expected spoken lines and scene labels; technical warnings never imply automatic author approval.'
+  ],
+  next:'Run media:first-reel:draft with sourceManifest, briefPath, new draft directory, installed whisper-cli.exe and multilingual model.'};
+}
+export async function runShootIntake({outputDir,labeledFiles}={}){
+ if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
+ const manifest=parseShootInputs(labeledFiles);
+ const resolvedInputs=new Set();
+ for(const source of manifest.sources){
+  const canonical=await realpath(source.path);
+  const file=await stat(canonical);
+  if(!file.isFile()||file.size<=0)fail('Empty or invalid selected video: '+source.id);
+  const key=process.platform==='win32'?canonical.toLowerCase():canonical;
+  if(resolvedInputs.has(key))fail('The same source file was assigned to two takes');
+  resolvedInputs.add(key);
+ }
+ const root=resolve(outputDir);
+ await mkdir(root,{recursive:false}); // Refuse existing output; never replace original.
+ const manifestPath=join(root,'sources.json');
+ try{
+  await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
+  const result=await analyze(manifestPath,join(root,'evidence'));
+  const analysis=JSON.parse(await readFile(result.analysis,'utf8'));
+  const report=createIntakeReport(analysis,manifestPath);
+  const reportPath=join(root,'INTAKE.json');
+  await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+  return {status:report.status,reportPath,manifestPath,evidencePath:result.analysis,sourceCount:report.sourceCount,
+   warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
+ }catch(error){
+  await writeFile(join(root,'FAILED.json'),JSON.stringify({
+   status:'failed',error:String(error.message||error),
+   note:'No input video was modified. Partial technical evidence stays local.'
+  },null,2)+'\n',{flag:'wx'}).catch(()=>{});
+  throw error;
+ }
+}
+if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
+ const [outputDir,...labeledFiles]=process.argv.slice(2);
+ runShootIntake({outputDir,labeledFiles}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{
+  console.error('Persona shoot intake:',e.message);process.exitCode=1;
+ });
+}
