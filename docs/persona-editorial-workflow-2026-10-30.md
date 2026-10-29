@@ -2,6 +2,26 @@
 
 Работает локально, поверх существующих Whisper и FFmpeg. Не заменяет основной рендерер и не разрешает публикацию.
 
+## Новый вариант: подготовить всё одной командой
+
+После успешной работы media:first-reel:draft и появления RESULT.json запустите:
+
+    node tools/persona-review-kit.mjs DRAFT_DIR
+
+Вместо DRAFT_DIR укажите фактический каталог черновика — например, полный путь в кавычках: "C:\Users\Kostya\Videos\persona-draft-001".
+
+Команда создаст новый каталог DRAFT_DIR/editorial-review-kit:
+
+- candidate-pack.json и candidate-pack.json.md — видеоальтернативы и пояснения;
+- selection.json — шаблон ручного выбора;
+- previews/review.html — локальная страница с воспроизводимыми дублями;
+- creative-review.template.json — шаблон художественного чек-листа;
+- KIT.json — список результатов.
+
+Откройте previews/review.html, посмотрите видео, выберите дубль и впишите причину. Нажмите «Сохранить мой выбор в JSON». Браузер создаст selection.reviewed.json, который затем передаётся в команду editorial-choices.mjs apply из инструкции ниже.
+
+Страница работает локально, не публикует видео и не меняет оригиналы. Выполнить ещё раз в том же каталоге невозможно: новый пакет требует нового каталога черновика.
+
 ## После съёмки A01 / B01
 
 Сначала запустите существующие media:shoot:intake и media:first-reel:draft. В итоговом каталоге (ниже: DRAFT_DIR) должны появиться evidence/analysis.json и decisions.json. Затем, из корня репозитория:
@@ -64,6 +84,7 @@ creative-review.md — русскоязычный итог проверки; cre
 ## Проверки
 
     node --test tools/persona-editorial-previews.test.mjs
+    node --test tools/persona-review-kit.test.mjs
 
 
     node --test tools/persona-editorial-choices.test.mjs tools/persona-creative-review.test.mjs
