@@ -67,7 +67,7 @@ test('real two-shot FFmpeg proof: human choice -> new MP4 and subtitles -> trust
   const originals=await Promise.all(sources.map(s=>readFile(s.path)));
   const draftMP4=join(draft,'draft-reel.mp4');
   const generateDraft=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
-   '-i',sources[0].path,'-t','2','-c:v','libx264','-preset','ultrafast',
+   '-i',sources[0].path,'-t','2','-vf','scale=1080:1920,setsar=1','-c:v','libx264','-preset','ultrafast',
    '-c:a','aac',draftMP4],{encoding:'utf8',timeout:60000});
   assert.equal(generateDraft.status,0,generateDraft.stderr);
   const oldQa=await verifyLocalPersonaRender({path:draftMP4,contentId:'persona-first-reel',format:'reel',
