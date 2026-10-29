@@ -214,7 +214,7 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <section aria-label="Создание готового MP4" className="personaLocalExport">
     <h4>Создать готовое видео MP4</h4>
     <p>На компьютере это уже умеет наш локальный FFmpeg. Никакой загрузки видео в облако не требуется.</p>
-    <p>Открой Persona локально на <code>http://localhost:5173</code> и запусти обработчик в отдельном терминале: <code>npm run media:bridge</code>.</p>
+    <p>На компьютере запусти интерфейс командой <code>npm run web:dev</code>, открой <code>http://localhost:5173</code>, затем в другом терминале запусти <code>npm run media:bridge</code>.</p>
     <button
       type="button"
       className="primary"
