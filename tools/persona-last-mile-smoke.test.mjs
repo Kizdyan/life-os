@@ -81,3 +81,55 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
   assert.equal(saved.status,'awaiting-author-review');
  }finally{await rm(root,{recursive:true,force:true})}
 });
+
+test('one explicitly selected source video -> generated manifest -> real MP4 + real QA',{skip:!tools,timeout:180000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-one-file-e2e-'));
+ try {
+  const video=join(root,'single.mp4');
+  const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=green:s=240x320:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','8','-c:v','mpeg4','-c:a','aac','-shortest',video],{encoding:'utf8',timeout:30000});
+  assert.equal(generated.status,0,generated.stderr);
+  const before=await readFile(video);
+  const briefPath=join(root,'brief.json');
+  await mkJson(briefPath,{version:1,sourceFormat:'reel',
+    script:[{order:1,line:'Я актёр. И ещё пишу музыку.',durationSec:2.2},
+            {order:2,line:'И у нас есть проблема.',durationSec:2}],
+    shots:[{order:1,durationSec:2.2,action:'Актёр смотрит в объектив'},
+           {order:2,durationSec:2,action:'Композитор отвечает'}]});
+  const model=join(root,'fixture-model.bin');
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  const transcribeStep=async analysisPath=>{
+   const analysis=JSON.parse(await readFile(analysisPath,'utf8'));
+   assert.deepEqual(analysis.sources.map(x=>x.id),['single']);
+   await mkJson(join(dirname(analysisPath),'single-whisper.json'),{
+    transcription:[
+     ...['Я',' актёр',' И',' ещё',' пишу',' музыку'].map((text,i)=>({text,offsets:{from:400+i*250,to:630+i*250}})),
+     ...[' И',' у',' нас',' есть',' проблема'].map((text,i)=>({text,offsets:{from:4200+i*250,to:4430+i*250}}))
+    ]
+   });
+   return {status:'fixture-asr-only'};
+  };
+  const result=await runFirstReel({sources:video,brief:briefPath,outputDir:join(root,'draft'),whisperCli:process.execPath,whisperModel:model,transcribeStep});
+  const sources=JSON.parse(await readFile(join(root,'draft','sources.generated.json'),'utf8'));
+  assert.deepEqual(sources.sources,[{id:'single',path:video}]);
+  assert.equal(result.status,'awaiting-author-review');
+  assert.equal(result.distributionAllowed,false);
+  assert.ok(result.events.includes('single_video_manifest_created'));
+  const qa=JSON.parse(await readFile(result.qaPath,'utf8'));
+  assert.equal(qa.evidence.fps,30);
+  assert.equal(qa.handoff.passed,false);
+  assert.deepEqual(qa.handoff.errors,['author approval required']);
+  assert.deepEqual(await readFile(video),before);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('first creative Reel production brief is present and contains all seven real shot directions',async()=>{
+ const path=join(here,'..','docs','persona-first-reel-production-brief-2026-10-29.json');
+ const data=JSON.parse(await readFile(path,'utf8'));
+ assert.equal(data.sourceFormat,'reel');
+ assert.equal(data.script.length,7);
+ assert.equal(data.shots.length,7);
+ assert.equal(data.shots.reduce((sec,x)=>sec+x.durationSec,0),31);
+ assert.equal(data.script[5].order,6);
+ assert.match(data.shots[5].action,/музык/iu);
+ assert.ok(data.shots.every((shot,i)=>shot.order===i+1&&data.script[i].order===shot.order));
+});
