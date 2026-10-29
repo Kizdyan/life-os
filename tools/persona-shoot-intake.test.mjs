@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseShootInputs, createIntakeReport, runShootIntake } from './persona-shoot-intake.mjs';
+import { parseShootInputs, createIntakeReport, formatIntakeMarkdown, runShootIntake } from './persona-shoot-intake.mjs';
 
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>
  spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
@@ -32,6 +32,10 @@ test('intake report cannot automatically approve color, performance or distribut
  assert.ok(r.takes[0].warnings.includes('audio_very_low_peak_review'));
  assert.ok(!('qualityScore' in r)&&!('actingScore' in r)&&!('approved' in r));
  assert.match(r.notes.join(' '),/eyes, glasses, skin, acting/);
+ const markdown=formatIntakeMarkdown(r);
+ assert.match(markdown,/приёмка съёмки A01\/B01/);
+ assert.match(markdown,/Очень тихий звук/);
+ assert.match(markdown,/просмотр автором/);
 });
 
 test('two real FFmpeg takes -> local evidence, hash, previews, WAV and intake report; no source edits',{skip:!mediaTools,timeout:180000},async()=>{
@@ -57,6 +61,10 @@ test('two real FFmpeg takes -> local evidence, hash, previews, WAV and intake re
   const manifest=JSON.parse(await readFile(result.manifestPath,'utf8'));
   const analysis=JSON.parse(await readFile(result.evidencePath,'utf8'));
   assert.equal(report.sourceCount,2);
+  const summary=await readFile(result.summaryPath,'utf8');
+  assert.match(summary,/A01_take01/);
+  assert.match(summary,/B01_take01/);
+  assert.match(summary,/Нет аудиодорожки/);
   assert.deepEqual(manifest.sources.map(x=>x.id),['A01_take01','B01_take01']);
   assert.deepEqual(report.takes.map(x=>x.sha256),analysis.sources.map(x=>x.sha256));
   assert.ok(report.takes[1].warnings.includes('cannot_transcribe_without_audio'));
