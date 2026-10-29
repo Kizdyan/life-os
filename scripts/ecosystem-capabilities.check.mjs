@@ -9,9 +9,11 @@ test('all 43 capability ids are unique and valid',async()=>{
   assert.equal(new Set(registry.capabilities.map(x=>x.id)).size,43);
   assert.deepEqual(summarize(registry).byDomain,{persona:21,ai:13,life:9});
 });
-test('prioritizes CI, reference UI, real Persona MP4, provider sandbox, finance',async()=>{
+test('prioritizes one real Reel, bounded Skills activation, QA, Instagram and monetization',async()=>{
   const registry=await readRegistry();
-  assert.deepEqual(getNext(registry).map(x=>x.id),[33,1,19,23,35]);
+  assert.deepEqual(getNext(registry).map(x=>x.id),[19,26,33,17,20,21,37,1,22,35,23]);
+  assert.equal(registry.capabilities.find(x=>x.id===26).priority,'P0');
+  assert.equal(registry.capabilities.find(x=>x.id===20).priority,'P0');
   assert.equal(registry.capabilities.find(x=>x.id===19).status,'partial');
   assert.equal(registry.capabilities.find(x=>x.id===1).status,'draft');
   assert.equal(registry.capabilities.find(x=>x.id===43).status,'deferred');
