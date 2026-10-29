@@ -80,11 +80,24 @@ export function rankDialogueCandidates(line,sourceId,segments){
   return results.sort((a,b)=>b.score-a.score).slice(0,6);
 }
 function intersects(a,b){return a.sourceId===b.sourceId && Math.min(a.endSec,b.endSec)-Math.max(a.startSec,b.startSec)>0.1}
+function requiresPostSpeechMusic(shot){
+  // Explicit shot direction, not an invented claim that the model understood music.
+  return typeof shot?.action==='string' &&
+    /(?:после реплики|после слов|затем).{0,85}(?:музык|мелод|фортепиан|клавиш|пианино)/iu.test(shot.action);
+}
+function extendForShot(candidate,shot,source){
+  if(!requiresPostSpeechMusic(shot))return candidate;
+  if(!valid(shot.durationSec,0.25,60))return null;
+  const endSec=Math.max(candidate.endSec,candidate.startSec+shot.durationSec);
+  if(endSec>source.durationSec+0.02)return null;
+  return {...candidate,endSec,postSpeechMusicPreserved:true};
+}
 export function chooseForBrief(brief,sources){
   const choices=[],warnings=[];
   for(const [index,beat] of brief.script.entries()){
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
-      .filter(x=>x.endSec<=src.durationSec+0.02)
+      .map(x=>extendForShot(x,brief.shots?.[index],src))
+      .filter(x=>x!==null && x.endSec<=src.durationSec+0.02)
       .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals)));
     const available=options.filter(x=>!choices.some(prev=>intersects(prev,x))).sort((a,b)=>b.score-a.score);
     if(!available.length){warnings.push('No confidently matched timed speech for beat '+(index+1)+': '+beat.line);continue}
@@ -94,7 +107,7 @@ export function chooseForBrief(brief,sources){
     if(!valid(durationSec,0.25,60)||confidence<0.75){warnings.push('Ambiguous timing or confidence for beat '+(index+1));continue}
     choices.push({beat:index+1,sourceId:pick.sourceId,startSec,durationSec,
       transcript:pick.transcript,confidence,
-      reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); visual and performance quality NOT assessed.'});
+      reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); '+(pick.postSpeechMusicPreserved?'explicit post-speech music hold preserved; ':'')+'visual and performance quality NOT assessed.'});
   }
   if(warnings.length||choices.length!==brief.script.length)fail('Manual review required: '+warnings.join('; '));
   return choices;
@@ -112,7 +125,7 @@ async function transcribe(analysisArg,cliArg,modelArg){
     const wav=sourcePath(base,source.audioPath);const output=join(base,source.id+'-whisper');
     await access(output+'.json').then(()=>fail('Whisper output already exists: '+output+'.json'),()=>{});
     await new Promise((ok,bad)=>{
-      const child=spawn(cli,['-m',model,'-f',wav,'-l','auto','-ml','1','-ojf','-of',output],
+      const child=spawn(cli,['-m',model,'-f',wav,'-l','auto','-ml','80','-sow','-ojf','-of',output],
         {shell:false,windowsHide:true,stdio:['ignore','ignore','pipe']});
       let err='',done=false;
       const timer=setTimeout(()=>{if(!done){done=true;child.kill();bad(Error('Local ASR timed out'))}},10*60*1000);
