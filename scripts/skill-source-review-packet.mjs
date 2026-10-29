@@ -15,6 +15,8 @@ export function compileSkillSourceReviewPacket(report) {
       !/^[a-f0-9]{64}$/i.test(report.bundleSha256 ?? '') ||
       !/^[a-f0-9]{64}$/i.test(report.manifestSha256 ?? '') ||
       !Array.isArray(report.files) || !Array.isArray(report.findings) ||
+      typeof report.staticCheckPassed !== 'boolean' ||
+      report.staticCheckPassed !== (report.inventoryComplete === true && report.findings.length === 0) ||
       report.scannedFiles !== report.files.length) throw Error('Missing independent pinned source evidence');
   const blocked = !report.inventoryComplete || report.findings.some(f => f.severity !== 'review');
   const review = report.findings.filter(f => f.severity === 'review').map(f => ({
