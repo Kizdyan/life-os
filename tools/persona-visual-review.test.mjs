@@ -52,6 +52,9 @@ test('offline visual page has crop sliders and escapes untrusted source names',(
  assert.ok(html.includes('&lt;img'));
  assert.ok(!html.includes('<img src=x onerror=alert(1)>'));
  assert.match(html,/Публикация не разрешается/);
+ pack.continuityWarnings=[{fromBeat:1,toBeat:2,yavgDelta:-57}];
+ assert.match(makeVisualHtml(pack),/Возможные различия между сценами/);
+ assert.match(makeVisualHtml(pack),/Склейка 1 → 2/);
 });
 const ready=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 test('synthetic videos: real FFmpeg stills, luma continuity warnings, manual crop, source integrity',{skip:!ready,timeout:180000},async()=>{
