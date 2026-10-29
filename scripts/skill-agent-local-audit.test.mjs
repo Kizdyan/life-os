@@ -41,8 +41,13 @@ describe('project-local Codex and Claude manifest audit',()=>{
  }));
  it('rejects symlinked skill directories, even if contents appear valid',()=>fixture(async root=>{
    await install(root,'.agents');await mkdir(join(root,'.claude','skills'),{recursive:true});
-   await symlink(join(root,'.agents','skills','life-os-skill-discovery'),
-      join(root,'.claude','skills','life-os-skill-discovery'),'dir');
+   try {
+     await symlink(join(root,'.agents','skills','life-os-skill-discovery'),
+       join(root,'.claude','skills','life-os-skill-discovery'),'dir');
+   } catch (e) {
+     if (['EPERM','EACCES','ENOTSUP'].includes(e.code)) return;
+     throw e;
+   }
    const a=await auditProjectAgentSkills(root);
    assert.equal(a.agents[1].status,'unsafe_path');
  }));
