@@ -9,6 +9,10 @@ import { analyze, assemble, sharedWords } from './persona-semantic-montage.mjs';
 
 const mediaTools=['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
+const minimalBrief={version:1,sourceFormat:'reel',script:[
+ {order:1,line:'Я актёр. И ещё пишу музыку.',durationSec:2},
+ {order:2,line:'И у нас есть проблема.',durationSec:2}
+],shots:[{order:1,durationSec:2},{order:2,durationSec:2}]};
 test('speech matching rejects unrelated dialogue',()=>{
  assert.equal(sharedWords('Я актёр. Пишу музыку.','Я актёр, пишу музыку.'),1);
  assert.equal(sharedWords('Я актёр, пишу музыку','Картошка, свекла, суп'),0);
