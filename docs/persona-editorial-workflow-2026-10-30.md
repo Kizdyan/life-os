@@ -22,6 +22,35 @@
 
 Страница работает локально, не публикует видео и не меняет оригиналы. Выполнить ещё раз в том же каталоге невозможно: новый пакет требует нового каталога черновика.
 
+## После выбора дублей: пересобрать и проверить одной командой
+
+Получив из браузера файл `selection.reviewed.json`, укажите три пути (и при необходимости четвёртый — папку FFmpeg):
+
+```powershell
+npm run media:review:render -- `
+  "C:\Users\Kostya\Videos\persona-draft-001" `
+  "C:\Users\Kostya\Downloads\selection.reviewed.json" `
+  "C:\Users\Kostya\Videos\persona-reviewed-001" `
+  "C:\Users\Kostya\Tools\FFmpeg\ffmpeg-9.0.2-essentials_build\bin"
+```
+
+Последний аргумент необязателен, если `ffmpeg` и `ffprobe` уже доступны в PATH. Каталог `persona-reviewed-001` должен быть **новым**, его не нужно создавать заранее.
+
+Команда проверяет оригинальный MP4 и его прежний SHA-256, блокировку публикации, вручную выбранные дубли, хеши исходных клипов и монтажные интервалы. Затем **без перезаписи** первого результата создаёт:
+
+- `reviewed-decisions.json` и `decision-memory.json` — выбранные дубли и причины;
+- `reviewed-timeline.json` и `reviewed-reel.mp4` — самостоятельная версия монтажа;
+- `captions.draft.srt`, `captions.draft.vtt`, `captions.review.json` — субтитры нового монтажа;
+- `reviewed-qa.json` — **повторная реальная техническая проверка**, публикация по-прежнему запрещена;
+- `creative-review.json` — художественный чек-лист для уже выбранных дублей;
+- `REVIEWED-RESULT.json` — пути и статус `awaiting-author-review`.
+
+Даже после успешного QA нельзя считать ролик утверждённым. Отдельно посмотреть весь MP4, проверить звук, синхронизацию титров, кадрирование и финальный музыкальный момент.
+
+Если что-то сломалось, внутри нового каталога останется FAILED.json, а первоначальные MP4 и `decisions.json` сохранятся.
+
+Старый порядок с несколькими командами ниже остаётся как ручной резервный вариант.
+
 ## После съёмки A01 / B01
 
 Сначала запустите существующие media:shoot:intake и media:first-reel:draft. В итоговом каталоге (ниже: DRAFT_DIR) должны появиться evidence/analysis.json и decisions.json. Затем, из корня репозитория:
@@ -85,6 +114,7 @@ creative-review.md — русскоязычный итог проверки; cre
 
     node --test tools/persona-editorial-previews.test.mjs
     node --test tools/persona-review-kit.test.mjs
+    node --test tools/persona-reviewed-render.test.mjs
 
 
     node --test tools/persona-editorial-choices.test.mjs tools/persona-creative-review.test.mjs
