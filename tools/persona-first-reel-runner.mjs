@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+/** One-command local speech-aware Persona Reel (draft only; never publishes). */
+import { spawn } from 'node:child_process';
+import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { analyze, assemble } from './persona-semantic-montage.mjs';
+import { transcribe, plan } from './persona-semantic-autoselect.mjs';
+
+const fail = m => {throw Error(m)};
+const exists = async p => stat(p).then(()=>true,()=>false);
+const home = dirname(fileURLToPath(import.meta.url));
+function call(bin,args,{timeout=20*60*1000}={}) {
+ return new Promise((ok,bad)=>{
+  const child=spawn(bin,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  let error='',output='',done=false;
+  const timer=setTimeout(()=>{if(!done){done=true;child.kill();bad(Error('Process timeout: '+bin))}},timeout);
+  child.stdout.on('data',b=>{output=(output+b).slice(-20000)});
+  child.stderr.on('data',b=>{error=(error+b).slice(-3000)});
+  child.on('error',e=>{if(!done){done=true;clearTimeout(timer);bad(e)}});
+  child.on('close',code=>{if(!done){done=true;clearTimeout(timer);code===0?ok(output):bad(Error('Process failed ('+code+'): '+error))}});
+ });
+}
+function temporaryBinPath(binDir){
+ if(!binDir)return;
+ const k=Object.keys(process.env).find(key=>key.toUpperCase()==='PATH')||'PATH';
+ process.env[k]=resolve(binDir)+(process.platform==='win32'?';':':')+(process.env[k]||'');
+ // process-level PATH only; the machine/user environment is untouched.
+}
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs')}={}){
+ if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
+ for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
+ if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
+ temporaryBinPath(ffmpegDir);
+ await Promise.all([call('ffmpeg',['-version'],{timeout:8000}),call('ffprobe',['-version'],{timeout:8000})]);
+ const root=resolve(outputDir);
+ await mkdir(root,{recursive:false});
+ const events=[];
+ try{
+  const evidence=await analyze(resolve(sources),join(root,'evidence'));
+  events.push('media_evidence_generated');
+  const transcripts=await transcribe(evidence.analysis,whisperCli,whisperModel);
+  events.push('offline_asr_completed');
+  const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'));
+  events.push('dialogue_cuts_proposed');
+  const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
+  events.push('clips_verified_and_timeline_built');
+  const output=join(root,'draft-reel.mp4');
+  await call(process.execPath,[rendererPath,assembled.project,output]);
+  events.push('real_mp4_rendered');
+  const qaPath=join(root,'qa.json');
+  await call(process.execPath,[verifierPath,output,'persona-first-reel','reel',qaPath]);
+  const qa=JSON.parse(await readFile(qaPath,'utf8'));
+  events.push('technical_qa_written');
+  const summary={version:1,status:'awaiting-author-review',events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Human visual review and publication approval are required.',
+    technicalChecks:qa.evidence??null,distributionAllowed:false};
+  await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
+  return summary;
+ }catch(error){
+  await writeFile(join(root,'FAILED.json'),JSON.stringify({status:'failed',events,error:String(error.message||error),note:'Partial outputs retained for debugging; originals are not changed.'},null,2)+'\n',{flag:'wx'}).catch(()=>{});
+  throw error;
+ }
+}
+if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
+ const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir]=process.argv.slice(2);
+ runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
+}
