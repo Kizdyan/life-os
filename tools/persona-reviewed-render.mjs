@@ -78,6 +78,28 @@ export async function preflightReviewedRender({draftDir,selectionPath,outputDir,
  return {draft,output,selection,kit,packPath,profilePath:resolve(profilePath),
   decisionsPath:join(draft,'decisions.json')};
 }
+export function formatReviewedResult(report){
+ if(report?.kind!=='persona-reviewed-reel-v1'||report.publicationApproved!==false||
+   typeof report.output!=='string'||typeof report.qaPath!=='string')
+  fail('Invalid reviewed output status');
+ return [
+  '# Persona · повторный монтаж выбранных дублей','',
+  '**Статус:** технический черновик готов к личному просмотру. **Публикация не разрешена.**','',
+  '- Первый черновик: '+report.originalDraft,
+  '- Новая версия: '+report.output,
+  '- Проверка MP4: '+report.qaPath,
+  '- Новые субтитры: '+report.subtitleDraft.srtPath,
+  '- Предупреждения и таймкоды: '+report.subtitleDraft.reviewPath,
+  '- Ручной контроль качества: '+report.creativeReviewTemplate,
+  '- Причины выбора дублей: '+report.memoryPath,'',
+  '## Что делать дальше','',
+  '1. Посмотреть **весь новый MP4** и сравнить с исходным черновиком.',
+  '2. Проверить взгляд, естественность пауз, цвет кожи, блики на очках и клавиши.',
+  '3. Проверить синхронизацию SRT, естественный голос, границу музыки и панчлайн.',
+  '4. Заполнить creative-review.json (true / false / null и конкретные замечания).',
+  '5. Отдельно утвердить конечную версию — этот файл и технический QA не дают разрешение на публикацию.',''
+ ].join('\n');
+}
 export async function renderReviewedReel({draftDir,selectionPath,outputDir,ffmpegDir,profilePath=profileDefault,
  rendererPath=join(here,'persona-timeline-render.mjs'),verifierPath=join(here,'persona-verify-render.mjs')}={}){
  const p=await preflightReviewedRender({draftDir,selectionPath,outputDir,profilePath});
@@ -113,6 +135,7 @@ export async function renderReviewedReel({draftDir,selectionPath,outputDir,ffmpe
    timelinePath:assembled.project,subtitleDraft:captions,creativeReviewTemplate:creative.reviewPath,
    steps:stage,caveat:'Selected clips were human-chosen; Creative QA still requires viewing the final MP4. No publication approval.'};
   await writeFile(join(p.output,'REVIEWED-RESULT.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+  await writeFile(join(p.output,'REVIEWED-RESULT.md'),formatReviewedResult(report),{flag:'wx'});
   return report;
  }catch(err){
   await writeFile(join(p.output,'FAILED.json'),JSON.stringify({version:1,status:'failed',
