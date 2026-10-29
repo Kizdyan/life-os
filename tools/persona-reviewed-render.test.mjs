@@ -6,11 +6,22 @@ import {mkdtemp,readFile,rm,stat,writeFile,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
-import {preflightReviewedRender,renderReviewedReel} from './persona-reviewed-render.mjs';
+import {preflightReviewedRender,renderReviewedReel,formatReviewedResult} from './persona-reviewed-render.mjs';
 
 const installed=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const writeJson=(path,data)=>writeFile(path,JSON.stringify(data,null,2)+'\n');
 const checksum=b=>createHash('sha256').update(b).digest('hex');
+
+test('friendly report is Russian, names actual output and never claims publication approval',()=>{
+ const report={kind:'persona-reviewed-reel-v1',publicationApproved:false,originalDraft:'D:/old.mp4',
+  output:'D:/new.mp4',qaPath:'D:/qa.json',subtitleDraft:{srtPath:'D:/captions.srt',reviewPath:'D:/captions.json'},
+  creativeReviewTemplate:'D:/creative.json',memoryPath:'D:/memory.json'};
+ const text=formatReviewedResult(report);
+ assert.match(text,/новый MP4/i);
+ assert.match(text,/D:\/new\.mp4/);
+ assert.match(text,/Публикация не разрешена/);
+ assert.throws(()=>formatReviewedResult({...report,publicationApproved:true}),/Invalid reviewed output/);
+});
 
 test('reviewed render refuses missing source draft and does not create output',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-reviewed-absent-'));
@@ -105,6 +116,7 @@ test('real two-shot FFmpeg proof: human choice -> new MP4 and subtitles -> trust
   assert.equal(JSON.parse(await readFile(result.qaPath,'utf8')).handoff.passed,false);
   assert.equal(JSON.parse(await readFile(result.creativeReviewTemplate,'utf8')).status,'unreviewed');
   assert.equal(JSON.parse(await readFile(join(output,'REVIEWED-RESULT.json'),'utf8')).kind,'persona-reviewed-reel-v1');
+  assert.match(await readFile(join(output,'REVIEWED-RESULT.md'),'utf8'),/Публикация не разрешена/);
   assert.ok((await stat(draftMP4)).size>1000);
   for(let i=0;i<originals.length;i++)assert.deepEqual(await readFile(sources[i].path),originals[i]);
   await assert.rejects(()=>renderReviewedReel({draftDir:draft,selectionPath,outputDir:output}),/EEXIST/);
