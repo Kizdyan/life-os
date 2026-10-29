@@ -211,11 +211,25 @@ export default function PersonaVideoTimeline({projectId}:{projectId:string}) {
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
   <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>
-  <p>Экспорт MP4 на iPhone пока недоступен. JSON можно скачать и без повторной загрузки исходников; самих видео он не содержит.</p>
+  <section aria-label="Создание готового MP4" className="personaLocalExport">
+    <h4>Создать готовое видео MP4</h4>
+    <p>На компьютере это уже умеет наш локальный FFmpeg. Никакой загрузки видео в облако не требуется.</p>
+    <p>Открой Persona локально на <code>http://localhost:5173</code> и запусти обработчик в отдельном терминале: <code>npm run media:bridge</code>.</p>
+    <button
+      type="button"
+      className="primary"
+      onClick={()=>void renderLocal()}
+      disabled={rendering||clips.length<2||clips.some(c=>!filesById.current.has(c.id)||!hasValidTimelineBounds(c))||
+        !(typeof window!=='undefined'&&['localhost','127.0.0.1'].includes(window.location.hostname)&&['5173','4173'].includes(window.location.port))}
+    >{rendering?'Собираем MP4…':'Скачать готовый MP4'}</button>
+    <p>Нужны минимум два исходника, правильно выставленные фрагменты и запущенный локальный обработчик. На опубликованном сайте и непосредственно на iPhone этот локальный рендер пока не работает.</p>
+    <p>После скачивания проверь видео, звук, цвет, титры и права на музыку. Публикация выполняется только после твоего подтверждения.</p>
+  </section>
+  <p>Монтажный план JSON сохраняется отдельно: он не содержит сами исходные видео.</p>
   {notice&&<p role="status">{notice}</p>}
   {renderState&&<p role="status">{renderState}</p>}
   <p>После перезагрузки выбери исходные видео повторно: браузер сохраняет названия, размер, порядок, тайминги и параметры экспорта, но не сами видеофайлы. Перед рендером проверь соответствие кадров исходникам.</p>
-  <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
+  <details className="personaDeveloperDisclosure"><summary>Технические сведения о локальном экспорте</summary><p>FFmpeg bridge слушает 127.0.0.1:47831 и принимает запросы только с разрешённых локальных адресов. Команда запуска: <code>npm run media:bridge</code>. Готовый файл проверяется обработчиком, но не считается автоматически готовым к публикации.</p></details>
   {error&&<p role="alert">{error}</p>}
  </section>;
 }
