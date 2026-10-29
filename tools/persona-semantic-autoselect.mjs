@@ -93,24 +93,39 @@ function extendForShot(candidate,shot,source){
   return {...candidate,endSec,postSpeechMusicPreserved:true};
 }
 export function chooseForBrief(brief,sources){
-  const choices=[],warnings=[];
-  for(const [index,beat] of brief.script.entries()){
+  if(!Array.isArray(brief?.script)||!Array.isArray(sources))fail('Invalid script or sources');
+  const candidatesByBeat=brief.script.map((beat,index)=>{
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
       .map(x=>extendForShot(x,brief.shots?.[index],src))
       .filter(x=>x!==null && x.endSec<=src.durationSec+0.02)
-      .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals)));
-    const available=options.filter(x=>!choices.some(prev=>intersects(prev,x))).sort((a,b)=>b.score-a.score);
-    if(!available.length){warnings.push('No confidently matched timed speech for beat '+(index+1)+': '+beat.line);continue}
-    const pick=available[0],confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
-    const startSec=Number(pick.startSec.toFixed(3));
-    const durationSec=Number((pick.endSec-pick.startSec).toFixed(3));
-    if(!valid(durationSec,0.25,60)||confidence<0.75){warnings.push('Ambiguous timing or confidence for beat '+(index+1));continue}
-    choices.push({beat:index+1,sourceId:pick.sourceId,startSec,durationSec,
-      transcript:pick.transcript,confidence,
-      reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); '+(pick.postSpeechMusicPreserved?'explicit post-speech music hold preserved; ':'')+'visual and performance quality NOT assessed.'});
+      .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals))
+      .filter(x=>x.score>=0.75 && valid(x.endSec-x.startSec,0.25,60)));
+    return options.sort((a,b)=>b.score-a.score);
+  });
+  const missing=candidatesByBeat.findIndex(x=>x.length===0);
+  if(missing!==-1)fail('Manual review required: No confidently matched clean speech for beat '+(missing+1)+': '+brief.script[missing].line);
+  // Backtracking prevents a greedy first take from occupying the only clean
+  // window available to a later line. Hard budget: never search unboundedly.
+  const chosen=[];let tried=0;
+  function select(index){
+    if(index===candidatesByBeat.length)return true;
+    for(const candidate of candidatesByBeat[index]){
+      if(++tried>20000)return false;
+      if(chosen.some(prev=>intersects(prev,candidate)))continue;
+      chosen.push(candidate);
+      if(select(index+1))return true;
+      chosen.pop();
+    }
+    return false;
   }
-  if(warnings.length||choices.length!==brief.script.length)fail('Manual review required: '+warnings.join('; '));
-  return choices;
+  if(!select(0))fail('Manual review required: no non-overlapping confident take combination (or search budget exceeded)');
+  return chosen.map((pick,index)=>{
+    const confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
+    return {beat:index+1,sourceId:pick.sourceId,startSec:Number(pick.startSec.toFixed(3)),
+      durationSec:Number((pick.endSec-pick.startSec).toFixed(3)),
+      transcript:pick.transcript,confidence,
+      reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); '+(pick.postSpeechMusicPreserved?'explicit post-speech music hold preserved; ':'')+'visual and performance quality NOT assessed.'};
+  });
 }
 async function transcribe(analysisArg,cliArg,modelArg){
   const analysisFile=resolve(analysisArg),analysis=await readJson(analysisFile),base=dirname(analysisFile);
