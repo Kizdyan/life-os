@@ -110,7 +110,7 @@ CLI Whisper скорректирован в соответствии с его �
 Запуск из корня проекта (пути к видео, модели и Whisper заменить на свои; каталог результата должен быть новым):
 
 ```powershell
-npm run media:first-reel:draft -- "D:\\PersonaMedia\\approved-source.mp4" "docs/persona-first-reel-production-brief-2026-10-29.json" "D:\\PersonaMedia\\draft-001" "D:\\Tools\\whisper.cpp\\whisper-cli.exe" "D:\\Models\\ggml-base.bin" "D:\\Tools\\ffmpeg\\bin"
+npm run media:first-reel:draft -- "D:\PersonaMedia\approved-source.mp4" "docs/persona-first-reel-production-brief-2026-10-29.json" "D:\PersonaMedia\draft-001" "D:\Tools\whisper.cpp\whisper-cli.exe" "D:\Models\ggml-base.bin" "D:\Tools\ffmpeg\bin"
 ```
 
 Указанная в примере многоязычная модель — **пример пути**, не свидетельство её наличия на ПК и не рекомендация скачивать что-либо автоматически. Portable FFmpeg указывается необязательно, если команды уже доступны процессу.
@@ -119,4 +119,4 @@ npm run media:first-reel:draft -- "D:\\PersonaMedia\\approved-source.mp4" "docs/
 
 Контракт дополнительно проверяется новым интеграционным smoke-тестом: **один синтетический MP4** с двумя непересекающимися репликами-фикстурами → автоматически созданный manifest → реальный FFmpeg renderer → настоящий media QA, без изменения входного видео. Добавлена проверка структуры семикадрового брифа. Эти тесты после добавления **пока не подтверждены успешной GitHub CI или Windows-сборкой**.
 
-Показанные пути `D:\\...` иллюстративные. Ни исходное пользовательское видео, ни модель Whisper не обнаружены и не установлены в ходе этого изменения.
+Показанные пути `D:\...` иллюстративные. Ни исходное пользовательское видео, ни модель Whisper не обнаружены и не установлены в ходе этого изменения.
