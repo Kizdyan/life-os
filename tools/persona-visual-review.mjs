@@ -50,7 +50,7 @@ export function applyManualFraming(pack,selection,timeline){
  for(let i=0;i<pack.scenes.length;i++){
   const c=result.clips[i],scene=pack.scenes[i],choice=selection.scenes[i];
   if(scene.beat!==(c.beat??i+1)||scene.startSec!==c.startSec||
-     scene.durationSec!==c.durationSec||scene.path!==resolve(c.path)||
+     scene.durationSec!==c.durationSec||scene.path!==(isAbsolute(c.path)?resolve(c.path):resolve(dirname(pack.timelinePath),c.path))||
      choice.beat!==scene.beat||choice.sourceSha256!==scene.sourceSha256||
      choice.reviewed!==true||typeof choice.reason!=='string'||
      choice.reason.trim().length<3||choice.reason.length>500)
