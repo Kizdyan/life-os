@@ -25,6 +25,10 @@ export function makeCreativeReview(pack,profile,selection=null){
   fail('Invalid editorial candidate pack');
  if(selection&&(selection.kind!=='persona-editorial-selection-v1'||!Array.isArray(selection.selections)||selection.selections.length!==pack.beats.length))
   fail('Invalid reviewed selection');
+ if(selection&&selection.selections.some((row,i)=>
+  row?.beat!==i+1||row.reviewed!==true||
+  !pack.beats[i].candidates?.some(c=>c.candidateId===row.candidateId)))
+  fail('Creative review requires explicitly reviewed candidates from the pack');
  return {version:1,kind:'persona-creative-review-v1',status:'unreviewed',publicationApproved:false,
   profileKind:profile.kind,profileVersion:profile.version,
   scenes:pack.beats.map((beat,index)=>({
