@@ -6,6 +6,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
+import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
 
 const fail = m => {throw Error(m)};
 const exists = async p => stat(p).then(()=>true,()=>false);
@@ -91,6 +92,8 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('dialogue_cuts_proposed');
   const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
+  const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,outputDir:root});
+  events.push('reviewable_subtitle_sidecars_written');
   const output=join(root,'draft-reel.mp4');
   await call(process.execPath,[rendererPath,assembled.project,output]);
   events.push('real_mp4_rendered');
@@ -100,7 +103,8 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   validateDraftQa(qa,output);
   events.push('technical_qa_passed');
   const summary={version:1,status:'awaiting-author-review',events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
-    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Human visual review and publication approval are required.',
+    subtitleDraft,
+    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. SRT/VTT are draft sidecars NOT burned into MP4 or word-level aligned. Human timing review and publication approval required.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;
