@@ -39,6 +39,16 @@ test('Picks cleaner complete spoken take, detects missing dialogue and prevents 
  assert.ok(choices.every(c=>c.confidence>=.75&&c.reason.includes('NOT assessed')));
  assert.throws(()=>chooseForBrief(brief,sources.filter(x=>x.id!=='takeB_good')),/Manual review required/);
 });
+test('Avoids technically black footage even if ASR transcript matches better',()=>{
+ const segments=parseWhisperJson(whisper([['Я',.1,.3],['актёр',.3,.8],['И',.8,.9],['ещё',.9,1.2],['пишу',1.2,1.6],['музыку',1.6,2.1]]),4);
+ const sources=[
+  {id:'black',durationSec:4,segments,technicalQuality:{blackIntervals:[{startSec:0,endSec:2.5}]}},
+  {id:'clear',durationSec:4,segments,technicalQuality:{blackIntervals:[]}}
+ ];
+ const one={...brief,script:[brief.script[0]],shots:[brief.shots[0]]};
+ assert.equal(chooseForBrief(one,sources)[0].sourceId,'clear');
+ assert.throws(()=>chooseForBrief(one,sources.slice(0,1)),/Manual review required/);
+});
 test('End-to-end decisions JSON from local Whisper fixture, output non-overwrite, no false auto-approval',async()=>{
  const d=await mk();
  try{
