@@ -24,6 +24,23 @@ test('creative QA starts unreviewed, without fake aesthetic scores or approval',
  assert.equal(summary.status,'needs-human-review');
 });
 
+test('creative QA follows explicitly reviewed replacement takes, not obsolete defaults',()=>{
+ const options=structuredClone(pack);
+ options.beats[0].candidates=[{candidateId:'beat1-replacement'}];
+ options.beats[1].candidates=[{candidateId:'beat2-two'}];
+ const selection={kind:'persona-editorial-selection-v1',selections:[
+  {beat:1,candidateId:'beat1-replacement',reviewed:true,reason:'Лучшая пауза'},
+  {beat:2,candidateId:'beat2-two',reviewed:true,reason:'Лучший взгляд'}
+ ]};
+ const review=makeCreativeReview(options,profile,selection);
+ assert.equal(review.scenes[0].selectedCandidateId,'beat1-replacement');
+ const invalid=structuredClone(selection);
+ invalid.selections[0].reviewed=false;
+ assert.throws(()=>makeCreativeReview(options,profile,invalid),/explicitly reviewed/);
+ invalid.selections[0].reviewed=true;invalid.selections[0].candidateId='unknown';
+ assert.throws(()=>makeCreativeReview(options,profile,invalid),/explicitly reviewed/);
+});
+
 test('human checks and issues persist; even green QA cannot authorize publication',()=>{
  const review=makeCreativeReview(pack,profile);
  for(const scene of review.scenes)
