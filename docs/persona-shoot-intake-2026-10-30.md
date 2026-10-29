@@ -14,7 +14,7 @@
 Из корня проекта:
 
 ```powershell
-npm run media:shoot:intake -- "C:\\Users\\Kostya\\Videos\\persona-intake-001" "A01=C:\\Users\\Kostya\\Videos\\IMG_0001.mp4" "B01=C:\\Users\\Kostya\\Videos\\IMG_0002.mp4"
+npm run media:shoot:intake -- "C:\Users\Kostya\Videos\persona-intake-001" "A01=C:\Users\Kostya\Videos\IMG_0001.mp4" "B01=C:\Users\Kostya\Videos\IMG_0002.mp4"
 ```
 
 Пути в примере **иллюстративные**. Вместо `npm` допустим прямой `node tools/persona-shoot-intake.mjs`, если npm недоступен. Чтобы добавить дубли, допишите `"A01=..."` и `"B01=..."` в команду. Всего: 2–12 **явно выбранных** видео, не более 6 на сцену. Каталоги не сканируются.
@@ -49,7 +49,7 @@ npm run media:shoot:intake -- "C:\\Users\\Kostya\\Videos\\persona-intake-001" "A
 Если приемка пройдена и речевые реплики реально произнесены:
 
 ```powershell
-npm run media:first-reel:draft -- "C:\\Users\\Kostya\\Videos\\persona-intake-001\\sources.json" "docs/persona-two-line-live-asr-check-2026-10-29.json" "C:\\Users\\Kostya\\Videos\\persona-draft-001" "C:\\Users\\Kostya\\Tools\\whisper.cpp\\bin\\whisper-cli.exe" "C:\\Users\\Kostya\\Tools\\whisper.cpp\\models\\ggml-small.bin"
+npm run media:first-reel:draft -- "C:\Users\Kostya\Videos\persona-intake-001\sources.json" "docs/persona-two-line-live-asr-check-2026-10-29.json" "C:\Users\Kostya\Videos\persona-draft-001" "C:\Users\Kostya\Tools\whisper.cpp\bin\whisper-cli.exe" "C:\Users\Kostya\Tools\whisper.cpp\models\ggml-small.bin"
 ```
 
 Если FFmpeg недоступен в PATH процесса, добавить шестым аргументом путь к папке FFmpeg с `ffmpeg.exe` и `ffprobe.exe`.
