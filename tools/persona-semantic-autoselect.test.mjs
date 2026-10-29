@@ -160,3 +160,15 @@ test('real synthetic video -> evidence -> fixture ASR -> automatic choices -> ve
   await assert.rejects(()=>assemble(decision,join(d,'refuse-render.json')),/Source modified/);
  } finally {await rm(d,{recursive:true,force:true})}
 });
+
+test('One long recording can supply two non-overlapping dialogue shots',()=>{
+ const words=[
+  ['Я',.5,.7],['актёр',.75,1],['И',1.05,1.15],['ещё',1.2,1.4],['пишу',1.45,1.7],['музыку',1.75,2.1],
+  ['И',5.5,5.7],['у',5.75,5.9],['нас',5.95,6.1],['есть',6.2,6.45],['проблема',6.55,7.2]
+ ];
+ const source={id:'one-archive-take',durationSec:10,segments:parseWhisperJson(whisper(words),10),technicalQuality:{blackIntervals:[]}};
+ const choices=chooseForBrief(brief,[source]);
+ assert.equal(choices.length,2);
+ assert.deepEqual(choices.map(x=>x.sourceId),['one-archive-take','one-archive-take']);
+ assert.ok(choices[0].startSec+choices[0].durationSec<choices[1].startSec,'selected source windows must not overlap');
+});
