@@ -15,7 +15,7 @@ const tools=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'ut
 const mkJson=(path,data)=>writeFile(path,JSON.stringify(data,null,2)+'\n');
 const here=dirname(fileURLToPath(import.meta.url));
 
-test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Persona MP4 renderer → actual Persona QA',{skip:!tools||process.platform==='win32',timeout:180000},async()=>{
+test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Persona MP4 renderer → actual Persona QA',{skip:!tools,timeout:180000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-last-mile-'));
  try {
   const originals=[];
@@ -33,14 +33,26 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
    shots:[{order:1,durationSec:2.2,action:'Крупный план актёра'},
           {order:2,durationSec:2.0,action:'Композитор за клавишами'}]});
   // Mock timestamps are deliberately NOT acoustic recognition.
-  const mock=join(root,'fixture-whisper.cjs');
-  await writeFile(mock,"#!/usr/bin/env node\nconst fs=require('node:fs');\nconst args=process.argv;\nconst p=args[args.indexOf('-of')+1];\nconst words=p.includes('take0')?['Я','актёр','И','ещё','пишу','музыку']:['И','у','нас','есть','проблема'];\nfs.writeFileSync(p+'.json',JSON.stringify({transcription:words.map((text,i)=>({text,offsets:{from:200+i*280,to:460+i*280}}))}));\n");
-  await chmod(mock,0o755);
+  // Inject ONLY the ASR fixture. Keep the real Persona timeline renderer and real QA.
+  // Native Windows execution no longer depends on launching a .cjs file as an executable.
   const fakeModel=join(root,'fixture-model.bin');
   await writeFile(fakeModel,Buffer.alloc(1024*1024+1));
+  const fixtureTranscribe=async analysisPath=>{
+   const packet=JSON.parse(await readFile(analysisPath,'utf8'));
+   const outputs=[];
+   for(const source of packet.sources){
+    const words=source.id==='take0'?['Я','актёр','И','ещё','пишу','музыку']:['И','у','нас','есть','проблема'];
+    const output=join(dirname(analysisPath),source.id+'-whisper.json');
+    await writeFile(output,JSON.stringify({transcription:words.map((text,i)=>({
+     text,offsets:{from:200+i*280,to:460+i*280}
+    }))}));
+    outputs.push({sourceId:source.id,transcriptPath:output});
+   }
+   return {status:'fixture-asr-only',results:outputs};
+  };
   const out=join(root,'release-candidate');
   const result=await runFirstReel({
-   sources,brief,outputDir:out,whisperCli:mock,whisperModel:fakeModel,
+   sources,brief,outputDir:out,whisperCli:process.execPath,whisperModel:fakeModel,transcribeStep:fixtureTranscribe,
    rendererPath:join(here,'persona-timeline-render.mjs'),
    verifierPath:join(here,'persona-verify-render.mjs')
   });
