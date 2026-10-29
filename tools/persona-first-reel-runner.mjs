@@ -2,7 +2,7 @@
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
 import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
@@ -54,6 +54,19 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
  if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
+ if(process.platform==='win32'&&extname(resolve(whisperCli)).toLowerCase()!=='.exe')fail('Windows needs a native whisper-cli.exe, not an untrusted script wrapper');
+ const modelFile=resolve(whisperModel),modelStats=await stat(modelFile);
+ if(!modelStats.isFile()||modelStats.size<1024*1024)fail('Whisper model missing or too small; use an existing local multilingual ggml model');
+ if(/(?:^|[._-])en(?:[._-]|$)/i.test(basename(modelFile)))fail('English-only Whisper model cannot reliably transcribe the Russian Reel; select a multilingual model');
+ let requestedBrief;
+ try{requestedBrief=JSON.parse(await readFile(resolve(brief),'utf8'))}
+ catch{fail('Invalid PersonaProductionBrief JSON')}
+ if(requestedBrief?.version!==1||requestedBrief.sourceFormat!=='reel'||
+  !Array.isArray(requestedBrief.script)||requestedBrief.script.length<2||requestedBrief.script.length>30||
+  !Array.isArray(requestedBrief.shots)||requestedBrief.shots.length!==requestedBrief.script.length||
+  requestedBrief.script.some((line,i)=>line?.order!==i+1||typeof line.line!=='string'||!line.line.trim())||
+  requestedBrief.shots.some((shot,i)=>shot?.order!==i+1))
+  fail('Invalid Persona Reel brief: expected 2–30 ordered spoken beats with matching shots');
  temporaryBinPath(ffmpegDir);
  await Promise.all([call('ffmpeg',['-version'],{timeout:8000}),call('ffprobe',['-version'],{timeout:8000})]);
  const root=resolve(outputDir);
