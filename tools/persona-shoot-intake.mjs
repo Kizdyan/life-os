@@ -61,6 +61,43 @@ export function createIntakeReport(analysis,manifestPath){
   ],
   next:'Run media:first-reel:draft with sourceManifest, briefPath, new draft directory, installed whisper-cli.exe and multilingual model.'};
 }
+const warningLabels={
+ audio_track_missing:'Нет аудиодорожки',
+ cannot_transcribe_without_audio:'Нельзя распознать речь без аудио',
+ audio_silent_track_review:'Цифровая тишина на аудиодорожке',
+ audio_very_low_peak_review:'Очень тихий звук — проверьте микрофон',
+ audio_near_digital_ceiling:'Пик почти у цифрового потолка — проверьте перегрузку',
+ audio_peak_unavailable_review:'Пик звука не измерен — проверьте вручную',
+ black_video_intervals:'Обнаружены чёрные участки видео',
+ low_average_luma_review:'Видео в среднем тёмное — проверьте экспозицию',
+ high_average_luma_review:'Видео в среднем светлое — проверьте пересвет',
+ coded_orientation_review_phone_rotation_possible:'Горизонтальное кодирование — проверьте поворот телефона',
+ short_take_review:'Очень короткий дубль — проверьте конец реплики'
+};
+export function formatIntakeMarkdown(report){
+ if(report?.kind!=='persona-shoot-intake-v1'||!Array.isArray(report.takes))fail('Invalid intake summary');
+ const lines=[
+  '# Persona · приёмка съёмки A01/B01','',
+  '**Статус: требуется просмотр автором.** Ничего не утверждено и не опубликовано.','',
+  '| Дубль | Длина | Звук | На что обратить внимание |',
+  '| --- | ---: | --- | --- |'
+ ];
+ for(const take of report.takes){
+  const hints=take.warnings.map(x=>warningLabels[x]||x).join('; ')||'Нет предупреждений по базовым техническим сигналам';
+  lines.push('| '+take.id+' | '+take.durationSec.toFixed(1)+' с | '+(take.hasAudio?'есть':'нет')+' | '+hints.replaceAll('|','/')+' |');
+ }
+ lines.push('','## Что проверить лично',
+  '1. Слышны ли полностью обе реплики A01 и B01, нет ли обрезанных слов?',
+  '2. Глаза в фокусе? Нет бликов на очках, смазанного лица, обрезанных рук?',
+  '3. Естественный цвет кожи и одинаковое освещение в обеих ролях?',
+  '4. Убедительны ли паузы, интонация и актерская реакция?',
+  '5. Посмотрите JPEG в папке evidence и воспроизведите оригиналы.',
+  '',
+  'Отсутствие замечаний не доказывает художественную готовность к публикации.',
+  'Всё локально, исходники не меняются. Вход для монтажа — sources.json.',
+  '');
+ return lines.join(String.fromCharCode(10));
+}
 export async function runShootIntake({outputDir,labeledFiles}={}){
  if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
  const manifest=parseShootInputs(labeledFiles);
@@ -83,7 +120,9 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
   const report=createIntakeReport(analysis,manifestPath);
   const reportPath=join(root,'INTAKE.json');
   await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
-  return {status:report.status,reportPath,manifestPath,evidencePath:result.analysis,sourceCount:report.sourceCount,
+  const summaryPath=join(root,'INTAKE.md');
+  await writeFile(summaryPath,formatIntakeMarkdown(report),{flag:'wx'});
+  return {status:report.status,reportPath,summaryPath,manifestPath,evidencePath:result.analysis,sourceCount:report.sourceCount,
    warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
  }catch(error){
   await writeFile(join(root,'FAILED.json'),JSON.stringify({
