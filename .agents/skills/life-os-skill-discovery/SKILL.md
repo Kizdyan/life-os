@@ -19,4 +19,15 @@ Use the existing Skill Intelligence system; do not install untrusted `find-skill
 8. Prefer existing project-local, audited capabilities over redundant global Skills. Recommend a Codex/Claude provider only when connected and verified; Claude OAuth may be pending.
 9. Return a concise shortlist with source, status, missing checks, risk and a concrete next approval step. Distinguish **found**, **reviewed**, **installed** and **verified working**.
 
+
+## Multi-domain research and review (project-local only)
+
+For a controlled eight-domain candidate search, use `npm run skills:batch -- --out <new-report.json>` ONLY after valid Vercel OIDC credentials and permission for a public-query catalog lookup are available. Never put personal information into search terms.
+
+Run `npm run skills:queue -- <batch-report.json> --out <new-queue.json>` to create a deterministic offline shortlist. Its scores mean only discovery relevance: nothing is approved, installed, executed, or ready for private material.
+
+For a previously obtained and independently trusted source checkout whose HEAD is an exact pinned commit, run `npm run skills:review-source -- <checkout> <skill-subpath> <commit> <new-review.json>`. The generated review packet is a human decision aid, not the decision. Never approve its own findings or perform unattended global installation.
+
+If Codex or Claude lacks OAuth, OIDC, permissions, network, or the required binaries, report the blocked capability rather than implying the new skill works in that agent.
+
 This repository Skill only guides safe discovery; it does not connect third-party accounts or grant any new permissions.
