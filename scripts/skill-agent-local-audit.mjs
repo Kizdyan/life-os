@@ -50,9 +50,10 @@ async function inspectOne(root, {agent, dir}, skill) {
 
 export async function auditProjectAgentSkills(root, skill='life-os-skill-discovery') {
   if (!nameIsSafe(skill)) throw Error('Unsafe Skill name');
-  const canonical = await realpath(resolve(root));
-  const state = await lstat(canonical);
-  if (!state.isDirectory() || state.isSymbolicLink()) throw Error('Project root is not an ordinary directory');
+  const input = resolve(root);
+  const initial = await lstat(input);
+  if (!initial.isDirectory() || initial.isSymbolicLink()) throw Error('Project root is not an ordinary directory');
+  const canonical = await realpath(input);
   const agents = [];
   for (const item of SOURCES) agents.push(await inspectOne(canonical,item,skill));
   const present = agents.filter(x=>x.status==='manifest_present');
