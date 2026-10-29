@@ -62,7 +62,7 @@ export async function readRegistry(path=REGISTRY_PATH) {
   if(errors.length) throw Error('Invalid registry:\n'+errors.join('\n'));
   return data;
 }
-export const deliveryOrder = [33,1,19,23,35];
+// Release-first focus: first real Reel; bounded agent Skills efficiency; QA; Instagram approval; lead tracking.\nexport const deliveryOrder = [19,26,33,17,20,21,37,1,22,35,23];
 export function getNext(registry) {
   return deliveryOrder.map(id=>registry.capabilities.find(item=>item.id===id));
 }
