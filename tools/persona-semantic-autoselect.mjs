@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { overlapsBlackInterval } from './persona-take-qa.mjs';
 
 const fail = message => {throw Error(message)};
 const valid = (n,min,max) => typeof n === 'number' && Number.isFinite(n) && n>=min && n<=max;
@@ -66,7 +67,8 @@ export function chooseForBrief(brief,sources){
   const choices=[],warnings=[];
   for(const [index,beat] of brief.script.entries()){
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
-      .filter(x=>x.endSec<=src.durationSec+0.02));
+      .filter(x=>x.endSec<=src.durationSec+0.02)
+      .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals)));
     const available=options.filter(x=>!choices.some(prev=>intersects(prev,x))).sort((a,b)=>b.score-a.score);
     if(!available.length){warnings.push('No confidently matched timed speech for beat '+(index+1)+': '+beat.line);continue}
     const pick=available[0],confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
@@ -118,7 +120,7 @@ async function plan(analysisArg,briefArg,decisionsArg){
     if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id)||!valid(source.durationSec,0.1,180))fail('Invalid source metadata');
     const transcriptFile=join(base,source.id+'-whisper.json');
     const transcript=await readJson(transcriptFile);
-    sources.push({id:source.id,durationSec:source.durationSec,segments:parseWhisperJson(transcript,source.durationSec)});
+    sources.push({id:source.id,durationSec:source.durationSec,technicalQuality:source.technicalQuality,segments:parseWhisperJson(transcript,source.durationSec)});
   }
   const choices=chooseForBrief(brief,sources);
   const result={version:1,analysisPath,briefPath,choices};
