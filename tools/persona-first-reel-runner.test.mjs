@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runFirstReel, validateDraftQa } from './persona-first-reel-runner.mjs';
+import { runFirstReel, validateDraftQa, validateFirstReelMode } from './persona-first-reel-runner.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
 test('missing inputs fail preflight without creating output directory',async()=>{
@@ -12,6 +12,11 @@ test('missing inputs fail preflight without creating output directory',async()=>
  try{await assert.rejects(()=>runFirstReel({sources:join(dir,'missing.json'),brief:join(dir,'no.json'),outputDir:join(dir,'output'),whisperCli:'no',whisperModel:'no'}),/Missing required local file/);
  await assert.rejects(()=>stat(join(dir,'output')),/ENOENT/);
  }finally{await rm(dir,{recursive:true,force:true})}
+});
+test('runner exposes strict and incomplete preview modes without a silent fallback',()=>{
+ assert.equal(validateFirstReelMode(), 'strict');
+ assert.equal(validateFirstReelMode('preview'), 'preview');
+ assert.throws(()=>validateFirstReelMode('fast'),/Invalid editorial decision mode/);
 });
 test('single run chains media evidence, mock ASR, cut decisions, renderer and QA stubs; originals untouched',{skip:!mediaTools||process.platform==='win32'},async()=>{
  const d=await mkdtemp(join(tmpdir(),'persona-runner-e2e-'));

@@ -76,7 +76,8 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(coverage<0.75||f1<0.57)continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;
-      results.push({sourceId,startSec,endSec,coverage,f1,score,transcript:text,
+      results.push({sourceId,startSec,endSec,speechEndSec:segments[j-1].endSec,
+       speechBoundaryConfidence:segments.slice(i,j).every(segment=>segment.timing==='word')?'word':'segment',coverage,f1,score,transcript:text,
        captionWords:segments.slice(i,j).map(segment=>({text:segment.text,startSec:segment.startSec,endSec:segment.endSec,timing:segment.timing??'segment'}))});
     }
   }
@@ -95,18 +96,38 @@ function extendForShot(candidate,shot,source){
   if(endSec>source.durationSec+0.02)return null;
   return {...candidate,endSec,postSpeechMusicPreserved:true};
 }
-export function chooseForBrief(brief,sources){
+function candidateAlternative(pick,beat,index){
+  const confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
+  return {candidateId:'beat-'+beat+'-take-'+(index+1),sourceId:pick.sourceId,
+    startSec:Number(pick.startSec.toFixed(3)),durationSec:Number((pick.endSec-pick.startSec).toFixed(3)),
+    transcript:pick.transcript,confidence,coverage:Number(pick.coverage.toFixed(3)),f1:Number(pick.f1.toFixed(3)),
+    captionWords:pick.captionWords,speechEndSec:Number(pick.speechEndSec.toFixed(3)),
+    speechBoundaryConfidence:pick.speechBoundaryConfidence,
+    postSpeechMusicPreserved:pick.postSpeechMusicPreserved===true,
+    rankingReason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'). Technical/ASR evidence only; visual and performance quality NOT assessed.'};
+}
+function choiceFromAlternative(beat,alternative){
+ return {beat,selectedCandidateId:alternative.candidateId,sourceId:alternative.sourceId,startSec:alternative.startSec,
+  durationSec:alternative.durationSec,transcript:alternative.transcript,confidence:alternative.confidence,
+  captionWords:alternative.captionWords,speechEndSec:alternative.speechEndSec,
+  speechBoundaryConfidence:alternative.speechBoundaryConfidence,
+  postSpeechMusicPreserved:alternative.postSpeechMusicPreserved,
+  reason:alternative.rankingReason+(alternative.postSpeechMusicPreserved?' Explicit post-speech music hold preserved.':'')};
+}
+export function createEditorialPlan(brief,sources,{mode='strict'}={}){
   if(!Array.isArray(brief?.script)||!Array.isArray(sources))fail('Invalid script or sources');
+  if(!['strict','preview'].includes(mode))fail('Unknown editorial decision mode');
   const candidatesByBeat=brief.script.map((beat,index)=>{
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
       .map(x=>extendForShot(x,brief.shots?.[index],src))
       .filter(x=>x!==null && x.endSec<=src.durationSec+0.02)
       .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals))
       .filter(x=>x.score>=0.75 && valid(x.endSec-x.startSec,0.25,60)));
-    return options.sort((a,b)=>b.score-a.score);
+    return options.sort((a,b)=>b.score-a.score).slice(0,3);
   });
+  const candidates=candidatesByBeat.map((options,index)=>({beat:index+1,alternatives:options.map((pick,option)=>candidateAlternative(pick,index+1,option))}));
   const missing=candidatesByBeat.findIndex(x=>x.length===0);
-  if(missing!==-1)fail('Manual review required: No confidently matched clean speech for beat '+(missing+1)+': '+brief.script[missing].line);
+  if(mode==='strict'&&missing!==-1)fail('Manual review required: No confidently matched clean speech for beat '+(missing+1)+': '+brief.script[missing].line);
   // Backtracking prevents a greedy first take from occupying the only clean
   // window available to a later line. Hard budget: never search unboundedly.
   const chosen=[];let tried=0;
@@ -121,14 +142,32 @@ export function chooseForBrief(brief,sources){
     }
     return false;
   }
-  if(!select(0))fail('Manual review required: no non-overlapping confident take combination (or search budget exceeded)');
-  return chosen.map((pick,index)=>{
-    const confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
-    return {beat:index+1,sourceId:pick.sourceId,startSec:Number(pick.startSec.toFixed(3)),
-      durationSec:Number((pick.endSec-pick.startSec).toFixed(3)),
-      transcript:pick.transcript,confidence,captionWords:pick.captionWords,
-      reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); '+(pick.postSpeechMusicPreserved?'explicit post-speech music hold preserved; ':'')+'visual and performance quality NOT assessed.'};
+  if(mode==='strict'){
+   if(!select(0))fail('Manual review required: no non-overlapping confident take combination (or search budget exceeded)');
+   return {mode,candidates,choices:chosen.map((pick,index)=>choiceFromAlternative(index+1,candidateAlternative(pick,index+1,candidatesByBeat[index].indexOf(pick)))),missingBeats:[]};
+  }
+  const previewChoices=[];
+  for(let index=0;index<candidatesByBeat.length;index++){
+   const pick=candidatesByBeat[index].find(candidate=>!previewChoices.some(previous=>intersects(previous,candidate)));
+   if(pick)previewChoices.push({...pick,beat:index+1});
+  }
+  const choices=previewChoices.map(pick=>{
+   const options=candidatesByBeat[pick.beat-1];
+   const option=options.findIndex(candidate=>candidate.sourceId===pick.sourceId&&candidate.startSec===pick.startSec&&candidate.endSec===pick.endSec);
+   return choiceFromAlternative(pick.beat,candidateAlternative(pick,pick.beat,option));
   });
+  return {mode,candidates,choices,missingBeats:brief.script.map((_,index)=>index+1).filter(beat=>!choices.some(choice=>choice.beat===beat))};
+}
+export function chooseForBrief(brief,sources){
+ return createEditorialPlan(brief,sources).choices;
+}
+export function applyManualSelection(decisions,{beat,candidateId}={}){
+ if(!Number.isSafeInteger(beat)||beat<1||typeof candidateId!=='string'||!candidateId)fail('Invalid editorial selection');
+ const candidate=decisions?.candidates?.find(item=>item?.beat===beat)?.alternatives?.find(item=>item?.candidateId===candidateId);
+ if(!candidate)fail('Unknown editorial candidate');
+ const choices=(Array.isArray(decisions.choices)?decisions.choices:[]).filter(choice=>choice?.beat!==beat);
+ choices.push(choiceFromAlternative(beat,candidate));choices.sort((a,b)=>a.beat-b.beat);
+ return {...decisions,choices,missingBeats:(decisions.missingBeats??[]).filter(item=>item!==beat)};
 }
 async function transcribe(analysisArg,cliArg,modelArg){
   const analysisFile=resolve(analysisArg),analysis=await readJson(analysisFile),base=dirname(analysisFile);
@@ -157,7 +196,7 @@ async function transcribe(analysisArg,cliArg,modelArg){
   }
   return {status:'offline-asr-transcripts-written',results:completed,notice:'Transcriptions are model estimates, not proven verbatim words. Review before author approval.'};
 }
-async function plan(analysisArg,briefArg,decisionsArg){
+async function plan(analysisArg,briefArg,decisionsArg,mode='strict'){
   const analysisPath=resolve(analysisArg),briefPath=resolve(briefArg),out=resolve(decisionsArg);
   const analysis=await readJson(analysisPath),brief=await readJson(briefPath),base=dirname(analysisPath);
   if(analysis?.kind!=='persona-evidence-v1'||analysis.version!==1||!Array.isArray(analysis.sources)||analysis.sources.length<1)fail('Invalid analysis packet');
@@ -170,15 +209,15 @@ async function plan(analysisArg,briefArg,decisionsArg){
     const transcript=await readJson(transcriptFile);
     sources.push({id:source.id,durationSec:source.durationSec,technicalQuality:source.technicalQuality,segments:parseWhisperJson(transcript,source.durationSec)});
   }
-  const choices=chooseForBrief(brief,sources);
-  const result={version:1,analysisPath,briefPath,choices};
+  const editorial=createEditorialPlan(brief,sources,{mode});
+  const result={version:1,analysisPath,briefPath,...editorial};
   await writeFile(out,JSON.stringify(result,null,2)+'\n',{flag:'wx'});
-  return {decisions:out,choices:choices.length,totalSec:Number(choices.reduce((s,x)=>s+x.durationSec,0).toFixed(3)),review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};
+  return {decisions:out,choices:editorial.choices.length,missingBeats:editorial.missingBeats,totalSec:Number(editorial.choices.reduce((s,x)=>s+x.durationSec,0).toFixed(3)),review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};
 }
 export { transcribe,plan,overlap,similarity };
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
-  const [operation,a,b,c]=process.argv.slice(2);
+  const [operation,a,b,c,mode]=process.argv.slice(2);
   if(operation==='transcribe'&&a&&b&&c)transcribe(a,b,c).then(r=>console.log(JSON.stringify(r,null,2))).catch(e=>{console.error(e.message);process.exitCode=1});
-  else if(operation==='plan'&&a&&b&&c)plan(a,b,c).then(r=>console.log(JSON.stringify(r,null,2))).catch(e=>{console.error(e.message);process.exitCode=1});
-  else {console.error('Usage: transcribe <analysis.json> <whisper-cli> <local-model.bin> | plan <analysis.json> <brief.json> <new-decisions.json>');process.exitCode=2}
+  else if(operation==='plan'&&a&&b&&c)plan(a,b,c,mode??'strict').then(r=>console.log(JSON.stringify(r,null,2))).catch(e=>{console.error(e.message);process.exitCode=1});
+  else {console.error('Usage: transcribe <analysis.json> <whisper-cli> <local-model.bin> | plan <analysis.json> <brief.json> <new-decisions.json> [strict|preview]');process.exitCode=2}
 }

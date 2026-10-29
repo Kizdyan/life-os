@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -95,4 +96,40 @@ test('One MP4 becomes a two-shot timeline while preserving its original bytes',{
   assert.ok(timeline.clips[0].startSec+timeline.clips[0].durationSec<timeline.clips[1].startSec);
   assert.deepEqual(await readFile(video),original);
  } finally {await rm(d,{recursive:true,force:true})}
+});
+
+test('preview assembly writes only explicitly selected ordered beats and reports missing scenes',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-preview-assembly-'));
+ try{
+  const source=join(d,'source.mp4'); const bytes=Buffer.from('fixture'); await writeFile(source,bytes);
+  const brief=join(d,'brief.json'),analysis=join(d,'analysis.json'),decisions=join(d,'decisions.json');
+  await mk(brief,minimalBrief);
+  await mk(analysis,{version:1,kind:'persona-evidence-v1',sources:[{id:'take',path:source,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),durationSec:3}]});
+  await mk(decisions,{version:1,mode:'preview',analysisPath:analysis,briefPath:brief,missingBeats:[2],choices:[{beat:1,sourceId:'take',startSec:0,durationSec:1,confidence:.9,transcript:'Я актёр. И ещё пишу музыку.',reason:'Matched transcript; visual and performance quality NOT assessed.'}]});
+  const result=await assemble(decisions,join(d,'preview.json'));
+  assert.equal(result.clips,1);
+  const review=JSON.parse(await readFile(result.review,'utf8'));
+  assert.deepEqual(review.missingBeats,[2]);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
+
+test('B03 music tail requires a word timestamp or an explicit manual boundary',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-b03-boundary-'));
+ try{
+  const source=join(d,'b03.mp4'),bytes=Buffer.from('b03fixture');await writeFile(source,bytes);
+  const brief=join(d,'brief.json'),analysis=join(d,'analysis.json'),decisions=join(d,'decisions.json');
+  const musicBrief={version:1,sourceFormat:'reel',script:[{order:1,line:'Почему? Сейчас напишу колыбельную.',durationSec:4},{order:2,line:'Финал.',durationSec:1}],shots:[{order:1,durationSec:4,action:'После реплики музыкальный фрагмент на клавишах'},{order:2,durationSec:1}]};
+  await mk(brief,musicBrief);
+  await mk(analysis,{version:1,kind:'persona-evidence-v1',sources:[{id:'b03',path:source,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),durationSec:5},{id:'end',path:source,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),durationSec:5}]});
+  const base={version:1,analysisPath:analysis,briefPath:brief,choices:[
+   {beat:1,sourceId:'b03',startSec:1,durationSec:3,confidence:.9,transcript:'Почему? Сейчас напишу колыбельную.',reason:'Transcript match; visual and performance quality NOT assessed.',postSpeechMusicPreserved:true,speechBoundaryConfidence:'segment'},
+   {beat:2,sourceId:'end',startSec:0,durationSec:1,confidence:.9,transcript:'Финал.',reason:'Transcript match; visual and performance quality NOT assessed.'}
+  ]};
+  await mk(decisions,base);
+  await assert.rejects(()=>assemble(decisions,join(d,'blocked.json')),/Post-speech music needs word timing or manual boundary/);
+  await mk(decisions,{...base,choices:[{...base.choices[0],manualMusicBoundarySec:2.25},base.choices[1]]});
+  const result=await assemble(decisions,join(d,'timeline.json'));
+  const timeline=JSON.parse(await readFile(result.project,'utf8'));
+  assert.deepEqual(timeline.clips[0].audioTreatment,{speechDurationSec:1.25,preserveMusicTail:true,boundarySource:'manual'});
+ }finally{await rm(d,{recursive:true,force:true})}
 });

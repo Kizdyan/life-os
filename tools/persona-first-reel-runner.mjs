@@ -51,7 +51,11 @@ export function validateDraftQa(qa,expectedPath){
    fail('Unexpected publication handoff or QA errors: delivery blocked');
  return true;
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe}={}){
+export function validateFirstReelMode(mode='strict'){
+ if(!['strict','preview'].includes(mode))fail('Invalid editorial decision mode');
+ return mode;
+}
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe}={}){
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
  if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
@@ -59,6 +63,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
  const modelFile=resolve(whisperModel),modelStats=await stat(modelFile);
  if(!modelStats.isFile()||modelStats.size<1024*1024)fail('Whisper model missing or too small; use an existing local multilingual ggml model');
  if(/(?:^|[._-])en(?:[._-]|$)/i.test(basename(modelFile)))fail('English-only Whisper model cannot reliably transcribe the Russian Reel; select a multilingual model');
+ mode=validateFirstReelMode(mode);
  let requestedBrief;
  try{requestedBrief=JSON.parse(await readFile(resolve(brief),'utf8'))}
  catch{fail('Invalid PersonaProductionBrief JSON')}
@@ -88,7 +93,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('media_evidence_generated');
   const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
   events.push('offline_asr_completed');
-  const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'));
+  const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode);
   events.push('dialogue_cuts_proposed');
   const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
@@ -102,7 +107,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const qa=JSON.parse(await readFile(qaPath,'utf8'));
   validateDraftQa(qa,output);
   events.push('technical_qa_passed');
-  const summary={version:1,status:'awaiting-author-review',events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+  const summary={version:1,status:'awaiting-author-review',mode,events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
     subtitleDraft,
     warning:'Offline speech matching is not evaluation of acting, emotion, music or color. SRT/VTT are draft sidecars NOT burned into MP4 or word-level aligned. Human timing review and publication approval required.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
@@ -114,6 +119,6 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
  }
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
- const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir]=process.argv.slice(2);
- runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
+ const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode]=process.argv.slice(2);
+ runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
 }

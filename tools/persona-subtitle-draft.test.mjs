@@ -99,3 +99,15 @@ test('writes new reviewable SRT and VTT, but never overwrites previous captions'
   await assert.rejects(()=>writeSubtitleDraft({briefPath,timelinePath,outputDir:dir}),/EEXIST/);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+test('preview captions include selected beats only and record the missing scenes',()=>{
+ const previewTimeline={version:1,mode:'preview',missingBeats:[2],clips:[{beat:1,path:'opening.mp4',startSec:0,durationSec:2}]};
+ const decisions={version:1,mode:'preview',missingBeats:[2],choices:[{beat:1,sourceId:'opening',startSec:0,durationSec:2,captionWords:[
+  {text:'Я',startSec:.1,endSec:.3,timing:'word'},{text:'актёр.',startSec:.32,endSec:.8,timing:'word'}
+ ]}]};
+ const result=buildSubtitleDraft(brief,previewTimeline,decisions);
+ assert.equal(result.review.cues.length,1);
+ assert.match(result.srt,/Я актёр\./u);
+ assert.doesNotMatch(result.srt,/И у нас есть проблема/u);
+ assert.deepEqual(result.review.missingBeats,[2]);
+});

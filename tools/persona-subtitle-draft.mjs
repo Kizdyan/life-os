@@ -75,37 +75,45 @@ function wordCues(words,choice,cursorSec,clipDurationSec,beat){
 export function buildSubtitleDraft(brief,timeline,decisions){
  if(brief?.version!==1||brief.sourceFormat!=='reel'||!Array.isArray(brief.script)||
    !Array.isArray(brief.shots)||brief.script.length!==brief.shots.length||
-   !Array.isArray(timeline?.clips)||timeline.clips.length!==brief.script.length||
+   !Array.isArray(timeline?.clips)||
    brief.script.length<2||brief.script.length>30)fail('Script and assembled clips must be aligned');
  if(timeline.version!==1)fail('Invalid timeline version');
+ const mode=timeline.mode??'strict';
+ if(!['strict','preview'].includes(mode))fail('Invalid timeline mode');
+ if(mode==='strict'&&timeline.clips.length!==brief.script.length)fail('Script and assembled clips must be aligned');
+ if(mode==='preview'&&(timeline.clips.length<1||timeline.clips.length>brief.script.length||!Array.isArray(timeline.missingBeats)))fail('Invalid preview timeline');
  let cursor=0;
  const cues=[],warnings=[],timingKinds=new Set();
  const choices=Array.isArray(decisions?.choices)?decisions.choices:null;
- if(choices&&choices.length!==brief.script.length)fail('Subtitle decisions must align with script beats');
- for(let index=0;index<brief.script.length;index++){
-  const script=brief.script[index],shot=brief.shots[index],clip=timeline.clips[index];
-  if(script?.order!==index+1||shot?.order!==index+1||
+ if(choices&&mode==='strict'&&choices.length!==brief.script.length)fail('Subtitle decisions must align with script beats');
+ const choicesByBeat=new Map((choices??[]).map(choice=>[choice?.beat,choice]));
+ let previousBeat=0;
+ for(let index=0;index<timeline.clips.length;index++){
+  const clip=timeline.clips[index],beatNumber=mode==='preview'?clip?.beat:index+1;
+  const script=brief.script[beatNumber-1],shot=brief.shots[beatNumber-1];
+  if(!Number.isSafeInteger(beatNumber)||beatNumber<=previousBeat||beatNumber>brief.script.length||script?.order!==beatNumber||shot?.order!==beatNumber||
    !finite(clip?.durationSec)||clip.durationSec<0.25||clip.durationSec>60)
-   fail('Invalid duration or scene order at beat '+(index+1));
-  const choice=choices?.[index],words=timedWords(choice);
-  if(words&&choice?.beat===index+1&&finite(choice.startSec)&&finite(choice.durationSec)){
+   fail('Invalid duration or scene order at beat '+beatNumber);
+  previousBeat=beatNumber;
+  const choice=choicesByBeat.get(beatNumber),words=timedWords(choice);
+  if(words&&choice?.beat===beatNumber&&finite(choice.startSec)&&finite(choice.durationSec)){
    if(words.some(word=>word.startSec<choice.startSec-0.02||word.endSec>choice.startSec+choice.durationSec+0.02))
-    fail('Whisper caption timing is outside selected clip at beat '+(index+1));
-   cues.push(...wordCues(words,choice,cursor,clip.durationSec,index+1));
+    fail('Whisper caption timing is outside selected clip at beat '+beatNumber);
+   cues.push(...wordCues(words,choice,cursor,clip.durationSec,beatNumber));
    if(words.some(word=>word.timing!=='word')){
     timingKinds.add('segment');
-    warnings.push('Beat '+(index+1)+': Whisper supplied only segment-level timing; verify every word before release.');
+    warnings.push('Beat '+beatNumber+': Whisper supplied only segment-level timing; verify every word before release.');
    }else timingKinds.add('word');
   }else if(musicCue(shot)){
    timingKinds.add('estimated');
-   warnings.push('Beat '+(index+1)+': no usable Whisper timing. Subtitle end must be adjusted manually; caption omitted so it cannot remain on the post-speech music tail.');
+   warnings.push('Beat '+beatNumber+': no usable Whisper timing. Subtitle end must be adjusted manually; caption omitted so it cannot remain on the post-speech music tail.');
   }else{
    timingKinds.add('estimated');
-   if(choices)warnings.push('Beat '+(index+1)+': no usable Whisper timing; caption uses estimated clip boundaries and requires manual timing review.');
+   if(choices)warnings.push('Beat '+beatNumber+': no usable Whisper timing; caption uses estimated clip boundaries and requires manual timing review.');
    const text=safeCaptionText(script.line);
    const startMs=Math.round(cursor*1000),endMs=Math.round((cursor+clip.durationSec)*1000);
    if(endMs<=startMs)fail('Non-positive caption duration');
-   cues.push({beat:index+1,startMs,endMs,text});
+   cues.push({beat:beatNumber,startMs,endMs,text});
   }
   cursor+=clip.durationSec;
  }
@@ -121,7 +129,7 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   srt,vtt,
   review:{version:1,kind:'persona-subtitle-draft-v1',status:'needs-human-review',
    captionTiming:timing,
-   cues,totalTimelineSec:Number(cursor.toFixed(3)),
+   cues,totalTimelineSec:Number(cursor.toFixed(3)),missingBeats:mode==='preview'?timeline.missingBeats:[],
    warnings:[...warnings,
     'Verify exact word timing, punctuation, speaker changes, lip sync, and caption safe areas by watching the exported video.',
     'Scripted lines are NOT confirmed verbatim by these subtitles. No subtitles are burned into the MP4. No publication approval.']}

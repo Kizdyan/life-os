@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyze,assemble } from './persona-semantic-montage.mjs';
-import { parseWhisperJson, chooseForBrief, plan,transcribe,overlap,similarity } from './persona-semantic-autoselect.mjs';
+import { parseWhisperJson, chooseForBrief, createEditorialPlan, applyManualSelection, plan,transcribe,overlap,similarity } from './persona-semantic-autoselect.mjs';
 const mk=()=>mkdtemp(join(tmpdir(),'persona-asr-select-'));
 const put=(p,v)=>writeFile(p,JSON.stringify(v));
 const whisper=(words)=>({transcription:words.map(([text,a,b])=>({text,offsets:{from:a*1000,to:b*1000}}))});
@@ -199,4 +199,30 @@ test('non-greedy alternative lets two utterances share a coarse Whisper segment 
  assert.ok(picks.every(x=>x.confidence>=0.75));
  // A missing alternate must fail instead of recycling the same timeline range.
  assert.throws(()=>chooseForBrief(brief,[coarse]),/Manual review required/);
+});
+
+test('stores three ranked take candidates and persists a deliberate manual replacement',()=>{
+ const spoken=parseWhisperJson(whisper([
+  ['Я',.1,.25],['актёр',.3,.55],['И',.6,.7],['ещё',.75,1],['пишу',1.05,1.3],['музыку',1.35,1.7]
+ ]),3);
+ const sources=['one','two','three','four'].map((id,index)=>({id,durationSec:3,segments:spoken,technicalQuality:{blackIntervals:[]},preference:index}));
+ const decisions=createEditorialPlan({...brief,script:[brief.script[0]],shots:[brief.shots[0]]},sources);
+ assert.equal(decisions.mode,'strict');
+ assert.equal(decisions.candidates.length,1);
+ assert.equal(decisions.candidates[0].alternatives.length,3);
+ const replacement=decisions.candidates[0].alternatives[1];
+ const changed=applyManualSelection(decisions,{beat:1,candidateId:replacement.candidateId});
+ assert.equal(changed.choices[0].selectedCandidateId,replacement.candidateId);
+ assert.equal(changed.choices[0].sourceId,replacement.sourceId);
+ assert.throws(()=>applyManualSelection(decisions,{beat:1,candidateId:'not-present'}),/Unknown editorial candidate/);
+});
+
+test('preview retains only matched ordered beats and names missing beats without inventing cuts',()=>{
+ const first=parseWhisperJson(whisper([['Я',.1,.3],['актёр',.3,.7],['И',.7,.8],['ещё',.8,1.1],['пишу',1.1,1.5],['музыку',1.5,1.9]]),3);
+ const preview=createEditorialPlan(brief,[{id:'opening',durationSec:3,segments:first,technicalQuality:{blackIntervals:[]}}],{mode:'preview'});
+ assert.equal(preview.mode,'preview');
+ assert.deepEqual(preview.choices.map(choice=>choice.beat),[1]);
+ assert.deepEqual(preview.missingBeats,[2]);
+ assert.equal(preview.candidates[1].alternatives.length,0);
+ assert.throws(()=>createEditorialPlan(brief,[{id:'opening',durationSec:3,segments:first,technicalQuality:{blackIntervals:[]}}],{mode:'strict'}),/Manual review required/);
 });

@@ -34,6 +34,55 @@ function numeric(value, label, min, max) {
   if (typeof value !== 'number' || !Number.isFinite(n) || n < min || n > max) fail('Invalid ' + label);
   return n;
 }
+function framingFor(value,width,height){
+ const framing=value??{};
+ if(!framing||typeof framing!=='object'||Array.isArray(framing))fail('Invalid framing');
+ const mode=framing.mode??'contain';
+ if(!['contain','cover'].includes(mode))fail('Unsupported framing mode');
+ const raw=framing.position??{};
+ const position={x:raw.x??0.5,y:raw.y??0.5};
+ numeric(position.x,'crop position x',0,1);numeric(position.y,'crop position y',0,1);
+ return {mode,position:{x:position.x,y:position.y},manualReviewRequired:mode==='cover',width,height};
+}
+function videoFilter(framing,width,height,fps){
+ const base=framing.mode==='cover'
+  ? 'scale='+width+':'+height+':force_original_aspect_ratio=increase,crop='+width+':'+height+':(in_w-out_w)*'+framing.position.x+':(in_h-out_h)*'+framing.position.y
+  : 'scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2';
+ return base+',setsar=1,fps='+fps+',format=yuv420p';
+}
+function audioTreatmentFor(value,durationSec,hasAudio){
+ if(value===undefined)return null;
+ if(!hasAudio)fail('Audio treatment requires a source audio stream');
+ if(!value||typeof value!=='object'||value.preserveMusicTail!==true)fail('Invalid audio treatment');
+ const speechDurationSec=numeric(value.speechDurationSec,'speech duration',0.02,durationSec-0.02);
+ if(!['whisper-word','manual'].includes(value.boundarySource))fail('Invalid music boundary source');
+ return {speechDurationSec,boundarySource:value.boundarySource,preserveMusicTail:true};
+}
+async function renderFramingPreviews(projectArg,outputArg){
+ const projectPath=resolve(projectArg),output=resolve(outputArg);
+ const project=JSON.parse(await readFile(projectPath,'utf8'));
+ if(!project||typeof project!=='object'||Array.isArray(project)||project.version!==1||!Array.isArray(project.clips)||project.clips.length<1||project.clips.length>30)fail('Expected 1–30 clips in version 1 project');
+ const width=numeric(project.width??1080,'width',128,3840),height=numeric(project.height??1920,'height',128,3840),fps=numeric(project.fps??30,'fps',15,60);
+ if(width%2||height%2||!Number.isInteger(fps))fail('Dimensions must be even; fps must be integer');
+ await access(output).then(()=>fail('Preview directory already exists'),()=>{});
+ await mkdir(output,{recursive:false});
+ try{
+  const previews=[];
+  for(const [index,clip] of project.clips.entries()){
+   if(!clip||typeof clip.path!=='string'||!clip.path.trim())fail('Invalid clip path at '+index);
+   const path=isAbsolute(clip.path)?resolve(clip.path):resolve(dirname(projectPath),clip.path);
+   if(!allowed.has(extname(path).toLowerCase()))fail('Unsupported clip extension at '+index);
+   const media=await probe(path),startSec=numeric(clip.startSec??0,'startSec',0,media.durationSec-.02),durationSec=numeric(clip.durationSec??media.durationSec-startSec,'durationSec',.02,media.durationSec-startSec+.001);
+   const framing=framingFor(clip.framing??project.framing,width,height),pathOut=join(output,'clip-'+(index+1)+'-framing.jpg');
+   const sampleSec=Number((startSec+durationSec/2).toFixed(3));
+   await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(sampleSec),'-i',path,'-frames:v','1','-vf',videoFilter(framing,width,height,fps),'-q:v','3',pathOut]);
+   previews.push({clip:index+1,path:pathOut,sampleSec,framing});
+  }
+  const manifest={version:1,kind:'persona-framing-previews-v1',project:projectPath,manualReviewRequired:previews.some(preview=>preview.framing.manualReviewRequired),notice:'These are crop-position inspection images only. They do not detect faces, glasses, hands, instruments, keyboards or safe text areas; review before final rendering.',previews};
+  await writeFile(join(output,'framing-previews.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
+  process.stdout.write(JSON.stringify({output,previews:previews.length,manualReviewRequired:manifest.manualReviewRequired})+'\n');
+ }catch(error){await rm(output,{recursive:true,force:true});throw error;}
+}
 async function probe(path) {
   const raw = await run('ffprobe', ['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',path]);
   const data = JSON.parse(raw);
@@ -73,9 +122,14 @@ function safeGain(measurement){
   return {gainDb:rounded(gain),status:Math.abs(gain)<0.05?'already-close':'levelled',warning:null};
 }
 async function main() {
-  const [projectArg, outputArg] = process.argv.slice(2);
-  if (!projectArg || !outputArg) fail('Usage: node tools/persona-timeline-render.mjs project.json output.mp4');
-  const projectPath = resolve(projectArg), output = resolve(outputArg);
+  const [firstArg,projectArg,previewOutput]=process.argv.slice(2);
+  if(firstArg==='preview'){
+    if(!projectArg||!previewOutput)fail('Usage: node tools/persona-timeline-render.mjs preview project.json new-preview-directory');
+    return renderFramingPreviews(projectArg,previewOutput);
+  }
+  const outputArg=projectArg,projectPathArg=firstArg;
+  if (!projectPathArg || !outputArg) fail('Usage: node tools/persona-timeline-render.mjs project.json output.mp4');
+  const projectPath = resolve(projectPathArg), output = resolve(outputArg);
   if (extname(output).toLowerCase() !== '.mp4') fail('Output must be .mp4');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
   if (!project || typeof project !== 'object' || Array.isArray(project) || project.version !== 1 || !Array.isArray(project.clips) || project.clips.length < 2 || project.clips.length > 30) fail('Expected 2–30 clips in version 1 project');
@@ -96,8 +150,12 @@ async function main() {
     const media = await probe(path);
     const startSec = numeric(clip.startSec ?? 0, 'startSec', 0, media.durationSec - 0.02);
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
-    const loudness=media.audio?await measureLoudness(path,startSec,durationSec):null;
-    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), loudness, audioLeveling:safeGain(loudness) });
+    const framing=framingFor(clip.framing??project.framing,width,height);
+    const audioTreatment=audioTreatmentFor(clip.audioTreatment,durationSec,media.audio);
+    const loudnessDuration=audioTreatment?.speechDurationSec??durationSec;
+    const loudness=media.audio?await measureLoudness(path,startSec,loudnessDuration):null;
+    const musicTail=audioTreatment?await measureLoudness(path,startSec+audioTreatment.speechDurationSec,durationSec-audioTreatment.speechDurationSec):null;
+    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing, audioTreatment, loudness, musicTail, audioLeveling:safeGain(loudness) });
   }
   let soundtrack = null;
   if (project.soundtrack !== undefined) {
@@ -124,14 +182,20 @@ async function main() {
     const segments = [];
     for (let i = 0; i < clips.length; i++) {
       const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
-      const videoFilter = 'scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2,setsar=1,fps=' + fps + ',format=yuv420p';
+      const clipVideoFilter = videoFilter(clip.framing,width,height,fps);
       const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
       if (!clip.media.audio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
       const audioFilters=['aresample=async=1:first_pts=0'];
       if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
       // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
       audioFilters.push('alimiter=limit=0.95:level=0');
-      args.push('-t',String(clip.durationSec),'-map','0:v:0','-map',clip.media.audio?'0:a:0':'1:a:0','-vf',videoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-af',audioFilters.join(','),'-shortest','-movflags','+faststart',segment);
+      args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k');
+      if(clip.audioTreatment){
+        const speech=clip.audioTreatment.speechDurationSec,tail=clip.durationSec-speech;
+        const graph='[0:a]atrim=duration='+speech+',asetpts=PTS-STARTPTS,'+audioFilters.join(',')+'[speech];[0:a]atrim=start='+speech+':duration='+tail+',asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[tail];[speech][tail]concat=n=2:v=0:a=1[audio]';
+        args.push('-filter_complex',graph,'-map','[audio]');
+      }else args.push('-map',clip.media.audio?'0:a:0':'1:a:0','-af',audioFilters.join(','));
+      args.push('-shortest','-movflags','+faststart',segment);
       await run('ffmpeg', args);
       segments.push(segment);
     }
@@ -154,11 +218,18 @@ async function main() {
     const audioLeveling={version:1,strategy:'per-clip-integrated-loudness-gain-capped',targetLufs:TARGET_DIALOGUE_LUFS,maxBoostDb:MAX_DIALOGUE_BOOST_DB,maxReductionDb:MAX_DIALOGUE_REDUCTION_DB,
       caveat:'Measured clip loudness is a technical continuity aid, not a judgement of speech intelligibility, noise, acting, music balance or artistic sound quality.',clips:[]};
     for(const clip of clips){
-      const after=await measureLoudness(staged,outputOffset,clip.durationSec);
-      audioLeveling.clips.push({path:clip.path,startSec:clip.startSec,durationSec:clip.durationSec,sourceHasAudio:clip.media.audio,
+      const speechDuration=clip.audioTreatment?.speechDurationSec??clip.durationSec;
+      const after=await measureLoudness(staged,outputOffset,speechDuration);
+      const entry={path:clip.path,startSec:clip.startSec,durationSec:clip.durationSec,sourceHasAudio:clip.media.audio,framing:clip.framing,
        beforeLufs:clip.loudness?.integratedLufs??null,beforeTruePeakDb:clip.loudness?.truePeakDb??null,
        gainDb:clip.audioLeveling.gainDb,status:clip.audioLeveling.status,warning:clip.audioLeveling.warning,
-       afterLufs:after.integratedLufs,afterTruePeakDb:after.truePeakDb});
+       afterLufs:after.integratedLufs,afterTruePeakDb:after.truePeakDb};
+      if(clip.audioTreatment){
+       const tailDuration=clip.durationSec-speechDuration,afterTail=await measureLoudness(staged,outputOffset+speechDuration,tailDuration);
+       entry.speech={durationSec:speechDuration,boundarySource:clip.audioTreatment.boundarySource,beforeLufs:clip.loudness?.integratedLufs??null,afterLufs:after.integratedLufs,gainDb:clip.audioLeveling.gainDb};
+       entry.musicTail={durationSec:tailDuration,preserved:true,gainDb:0,beforeLufs:clip.musicTail?.integratedLufs??null,afterLufs:afterTail.integratedLufs};
+      }
+      audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
     const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
