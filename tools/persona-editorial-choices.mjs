@@ -88,6 +88,34 @@ export function buildCandidatePack(brief,sources,planned=null){
   beats,notAnApproval:true,
   notice:'Options are evidence-based ASR proposals. Review video/audio before selecting. No author approval or publication is implied.'};
 }
+export function formatCandidatePack(pack){
+ if(pack?.kind!=='persona-editorial-candidate-pack-v1'||!Array.isArray(pack.beats))
+  fail('Invalid candidate pack');
+ const lines=['# Persona · выбор актёрских дублей','',
+  'Ранжирование здесь основано на совпадении текста с Whisper, а НЕ на качестве игры.',
+  'Просмотрите оригинальное видео каждого кандидата и прослушайте звук перед выбором.',''];
+ for(const beat of pack.beats){
+  lines.push('## Сцена '+beat.beat+' — '+beat.scriptLine,'');
+  if(!beat.candidates.length){
+   lines.push('**Нет подходящего речевого фрагмента.** Нужно снять сцену или вручную проверить распознавание.','');
+   continue;
+  }
+  beat.candidates.forEach((take,index)=>{
+   lines.push('**Вариант '+(index+1)+(take.candidateId===beat.defaultCandidateId?' (автоматический черновой выбор)':'')+'**',
+    '- Источник: '+take.sourceId,
+    '- Время в исходнике: '+take.startSec.toFixed(2)+'–'+(take.startSec+take.durationSec).toFixed(2)+' с',
+    '- Речь по Whisper: '+take.transcript,
+    '- Технические замечания: '+(take.technicalWarnings.join(', ')||'нет автоматических предупреждений'),
+    '- ID: '+take.candidateId,'');
+  });
+ }
+ lines.push('## Как утвердить выбор','',
+  'Откройте selection.json, для каждого кадра укажите candidateId, reviewed=true и причину выбора.',
+  'Другие дубли добавляйте в rejected только с конкретной причиной; исходные видео не меняются.',
+  'После выбора выполните команду apply для создания нового decisions.json.',
+  'Файл не является разрешением на публикацию.','');
+ return lines.join('\n');
+}
 export function createSelectionTemplate(pack){
  if(pack?.kind!=='persona-editorial-candidate-pack-v1')fail('Invalid candidate pack');
  return {version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
@@ -161,10 +189,17 @@ export async function prepare({analysisPath,briefPath,decisionsPath,packPath,sel
  const pack=buildCandidatePack(brief,sources,planned);
  pack.analysisPath=resolve(analysisPath);pack.briefPath=resolve(briefPath);pack.decisionsPath=resolve(decisionsPath);
  const template=createSelectionTemplate(pack);
+ const summaryPath=resolve(packPath)+'.md';
  await writeFile(resolve(packPath),JSON.stringify(pack,null,2)+'\n',{flag:'wx'});
- try{await writeFile(resolve(selectionPath),JSON.stringify(template,null,2)+'\n',{flag:'wx'});}
- catch(e){await rm(resolve(packPath),{force:true});throw e;}
- return {packPath:resolve(packPath),selectionPath:resolve(selectionPath),
+ try{
+  await writeFile(resolve(selectionPath),JSON.stringify(template,null,2)+'\n',{flag:'wx'});
+  await writeFile(summaryPath,formatCandidatePack(pack),{flag:'wx'});
+ }catch(e){
+  await rm(resolve(packPath),{force:true});
+  await rm(resolve(selectionPath),{force:true});
+  throw e;
+ }
+ return {packPath:resolve(packPath),summaryPath,selectionPath:resolve(selectionPath),
   beats:pack.beats.length,candidateCounts:pack.beats.map(x=>x.candidates.length),
   next:'Review the clips, edit selection JSON, then run apply. No publication approval.'};
 }
