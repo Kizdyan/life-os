@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runFirstReel } from './persona-first-reel-runner.mjs';
+import { runFirstReel, validateDraftQa } from './persona-first-reel-runner.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
 test('missing inputs fail preflight without creating output directory',async()=>{
@@ -34,7 +34,12 @@ const fs=require('fs');const a=process.argv,p=a[a.indexOf('-of')+1];let words=p.
  const renderer=join(d,'renderer.mjs');
  await writeFile(renderer,`import {spawnSync} from 'node:child_process';import {readFileSync} from 'node:fs';const input=JSON.parse(readFileSync(process.argv[2]));const r=spawnSync('ffmpeg',['-v','error','-i',input.clips[0].path,'-t','0.5','-c:v','libx264','-preset','ultrafast','-c:a','aac',process.argv[3]],{encoding:'utf8'});if(r.status)process.exit(1);`);
  const verifier=join(d,'qa.mjs');
- await writeFile(verifier,`import {writeFileSync} from 'node:fs';writeFileSync(process.argv[5],JSON.stringify({evidence:{synthetic:true,checks:true},handoff:{errors:['author approval required']}}));`);
+ await writeFile(verifier,`import {statSync,readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {resolve} from 'node:path';
+const path=resolve(process.argv[2]);
+const evidence={path,fileExists:true,probeVerified:true,bytes:statSync(path).size,sha256:createHash('sha256').update(readFileSync(path)).digest('hex'),durationSec:0.5,width:1080,height:1920,fps:30,videoCodec:'h264',audioCodec:'aac',blackFrameCheckPassed:true,audioCheckPassed:true};
+writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,status:'blocked',errors:['author approval required'],assets:[{passed:true}]},distribution:null}));`);
  const result=await runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier});
  assert.equal(result.status,'awaiting-author-review');
  assert.equal(result.events.length,6);
@@ -43,4 +48,18 @@ const fs=require('fs');const a=process.argv,p=a[a.indexOf('-of')+1];let words=p.
  for(let i=0;i<videos.length;i++)assert.deepEqual(await readFile(videos[i]),originals[i]);
  await assert.rejects(()=>runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier}),/EEXIST/);
  }finally{await rm(d,{recursive:true,force:true})}
+});
+
+test('draft QA rejects a fake success, technical failure, and a missing publication blocker',()=>{
+ const output=join(tmpdir(),'persona-draft-contract.mp4');
+ const evidence={path:output,fileExists:true,probeVerified:true,bytes:1024,sha256:'a'.repeat(64),durationSec:3.7,width:1080,height:1920,fps:30,videoCodec:'h264',audioCodec:'aac',blackFrameCheckPassed:true,audioCheckPassed:true};
+ const handoff={passed:false,status:'blocked',errors:['author approval required'],assets:[{passed:true}]};
+ const safe={evidence,handoff,distribution:null};
+ assert.equal(validateDraftQa(safe,output),true);
+ assert.throws(()=>validateDraftQa({...safe,evidence:{...evidence,blackFrameCheckPassed:false}},output),/technical QA/);
+ assert.throws(()=>validateDraftQa({...safe,evidence:{...evidence,fps:29.97}},output),/technical QA/);
+ assert.throws(()=>validateDraftQa({...safe,evidence:{...evidence,path:join(tmpdir(),'different.mp4')}},output),/technical QA/);
+ assert.throws(()=>validateDraftQa({...safe,handoff:{...handoff,errors:[]}},output),/publication handoff/);
+ assert.throws(()=>validateDraftQa({...safe,handoff:{...handoff,passed:true,status:'approved_for_distribution'}},output),/publication handoff/);
+ assert.throws(()=>validateDraftQa({...safe,distribution:{instagram:{status:'ready'}}},output),/publication handoff/);
 });
