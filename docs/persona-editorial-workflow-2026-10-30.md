@@ -12,6 +12,20 @@
 
 Файлы: candidate-pack.json, candidate-pack.json.md и selection.json. До трёх разных речевых кандидатов на сцену; их ранжирование — по совпадению произнесённого текста с Whisper, **не по актёрской игре**.
 
+### 2. Посмотреть настоящие видеодубли в браузере — новый удобный вариант
+
+После создания candidate-pack.json запустите:
+
+    node tools/persona-editorial-previews.mjs DRAFT_DIR/candidate-pack.json DRAFT_DIR/evidence/analysis.json DRAFT_DIR/preview-review-001
+
+Последний аргумент — **новый, ещё не существующий каталог**. Persona локально создаст короткие MP4-копии только выбранных кандидатов, файл previews.json и **preview-review-001/review.html**.
+
+Откройте review.html в браузере Windows, прослушайте и просмотрите варианты, у каждой сцены выберите лучший, впишите причину и нажмите «Сохранить мой выбор в JSON». Браузер выдаст **selection.reviewed.json** в папку загрузок. Облако, личные папки, изменение оригиналов и автоматическая публикация не используются.
+
+Передайте скачанный файл вторым аргументом в команду apply ниже (вместо DRAFT_DIR/selection.json) — либо положите его в DRAFT_DIR, оставив имя selection.reviewed.json.
+
+Если компьютер не может открыть локальную страницу, остаётся текстовый путь: candidate-pack.json.md и ручное редактирование selection.json. Никаких внешних сервисов не требуется.
+
 ### 2. Выбрать вручную
 
 Посмотрите исходное видео, сравните варианты по candidate-pack.json.md. В selection.json у каждой сцены:
@@ -48,6 +62,9 @@
 creative-review.md — русскоязычный итог проверки; creative-feedback.json — только **явно введённые человеком** замечания, без выдуманного анализа и автоматического обучения. Даже при всех true нужна отдельная авторская приёмка перед публикацией.
 
 ## Проверки
+
+    node --test tools/persona-editorial-previews.test.mjs
+
 
     node --test tools/persona-editorial-choices.test.mjs tools/persona-creative-review.test.mjs
     npm run media:test
