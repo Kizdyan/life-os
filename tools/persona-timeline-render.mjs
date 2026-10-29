@@ -14,6 +14,9 @@ import { tmpdir } from 'node:os';
 
 const fail = message => { throw new Error(message); };
 const allowed = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
+const TARGET_DIALOGUE_LUFS = -20;
+const MAX_DIALOGUE_BOOST_DB = 6;
+const MAX_DIALOGUE_REDUCTION_DB = 12;
 function run(command, args) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -43,6 +46,32 @@ async function hash(path) {
   for await (const part of createReadStream(path)) digest.update(part);
   return digest.digest('hex');
 }
+function rounded(value){return Number(value.toFixed(2));}
+function measureLoudness(path,startSec,durationSec){
+  return new Promise((resolveMeasure,reject)=>{
+    const child=spawn('ffmpeg',['-hide_banner','-nostdin','-ss',String(startSec),'-i',path,'-t',String(durationSec),'-vn','-af','ebur128=peak=true','-f','null','-'],{shell:false,windowsHide:true,stdio:['ignore','ignore','pipe']});
+    let stderr='';
+    child.stderr.on('data',data=>{stderr=(stderr+data).slice(-200000);});
+    child.on('error',reject);
+    child.on('close',code=>{
+      if(code!==0)return reject(new Error('Audio loudness measurement failed ('+code+'): '+stderr.slice(-1800)));
+      const integrated=stderr.match(/Integrated loudness:\s*I:\s*(-?(?:\d+(?:\.\d+)?))\s+LUFS/su);
+      const peak=stderr.match(/True peak:\s*Peak:\s*(-?(?:\d+(?:\.\d+)?))\s+dBFS/su);
+      resolveMeasure({integratedLufs:integrated?Number(integrated[1]):null,truePeakDb:peak?Number(peak[1]):null});
+    });
+  });
+}
+function safeGain(measurement){
+  if(!measurement)return {gainDb:0,status:'no-source-audio',warning:'No source audio; silent track inserted.'};
+  if(!Number.isFinite(measurement.integratedLufs)||!Number.isFinite(measurement.truePeakDb))
+    return {gainDb:0,status:'measurement-unavailable',warning:'Loudness could not be measured; no automatic gain applied.'};
+  if(measurement.integratedLufs<-45)
+    return {gainDb:0,status:'very-quiet-review',warning:'Very quiet source was not boosted automatically; review microphone/noise.'};
+  const requested=TARGET_DIALOGUE_LUFS-measurement.integratedLufs;
+  const peakLimited=-1-measurement.truePeakDb;
+  const gain=Math.max(-MAX_DIALOGUE_REDUCTION_DB,Math.min(MAX_DIALOGUE_BOOST_DB,requested,peakLimited));
+  return {gainDb:rounded(gain),status:Math.abs(gain)<0.05?'already-close':'levelled',warning:null};
+}
 async function main() {
   const [projectArg, outputArg] = process.argv.slice(2);
   if (!projectArg || !outputArg) fail('Usage: node tools/persona-timeline-render.mjs project.json output.mp4');
@@ -67,7 +96,8 @@ async function main() {
     const media = await probe(path);
     const startSec = numeric(clip.startSec ?? 0, 'startSec', 0, media.durationSec - 0.02);
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
-    clips.push({ path, startSec, durationSec, media, sha256: await hash(path) });
+    const loudness=media.audio?await measureLoudness(path,startSec,durationSec):null;
+    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), loudness, audioLeveling:safeGain(loudness) });
   }
   let soundtrack = null;
   if (project.soundtrack !== undefined) {
@@ -97,7 +127,11 @@ async function main() {
       const videoFilter = 'scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2,setsar=1,fps=' + fps + ',format=yuv420p';
       const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
       if (!clip.media.audio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
-      args.push('-t',String(clip.durationSec),'-map','0:v:0','-map',clip.media.audio?'0:a:0':'1:a:0','-vf',videoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-af','aresample=async=1:first_pts=0','-shortest','-movflags','+faststart',segment);
+      const audioFilters=['aresample=async=1:first_pts=0'];
+      if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
+      // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
+      audioFilters.push('alimiter=limit=0.95:level=0');
+      args.push('-t',String(clip.durationSec),'-map','0:v:0','-map',clip.media.audio?'0:a:0':'1:a:0','-vf',videoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-af',audioFilters.join(','),'-shortest','-movflags','+faststart',segment);
       await run('ffmpeg', args);
       segments.push(segment);
     }
@@ -116,7 +150,18 @@ async function main() {
     if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
     const toleranceSec = Math.max(0.25, totalSec * 0.06);
     if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, soundtrack, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    let outputOffset=0;
+    const audioLeveling={version:1,strategy:'per-clip-integrated-loudness-gain-capped',targetLufs:TARGET_DIALOGUE_LUFS,maxBoostDb:MAX_DIALOGUE_BOOST_DB,maxReductionDb:MAX_DIALOGUE_REDUCTION_DB,
+      caveat:'Measured clip loudness is a technical continuity aid, not a judgement of speech intelligibility, noise, acting, music balance or artistic sound quality.',clips:[]};
+    for(const clip of clips){
+      const after=await measureLoudness(staged,outputOffset,clip.durationSec);
+      audioLeveling.clips.push({path:clip.path,startSec:clip.startSec,durationSec:clip.durationSec,sourceHasAudio:clip.media.audio,
+       beforeLufs:clip.loudness?.integratedLufs??null,beforeTruePeakDb:clip.loudness?.truePeakDb??null,
+       gainDb:clip.audioLeveling.gainDb,status:clip.audioLeveling.status,warning:clip.audioLeveling.warning,
+       afterLufs:after.integratedLufs,afterTruePeakDb:after.truePeakDb});
+      outputOffset+=clip.durationSec;
+    }
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await rename(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }

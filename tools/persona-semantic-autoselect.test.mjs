@@ -34,8 +34,8 @@ test('whisper.cpp terminal control token outside source does not reject timed sp
   {text:'[_TT_100]',offsets:{from:2000,to:2000}}
  ]}]},1);
  assert.deepEqual(result,[
-  {startSec:0,endSec:.7,text:'Редактор'},
-  {startSec:.7,endSec:.99,text:'субтитров'}
+  {startSec:0,endSec:.7,text:'Редактор',timing:'word'},
+  {startSec:.7,endSec:.99,text:'субтитров',timing:'word'}
  ]);
 });
 test('whisper.cpp JSON-full falls back to segment offsets when token offsets are absent',()=>{
@@ -44,7 +44,7 @@ test('whisper.cpp JSON-full falls back to segment offsets when token offsets are
   tokens:[{text:' Я',id:1,p:.9},{text:' актёр',id:2,p:.9},{text:' музыку',id:3,p:.9}]
  }]};
  const segments=parseWhisperJson(data,4);
- assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.'}]);
+ assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.',timing:'segment'}]);
  const matched=chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
    {id:'take-real-json',durationSec:4,segments}
  ]);
@@ -83,6 +83,8 @@ test('Picks cleaner complete spoken take, detects missing dialogue and prevents 
  assert.equal(choices[0].sourceId,'takeA_good');
  assert.equal(choices[1].sourceId,'takeB_good');
  assert.ok(choices.every(c=>c.confidence>=.75&&c.reason.includes('NOT assessed')));
+ assert.deepEqual(choices[0].captionWords.map(word=>word.text),['Я','актёр','И','ещё','пишу','музыку']);
+ assert.ok(choices[0].captionWords.every(word=>word.timing==='segment'));
  assert.throws(()=>chooseForBrief(brief,sources.filter(x=>x.id!=='takeB_good')),/Manual review required/);
 });
 test('Avoids technically black footage even if ASR transcript matches better',()=>{

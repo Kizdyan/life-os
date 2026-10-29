@@ -92,7 +92,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('dialogue_cuts_proposed');
   const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
-  const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,outputDir:root});
+  const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,decisionsPath:decisions.decisions,outputDir:root});
   events.push('reviewable_subtitle_sidecars_written');
   const output=join(root,'draft-reel.mp4');
   await call(process.execPath,[rendererPath,assembled.project,output]);

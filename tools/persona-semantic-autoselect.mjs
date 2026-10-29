@@ -37,6 +37,7 @@ export function parseWhisperJson(value,durationSec){
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
       Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
     const candidates=allTokensTimed?audible:[seg];
+    const timing=allTokensTimed?'word':'segment';
     const grouped=[];
     for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
@@ -50,7 +51,7 @@ export function parseWhisperJson(value,durationSec){
         const last=grouped[grouped.length-1];
         last.text+=text;
         last.endSec=end;
-      }else grouped.push({startSec:start,endSec:end,text});
+      }else grouped.push({startSec:start,endSec:end,text,timing});
     }
     raw.push(...grouped);
   }
@@ -75,7 +76,8 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(coverage<0.75||f1<0.57)continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;
-      results.push({sourceId,startSec,endSec,coverage,f1,score,transcript:text});
+      results.push({sourceId,startSec,endSec,coverage,f1,score,transcript:text,
+       captionWords:segments.slice(i,j).map(segment=>({text:segment.text,startSec:segment.startSec,endSec:segment.endSec,timing:segment.timing??'segment'}))});
     }
   }
   return results.sort((a,b)=>b.score-a.score).slice(0,6);
@@ -124,7 +126,7 @@ export function chooseForBrief(brief,sources){
     const confidence=Number(Math.min(0.94,Math.max(0.65,pick.score)).toFixed(3));
     return {beat:index+1,sourceId:pick.sourceId,startSec:Number(pick.startSec.toFixed(3)),
       durationSec:Number((pick.endSec-pick.startSec).toFixed(3)),
-      transcript:pick.transcript,confidence,
+      transcript:pick.transcript,confidence,captionWords:pick.captionWords,
       reason:'Offline ASR matched '+Math.round(pick.coverage*100)+'% of scripted tokens (F1='+pick.f1.toFixed(2)+'); '+(pick.postSpeechMusicPreserved?'explicit post-speech music hold preserved; ':'')+'visual and performance quality NOT assessed.'};
   });
 }

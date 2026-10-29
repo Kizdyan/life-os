@@ -44,6 +44,39 @@ test('music-tail cue must be manually retimed; never pretend speech continues th
  assert.match(buildSubtitleDraft(updated,timeline).review.warnings.join(' '),/Subtitle end must be adjusted/);
 });
 
+test('Whisper word timestamps are translated into montage time and stop before a music tail',()=>{
+ const updated=structuredClone(brief);
+ updated.shots[1].action='После реплики 2 секунды оригинальной музыки';
+ const decisions={version:1,choices:[
+  {beat:1,sourceId:'actor',startSec:10.4,durationSec:2.145,captionWords:[
+   {text:'Я',startSec:10.6,endSec:10.78,timing:'word'},
+   {text:'актёр.',startSec:10.8,endSec:11.2,timing:'word'}]},
+  {beat:2,sourceId:'composer',startSec:20.7,durationSec:2.2,captionWords:[
+   {text:'И',startSec:20.9,endSec:21.02,timing:'word'},
+   {text:'у',startSec:21.04,endSec:21.13,timing:'word'},
+   {text:'нас',startSec:21.15,endSec:21.34,timing:'word'},
+   {text:'есть',startSec:21.36,endSec:21.56,timing:'word'},
+   {text:'проблема.',startSec:21.58,endSec:21.95,timing:'word'}]}
+ ]};
+ const result=buildSubtitleDraft(updated,timeline,decisions);
+ assert.match(result.srt,/00:00:00,200 --> 00:00:00,920\nЯ актёр\./u);
+ assert.match(result.srt,/00:00:02,345 --> 00:00:03,515\nИ у нас есть проблема\./u);
+ assert.equal(result.review.captionTiming,'word-level-from-whisper-timestamps');
+ assert.ok(result.review.cues[1].endMs<4345,'caption must end before the music tail');
+});
+
+test('mixed timed and estimated captions are explicitly marked for manual timing review',()=>{
+ const decisions={version:1,choices:[
+  {beat:1,sourceId:'actor',startSec:0,durationSec:2.145,captionWords:[
+   {text:'Я',startSec:.1,endSec:.2,timing:'word'},
+   {text:'актёр.',startSec:.22,endSec:.5,timing:'word'}]},
+  {beat:2,sourceId:'composer',startSec:0,durationSec:2.2}
+ ]};
+ const result=buildSubtitleDraft(brief,timeline,decisions);
+ assert.equal(result.review.captionTiming,'mixed-whisper-and-estimated-needs-review');
+ assert.match(result.review.warnings.join(' '),/estimated clip boundaries/iu);
+});
+
 test('refuses inconsistent beats and captions exceeding two lines',()=>{
  assert.throws(()=>buildSubtitleDraft(brief,{version:1,clips:[timeline.clips[0]]}),/aligned/);
  const bad=structuredClone(brief);bad.script[0].order=5;
