@@ -36,13 +36,22 @@ export function parseWhisperJson(value,durationSec){
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
       Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
     const candidates=allTokensTimed?audible:[seg];
+    const grouped=[];
     for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
       const start=ms(token.offsets.from),end=ms(token.offsets.to);
       if(!valid(start,0,durationSec)||!valid(end,start,durationSec+0.1))fail('ASR time offsets outside source');
       const text=token.text.trim();
-      if(text&&!/^\[[^\]]+\]$/.test(text)&&end>start)raw.push({startSec:start,endSec:end,text});
+      if(!text || /^\[[^\]]+\]$/.test(text) || end<=start)continue;
+      // Full JSON token strings often split ONE Russian word into subwords.
+      // Absence of a leading space means continuation, not a new word.
+      if(allTokensTimed && grouped.length && !/^\s/u.test(token.text)){
+        const last=grouped[grouped.length-1];
+        last.text+=text;
+        last.endSec=end;
+      }else grouped.push({startSec:start,endSec:end,text});
     }
+    raw.push(...grouped);
   }
   const sorted=raw.sort((a,b)=>a.startSec-b.startSec);
   if(!sorted.length)fail('No timestamped words/phrases from offline ASR');
