@@ -26,6 +26,18 @@ test('Whisper JSON parser reads timestamped tokens and rejects invalid offsets',
  assert.equal(result[3].endSec,2);
  assert.throws(()=>parseWhisperJson(whisper([['Ура',0,16]]),2),/outside source/);
 });
+test('whisper.cpp terminal control token outside source does not reject timed speech',()=>{
+ const result=parseWhisperJson({transcription:[{text:' Редактор субтитров',offsets:{from:0,to:2000},tokens:[
+  {text:'[_BEG_]',offsets:{from:0,to:0}},
+  {text:' Редактор',offsets:{from:0,to:700}},
+  {text:' субтитров',offsets:{from:700,to:990}},
+  {text:'[_TT_100]',offsets:{from:2000,to:2000}}
+ ]}]},1);
+ assert.deepEqual(result,[
+  {startSec:0,endSec:.7,text:'Редактор'},
+  {startSec:.7,endSec:.99,text:'субтитров'}
+ ]);
+});
 test('whisper.cpp JSON-full falls back to segment offsets when token offsets are absent',()=>{
  const data={transcription:[{
   text:' Я актёр. И ещё пишу музыку.',offsets:{from:500,to:2800},

@@ -32,7 +32,8 @@ export function parseWhisperJson(value,durationSec){
     // a spoken line because token timestamps were not emitted by a model.
     const tokens=Array.isArray(seg?.tokens)&&seg.tokens.length?seg.tokens:null;
     const audible=tokens?.filter(t=>typeof t?.text==='string' &&
-      t.text.trim() && !/^<\|.*\|>$/.test(t.text.trim())) ?? [];
+      t.text.trim() && !/^<\|.*\|>$/.test(t.text.trim()) &&
+      !/^\[[^\]]+\]$/.test(t.text.trim())) ?? [];
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
       Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
     const candidates=allTokensTimed?audible:[seg];
