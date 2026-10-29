@@ -142,7 +142,7 @@ async function transcribe(analysisArg,cliArg,modelArg){
 async function plan(analysisArg,briefArg,decisionsArg){
   const analysisPath=resolve(analysisArg),briefPath=resolve(briefArg),out=resolve(decisionsArg);
   const analysis=await readJson(analysisPath),brief=await readJson(briefPath),base=dirname(analysisPath);
-  if(analysis?.kind!=='persona-evidence-v1'||analysis.version!==1||!Array.isArray(analysis.sources)||analysis.sources.length<2)fail('Invalid analysis packet');
+  if(analysis?.kind!=='persona-evidence-v1'||analysis.version!==1||!Array.isArray(analysis.sources)||analysis.sources.length<1)fail('Invalid analysis packet');
   if(brief?.version!==1||brief.sourceFormat!=='reel'||!Array.isArray(brief.script)||!Array.isArray(brief.shots)||brief.script.length!==brief.shots.length||brief.script.length<2)fail('Invalid Persona Reel brief');
   await access(out).then(()=>fail('Decision output already exists'),()=>{});
   const sources=[];
