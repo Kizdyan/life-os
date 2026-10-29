@@ -191,12 +191,14 @@ export async function prepare({analysisPath,briefPath,decisionsPath,packPath,sel
  const template=createSelectionTemplate(pack);
  const summaryPath=resolve(packPath)+'.md';
  await writeFile(resolve(packPath),JSON.stringify(pack,null,2)+'\n',{flag:'wx'});
+ let selectionCreated=false;
  try{
   await writeFile(resolve(selectionPath),JSON.stringify(template,null,2)+'\n',{flag:'wx'});
+  selectionCreated=true;
   await writeFile(summaryPath,formatCandidatePack(pack),{flag:'wx'});
  }catch(e){
   await rm(resolve(packPath),{force:true});
-  await rm(resolve(selectionPath),{force:true});
+  if(selectionCreated)await rm(resolve(selectionPath),{force:true});
   throw e;
  }
  return {packPath:resolve(packPath),summaryPath,selectionPath:resolve(selectionPath),
