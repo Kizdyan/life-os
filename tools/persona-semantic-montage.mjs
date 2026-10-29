@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 const exts = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const MAX_INPUTS = 12;
 const MAX_BYTES = 2 * 1024 ** 3;
+const FFMPEG = process.env.PERSONA_FFMPEG || 'ffmpeg';
+const FFPROBE = process.env.PERSONA_FFPROBE || 'ffprobe';
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 const finite = (n, min, max) => typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max;
 const own = (object, field) => Object.prototype.hasOwnProperty.call(object, field);
@@ -46,7 +48,7 @@ async function sha256(path) {
   return h.digest('hex');
 }
 async function mediaInfo(path) {
-  const value = JSON.parse(await invoke('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height,avg_frame_rate','-of','json',path]));
+  const value = JSON.parse(await invoke(FFPROBE,['-v','error','-show_entries','format=duration:stream=codec_type,width,height,avg_frame_rate','-of','json',path]));
   const video = value.streams?.find(stream => stream.codec_type === 'video');
   const durationSec = Number(value.format?.duration);
   assert(video?.width > 0 && video?.height > 0 && finite(durationSec,0.1,180), 'Invalid or oversized video input');
@@ -78,13 +80,13 @@ async function analyze(inputArg, outputArg) {
       for (const [index, fraction] of [0.2,0.5,0.8].entries()) {
         const timeSec = Number((source.durationSec*fraction).toFixed(3));
         const frame = source.id + '-' + (index + 1) + '.jpg';
-        await invoke('ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-ss',String(timeSec),'-i',source.path,'-frames:v','1','-vf','scale=w=480:h=480:force_original_aspect_ratio=decrease','-q:v','5',join(output,frame)]);
+        await invoke(FFMPEG,['-nostdin','-hide_banner','-loglevel','error','-ss',String(timeSec),'-i',source.path,'-frames:v','1','-vf','scale=w=480:h=480:force_original_aspect_ratio=decrease','-q:v','5',join(output,frame)]);
         source.frames.push({timeSec,path:join(output,frame)});
       }
       if (source.hasAudio) {
         source.audioPath=join(output,source.id+'-speech.wav');
-        await invoke('ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-i',source.path,'-vn','-ac','1','-ar','16000','-c:a','pcm_s16le',source.audioPath]);
-        const silence = await invoke('ffmpeg',['-nostdin','-hide_banner','-i',source.path,'-vn','-af','silencedetect=noise=-35dB:d=0.35','-f','null','-'],{captureError:true});
+        await invoke(FFMPEG,['-nostdin','-hide_banner','-loglevel','error','-i',source.path,'-vn','-ac','1','-ar','16000','-c:a','pcm_s16le',source.audioPath]);
+        const silence = await invoke(FFMPEG,['-nostdin','-hide_banner','-i',source.path,'-vn','-af','silencedetect=noise=-35dB:d=0.35','-f','null','-'],{captureError:true});
         source.silenceEvents=silence.split('\n').filter(line=>/silence_(start|end):/.test(line)).slice(0,100).map(line=>line.trim().slice(-180));
       }
     }
