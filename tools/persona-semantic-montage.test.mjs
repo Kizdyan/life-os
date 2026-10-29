@@ -61,3 +61,26 @@ test('real evidence -> validated choices -> existing FFmpeg renderer -> untouche
   await assert.rejects(()=>assemble(decisions,join(d,'other.json')),/Source modified/);
  }finally{await rm(d,{recursive:true,force:true})}
 });
+test('One MP4 becomes a two-shot timeline while preserving its original bytes',{skip:!mediaTools},async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-one-source-'));
+ try {
+  const video=join(d,'single-recording.mp4');
+  const creation=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=s=240x320:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=16000','-t','5','-c:v','mpeg4','-c:a','aac','-shortest',video],{encoding:'utf8',timeout:30000});
+  assert.equal(creation.status,0,creation.stderr);
+  const original=await readFile(video);
+  const src=join(d,'source.json');await mk(src,{version:1,sources:[{id:'one',path:video}]});
+  const analyzed=await analyze(src,join(d,'evidence'));
+  assert.equal(analyzed.sources,1);
+  const brief=join(d,'brief.json');await mk(brief,minimalBrief);
+  const choice=join(d,'choices.json');await mk(choice,{version:1,analysisPath:analyzed.analysis,briefPath:brief,choices:[
+   {beat:1,sourceId:'one',startSec:0.1,durationSec:1.2,confidence:.95,transcript:'Я актёр. И ещё пишу музыку.',reason:'First standalone line in same continuous recording'},
+   {beat:2,sourceId:'one',startSec:2.8,durationSec:1.2,confidence:.93,transcript:'И у нас есть проблема.',reason:'Second standalone line later in recording'}
+  ]});
+  const assembled=await assemble(choice,join(d,'timeline.json'));
+  assert.equal(assembled.clips,2);
+  const timeline=JSON.parse(await readFile(assembled.project,'utf8'));
+  assert.deepEqual(timeline.clips.map(x=>x.path),[video,video]);
+  assert.ok(timeline.clips[0].startSec+timeline.clips[0].durationSec<timeline.clips[1].startSec);
+  assert.deepEqual(await readFile(video),original);
+ } finally {await rm(d,{recursive:true,force:true})}
+});
