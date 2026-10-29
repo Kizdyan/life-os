@@ -7,6 +7,16 @@ import { tmpdir } from 'node:os';
 import { runFirstReel, validateDraftQa, validateFirstReelMode } from './persona-first-reel-runner.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
+test('two-shot live speech brief matches only the first two beats of the full Reel',async()=>{
+ const two=JSON.parse(await readFile(new URL('../docs/persona-two-line-live-asr-check-2026-10-29.json',import.meta.url),'utf8'));
+ const full=JSON.parse(await readFile(new URL('../docs/persona-first-reel-production-brief-2026-10-29.json',import.meta.url),'utf8'));
+ assert.equal(two.script.length,2);
+ assert.equal(two.shots.length,2);
+ assert.equal(full.script.length,7);
+ assert.deepEqual(two.script.map(x=>x.line),full.script.slice(0,2).map(x=>x.line));
+ assert.deepEqual(two.shots.map(x=>x.order),[1,2]);
+ assert.equal(two.sourceFormat,'reel');
+});
 test('missing inputs fail preflight without creating output directory',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-runner-preflight-'));
  try{await assert.rejects(()=>runFirstReel({sources:join(dir,'missing.json'),brief:join(dir,'no.json'),outputDir:join(dir,'output'),whisperCli:'no',whisperModel:'no'}),/Missing required local file/);
