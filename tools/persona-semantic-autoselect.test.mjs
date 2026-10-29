@@ -172,3 +172,17 @@ test('One long recording can supply two non-overlapping dialogue shots',()=>{
  assert.deepEqual(choices.map(x=>x.sourceId),['one-archive-take','one-archive-take']);
  assert.ok(choices[0].startSec+choices[0].durationSec<choices[1].startSec,'selected source windows must not overlap');
 });
+
+test('non-greedy alternative lets two utterances share a coarse Whisper segment safely',()=>{
+ const coarse= {id:'archive',durationSec:6,segments:parseWhisperJson({
+  transcription:[{text:'Я актёр. И ещё пишу музыку. И у нас есть проблема.',offsets:{from:400,to:4000}}]
+ },6),technicalQuality:{blackIntervals:[]}};
+ const alternative={id:'other-take',durationSec:4,segments:parseWhisperJson(whisper([
+  ['Я',.4,.6],['актёр',.65,.9],['И',.95,1.05],['пишу',1.1,1.4],['музыку',1.45,1.8]
+ ]),4),technicalQuality:{blackIntervals:[]}};
+ const picks=chooseForBrief(brief,[coarse,alternative]);
+ assert.deepEqual(picks.map(x=>x.sourceId),['other-take','archive']);
+ assert.ok(picks.every(x=>x.confidence>=0.75));
+ // A missing alternate must fail instead of recycling the same timeline range.
+ assert.throws(()=>chooseForBrief(brief,[coarse]),/Manual review required/);
+});
