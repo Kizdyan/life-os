@@ -11,6 +11,7 @@ import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectTake } from './persona-take-qa.mjs';
 
 const exts = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const MAX_INPUTS = 12;
@@ -70,7 +71,7 @@ async function analyze(inputArg, outputArg) {
     const file = await stat(path);
     assert(file.isFile() && file.size > 0 && file.size <= MAX_BYTES, 'Source exceeds file safety limits');
     const info = await mediaInfo(path);
-    sources.push({id:entry.id,path,bytes:file.size,sha256:await sha256(path),...info});
+    sources.push({id:entry.id,path,bytes:file.size,sha256:await sha256(path),...info,technicalQuality:await inspectTake({path,...info})});
   }
   const output = resolve(outputArg);
   await mkdir(output, {recursive:false});
