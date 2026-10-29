@@ -69,6 +69,7 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
   assert.ok(Number(media.format.duration)>2.5);
   const qa=JSON.parse(await readFile(result.qaPath,'utf8'));
   assert.equal(qa.evidence.videoCodec,'h264');
+  assert.equal(qa.evidence.fps,30,'export must remain constant-frame-rate at target 30 fps');
   assert.equal(qa.evidence.audioCodec,'aac');
   assert.equal(qa.evidence.blackFrameCheckPassed,true);
   assert.equal(qa.evidence.audioCheckPassed,true);
