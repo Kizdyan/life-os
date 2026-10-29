@@ -51,7 +51,7 @@ npm run media:visual:finalize -- `
 
 ## Что получится
 
-- `framed-reel.mp4` — новый вариант MP4 (изображение 1080×1920, звук H.264/AAC по существующей проверке);
+- `framed-reel.mp4` — новый вариант MP4 (видео 1080×1920, H.264; аудио AAC, проверяется существующим QA);
 - `framed-timeline.json` — только ручные настройки crop, старый timeline неизменён;
 - `captions.draft.srt` и `captions.draft.vtt` — редактируемые титры;
 - `framed-qa.json` — повторная проверка звука, кадра и формата;
