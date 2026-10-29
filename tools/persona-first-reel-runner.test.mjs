@@ -63,3 +63,24 @@ test('draft QA rejects a fake success, technical failure, and a missing publicat
  assert.throws(()=>validateDraftQa({...safe,handoff:{...handoff,passed:true,status:'approved_for_distribution'}},output),/publication handoff/);
  assert.throws(()=>validateDraftQa({...safe,distribution:{instagram:{status:'ready'}}},output),/publication handoff/);
 });
+
+test('unsafe or mismatched Whisper model / brief fail before creating output',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-preflight-'));
+ try{
+  const src=join(dir,'sources.json'),brief=join(dir,'brief.json'),model=join(dir,'ggml-base.bin'),out=join(dir,'out');
+  await mk(src,{version:1,sources:[{id:'one',path:'not-actually-needed-yet.mp4'}]});
+  await mk(brief,{version:1,sourceFormat:'reel',script:[{order:1,line:'Первая реплика'},{order:2,line:'Вторая реплика'}],shots:[{order:1},{order:2}]});
+  const args={sources:src,brief,outputDir:out,whisperCli:process.execPath,whisperModel:model};
+  await writeFile(model,Buffer.from('not a real model'));
+  await assert.rejects(()=>runFirstReel(args),/too small/);
+  await assert.rejects(()=>stat(out),/ENOENT/);
+  const english=join(dir,'ggml-base.en.bin');
+  await writeFile(english,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel({...args,whisperModel:english}),/English-only/);
+  await mk(brief,{version:1,sourceFormat:'reel',script:[{order:1,line:'Only one line'}],shots:[{order:1}]});
+  await assert.rejects(()=>runFirstReel({...args,whisperModel:english}),/English-only/);
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel(args),/Invalid Persona Reel brief/);
+  await assert.rejects(()=>stat(out),/ENOENT/);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
