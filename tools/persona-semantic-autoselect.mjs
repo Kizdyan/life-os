@@ -27,8 +27,16 @@ export function parseWhisperJson(value,durationSec){
   if(!value || !Array.isArray(value.transcription))fail('Expected whisper.cpp transcription array');
   const raw=[];
   for(const seg of value.transcription){
-    const tokens=Array.isArray(seg.tokens)&&seg.tokens.length?seg.tokens:[seg];
-    for(const token of tokens){
+    // whisper.cpp JSON-full may include tokens WITHOUT per-token timestamps.
+    // Its segment still carries authoritative offsets. Do not silently drop
+    // a spoken line because token timestamps were not emitted by a model.
+    const tokens=Array.isArray(seg?.tokens)&&seg.tokens.length?seg.tokens:null;
+    const audible=tokens?.filter(t=>typeof t?.text==='string' &&
+      t.text.trim() && !/^<\|.*\|>$/.test(t.text.trim())) ?? [];
+    const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
+      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
+    const candidates=allTokensTimed?audible:[seg];
+    for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
       const start=ms(token.offsets.from),end=ms(token.offsets.to);
       if(!valid(start,0,durationSec)||!valid(end,start,durationSec+0.1))fail('ASR time offsets outside source');
