@@ -65,11 +65,13 @@ export function summarizeCreativeReview(review,profile){
     fail('Invalid creative review comments');
   const failed=Object.entries(checks).filter(([,val])=>val===false).map(([key])=>key);
   const unreviewed=Object.entries(checks).filter(([,val])=>val===null).map(([key])=>key);
+  const missingTake=typeof scene.selectedCandidateId!=='string'||!scene.selectedCandidateId.trim();
   if(failed.length&&(!scene.issues.length&&!scene.remarks.trim()))
    fail('Explain failed creative checks at beat '+scene.beat);
   rows.push({beat:scene.beat,failed,unreviewed,issues:scene.issues,
     remarks:scene.remarks,status:failed.length||scene.issues.length?'changes-requested':
-     unreviewed.length?'needs-human-review':'technically-reviewed-by-human-not-approved'});
+     (unreviewed.length||missingTake)?'needs-human-review':'technically-reviewed-by-human-not-approved',
+    missingTake});
   if(scene.remarks.trim()||scene.issues.length){
    memory.push({beat:scene.beat,selectedCandidateId:scene.selectedCandidateId,
     remark:scene.remarks.trim(),issues:scene.issues,
