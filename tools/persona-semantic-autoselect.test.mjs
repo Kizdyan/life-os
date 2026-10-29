@@ -83,6 +83,21 @@ test('Avoids technically black footage even if ASR transcript matches better',()
  assert.equal(chooseForBrief(one,sources)[0].sourceId,'clear');
  assert.throws(()=>chooseForBrief(one,sources.slice(0,1)),/Manual review required/);
 });
+test('An explicit post-dialogue music cue preserves the full shot and rejects short takes',()=>{
+ const musicBeat={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Почему? Сейчас напишу колыбельную.',durationSec:6}],
+  shots:[{order:1,durationSec:6,action:'Сухо; затем 2–3 секунды оригинальной музыки на клавишах'}]};
+ const speech=parseWhisperJson(whisper([
+  ['Почему',0.4,0.8],['сейчас',0.85,1.2],['напишу',1.25,1.6],['колыбельную',1.65,2.1]
+ ]),8);
+ const good={id:'music-complete',durationSec:8,segments:speech,technicalQuality:{blackIntervals:[]}};
+ const chosen=chooseForBrief(musicBeat,[good]);
+ assert.equal(chosen[0].sourceId,'music-complete');
+ assert.ok(chosen[0].durationSec>=6,'post-dialogue music must not be clipped off');
+ assert.match(chosen[0].reason,/post-speech music hold preserved/);
+ assert.throws(()=>chooseForBrief(musicBeat,[{...good,id:'too-short',durationSec:4}]),/Manual review required/);
+ assert.throws(()=>chooseForBrief(musicBeat,[{...good,technicalQuality:{blackIntervals:[{startSec:3,endSec:4}]}}]),/Manual review required/);
+});
 test('End-to-end decisions JSON from local Whisper fixture, output non-overwrite, no false auto-approval',async()=>{
  const d=await mk();
  try{
