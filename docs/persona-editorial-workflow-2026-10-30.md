@@ -1,0 +1,59 @@
+# Persona P1 — выбор дублей и художественная приёмка
+
+Работает локально, поверх существующих Whisper и FFmpeg. Не заменяет основной рендерер и не разрешает публикацию.
+
+## После съёмки A01 / B01
+
+Сначала запустите существующие media:shoot:intake и media:first-reel:draft. В итоговом каталоге (ниже: DRAFT_DIR) должны появиться evidence/analysis.json и decisions.json. Затем, из корня репозитория:
+
+### 1. Сформировать варианты
+
+    node tools/persona-editorial-choices.mjs prepare DRAFT_DIR/evidence/analysis.json docs/persona-two-line-live-asr-check-2026-10-29.json DRAFT_DIR/decisions.json DRAFT_DIR/candidate-pack.json DRAFT_DIR/selection.json
+
+Файлы: candidate-pack.json, candidate-pack.json.md и selection.json. До трёх разных речевых кандидатов на сцену; их ранжирование — по совпадению произнесённого текста с Whisper, **не по актёрской игре**.
+
+### 2. Выбрать вручную
+
+Посмотрите исходное видео, сравните варианты по candidate-pack.json.md. В selection.json у каждой сцены:
+
+- candidateId — один из ID соответствующей сцены;
+- reviewed — поставить true **только после личного просмотра**;
+- reason — реальная причина выбора (взгляд, пауза, интонация и т. д.);
+- rejected — необязательные отклонённые кандидаты с их ID и причиной.
+
+Затем:
+
+    node tools/persona-editorial-choices.mjs apply DRAFT_DIR/candidate-pack.json DRAFT_DIR/selection.json DRAFT_DIR/decisions.json DRAFT_DIR/reviewed-decisions.json DRAFT_DIR/decision-memory.json
+
+Это создаст новый файл решений и отдельную память о выборе. Старый decisions.json не меняется. Пересечения, чёрные участки, хеши источников и границы перепроверяются.
+
+### 3. Собрать альтернативную версию
+
+    node tools/persona-semantic-montage.mjs assemble DRAFT_DIR/reviewed-decisions.json DRAFT_DIR/reviewed-timeline.json
+    node tools/persona-timeline-render.mjs DRAFT_DIR/reviewed-timeline.json DRAFT_DIR/reviewed-reel.mp4
+    node tools/persona-verify-render.mjs DRAFT_DIR/reviewed-reel.mp4 persona-first-reel reel DRAFT_DIR/reviewed-qa.json
+
+Для субтитров новой версии вызвать persona-subtitle-draft.mjs с reviewed-timeline.json и reviewed-decisions.json; укажите отдельный **существующий пустой каталог**, потому что ранние SRT/VTT перезаписывать запрещено.
+
+### 4. Пройти художественную приёмку
+
+Профиль: docs/persona-creative-profile-v1.json. Он не дублирует Identity, а закрепляет практические правила: не менять внешность, сохранять игру, естественный цвет, музыкальные хвосты, безопасные субтитры.
+
+    node tools/persona-creative-review.mjs init DRAFT_DIR/candidate-pack.json docs/persona-creative-profile-v1.json DRAFT_DIR/creative-review.json DRAFT_DIR/selection.json
+
+Посмотрите reviewed-reel.mp4. В creative-review.json отметьте для каждой сцены: true — лично проверено, false — есть замечание, null — не проверено. Для false заполните замечание в remarks или issues.
+
+    node tools/persona-creative-review.mjs finish DRAFT_DIR/creative-review.json docs/persona-creative-profile-v1.json DRAFT_DIR/creative-review.md DRAFT_DIR/creative-feedback.json
+
+creative-review.md — русскоязычный итог проверки; creative-feedback.json — только **явно введённые человеком** замечания, без выдуманного анализа и автоматического обучения. Даже при всех true нужна отдельная авторская приёмка перед публикацией.
+
+## Проверки
+
+    node --test tools/persona-editorial-choices.test.mjs tools/persona-creative-review.test.mjs
+    npm run media:test
+
+Новые тесты добавлены в PR #128, но их реальный запуск в Windows-проекте после этого изменения ещё не подтверждён. Чистые JS-функции прошли отдельную проверку; это **не заменяет Node.js и FFmpeg end-to-end**.
+
+## Защита локальных изменений
+
+Codex мог оставить незакоммиченные правки по P0 до достижения лимита. До синхронизации проверить git status. Не выполнять reset --hard и не делать автоматическое перезаписывание локальных правок. Новые P1-компоненты добавлены отдельно; имеющийся рабочий код не заменён.
