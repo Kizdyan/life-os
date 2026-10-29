@@ -100,14 +100,18 @@ export async function generatePreviews({packPath,evidencePath,outputDir}={}){
  const [pack,evidence]=await Promise.all([readFile(resolve(packPath),'utf8').then(JSON.parse),readFile(resolve(evidencePath),'utf8').then(JSON.parse)]);
  verifyPreviewPack(pack,evidence);
  const byId=new Map(evidence.sources.map(x=>[x.id,x])),root=resolve(outputDir);
- const paths=new Map();
+ const paths=new Map(),verifiedSourcePaths=new Map();
  for(const beat of pack.beats)for(const take of beat.candidates){
   const src=byId.get(take.sourceId);
-  const p=await realpath(src.path);
-  if(!['.mp4','.mov','.mkv','.webm','.m4v'].includes(extname(p).toLowerCase()))fail('Unsupported source video extension');
-  const st=await stat(p);
-  if(!st.isFile()||!st.size||st.size>2*1024**3||(await hash(p))!==src.sha256)
-   fail('Source changed after intake; refuse to create misleading previews');
+  let p=verifiedSourcePaths.get(take.sourceId);
+  if(!p){
+   p=await realpath(src.path);
+   if(!['.mp4','.mov','.mkv','.webm','.m4v'].includes(extname(p).toLowerCase()))fail('Unsupported source video extension');
+   const st=await stat(p);
+   if(!st.isFile()||!st.size||st.size>2*1024**3||(await hash(p))!==src.sha256)
+    fail('Source changed after intake; refuse to create misleading previews');
+   verifiedSourcePaths.set(take.sourceId,p);
+  }
   paths.set(take.candidateId,p);
  }
  await mkdir(root,{recursive:false});
