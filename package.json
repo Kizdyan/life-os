@@ -10,7 +10,7 @@
     "web:build": "vite build apps/web",
     "media:probe": "node tools/persona-media-engine.mjs probe",
     "media:render": "node tools/persona-media-engine.mjs render",
-    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs tools/persona-semantic-montage.test.mjs tools/persona-semantic-autoselect.test.mjs tools/persona-first-reel-runner.test.mjs tools/persona-take-qa.test.mjs tools/persona-shoot-intake.test.mjs tools/persona-subtitle-draft.test.mjs tools/persona-editorial-choices.test.mjs tools/persona-editorial-previews.test.mjs tools/persona-creative-review.test.mjs tools/persona-last-mile-smoke.test.mjs",
+    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs tools/persona-semantic-montage.test.mjs tools/persona-semantic-autoselect.test.mjs tools/persona-first-reel-runner.test.mjs tools/persona-take-qa.test.mjs tools/persona-shoot-intake.test.mjs tools/persona-subtitle-draft.test.mjs tools/persona-editorial-choices.test.mjs tools/persona-editorial-previews.test.mjs tools/persona-review-kit.test.mjs tools/persona-creative-review.test.mjs tools/persona-last-mile-smoke.test.mjs",
     "media:timeline": "node tools/persona-timeline-render.mjs",
     "media:bridge": "node tools/persona-render-bridge.mjs",
     "persona:preflight": "node tools/persona-preflight.mjs",
@@ -28,6 +28,7 @@
     "media:subtitle:draft": "node tools/persona-subtitle-draft.mjs",
     "media:editorial": "node tools/persona-editorial-choices.mjs",
     "media:editorial:previews": "node tools/persona-editorial-previews.mjs",
+    "media:review:kit": "node tools/persona-review-kit.mjs",
     "media:creative:review": "node tools/persona-creative-review.mjs"
   },
   "dependencies": {
