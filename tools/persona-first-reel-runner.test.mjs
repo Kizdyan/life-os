@@ -42,7 +42,10 @@ const evidence={path,fileExists:true,probeVerified:true,bytes:statSync(path).siz
 writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,status:'blocked',errors:['author approval required'],assets:[{passed:true}]},distribution:null}));`);
  const result=await runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier});
  assert.equal(result.status,'awaiting-author-review');
- assert.equal(result.events.length,6);
+ assert.equal(result.events.length,7);
+ assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
+ assert.equal(result.subtitleDraft.status,'needs-human-review');
+ assert.match(await readFile(result.subtitleDraft.srtPath,'utf8'),/Я актёр/);
  assert.equal(result.distributionAllowed,false);
  assert.ok((await stat(result.output)).size>1000);
  for(let i=0;i<videos.length;i++)assert.deepEqual(await readFile(videos[i]),originals[i]);
