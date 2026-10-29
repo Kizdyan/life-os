@@ -27,6 +27,29 @@ function temporaryBinPath(binDir){
  process.env[k]=resolve(binDir)+(process.platform==='win32'?';':':')+(process.env[k]||'');
  // process-level PATH only; the machine/user environment is untouched.
 }
+/**
+ * Fail closed if a verifier exits 0 but emits incomplete/unsafe QA.
+ * The one expected handoff blocker is explicit author approval.
+ */
+export function validateDraftQa(qa,expectedPath){
+ const evidence=qa?.evidence,gate=qa?.handoff;
+ if(!evidence || evidence.path!==resolve(expectedPath) ||
+   evidence.fileExists!==true || evidence.probeVerified!==true ||
+   !Number.isSafeInteger(evidence.bytes) || evidence.bytes<=0 ||
+   !/^[a-f0-9]{64}$/i.test(evidence.sha256||'') ||
+   !Number.isFinite(evidence.durationSec) || evidence.durationSec<=0 ||
+   evidence.width!==1080 || evidence.height!==1920 || evidence.fps!==30 ||
+   evidence.videoCodec!=='h264' || evidence.audioCodec!=='aac' ||
+   evidence.blackFrameCheckPassed!==true || evidence.audioCheckPassed!==true)
+   fail('MP4 technical QA invalid or failed: inspect qa.json; delivery blocked');
+ if(gate?.passed!==false || gate.status!=='blocked' ||
+   !Array.isArray(gate.errors) || gate.errors.length!==1 ||
+   gate.errors[0]!=='author approval required' ||
+   !Array.isArray(gate.assets) || gate.assets.length!==1 ||
+   gate.assets[0]?.passed!==true || qa.distribution!==null)
+   fail('Unexpected publication handoff or QA errors: delivery blocked');
+ return true;
+}
 export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe}={}){
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
@@ -51,7 +74,8 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const qaPath=join(root,'qa.json');
   await call(process.execPath,[verifierPath,output,'persona-first-reel','reel',qaPath]);
   const qa=JSON.parse(await readFile(qaPath,'utf8'));
-  events.push('technical_qa_written');
+  validateDraftQa(qa,output);
+  events.push('technical_qa_passed');
   const summary={version:1,status:'awaiting-author-review',events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
     warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Human visual review and publication approval are required.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
