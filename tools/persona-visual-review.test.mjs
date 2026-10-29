@@ -9,11 +9,11 @@ import {validateTimeline,applyManualFraming,makeVisualHtml,prepareVisualReview,a
 
 const sha=n=>n.repeat(64);
 const baseTimeline={version:1,clips:[
- {path:'/safe/a.mp4',beat:1,startSec:0.1,durationSec:1.5},
- {path:'/safe/b.mp4',beat:2,startSec:0.2,durationSec:1.3}
+ {path:join(process.cwd(),'safe','a.mp4'),beat:1,startSec:0.1,durationSec:1.5},
+ {path:join(process.cwd(),'safe','b.mp4'),beat:2,startSec:0.2,durationSec:1.3}
 ]};
 function fixturePack(timeline=baseTimeline){
- return {version:1,kind:'persona-visual-review-pack-v1',timelinePath:'/safe/timeline.json',
+ return {version:1,kind:'persona-visual-review-pack-v1',timelinePath:join(process.cwd(),'safe','timeline.json'),
  scenes:timeline.clips.map((c,i)=>({beat:c.beat,path:c.path,startSec:c.startSec,
   durationSec:c.durationSec,sourceSha256:sha(i?'b':'a'),
   sourceLabel:'clip.mp4',frames:[1,2,3].map(j=>({file:'f'+j+'.jpg',yavg:100})),warnings:[]}))};
