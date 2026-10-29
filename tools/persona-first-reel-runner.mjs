@@ -27,7 +27,7 @@ function temporaryBinPath(binDir){
  process.env[k]=resolve(binDir)+(process.platform==='win32'?';':':')+(process.env[k]||'');
  // process-level PATH only; the machine/user environment is untouched.
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs')}={}){
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe}={}){
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
  if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
@@ -39,7 +39,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
  try{
   const evidence=await analyze(resolve(sources),join(root,'evidence'));
   events.push('media_evidence_generated');
-  const transcripts=await transcribe(evidence.analysis,whisperCli,whisperModel);
+  const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
   events.push('offline_asr_completed');
   const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'));
   events.push('dialogue_cuts_proposed');
