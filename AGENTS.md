@@ -2,6 +2,8 @@
 
 This project contains Life OS, Persona, Erika and AI Capacity OS. Preserve existing project, folder and chat names.
 
+**Current execution priority (29 Oct 2026):** Produce the first real approved Persona Reel for Instagram and connect a SMALL number of audited, actually usable Codex/Claude Skills that measurably improve time, retries or token efficiency. Follow the updated priority section in `docs/ECOSYSTEM_CAPABILITY_ROADMAP_2026-10-28.md`; use `node scripts/ecosystem-capabilities.mjs next` as the execution order. Skill discovery without agent loading + real use is NOT completed work. Never promise token savings without an A/B measurement. After release, continue Instagram lead tracking and the preserved 43-capability backlog. Do not rewrite working modules or replace functioning interfaces just to change architecture.
+
 Before proposing a new ecosystem feature, read `docs/ECOSYSTEM_CAPABILITY_ROADMAP_2026-10-28.md` and query `docs/ecosystem-capabilities.json` with `node scripts/ecosystem-capabilities.mjs next` or `show ID`. Work on the smallest testable next milestone; don't start multiple unrelated tools or agents.
 
 Status is evidence-based:
