@@ -19,14 +19,17 @@ export function validateCreativeProfile(profile){
   fail('Invalid creative profile');
  return true;
 }
-export function makeCreativeReview(pack,profile){
+export function makeCreativeReview(pack,profile,selection=null){
  validateCreativeProfile(profile);
  if(pack?.kind!=='persona-editorial-candidate-pack-v1'||!Array.isArray(pack.beats)||pack.beats.length<2)
   fail('Invalid editorial candidate pack');
+ if(selection&&(selection.kind!=='persona-editorial-selection-v1'||!Array.isArray(selection.selections)||selection.selections.length!==pack.beats.length))
+  fail('Invalid reviewed selection');
  return {version:1,kind:'persona-creative-review-v1',status:'unreviewed',publicationApproved:false,
   profileKind:profile.kind,profileVersion:profile.version,
   scenes:pack.beats.map((beat,index)=>({
-   beat:index+1,scriptLine:beat.scriptLine,selectedCandidateId:beat.defaultCandidateId,
+   beat:index+1,scriptLine:beat.scriptLine,
+   selectedCandidateId:selection?selection.selections[index]?.candidateId:beat.defaultCandidateId,
    checks:Object.fromEntries(profile.reviewCategories.map(key=>[key,null])),
    remarks:'',issues:[],
    note:'Null means not checked. Never treat blank checks as passing.'
@@ -96,9 +99,9 @@ export function formatCreativeReview(report){
  lines.push('','Отчёт не заменяет просмотр MP4 и не снимает блокировку публикации.','');
  return lines.join('\n');
 }
-export async function initReview(packPath,profilePath,outPath){
- const [pack,profile]=await Promise.all([readJson(packPath),readJson(profilePath)]);
- const review=makeCreativeReview(pack,profile);
+export async function initReview(packPath,profilePath,outPath,selectionPath){
+ const [pack,profile,selection]=await Promise.all([readJson(packPath),readJson(profilePath),selectionPath?readJson(selectionPath):null]);
+ const review=makeCreativeReview(pack,profile,selection);
  await writeFile(resolve(outPath),JSON.stringify(review,null,2)+'\n',{flag:'wx'});
  return {reviewPath:resolve(outPath),status:review.status,scenes:review.scenes.length};
 }
@@ -113,8 +116,8 @@ export async function finishReview(reviewPath,profilePath,reportPath,memoryPath)
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
  const [action,a,b,c,d]=process.argv.slice(2);
- const operation=action==='init'&&a&&b&&c?initReview(a,b,c):
+ const operation=action==='init'&&a&&b&&c?initReview(a,b,c,d):
   action==='finish'&&a&&b&&c&&d?finishReview(a,b,c,d):null;
- if(!operation){console.error('Usage: init <candidate-pack> <creative-profile> <new-review.json> | finish <review.json> <creative-profile> <new-report.md> <new-memory.json>');process.exitCode=2;}
+ if(!operation){console.error('Usage: init <candidate-pack> <creative-profile> <new-review.json> [reviewed-selection.json] | finish <review.json> <creative-profile> <new-report.md> <new-memory.json>');process.exitCode=2;}
  else operation.then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona creative review:',e.message);process.exitCode=1});
 }
