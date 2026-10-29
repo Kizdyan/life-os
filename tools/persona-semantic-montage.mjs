@@ -58,7 +58,7 @@ async function mediaInfo(path) {
 async function analyze(inputArg, outputArg) {
   const input = resolve(inputArg), base = dirname(input);
   const request = await readJson(input);
-  assert(request?.version === 1 && Array.isArray(request.sources) && request.sources.length >= 2 && request.sources.length <= MAX_INPUTS, 'Expected 2–12 source clips');
+  assert(request?.version === 1 && Array.isArray(request.sources) && request.sources.length >= 1 && request.sources.length <= MAX_INPUTS, 'Expected 1–12 source clips');
   const ids = new Set(); const sources = [];
   for (const entry of request.sources) {
     assert(typeof entry?.id==='string' && /^[A-Za-z0-9_-]{1,48}$/.test(entry.id) && !ids.has(entry.id), 'Invalid or repeated source ID');
