@@ -66,7 +66,30 @@ npm run media:review:render -- `
 
 Итог: `D:\Persona\reviewed-01\reviewed-reel.mp4`, обновлённые субтитры, новый QA, `REVIEWED-RESULT.md` и Creative QA. Путь к файлу выбора измените, если браузер сохранил его в другом месте.
 
-## 4. Условия приёмки
+## 4. Визуальный контроль после выбора дублей
+
+Когда готов `D:\Persona\reviewed-01\reviewed-reel.mp4`, можно **дополнительно** проверить кадрирование и согласованность света:
+
+```powershell
+npm run media:visual:review -- prepare "D:\Persona\reviewed-01\reviewed-timeline.json" "D:\Persona\visual-review-01"
+```
+
+Откройте `D:\Persona\visual-review-01\review.html`: там три контрольных кадра каждой сцены, предупреждения по средней яркости и ручные настройки `contain/cover` с X/Y. После просмотра и ввода причин браузер сохранит `visual-framing.reviewed.json`.
+
+```powershell
+npm run media:visual:finalize -- `
+  "D:\Persona\reviewed-01" `
+  "D:\Persona\visual-review-01\visual-review-pack.json" `
+  "C:\Users\Kostya\Downloads\visual-framing.reviewed.json" `
+  "D:\Persona\framed-01" `
+  "C:\Users\Kostya\Tools\FFmpeg\ffmpeg-9.0.2-essentials_build\bin"
+```
+
+Новые целевые каталоги заранее не создавать. Получатся новый `framed-reel.mp4`, SRT/VTT, `framed-qa.json`, `VISUAL-RESULT.md` и новый Creative QA. Исходники и предыдущие версии останутся неизменными; публикация заблокирована.
+
+Подробности: `docs/persona-visual-qa-and-framing-2026-10-30.md`. Цель — проверить геометрию кадра, **не менять лицо или цвет кожи**.
+
+## 5. Условия приёмки
 
 1. Оригиналы A01/B01 остались побайтно неизменными.
 2. В первом и повторном MP4 звучат две настоящие реплики, слова не обрезаны.
