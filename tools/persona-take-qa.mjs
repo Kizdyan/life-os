@@ -22,10 +22,14 @@ export function parseTakeDiagnostics(videoLog,audioLog, durationSec,hasAudio){
   const black=[...videoLog.matchAll(/black_start:([\d.]+)\s+black_end:([\d.]+)\s+black_duration:([\d.]+)/g)]
     .map(m=>({startSec:Number(m[1]),endSec:Number(m[2]),durationSec:Number(m[3])})).filter(x=>x.endSec>x.startSec);
   const max=audioLog.match(/max_volume:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dB/);
-  const peak=max?Number(max[1]):null;
+  const silentTrack=max?.[1]==='-inf';
+  const peak=max&&!silentTrack?Number(max[1]):null;
   const warnings=[];
   if(!hasAudio)warnings.push('audio_track_missing');
-  else if(peak!==null && Number.isFinite(peak) && peak>=-0.3)warnings.push('audio_near_digital_ceiling');
+  else if(silentTrack)warnings.push('audio_silent_track_review');
+  else if(peak===null||!Number.isFinite(peak))warnings.push('audio_peak_unavailable_review');
+  else if(peak>=-0.3)warnings.push('audio_near_digital_ceiling');
+  else if(peak< -35)warnings.push('audio_very_low_peak_review');
   if(black.length)warnings.push('black_video_intervals');
   if(y.length && mean(y)<45)warnings.push('low_average_luma_review');
   if(y.length && mean(y)>215)warnings.push('high_average_luma_review');
