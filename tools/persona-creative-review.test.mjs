@@ -59,6 +59,18 @@ test('human checks and issues persist; even green QA cannot authorize publicatio
  assert.match(formatCreativeReview(flagged.summary),/Вернуть клавиши в кадр/);
 });
 
+test('missing recorded scene cannot become ready for approval even with all checks marked true',()=>{
+ const blank=structuredClone(pack);
+ blank.beats[0].defaultCandidateId=null;
+ const review=makeCreativeReview(blank,profile);
+ for(const scene of review.scenes)for(const key of profile.reviewCategories)scene.checks[key]=true;
+ const result=summarizeCreativeReview(review,profile);
+ assert.equal(result.summary.scenes[0].missingTake,true);
+ assert.equal(result.summary.unresolvedCount,1);
+ assert.equal(result.summary.status,'needs-human-review');
+ assert.equal(result.summary.publicationApproved,false);
+});
+
 test('invalid or forged review data rejected',()=>{
  const review=makeCreativeReview(pack,profile);
  assert.throws(()=>summarizeCreativeReview({...review,approved:true},profile),/Invalid or unsafe/);
