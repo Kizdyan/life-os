@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {buildCandidatePack,createSelectionTemplate,applySelections,prepare,apply} from './persona-editorial-choices.mjs';
+import {buildCandidatePack,formatCandidatePack,createSelectionTemplate,applySelections,prepare,apply} from './persona-editorial-choices.mjs';
 
 const brief={version:1,sourceFormat:'reel',
  script:[{order:1,line:'Я актёр. И ещё пишу музыку.'},{order:2,line:'И у нас есть проблема.'}],
@@ -36,6 +36,8 @@ test('top three candidates prefer independent takes, without artistic rankings',
  assert.ok(pack.beats[0].candidates.every(x=>x.reason.includes('ASR text match')));
  assert.ok(!JSON.stringify(pack).includes('actingScore'));
  assert.equal(pack.status,'needs-human-review');
+ assert.match(formatCandidatePack(pack),/выбор актёрских дублей/);
+ assert.match(formatCandidatePack(pack),/A01_take01/);
  assert.equal(createSelectionTemplate(pack).status,'unreviewed');
 });
 
@@ -107,6 +109,7 @@ test('file-based prepare/apply preserves original decisions and refuses overwrit
   ]);
   const prepared=await prepare({analysisPath,briefPath,decisionsPath,packPath,selectionPath});
   assert.deepEqual(prepared.candidateCounts,[3,1]);
+  assert.match(await readFile(prepared.summaryPath,'utf8'),/B01_take01/);
   const proposal=JSON.parse(await readFile(selectionPath,'utf8'));
   for(const item of proposal.selections){item.reviewed=true;item.reason='Просмотрено вручную';}
   await writeFile(join(dir,'reviewed.json'),JSON.stringify(proposal));
@@ -115,5 +118,10 @@ test('file-based prepare/apply preserves original decisions and refuses overwrit
   assert.deepEqual(JSON.parse(await readFile(decisionsPath,'utf8')),localDecisions);
   await assert.rejects(()=>apply({packPath,selectionPath:join(dir,'reviewed.json'),decisionsPath,outputPath:updatedPath,memoryPath}),/EEXIST/);
   await assert.rejects(()=>prepare({analysisPath,briefPath,decisionsPath,packPath,selectionPath}),/EEXIST/);
+  const extraPack=join(dir,'candidate-pack-next.json');
+  const protectedSelection=await readFile(selectionPath,'utf8');
+  await assert.rejects(()=>prepare({analysisPath,briefPath,decisionsPath,packPath:extraPack,selectionPath}),/EEXIST/);
+  assert.equal(await readFile(selectionPath,'utf8'),protectedSelection,'an existing human selection must never be deleted');
+  await assert.rejects(()=>readFile(extraPack,'utf8'),/ENOENT/);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
