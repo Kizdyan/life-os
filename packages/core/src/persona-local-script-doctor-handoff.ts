@@ -13,6 +13,17 @@ export interface PersonaLocalDoctorSuggestion {
   version: 1;
   sourceRevisionId: string;
   status: "SUGGESTION_NOT_APPROVED";
+  model: string;
+  diagnosis: {
+    editorialSummary: string;
+    findings: Array<{
+      role: "dramaturg" | "comedy" | "director" | "acting" | "producer";
+      beatIndex: number;
+      issue: string;
+      evidence: string;
+      proposal: string;
+    }>;
+  };
   revisedBeats: ScenarioScriptBeat[];
   diff: Array<{
     beatIndex: number;
@@ -69,6 +80,23 @@ export function applyPersonaLocalDoctorSuggestion(
     value.status !== "SUGGESTION_NOT_APPROVED" ||
     value.sourceRevisionId !== current.id
   ) throw new Error("Script Doctor suggestion belongs to another revision or is not an unapproved draft");
+  const diagnosis = value.diagnosis;
+  const allowedRoles = ["dramaturg", "comedy", "director", "acting", "producer"];
+  if (typeof value.model !== "string" || !value.model.trim() ||
+      value.model.length > 100 || /cloud/iu.test(value.model) ||
+      !diagnosis || typeof diagnosis.editorialSummary !== "string" ||
+      diagnosis.editorialSummary.trim().length < 3 ||
+      !Array.isArray(diagnosis.findings) || !diagnosis.findings.length ||
+      diagnosis.findings.length > 12 ||
+      diagnosis.findings.some(finding =>
+        !finding || !allowedRoles.includes(finding.role) ||
+        !Number.isInteger(finding.beatIndex) ||
+        finding.beatIndex < 0 || finding.beatIndex >= current.beats.length ||
+        typeof finding.issue !== "string" || !finding.issue.trim() ||
+        typeof finding.evidence !== "string" || !finding.evidence.trim() ||
+        typeof finding.proposal !== "string" || !finding.proposal.trim())) {
+    throw new Error("Invalid Script Doctor editorial diagnosis");
+  }
   if (!Array.isArray(value.revisedBeats) || !Array.isArray(value.diff) ||
       value.revisedBeats.length !== current.beats.length ||
       value.diff.length < 1 || value.diff.length > current.beats.length) {
