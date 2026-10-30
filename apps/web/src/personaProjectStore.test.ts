@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createPersonaProject,loadPersonaProjects,savePersonaProject,type PersonaProjectStorage} from './personaProjectStore';
+import {createPersonaProject,loadPersonaProjects,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -50,6 +50,38 @@ describe('Persona project storage',()=>{
   expect(saved.materials.shotList).toHaveLength(7);
   expect(saved.materials.productionBrief?.adaptations.reels.durationSec).toBe(31);
   expect(saved.materials.script[0].line).toBe('Реплика 1');
+ });
+
+ it('persists a versioned Scenario Intelligence workspace without changing media or legacy projects',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'scenario-project',title:'Сценарий',contentType:'reel',sourceIdea:'Проверить сцену',now:'2026-10-30T10:00:00.000Z'});
+  const workspace={
+   version:1,
+   research:[{id:'ref-1',url:'https://www.youtube.com/shorts/reference',platform:'youtube',observedAt:'2026-10-30T10:00:00.000Z',observationStatus:'metadata_only',evidence:{kind:'manual_link',observedFields:['url','title']}}],
+   analyses:[],
+   ideas:[{id:'scenario-idea-1',title:'Оригинальная идея',referenceIds:['ref-1'],originalConflict:'Конфликт без копирования чужой сцены.',actingTask:'Слушать партнёра.',ending:'Точная реакция.',productionComplexity:'low',estimatedDurationSec:25,creativeProfileFit:'Естественный голос.'}],
+   selectedIdeaId:'scenario-idea-1',
+   script:{currentRevisionId:'r1',revisions:[{id:'r1',number:1,createdAt:'2026-10-30T10:00:00.000Z',beats:[],sourceFacts:[]}],approval:undefined},
+  };
+
+  savePersonaProject(storage,{...project,mediaAssets:[{id:'original-video'}],timeline:{clips:['original-video']},scenarioWorkspace:workspace,revision:2,updatedAt:'2026-10-30T10:01:00.000Z'} as any);
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+  const saved=reloaded.projects[0] as any;
+
+  expect(saved.scenarioWorkspace).toMatchObject({version:1,selectedIdeaId:'scenario-idea-1'});
+  expect(saved.mediaAssets).toEqual([{id:'original-video'}]);
+  expect(saved.timeline).toEqual({clips:['original-video']});
+  expect(()=>validatePersonaProjectSnapshot({...project,scenarioWorkspace:{version:2}} as any)).toThrow('invalid_persona_project_snapshot');
+ });
+
+ it('loads an existing v1 project without a Scenario Intelligence workspace',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'legacy-v1',title:'Старый',contentType:'photo',sourceIdea:'Идея',now:'2026-10-30T10:00:00.000Z'});
+  savePersonaProject(storage,project);
+
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+
+  expect((reloaded.projects[0] as any).scenarioWorkspace).toBeUndefined();
  });
 
  it('quarantines corrupt project data instead of throwing or overwriting it',()=>{
