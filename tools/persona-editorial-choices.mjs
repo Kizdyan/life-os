@@ -50,6 +50,28 @@ function sameTakeWindow(a,b){
  Math.min(a.startSec+a.durationSec,b.startSec+b.durationSec)-Math.max(a.startSec,b.startSec)>=
  0.5*Math.min(a.durationSec,b.durationSec);
 }
+function recoveryForSources(sources){
+ return {status:'needs-transcript-review',availableSources:sources.map(source=>({
+  sourceId:source.id,sourceSha256:source.sha256??null,durationSec:source.durationSec,
+  hasAudio:source.hasAudio===true,asrStatus:source.asrStatus??(source.segments?.length?'partial-or-unmatched':'unavailable')
+ })),actions:['Просмотреть и прослушать локальный исходник','Сверить результат Whisper с речью','Вручную указать границы и текст фразы либо выбрать пересъёмку','Повторить монтаж только после явной проверки фрагмента'],
+  note:'Ручная разметка хранится отдельно от Whisper и не доказывает автоматическую точность распознавания.'};
+}
+function manualRecovery(selected,source,beat){
+ const item=selected?.recovery;
+ if(!item||item.kind!=='persona-manual-segment-v1'||item.confirmed!==true||
+    item.sourceId!==source?.id||item.sourceSha256!==source?.sha256||
+    !valid(item.startSec)||item.startSec<0||!valid(item.durationSec)||item.durationSec<0.25||item.durationSec>60||
+    item.startSec+item.durationSec>source.durationSec+0.02||typeof item.transcript!=='string'||
+    item.transcript.trim().length<3||item.transcript.length>3000||typeof item.reason!=='string'||
+    item.reason.trim().length<3||item.reason.length>500||source.hasAudio!==true||
+    overlapsBlackInterval(item.startSec,item.startSec+item.durationSec,source.technicalQuality?.blackIntervals))
+  fail('Invalid manual recovery for beat '+beat);
+ return {beat,sourceId:source.id,startSec:Number(item.startSec.toFixed(3)),durationSec:Number(item.durationSec.toFixed(3)),
+  transcript:item.transcript.trim(),captionWords:[],confidence:null,sourceSha256:source.sha256,
+  transcriptSource:'manual-review',manualTranscriptReview:true,
+  reason:item.reason.trim(),technicalWarnings:source.technicalQuality?.warnings??[]};
+}
 export function buildCandidatePack(brief,sources,planned=null){
  if(brief?.version!==1||brief.sourceFormat!=='reel'||!Array.isArray(brief.script)||
     !Array.isArray(brief.shots)||brief.shots.length!==brief.script.length||
@@ -82,6 +104,7 @@ export function buildCandidatePack(brief,sources,planned=null){
   }
   beats.push({beat,scriptLine:script.line,defaultCandidateId:previous?.candidateId??alternatives[0]?.candidateId??null,
    candidates:alternatives,needsRecording:alternatives.length===0,
+   ...(alternatives.length?{}:{recovery:recoveryForSources(sources)}),
    caveat:'Ranked by spoken-text coverage only; acting, humor, framing and color NOT scored.'});
  }
  return {version:1,kind:'persona-editorial-candidate-pack-v1',status:'needs-human-review',
@@ -97,7 +120,7 @@ export function formatCandidatePack(pack){
  for(const beat of pack.beats){
   lines.push('## Сцена '+beat.beat+' — '+beat.scriptLine,'');
   if(!beat.candidates.length){
-   lines.push('**Нет подходящего речевого фрагмента.** Нужно снять сцену или вручную проверить распознавание.','');
+   lines.push('**Нет подходящего речевого фрагмента.** Нужна пересъёмка или Recovery Review: посмотреть исходник, вручную проверить распознавание Whisper и отдельно отметить границы/текст.','');
    continue;
   }
   beat.candidates.forEach((take,index)=>{
@@ -120,7 +143,7 @@ export function createSelectionTemplate(pack){
  if(pack?.kind!=='persona-editorial-candidate-pack-v1')fail('Invalid candidate pack');
  return {version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
   selections:pack.beats.map(x=>({beat:x.beat,candidateId:x.defaultCandidateId,
-   reviewed:false,reason:'',rejected:[]})),
+   reviewed:false,reason:'',rejected:[],recovery:null})),
   notice:'Set reviewed=true and explain each scene choice after viewing the real footage. Does not approve publication.'};
 }
 export function applySelections(pack,selection,existing,analysis,brief){
@@ -141,13 +164,17 @@ export function applySelections(pack,selection,existing,analysis,brief){
    fail('Selection scene ordering mismatch');
   if(selected.reviewed!==true||typeof selected.reason!=='string'||selected.reason.trim().length<3||
      selected.reason.length>500)fail('Manual selection needs reviewed=true and a real reason for beat '+beat);
-  const found=item.candidates.find(c=>c.candidateId===selected.candidateId);
+  let found=item.candidates.find(c=>c.candidateId===selected.candidateId),manual=false;
+  if(!found&&selected.recovery){
+   const src=known.get(selected.recovery.sourceId);
+   found=manualRecovery(selected,src,beat);manual=true;
+  }
   if(!found)fail('Selected candidate not in evidence pack for beat '+beat);
   const src=known.get(found.sourceId);
   if(!src||src.sha256!==found.sourceSha256||!valid(found.startSec)||
      !valid(found.durationSec)||found.startSec<0||found.durationSec<0.25||
      found.startSec+found.durationSec>src.durationSec+0.02||
-     !valid(found.confidence)||found.confidence<0.65||
+     (!manual&&(!valid(found.confidence)||found.confidence<0.65))||
      overlapsBlackInterval(found.startSec,found.startSec+found.durationSec,src.technicalQuality?.blackIntervals))
    fail('Selected candidate fails source or technical validation for beat '+beat);
   if(used.some(x=>intersection(x,found)))fail('Selected scenes reuse overlapping source intervals');
@@ -162,10 +189,12 @@ export function applySelections(pack,selection,existing,analysis,brief){
   });
   choices.push({beat,sourceId:found.sourceId,startSec:found.startSec,durationSec:found.durationSec,
    transcript:found.transcript,captionWords:found.captionWords,
-   confidence:found.confidence,reason:'Human reviewed take: '+selected.reason.trim()+
-    '; ASR matched dialogue but acting quality not automatically assessed.'});
+   confidence:found.confidence,...(manual?{transcriptSource:'manual-review',manualTranscriptReview:true}:{}),
+   reason:'Human reviewed take: '+selected.reason.trim()+
+    (manual?'; source range and transcript were manually confirmed after ASR recovery; not an ASR accuracy claim.':'; ASR matched dialogue but acting quality not automatically assessed.')});
   events.push({beat,selectedCandidateId:found.candidateId,sourceId:found.sourceId,
-   reason:selected.reason.trim(),rejected:rejectedEvents,sourceSha256:found.sourceSha256});
+   reason:selected.reason.trim(),rejected:rejectedEvents,sourceSha256:found.sourceSha256,
+   ...(manual?{recovery:'manual-segment',manualTranscriptReview:true}:{})});
  }
  return {
   decisions:{version:1,analysisPath:existing.analysisPath,briefPath:existing.briefPath,choices},
@@ -181,10 +210,10 @@ export async function prepare({analysisPath,briefPath,decisionsPath,packPath,sel
  if(analysis?.kind!=='persona-evidence-v1'||!Array.isArray(analysis.sources))fail('Expected Persona evidence');
  const sources=[];
  for(const src of analysis.sources){
-  if(!src.hasAudio)continue;
   const path=join(dirname(resolve(analysisPath)),src.id+'-whisper.json');
-  const whisper=await readJson(path);
-  sources.push({...src,segments:parseWhisperJson(whisper,src.durationSec)});
+  let segments=[],asrStatus=src.hasAudio?'transcript-unavailable':'no-audio';
+  if(src.hasAudio)try{segments=parseWhisperJson(await readJson(path),src.durationSec);asrStatus=segments.length?'available':'empty';}catch{}
+  sources.push({...src,segments,asrStatus});
  }
  const pack=buildCandidatePack(brief,sources,planned);
  pack.analysisPath=resolve(analysisPath);pack.briefPath=resolve(briefPath);pack.decisionsPath=resolve(decisionsPath);

@@ -77,6 +77,32 @@ test('manual overrides reject unreviewed choices, unknown candidates and unsafe 
  assert.throws(()=>applySelections(pack,sel,decisions,blackEvidence,brief),/source or technical validation/);
 });
 
+test('ASR recovery keeps recorded material available and stores a separately confirmed manual segment',()=>{
+ const failedSources=[source('A01_take01',aWords,'a'),source('B01_take01',[],'d')];
+ const pack=buildCandidatePack(brief,failedSources,decisions);
+ assert.equal(pack.beats[1].candidates.length,0);
+ assert.equal(pack.beats[1].recovery.status,'needs-transcript-review');
+ assert.equal(pack.beats[1].recovery.availableSources[0].sourceId,'A01_take01');
+ assert.match(formatCandidatePack(pack),/вручную проверить распознавание/);
+ const selection=createSelectionTemplate(pack);
+ selection.selections[0].reviewed=true;
+ selection.selections[0].reason='Реплика слышна и подходит по реакции';
+ selection.selections[1]={beat:2,candidateId:null,reviewed:true,
+  reason:'Вручную отмечен фрагмент после прослушивания',rejected:[],
+  recovery:{kind:'persona-manual-segment-v1',sourceId:'B01_take01',sourceSha256:sha('d'),
+   startSec:.2,durationSec:1.7,transcript:'И у нас есть проблема',confirmed:true,
+   reason:'Whisper не распознал фразу, автор проверил звук и границы'}};
+ const {decisions:updated,memory}=applySelections(pack,selection,decisions,
+  {kind:'persona-evidence-v1',sources:failedSources},brief);
+ assert.equal(updated.choices[1].transcriptSource,'manual-review');
+ assert.equal(updated.choices[1].confidence,null);
+ assert.equal(updated.choices[1].manualTranscriptReview,true);
+ assert.equal(memory.events[1].recovery,'manual-segment');
+ const forged=structuredClone(selection);forged.selections[1].recovery.sourceSha256=sha('f');
+ assert.throws(()=>applySelections(pack,forged,decisions,
+  {kind:'persona-evidence-v1',sources:failedSources},brief),/manual recovery/);
+});
+
 test('cannot reuse overlapping source video intervals across two scene picks',()=>{
  const src=source('same',aWords,'a');
  const c1={beat:1,candidateId:'beat1-same',sourceId:'same',startSec:0,durationSec:2,transcript:'Я актёр',captionWords:[],confidence:.9,sourceSha256:sha('a')};

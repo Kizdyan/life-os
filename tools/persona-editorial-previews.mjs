@@ -44,6 +44,16 @@ export function verifyPreviewPack(pack,evidence){
     fail('Candidate does not match trusted source evidence');
    seenIds.add(c.candidateId);
   }
+  if(beat.candidates.length===0){
+   const recovery=beat.recovery;
+   if(recovery?.status!=='needs-transcript-review'||!Array.isArray(recovery.availableSources)||!recovery.availableSources.length)
+    fail('Missing recovery information for unmatched scene');
+   for(const item of recovery.availableSources){
+    const src=byId.get(item?.sourceId);
+    if(!src||item.sourceSha256!==src.sha256||!finite(item.durationSec)||item.durationSec!==src.durationSec||
+       item.hasAudio!==true||src.hasAudio!==true)fail('Recovery source does not match trusted source evidence');
+   }
+  }
  }
  return true;
 }
@@ -51,29 +61,45 @@ export function buildReviewHtml(pack,template,files){
  if(pack?.kind!=='persona-editorial-candidate-pack-v1'||
   template?.kind!=='persona-editorial-selection-v1'||!Array.isArray(template.selections)||
   template.selections.length!==pack.beats.length)fail('Invalid offline review input');
+ const candidateFiles=files?.candidates??files,recoveryFiles=files?.recovery??{};
  const sections=pack.beats.map(beat=>{
   const options=beat.candidates.length?beat.candidates.map((take,i)=>{
-   const key=take.candidateId,video=files[key];
+   const key=take.candidateId,video=candidateFiles[key];
    if(typeof video!=='string'||!/^[a-z0-9-]+\.mp4$/i.test(video))fail('Missing generated candidate preview');
    return '<label class="take"><span class="flag">Вариант '+(i+1)+'</span><video controls playsinline preload="metadata" src="'+esc(video)+'"></video>'+
     '<span class="pick"><input type="radio" name="beat'+beat.beat+'" value="'+esc(key)+'"> Выбрать этот дубль</span>'+
     '<small>'+esc(take.sourceId)+' · '+take.startSec.toFixed(2)+'–'+(take.startSec+take.durationSec).toFixed(2)+' с</small>'+
     '<small>Whisper: '+esc(take.transcript)+'</small>'+
     '<small class="warning">'+esc((take.technicalWarnings??[]).join('; ')||'Нет базовых технических предупреждений')+'</small></label>';
-  }).join(''):'<p>Подходящих дублей нет. Требуется пересъёмка или проверка распознавания.</p>';
+  }).join(''):'';
+  const recovery=beat.candidates.length===0?beat.recovery:null;
+  const recoveryOptions=recovery?.availableSources?.map(source=>{
+   const video=recoveryFiles[source.sourceId];
+   if(typeof video!=='string'||!/^[a-z0-9-]+\.mp4$/i.test(video))fail('Missing generated recovery preview');
+   return '<article class="take recovery"><strong>Recovery Review · '+esc(source.sourceId)+'</strong><video controls playsinline preload="metadata" src="'+esc(video)+'"></video>'+
+    '<small>Whisper: '+esc(source.asrStatus==='empty'?'речь не распознана':'нет пригодного совпадения')+'. Этот прокси только для просмотра; исходник не изменяется.</small>'+
+    '<label><input type="radio" name="recovery'+beat.beat+'" value="'+esc(source.sourceId)+'"> Выбрать этот исходник для ручной разметки</label></article>';
+  }).join('')??'';
+  const recoveryForm=recovery?'<div class="recovery-form"><p><strong>Recovery Review.</strong> Укажи только после просмотра: начало, длительность и услышанный текст. Это не подменяет исходный Whisper и будет помечено как ручная разметка.</p>'+recoveryOptions+
+   '<label>Начало фразы, с <input id="recoveryStart'+beat.beat+'" type="number" min="0" step="0.01"></label><label>Длительность, с <input id="recoveryDuration'+beat.beat+'" type="number" min="0.25" step="0.01"></label>'+
+   '<label>Текст услышанной фразы <textarea id="recoveryText'+beat.beat+'" rows="2"></textarea></label></div>':'';
   return '<section class="scene"><h2>Сцена '+beat.beat+' — '+esc(beat.scriptLine)+'</h2><div class="clips">'+options+
-   '</div><label class="reason">Почему выбран дубль? <textarea id="reason'+beat.beat+'" rows="2" placeholder="Например: естественная пауза, хороший взгляд"></textarea></label></section>';
+   recoveryForm+'</div><label class="reason">Почему выбран дубль? <textarea id="reason'+beat.beat+'" rows="2" placeholder="Например: естественная пауза, хороший взгляд"></textarea></label></section>';
  }).join('');
  const base={version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
-  selections:pack.beats.map(b=>({beat:b.beat,candidateId:null,reviewed:false,reason:'',rejected:[]}))};
+  selections:pack.beats.map(b=>({beat:b.beat,candidateId:null,reviewed:false,reason:'',rejected:[],recovery:null})),
+  recoverySources:Object.fromEntries(pack.beats.map(b=>[b.beat,b.recovery?.availableSources??[]]))};
  const script='const template=JSON.parse(document.getElementById("data").textContent);'+
   'document.getElementById("save").addEventListener("click",()=>{'+
   'const result=JSON.parse(JSON.stringify(template));'+
   'for(const item of result.selections){'+
-  'const pick=document.querySelector("input[name=beat"+item.beat+"]:checked");'+
+  'const pick=document.querySelector("input[name=beat"+item.beat+"]:checked"),recoveryPick=document.querySelector("input[name=recovery"+item.beat+"]:checked");'+
   'const reason=document.getElementById("reason"+item.beat).value.trim();'+
-  'if(!pick||reason.length<3){alert("Для каждой сцены нужно посмотреть видео, выбрать дубль и объяснить выбор.");return;}'+
-  'item.candidateId=pick.value;item.reason=reason;item.reviewed=true;}'+
+  'if((!pick&&!recoveryPick)||reason.length<3){alert("Для каждой сцены нужно посмотреть видео, выбрать дубль или Recovery Review и объяснить выбор.");return;}'+
+  'if(recoveryPick){const start=Number(document.getElementById("recoveryStart"+item.beat).value),duration=Number(document.getElementById("recoveryDuration"+item.beat).value),transcript=document.getElementById("recoveryText"+item.beat).value.trim(),source=template.recoverySources[item.beat].find(x=>x.sourceId===recoveryPick.value);'+
+  'if(!source||!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<.25||transcript.length<3){alert("Для ручной разметки нужны источник, границы и текст фразы.");return;}'+
+  'item.candidateId=null;item.recovery={kind:"persona-manual-segment-v1",transcriptSource:"manual-review",sourceId:source.sourceId,sourceSha256:source.sourceSha256,startSec:start,durationSec:duration,transcript,confirmed:true,reason};'+
+  '}else item.candidateId=pick.value;item.reason=reason;item.reviewed=true;}'+
   'result.status="human-reviewed-not-published";'+
   'const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)+"\\n"],{type:"application/json"}));'+
   'const link=document.createElement("a");link.href=url;link.download="selection.reviewed.json";link.click();'+
@@ -83,7 +109,7 @@ export function buildReviewHtml(pack,template,files){
   '<title>Persona · Выбор дублей</title><style>'+
   'body{font:16px/1.5 system-ui,sans-serif;background:#12161d;color:#eee;margin:0;padding:24px;max-width:1100px;margin:auto}'+
   'h1{font-size:28px}.lead{color:#b5c0cb}.scene{padding:16px 0 24px;border-top:1px solid #333}'+
-  '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}'+
+  '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}.recovery-form{border:1px dashed #8c7960;border-radius:12px;padding:12px;display:grid;gap:10px}'+
   'video{width:100%;max-height:360px;background:black;border-radius:6px}small{display:block;color:#bbc6d1;overflow-wrap:anywhere}.warning{color:#e6c99d}'+
   '.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
   'button{font:inherit;background:#e8eee6;color:#171e22;border:0;border-radius:10px;padding:12px 20px;cursor:pointer}'+
@@ -115,7 +141,7 @@ export async function generatePreviews({packPath,evidencePath,outputDir}={}){
   paths.set(take.candidateId,p);
  }
  await mkdir(root,{recursive:false});
- const files={},items=[];
+ const files={},recoveryFiles={},items=[];
  try{
   for(const beat of pack.beats)for(const [index,take] of beat.candidates.entries()){
    const name='beat-'+String(beat.beat).padStart(2,'0')+'-candidate-'+String(index+1).padStart(2,'0')+'.mp4';
@@ -127,11 +153,20 @@ export async function generatePreviews({packPath,evidencePath,outputDir}={}){
    files[take.candidateId]=name;
    items.push({beat:beat.beat,candidateId:take.candidateId,sourceId:take.sourceId,preview:name});
   }
+  for(const beat of pack.beats.filter(x=>x.candidates.length===0))for(const item of beat.recovery.availableSources){
+   if(recoveryFiles[item.sourceId])continue;
+   const src=byId.get(item.sourceId),p=await realpath(src.path),name='source-'+item.sourceId+'-inspection.mp4';
+   if((await hash(p))!==src.sha256)fail('Source changed after intake; refuse to create misleading recovery preview');
+   await ffmpeg(['-hide_banner','-nostdin','-loglevel','error','-i',p,'-t',String(Math.min(src.durationSec,180)),
+    '-vf','scale=540:960:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1',
+    '-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart',join(root,name)]);
+   recoveryFiles[item.sourceId]=name;
+  }
   const template={version:1,kind:'persona-editorial-selection-v1',selections:pack.beats.map(b=>({beat:b.beat}))};
-  await writeFile(join(root,'review.html'),buildReviewHtml(pack,template,files),{flag:'wx'});
+  await writeFile(join(root,'review.html'),buildReviewHtml(pack,template,{candidates:files,recovery:recoveryFiles}),{flag:'wx'});
   await writeFile(join(root,'previews.json'),JSON.stringify({version:1,kind:'persona-editorial-previews-v1',items,
    originalSourcesUntouched:true,publicationApproved:false,notice:'Offline previews only. Re-encode may change preview compression but not source videos.'},null,2)+'\n',{flag:'wx'});
-  return {reviewHtml:join(root,'review.html'),previewCount:items.length,missingBeats:pack.beats.filter(b=>b.candidates.length===0).map(b=>b.beat)};
+  return {reviewHtml:join(root,'review.html'),previewCount:items.length,recoveryPreviewCount:Object.keys(recoveryFiles).length,missingBeats:pack.beats.filter(b=>b.candidates.length===0).map(b=>b.beat)};
  }catch(error){
   await writeFile(join(root,'FAILED.json'),JSON.stringify({status:'failed',error:String(error.message||error),note:'Original videos are untouched.'},null,2)+'\n',{flag:'wx'}).catch(()=>{});
   throw error;

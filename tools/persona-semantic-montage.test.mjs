@@ -61,6 +61,16 @@ test('real evidence -> validated choices -> existing FFmpeg renderer -> untouche
   assert.equal(call.status,0,call.stderr);
   assert.ok((await stat(join(d,'render.mp4'))).size>1000);
   for(let i=0;i<clips.length;i++)assert.deepEqual(await readFile(clips[i]),originals[i]);
+  const manuallyConfirmed={...chosen,choices:[
+   {...chosen.choices[0],confidence:null,transcriptSource:'manual-review',manualTranscriptReview:true,
+    reason:'Author checked the audible words and marked this exact source range manually'},
+   chosen.choices[1]
+  ]};
+  await mk(decisions,manuallyConfirmed);
+  const recovered=await assemble(decisions,join(d,'manual-recovery.json'));
+  const recoveredReview=JSON.parse(await readFile(recovered.review,'utf8'));
+  assert.equal(recoveredReview.cuts[0].transcriptSource,'manual-review');
+  assert.match(recoveredReview.notes,/manual transcript/);
   await assert.rejects(()=>assemble(decisions,assembled.project),/Output exists/);
   await writeFile(clips[0],'tampered');
   await assert.rejects(()=>assemble(decisions,join(d,'other.json')),/Source modified/);

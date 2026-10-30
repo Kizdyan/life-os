@@ -50,6 +50,21 @@ test('standalone review page includes video playback and safe manual selection e
  assert.ok(clean.includes('&lt;img'));
 });
 
+test('recovery review page keeps an unmatched recorded take available for a separate manual transcript',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'b',sourceSha256:sig,durationSec:3,hasAudio:true,asrStatus:'empty'
+ }]};
+ const html=buildReviewHtml(pack,{version:1,kind:'persona-editorial-selection-v1',selections:[{beat:1},{beat:2}]},
+  {candidates:{'beat1-a':'beat-01-candidate-01.mp4'},recovery:{b:'source-b-inspection.mp4'}});
+ assert.match(html,/Recovery Review/);
+ assert.match(html,/source-b-inspection\.mp4/);
+ assert.match(html,/manual-segment-v1/);
+ assert.match(html,/не подменяет исходный Whisper/);
+ assert.match(html,/transcriptSource/);
+});
+
 const installed=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'utf8'}).status===0);
 test('real FFmpeg preview clips created with preserved originals and no overwrite',{skip:!installed,timeout:180000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-editorial-previews-'));
@@ -79,5 +94,23 @@ test('real FFmpeg preview clips created with preserved originals and no overwrit
   await assert.rejects(()=>generatePreviews({packPath,evidencePath,outputDir:target}),/EEXIST/);
   await writeFile(a,'tampered video');
   await assert.rejects(()=>generatePreviews({packPath,evidencePath,outputDir:join(root,'tampered')}),/Source changed/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('real FFmpeg generates a local inspection proxy for a take with no ASR candidate',{skip:!installed,timeout:180000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-recovery-preview-'));
+ try{
+  const source=join(root,'source.mp4');
+  const gen=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=green:s=240x320:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','mpeg4','-c:a','aac','-shortest',source],{encoding:'utf8',timeout:30000});
+  assert.equal(gen.status,0,gen.stderr);
+  const bytes=await readFile(source),hash=createHash('sha256').update(bytes).digest('hex');
+  const pack={version:1,kind:'persona-editorial-candidate-pack-v1',beats:[{beat:1,scriptLine:'Нераспознанная реплика',candidates:[],recovery:{status:'needs-transcript-review',availableSources:[{sourceId:'take',sourceSha256:hash,durationSec:2,hasAudio:true,asrStatus:'empty'}]}}]};
+  const ev={version:1,kind:'persona-evidence-v1',sources:[{id:'take',path:source,sha256:hash,durationSec:2,hasAudio:true}]};
+  const packPath=join(root,'pack.json'),evidencePath=join(root,'analysis.json'),target=join(root,'previews');
+  await writeFile(packPath,JSON.stringify(pack));await writeFile(evidencePath,JSON.stringify(ev));
+  const produced=await generatePreviews({packPath,evidencePath,outputDir:target});
+  assert.equal(produced.previewCount,0);assert.equal(produced.recoveryPreviewCount,1);
+  assert.ok((await stat(join(target,'source-take-inspection.mp4'))).size>1000);
+  assert.deepEqual(await readFile(source),bytes);
  }finally{await rm(root,{recursive:true,force:true})}
 });
