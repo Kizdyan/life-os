@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { PersonaProductionBriefInput } from '../../../packages/core/src/persona-production-brief';
+import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
 import {
  analyseScenarioReference,
  addFreeTrendLeadToScenarioResearch,
@@ -9,7 +9,7 @@ import {
  reviewScenarioScript,
  reviseScenarioScript,
  scenarioScriptToFormatMemoryObservation,
- scenarioScriptToProductionBriefInput,
+ scenarioScriptToProductionBrief,
  suggestScenarioIdeas,
  validateScenarioResearch,
  type ScenarioIdea,
@@ -24,7 +24,7 @@ type Props={
  workspace:Workspace|undefined;
  creativeProfile:{priorities:string[];constraints:string[]};
  onChange:(workspace:Workspace)=>void;
- onCreateBrief:(input:PersonaProductionBriefInput)=>void;
+ onCreateBrief:(brief:PersonaProductionBrief)=>void;
 };
 
 const emptyWorkspace=():Workspace=>({version:1,research:[],analyses:[],ideas:[]});
@@ -86,7 +86,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  };
  const createBrief=()=>{
   if(!script)return;
-  try{onCreateBrief(scenarioScriptToProductionBriefInput(script));setError('');}
+  try{onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{
