@@ -42,3 +42,7 @@
 .personaFreeRadar .personaStoryAudit>div{display:grid;gap:4px;padding:8px;border:1px solid #405264;border-radius:8px}
 .personaFreeRadar .personaStoryAudit p{font-size:12px;margin:0}
 .personaFreeRadar .personaStoryReview>button{justify-self:start}
+
+.personaReferenceProvenance{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;border:1px solid #576978;border-radius:10px;margin:8px 0;padding:10px 12px}
+.personaReferenceProvenance a{color:#8bc0ee;overflow-wrap:anywhere}
+.personaReferenceProvenance small{flex-basis:100%;opacity:.78}
