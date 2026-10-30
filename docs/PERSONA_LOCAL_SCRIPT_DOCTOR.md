@@ -40,6 +40,10 @@ Read `doctor-suggestion.json`, especially `diagnosis.findings`, `diff`, and `rev
 
 In the same Persona project, choose **Загрузить результат локального редактора**, select the suggestion JSON and inspect every changed scene. Click **Принять как новую версию** only after review. The browser calls `applyPersonaLocalDoctorSuggestion()` and saves the new *unapproved* version through the existing `PersonaProjectStore`. Stale/tampered files, changed locked frames and nonrequested changes are rejected. No Production Brief or author approval happens automatically.
 
+## Learning from an explicit rejection
+
+The in-app suggestion comparison includes an optional free-text reason for rejecting the local model's proposal. If the author enters a reason of at least 12 characters and rejects, the browser keeps the **original screenplay unchanged** and appends the reason, current revision ID and timestamp to the existing project `scenarioWorkspace.editorialFeedback`. The next local Doctor task can reuse the latest comment. Rejecting without a reason is allowed, but creates no speculative preference or permanent prohibition.
+
 ## Scenario version history (also in Persona UI)
 
 The existing Scenario Workspace now has a **История сценария** disclosure after the second saved version. It compares precise dialogue, action, beat purpose and duration per scene. For inserting/deleting beats the comparison is **positional**, not a semantic scene-matching algorithm.
