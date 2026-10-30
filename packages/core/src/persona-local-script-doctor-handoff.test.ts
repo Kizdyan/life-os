@@ -83,6 +83,10 @@ describe("Persona local Script Doctor proposal import",()=>{
   it("rejects repeated or missing changed entries and wrong narrative roles",()=>{
     const source=original(),suggestion=candidate(source);
     expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,diff:[...suggestion.diff,...suggestion.diff]},"2026-10-30T15:05:00Z")).toThrow("change index");
-    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,revisedBeats:suggestion.revisedBeats.map((beat,index)=>index===3?{...beat,purpose:"development"}:beat)},"2026-10-30T15:05:00Z")).toThrow("narrative role");
+    const altered={...suggestion.diff[0].after,purpose:"development"};
+    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,
+      revisedBeats:suggestion.revisedBeats.map((beat,index)=>index===3?altered:beat),
+      diff:[{...suggestion.diff[0],after:altered}]
+    },"2026-10-30T15:05:00Z")).toThrow("narrative role");
   });
 });
