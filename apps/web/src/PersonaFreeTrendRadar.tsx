@@ -16,7 +16,7 @@ const categories:{value:PersonaReferenceCategory;label:string}[]=[
  * No API call, video scraping, upload or claim that a source was watched.
  */
 export default function PersonaFreeTrendRadar({onCreateIdea}:{
- onCreateIdea?:(idea:{title:string;angle:string})=>void;
+ onCreateIdea?:(idea:{title:string;angle:string;referenceUrl:string})=>void;
 }){
  const [items,setItems]=useState<PersonaFreeReference[]>(()=>readPersonaFreeReferences(localStorage));
  const [url,setUrl]=useState('');
@@ -55,7 +55,9 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
   if(!onCreateIdea){setMessage('Открой проект Persona, чтобы создать идею.');return}
   const title=newTitle.trim(),angle=adaptation.trim();
   if(title.length<3||angle.length<15){setMessage('Для собственной идеи нужны название и оригинальный замысел не короче 15 символов.');return}
-  onCreateIdea({title,angle});
+  const reference=items.find(x=>x.id===selectedId);
+  if(!reference){setMessage('Сначала выбери сохранённый референс.');return}
+  onCreateIdea({title,angle,referenceUrl:reference.url});
   setSelectedId(null);setAdaptation('');setNewTitle('');
  }
  return <section className="personaFreeRadar" aria-label="Бесплатная разведка трендов">
