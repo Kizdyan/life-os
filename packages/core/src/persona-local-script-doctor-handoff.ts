@@ -12,6 +12,9 @@ export interface PersonaLocalDoctorSuggestion {
   kind: "persona-local-doctor-suggestion-v1";
   version: 1;
   sourceRevisionId: string;
+  /** Full snapshot ties this suggestion to the SAME idea and authored frames. */
+  sourceIdeaId: string;
+  sourceBeats: ScenarioScriptBeat[];
   status: "SUGGESTION_NOT_APPROVED";
   model: string;
   diagnosis: {
@@ -80,6 +83,13 @@ export function applyPersonaLocalDoctorSuggestion(
     value.status !== "SUGGESTION_NOT_APPROVED" ||
     value.sourceRevisionId !== current.id
   ) throw new Error("Script Doctor suggestion belongs to another revision or is not an unapproved draft");
+  if (typeof value.sourceIdeaId !== "string" ||
+      value.sourceIdeaId !== script.idea.id ||
+      !Array.isArray(value.sourceBeats) ||
+      value.sourceBeats.length !== current.beats.length ||
+      value.sourceBeats.some((beat,index) => !sameBeat(beatSnapshot(beat),current.beats[index]))) {
+    throw new Error("Script Doctor source idea or screenplay snapshot does not match this project");
+  }
   const diagnosis = value.diagnosis;
   const allowedRoles = ["dramaturg", "comedy", "director", "acting", "producer"];
   if (typeof value.model !== "string" || !value.model.trim() ||
