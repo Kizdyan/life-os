@@ -103,7 +103,7 @@ function verifyDiagnosis(value,task){
  if(!value||!Array.isArray(value.findings)||value.findings.length<1||value.findings.length>12)throw Error('Диагностика не содержит конкретных замечаний');
  // Story Map is supplemental. A small model may return valid actionable
  // criticism without constructing a full causality map on every pass.
- const storyMap=value.storyMap===undefined?[]:(()=>{
+ const storyMap=(value.storyMap===undefined||(Array.isArray(value.storyMap)&&value.storyMap.length===0))?[]:(()=>{
   if(!Array.isArray(value.storyMap)||value.storyMap.length!==task.beats.length)
    throw Error('Story Consistency: if present, map every frame');
   return value.storyMap.map((item,index)=>{
