@@ -30,7 +30,7 @@ test('offline mocked benchmark writes technical results, never invents artistic 
  assert.ok(result.cases.every(x=>x.elapsedMs>=0));
  assert.deepEqual(called.map(x=>x[0]),CREATIVE_CASES.map(x=>x.input.idea.id));
  const list=await readdir(dir);
- assert.equal(list.length,13);
+ assert.equal(list.length,14);
  for(const item of CREATIVE_CASES){
   assert.deepEqual(JSON.parse(await readFile(join(dir,item.key+'.input.json'),'utf8')),item.input);
  }
@@ -43,8 +43,9 @@ test('model failure is recorded as failed and never faked as success',async(t)=>
  const result=await benchmarkPersonaLocalModel({outputDirectory:dir,
   generator:async()=>{throw Error('Ollama не запущена')}});
  assert.equal(result.cases.filter(x=>x.state==='failed').length,3);
- assert.equal((await readdir(dir)).length,4);
+ assert.equal((await readdir(dir)).length,5);
  assert.match(result.cases[0].error,/Ollama/);
+ assert.equal(JSON.parse(await readFile(join(dir,'benchmark-state.json'),'utf8')).state,'FAILED');
 });
 test('benchmark preserves the raw local answer and generation settings for later creative review',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-evidence-'));
@@ -59,4 +60,21 @@ test('benchmark preserves the raw local answer and generation settings for later
  assert.equal(result.cases[0].generation.temperature,0.6);
  assert.equal(await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8'),'{"beats":["необработанный ответ"]}');
  assert.deepEqual(JSON.parse(await readFile(join(dir,'acting-comedy.generation.json'),'utf8')),{temperature:0.6,numPredict:3500,systemPrompt:'Системный промпт'});
+});
+test('benchmark records a durable running state before a local model is asked to generate',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-state-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ let runningState;
+ const fake=async()=>{
+  runningState=JSON.parse(await readFile(join(dir,'benchmark-state.json'),'utf8'));
+  return {brief:{script:[{line:'Тест'}],adaptations:{reels:{durationSec:20}}},review:{notes:{dramaturg:['Замечание'],director:['Замечание'],producer:['Замечание']}}};
+ };
+ const result=await benchmarkPersonaLocalModel({model:'local-test:7b',outputDirectory:dir,generator:fake,cases:[CREATIVE_CASES[0]]});
+ assert.equal(runningState.state,'RUNNING');
+ assert.equal(runningState.caseKey,'acting-comedy');
+ assert.equal(runningState.model,'local-test:7b');
+ const completed=JSON.parse(await readFile(join(dir,'benchmark-state.json'),'utf8'));
+ assert.equal(completed.state,'GENERATED');
+ assert.equal(completed.completedCases,1);
+ assert.equal(result.cases.length,1);
 });

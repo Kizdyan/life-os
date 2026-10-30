@@ -56,19 +56,33 @@ export const CREATIVE_CASES=[
  }}
 ];
 
+function timestamp(){return new Date().toISOString();}
+function classifyFailure(error){
+ const message=error instanceof Error?error.message:'local_model_unavailable';
+ if(error?.name==='TimeoutError'||/timeout|timed out|превыш/i.test(message))return {state:'TIMEOUT',message};
+ if(error?.name==='AbortError'||/aborted|отмен/i.test(message))return {state:'CANCELLED',message};
+ return {state:'FAILED',message};
+}
+
 export async function benchmarkPersonaLocalModel({model='qwen2.5-coder:7b',outputDirectory,
- generator=generatePersonaLocalScenario}){
+ generator=generatePersonaLocalScenario,cases=CREATIVE_CASES,timeoutMs=240000,experimentId=crypto.randomUUID()}){
  if(typeof outputDirectory!=='string'||!outputDirectory.trim())throw Error('Укажи существующий или новый локальный каталог отчётов.');
+ if(!Array.isArray(cases)||cases.length<1||cases.some(item=>!CREATIVE_CASES.includes(item)))throw Error('Укажи один или несколько известных творческих сценариев benchmark.');
+ if(!Number.isInteger(timeoutMs)||timeoutMs<10_000||timeoutMs>600_000)throw Error('Таймаут benchmark должен быть от 10 до 600 секунд.');
  const dir=resolve(outputDirectory);await mkdir(dir,{recursive:true});
  if((await readdir(dir)).length)throw Error('Каталог результатов должен быть пустым: существующие файлы не перезаписываются.');
+ const statePath=resolve(dir,'benchmark-state.json');
+ const writeState=state=>writeFile(statePath,JSON.stringify({kind:'persona-local-creative-benchmark-state-v1',experimentId,model,timeoutMs,updatedAt:timestamp(),...state},null,2)+'\n');
+ await writeState({state:'CREATED',caseKey:null,completedCases:0});
  const reports=[];
- for(const item of CREATIVE_CASES){
+ for(const item of cases){
   const started=Date.now();
   // Keep the exact, local prompt beside the result. This makes a creative
   // comparison reproducible without claiming it was generated from other data.
   await writeFile(resolve(dir,item.key+'.input.json'),JSON.stringify(item.input,null,2),{flag:'wx'});
+  await writeState({state:'RUNNING',caseKey:item.key,startedAt:timestamp(),completedCases:reports.length});
   try{
-   const result=await generator(item.input,{model});
+   const result=await generator(item.input,{model,timeoutMs});
    const report={key:item.key,label:item.label,state:'generated',
     elapsedMs:Date.now()-started,model,
     scriptBeats:result.brief.script.length,totalDurationSec:result.brief.adaptations.reels.durationSec,
@@ -81,20 +95,25 @@ export async function benchmarkPersonaLocalModel({model='qwen2.5-coder:7b',outpu
    if(typeof result.rawResponse==='string')await writeFile(resolve(dir,item.key+'.raw-response.txt'),result.rawResponse,{flag:'wx'});
    reports.push(report);
   }catch(error){
-   reports.push({key:item.key,label:item.label,state:'failed',elapsedMs:Date.now()-started,
-    error:error instanceof Error?error.message:'local_model_unavailable',model});
+   const failure=classifyFailure(error);
+   reports.push({key:item.key,label:item.label,state:failure.state.toLowerCase(),elapsedMs:Date.now()-started,
+    error:failure.message,model});
+   await writeState({state:failure.state,caseKey:item.key,completedCases:reports.length,error:failure.message});
   }
  }
  const summary={kind:'persona-local-creative-benchmark-v1',generatedAt:new Date().toISOString(),
   cost:'0 paid API credits',model,cases:reports,
   notice:'Model output and timings are technical evidence only. Artistic quality requires a human review; scores are never fabricated.'};
  await writeFile(resolve(dir,'benchmark-report.json'),JSON.stringify(summary,null,2),{flag:'wx'});
+ const terminal=reports.some(report=>report.state!=='generated')?'FAILED':'GENERATED';
+ await writeState({state:terminal,caseKey:null,completedCases:reports.length,report:'benchmark-report.json'});
  return summary;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const args=process.argv.slice(2),index=args.indexOf('--out'),modelIndex=args.indexOf('--model');
+ const args=process.argv.slice(2),index=args.indexOf('--out'),modelIndex=args.indexOf('--model'),caseIndex=args.indexOf('--case'),timeoutIndex=args.indexOf('--timeout-ms');
  if(index<0||!args[index+1]){console.error('Usage: node tools/persona-local-creative-benchmark.mjs --out ./benchmark-results [--model qwen2.5-coder:7b]');process.exitCode=2;}
- else benchmarkPersonaLocalModel({outputDirectory:args[index+1],model:modelIndex>=0?args[modelIndex+1]:'qwen2.5-coder:7b'})
+ else {const selected=caseIndex<0?CREATIVE_CASES:CREATIVE_CASES.filter(item=>item.key===args[caseIndex+1]);
+  benchmarkPersonaLocalModel({outputDirectory:args[index+1],model:modelIndex>=0?args[modelIndex+1]:'qwen2.5-coder:7b',cases:selected,timeoutMs:timeoutIndex<0?240000:Number(args[timeoutIndex+1])})
   .then(result=>{console.log(JSON.stringify(result,null,2));if(result.cases.some(x=>x.state!=='generated'))process.exitCode=1;},
-    error=>{console.error('Benchmark not started: '+error.message);process.exitCode=1;});
+    error=>{console.error('Benchmark not started: '+error.message);process.exitCode=1;});}
 }
