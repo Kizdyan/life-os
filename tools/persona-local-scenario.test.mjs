@@ -14,4 +14,31 @@ test('local request creates an importable brief with three editorial roles and n
 test('rejects cloud model, remote endpoint and missing local model before a generation call',async()=>{const {calls,fetchImpl}=mocked(['different:3b']);await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl,model:'qwen3:cloud'}),/локальные модели/);await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl,endpoint:'https://ollama.com'}),/локальный Ollama/);await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl}),/не установлена локально/);assert.equal(calls.length,1)});
 test('rejects a pseudo-screenplay that repeats the same line instead of developing the scene',async()=>{const duplicate={...modelOutput,beats:modelOutput.beats.map(beat=>({...beat,line:'Я уже приехал.'}))};const {fetchImpl}=mocked(undefined,duplicate);await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl}),/повторяет одну и ту же реплику/)});
 test('rejects four-beat output with mechanically identical timings',async()=>{const flat={...modelOutput,beats:[...modelOutput.beats.map(beat=>({...beat,durationSec:3})),{...modelOutput.beats[2],line:'Режиссёр сам открывает дверь.',durationSec:3}]};const {fetchImpl}=mocked(undefined,flat);await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl}),/одинаковые длительности/)});
+test('conservatively normalizes Russian framing and explicit seconds without rewriting scene',async()=>{
+ const input={...modelOutput,beats:[...modelOutput.beats.map(beat=>({...beat})),{
+  ...modelOutput.beats[2],line:'За дверью оказывается реальный режиссёр.',action:'Герой внезапно прекращает репетицию.',
+  durationSec:'7 секунд',framing:'средний план',shotAction:'Открывает дверь режиссёру.'}]};
+ const {fetchImpl}=mocked(undefined,input);
+ const generated=await generatePersonaLocalScenario(req,{fetchImpl});
+ assert.equal(generated.brief.shots[3].framing,'medium');
+ assert.equal(generated.brief.script[3].durationSec,7);
+ assert.equal(generated.brief.script[3].line,input.beats[3].line);
+ assert.equal(generated.brief.script[3].action,input.beats[3].action);
+ assert.deepEqual(generated.normalization.corrections.map(x=>x.field),['durationSec','framing']);
+ assert.match(generated.rawResponse,/средний план/);
+ assert.equal(generated.review.status,'DRAFT_REQUIRES_HUMAN_EDITORIAL_APPROVAL');
+});
+test('rejected fourth shot includes precise diagnostic and preserves raw response',async()=>{
+ const invalid={...modelOutput,beats:[...modelOutput.beats,{...modelOutput.beats[2],
+  line:'Новая сцена за дверью.',durationSec:'около пяти секунд',framing:'общий план'}]};
+ const {fetchImpl}=mocked(undefined,invalid);
+ await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl}),error=>{
+  assert.match(error.message,/Некорректный кадр 4: durationSec/);
+  assert.equal(error.diagnostic.frameNumber,4);
+  assert.equal(error.diagnostic.field,'durationSec');
+  assert.equal(error.diagnostic.valuePreview,'"около пяти секунд"');
+  assert.equal(JSON.parse(error.rawResponse).beats[3].framing,'общий план');
+  return true;
+ });
+});
 test('writes reviewable files, refuses overwrite, and keeps its source JSON unchanged',async(t)=>{const dir=await mkdtemp(join(tmpdir(),'persona-local-'));t.after(async()=>rm(dir,{recursive:true,force:true}));const source=join(dir,'input.json'),output=join(dir,'brief.json'),input=JSON.stringify(req);await writeFile(source,input);const {fetchImpl}=mocked();await runPersonaLocalScenario(source,output,{fetchImpl});assert.equal(JSON.parse(await readFile(output,'utf8')).sourceTitle,req.idea.title);assert.equal(await readFile(source,'utf8'),input);await assert.rejects(runPersonaLocalScenario(source,output,{fetchImpl}),/EEXIST/);assert.deepEqual((await readdir(dir)).sort(),['brief.json','brief.json.review.json','input.json'])});

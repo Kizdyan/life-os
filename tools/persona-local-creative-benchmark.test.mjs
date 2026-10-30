@@ -56,6 +56,39 @@ test('invalid model output is preserved locally for diagnosis but never accepted
  assert.equal(result.cases[0].state,'failed');
  assert.equal(await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8'),error.rawResponse);
 });
+test('preserves exact field-level validation diagnostics for a failed fourth frame',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-frame-diagnostics-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const failure=Error('Некорректный кадр 4: framing');
+ failure.rawResponse='{"beats":[{"framing":"wide shot"}]}';
+ failure.diagnostic={code:'FRAME_FIELD_INVALID',frameNumber:4,field:'framing',
+  problem:'неподдерживаемый план',actualType:'string',valuePreview:'"wide shot"'};
+ failure.generationConfig={model:'qwen3:4b-instruct',thinking:false};
+ const output=await benchmarkPersonaLocalModel({model:'qwen3:4b-instruct',
+  outputDirectory:dir,cases:[CREATIVE_CASES[0]],generator:async()=>{throw failure}});
+ assert.equal(output.cases[0].state,'failed');
+ assert.equal((await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8')),failure.rawResponse);
+ const diagnostic=JSON.parse(await readFile(join(dir,'acting-comedy.validation-diagnostic.json'),'utf8'));
+ assert.equal(diagnostic.diagnostic.field,'framing');
+ assert.equal(diagnostic.diagnostic.frameNumber,4);
+ assert.equal(JSON.parse(await readFile(join(dir,'acting-comedy.generation.json'),'utf8')).thinking,false);
+});
+test('accepted deterministic field normalizations are visible in a separate local audit file',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-normalized-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const generator=async()=>({
+  brief:{script:[{line:'Новая сцена'}],adaptations:{reels:{durationSec:20}}},
+  review:{notes:{dramaturg:['Смысл'],director:['Кадр'],producer:['Ресурсы']}},
+  normalization:{corrections:[{frameNumber:4,field:'framing',
+   before:'средний план',after:'medium',reason:'однозначный перевод'}],
+   policy:'no creative changes'}
+ });
+ const output=await benchmarkPersonaLocalModel({outputDirectory:dir,
+  cases:[CREATIVE_CASES[0]],generator});
+ assert.equal(output.cases[0].state,'generated');
+ const normalization=JSON.parse(await readFile(join(dir,'acting-comedy.normalization.json'),'utf8'));
+ assert.deepEqual(normalization.corrections.map(x=>x.field),['framing']);
+});
 test('benchmark preserves the raw local answer and generation settings for later creative review',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-evidence-'));
  t.after(()=>rm(dir,{recursive:true,force:true}));
