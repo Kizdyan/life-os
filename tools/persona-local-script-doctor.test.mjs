@@ -16,9 +16,9 @@ const task={kind:'persona-local-doctor-input-v1',version:1,script:{
  currentRevisionId:'scenario-r3',currentRevision:{id:'scenario-r3',beats},approval:{revisionId:'scenario-r3',author:'Тестовый автор'}},
  targetIndices:[2,3],lockedIndices:[0],instruction:'Усилить финальную неожиданность, но оставить начало неизменным',
  authorFeedback:'В текущем финале нет драматургического поворота.'};
-const diagnosis={summary:'Финальный поворот не подготовлен.',findings:[
- {role:'dramaturg',beatIndex:2,issue:'Не проявлена новая цель.',evidence:'Пианино отвечает без изменения обстоятельств.',proposal:'Герой пробует перехватить инициативу и терпит неудачу.'},
- {role:'comedy',beatIndex:3,issue:'Панчлайн известен заранее.',evidence:'Финальная реплика буквально повторяет ожидаемую ситуацию.',proposal:'Пусть режиссёр зовёт пианино на следующую пробу, а герой становится аккомпаниатором.'}]};
+const diagnosis={summary:'Финальный поворот не подготовлен.',storyMap:beats.map((beat,beatIndex)=>({beatIndex,sceneFunction:beatIndex===0?'hook':beatIndex===beats.length-1?'payoff':'escalation',causedByBeatIndex:beatIndex===0?null:beatIndex-1,changedCondition:beatIndex===0?'Герой просит пробу.':'Обстоятельства меняются после действия героя.',goalObstacleRelation:'Герой добивается роли, а пианино перехватывает внимание.',turnPreparation:beatIndex===beats.length-1?'Подготовлено тем, что режиссёр слушает только пианино.':'Ещё не финальный поворот.'})),findings:[
+ {role:'dramaturg',classification:'INTERPRETIVE_WEAKNESS',beatIndex:2,issue:'Не проявлена новая цель.',evidence:'Пианино отвечает без изменения обстоятельств.',proposal:'Герой пробует перехватить инициативу и терпит неудачу.'},
+ {role:'comedy',classification:'INTERPRETIVE_WEAKNESS',beatIndex:3,issue:'Панчлайн известен заранее.',evidence:'Финальная реплика буквально повторяет ожидаемую ситуацию.',proposal:'Пусть режиссёр зовёт пианино на следующую пробу, а герой становится аккомпаниатором.'}]};
 const candidate={beats:[beats[0],beats[1],
  {...beats[2],line:'Я играю громче, но режиссёр обращается только к клавишам.',action:'Захлопываю партитуру и беззвучно показываю жест «я здесь».',durationSec:7},
  {...beats[3],line:'Меня взяли. Аккомпанировать пианино.',action:'Убираю стул и торжественно уступаю место инструменту.',durationSec:4}],
@@ -34,10 +34,10 @@ test('local two-pass editor returns meaningful scene-specific critique and unapp
  const {fetchImpl,calls}=fakeLocal();const out=await runLocalScriptDoctor(task,{fetchImpl});
  assert.equal(out.status,'SUGGESTION_NOT_APPROVED');assert.equal(out.sourceRevisionId,'scenario-r3');assert.equal(out.sourceIdeaId,'idea-audition-01');assert.deepEqual(out.sourceBeats,beats);
  assert.equal(out.revisedBeats[0].line,beats[0].line);assert.equal(out.revisedBeats[1].action,beats[1].action);
- assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);assert.equal(out.diagnosis.findings.length,2);
+ assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);assert.equal(out.diagnosis.findings.length,2);assert.equal(out.diagnosis.storyMap.length,beats.length);assert.equal(out.diagnosis.findings[0].classification,'INTERPRETIVE_WEAKNESS');
  assert.equal(out.totalDurationSec,19);assert.equal(out.approval,undefined);assert.equal(out.editorialDecision,undefined);
  assert.equal(calls.length,3);assert.deepEqual(calls.map(c=>new URL(c.url).pathname),['/api/tags','/api/chat','/api/chat']);
- const first=JSON.parse(calls[1].options.body);assert.equal(first.format.type,'object');assert.deepEqual(first.format.required,['summary','findings']);
+ const first=JSON.parse(calls[1].options.body);assert.equal(first.format.type,'object');assert.deepEqual(first.format.required,['summary','storyMap','findings']);
  const second=JSON.parse(calls[2].options.body);assert.equal(second.stream,false);assert.equal(second.model,'qwen2.5-coder:7b');
  assert.equal(second.format.type,'object');assert.deepEqual(second.format.required,['beats','changeSummary']);
  assert.equal(second.messages[1].content.includes('Финальный поворот не подготовлен.'),true);
