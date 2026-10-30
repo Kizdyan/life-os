@@ -20,6 +20,7 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
 }){
  const [items,setItems]=useState<PersonaFreeReference[]>(()=>readPersonaFreeReferences(localStorage));
  const [url,setUrl]=useState('');
+ const [searchPhrase,setSearchPhrase]=useState('актёрские кинопробы');
  const [title,setTitle]=useState('');
  const [category,setCategory]=useState<PersonaReferenceCategory>('comedy');
  const [observation,setObservation]=useState('');
@@ -62,6 +63,14 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
  }
  return <section className="personaFreeRadar" aria-label="Бесплатная разведка трендов">
   <header><div><small>ZERO-CREDIT · БЕЗ ПЛАТНЫХ API</small><h3>Источники трендов и референсы</h3><p>Открывай бесплатные публичные источники, сохраняй ссылки и наблюдения. Это ручное исследование: Persona не заявляет о просмотре видео, если ты его не смотрел.</p></div></header>
+  <div className="radarSearch">
+   <label>Тема бесплатного поиска<input aria-label="Тема трендов" value={searchPhrase} maxLength={100} onChange={e=>setSearchPhrase(e.target.value)} placeholder="Например: актёрские кинопробы"/></label>
+   <div className="radarSearchLinks">
+    <a target="_blank" rel="noopener noreferrer" href={'https://www.youtube.com/results?search_query='+encodeURIComponent(searchPhrase+' shorts')}>Искать YouTube ↗</a>
+    <a target="_blank" rel="noopener noreferrer" href={'https://www.google.com/search?q='+encodeURIComponent('site:instagram.com/reel/ '+searchPhrase)}>Искать Reels ↗</a>
+   </div>
+   <small>Поиск открывается на площадке, без ключей и API-кредитов. Persona не получает автоматически историю просмотров или статистику выдачи.</small>
+  </div>
   <details className="freeSources"><summary>Открыть источники трендов · {FREE_TREND_SOURCES.length}</summary>
    <div className="freeRadarSources">{FREE_TREND_SOURCES.map(source=><article key={source.name}>
     <a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
