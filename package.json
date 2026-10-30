@@ -40,7 +40,7 @@
     "persona:scenario:diagnose": "node tools/persona-local-scenario-diagnose.mjs",
     "persona:scenario:doctor": "node tools/persona-local-script-doctor.mjs",
     "persona:scenario:doctor:task": "node tools/persona-local-script-doctor-task.mjs",
-    "persona:scenario:doctor:test": "node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs"
+    "persona:scenario:doctor:test": "node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs tools/persona-local-doctor-patches.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
