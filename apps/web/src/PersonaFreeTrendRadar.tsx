@@ -2,7 +2,7 @@ import React,{useState} from 'react';
 import PersonaStoryReview from './PersonaStoryReview';
 import type {PersonaStoryOutline} from './personaStoryMechanics';
 import {
- FREE_TREND_SOURCES,addPersonaFreeReference,readPersonaFreeReferences,
+ FREE_TREND_SOURCES,PERSONA_EDITORIAL_SIGNALS,addPersonaFreeReference,readPersonaFreeReferences,
  savePersonaFreeReferences,exportPersonaFreeReferences,withPersonaReferenceStory,
  type PersonaFreeReference,type PersonaReferenceCategory
 } from './personaFreeResearch';
@@ -76,6 +76,15 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
  }
  return <section className="personaFreeRadar" aria-label="Бесплатная разведка трендов">
   <header><div><small>ZERO-CREDIT · БЕЗ ПЛАТНЫХ API</small><h3>Источники трендов и референсы</h3><p>Открывай бесплатные публичные источники, сохраняй ссылки и наблюдения. Это ручное исследование: Persona не заявляет о просмотре видео, если ты его не смотрел.</p></div></header>
+  <details className="freeSources"><summary>Подборка редактора · {PERSONA_EDITORIAL_SIGNALS.length} проверяемых источника</summary>
+   <p>Это датированные журналистские описания форматов, не просмотренные Persona оригинальные видео и не гарантия актуальности на сегодня.</p>
+   <div className="freeRadarSources">{PERSONA_EDITORIAL_SIGNALS.map(signal=><article key={signal.id}>
+    <strong>{signal.title}</strong><p>{signal.mechanism}</p>
+    <small>{signal.publishedAt} · {signal.sourceTitle}</small>
+    <p><a href={signal.sourceUrl} target="_blank" rel="noopener noreferrer">Проверить источник ↗</a></p>
+    <small>{signal.limitation}</small>
+   </article>)}</div>
+  </details>
   <div className="radarSearch">
    <label>Тема бесплатного поиска<input aria-label="Тема трендов" value={searchPhrase} maxLength={100} onChange={e=>setSearchPhrase(e.target.value)} placeholder="Например: актёрские кинопробы"/></label>
    <div className="radarSearchLinks">
