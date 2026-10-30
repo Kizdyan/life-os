@@ -1,4 +1,5 @@
 import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript } from '../../../packages/core/src/persona-scenario-intelligence';
+import type { FormatMemoryObservation } from '../../../packages/core/src/format-memory';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -35,6 +36,8 @@ export type PersonaScenarioWorkspace={
  ideas:ScenarioIdea[];
  selectedIdeaId?:string;
  script?:ScenarioScript;
+ /** Only explicit author approvals are retained as reusable format mechanics. */
+ formatMemory?:FormatMemoryObservation[];
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -47,7 +50,7 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  if(!value||typeof value!=='object')return false;
  const workspace=value as Partial<PersonaScenarioWorkspace>;
- if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string'))return false;
+ if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory)))return false;
  if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
  if(workspace.script===undefined)return true;
  const script=workspace.script as Partial<ScenarioScript>;

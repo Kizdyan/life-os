@@ -1,10 +1,12 @@
 import type { PersonaProductionBriefInput } from "./persona-production-brief";
+import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory";
+import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence";
 
 export type ScenarioPlatform = "instagram" | "youtube" | "vk" | "other";
 export type ScenarioObservationStatus = "metadata_only" | "user_reviewed" | "unavailable";
 
 export interface ScenarioResearchEvidence {
-  kind: "manual_link" | "allowed_search_result" | "user_note";
+  kind: "manual_link" | "allowed_search_result" | "editorial_report" | "user_note";
   observedFields: Array<"url" | "title" | "author" | "date" | "metrics" | "description">;
   sourceUrl?: string;
 }
@@ -36,6 +38,8 @@ export interface ScenarioReferenceAnalysis {
   sound: string;
   productionComplexity: "low" | "medium" | "high";
   reviewedAt?: string;
+  /** Evidence policy is derived from provenance, never from a claimed trend score. */
+  evidenceUse: ReferenceInsightAssessment;
 }
 
 export interface ScenarioIdea {
@@ -54,6 +58,55 @@ export interface ScenarioCreativeProfile {
   priorities: string[];
   constraints: string[];
 }
+
+/** Public, dated leads for a no-credit starting point. They are not scraped video metrics or proof that a video was watched. */
+export interface FreeScenarioTrendLead {
+  id: string;
+  title: string;
+  category: "acting" | "comedy" | "music" | "piano";
+  sourceTitle: string;
+  sourceUrl: string;
+  publishedAt: string;
+  dateKind: "published" | "observed";
+  mechanism: string;
+  limitation: string;
+}
+
+export const freeScenarioTrendLeads: readonly FreeScenarioTrendLead[] = [
+  {
+    id: "acting-audition-2026-10",
+    title: "Абсурдная «проба на роль»",
+    category: "acting",
+    sourceTitle: "360.ru",
+    sourceUrl: "https://360.ru/tekst/interesnoe/pochemu-v-sotssetjah-zavirusilsja-trend-proby-na-rol/",
+    publishedAt: "2026-10-07",
+    dateKind: "published",
+    mechanism: "Серьёзное актёрское исполнение неожиданно незначительной роли создаёт комедийный контраст.",
+    limitation: "Это журналистский разбор формата, а не просмотр Persona конкретного исходного ролика.",
+  },
+  {
+    id: "reaction-2026-10",
+    title: "My reaction · история через реакцию",
+    category: "acting",
+    sourceTitle: "Later · Weekly Reels Trends",
+    sourceUrl: "https://later.com/blog/instagram-reels-trends/",
+    publishedAt: "2026-10-23",
+    dateKind: "published",
+    mechanism: "Лицо и реакция становятся точкой зрения на знакомую ситуацию без объясняющего монолога.",
+    limitation: "Подборка описывает формат; без ручного просмотра отдельного Reels нельзя оценить игру или удержание.",
+  },
+  {
+    id: "shorts-discovery-2026-10",
+    title: "Поиск Shorts по актёрству и музыке",
+    category: "music",
+    sourceTitle: "YouTube Shorts search",
+    sourceUrl: "https://www.youtube.com/results?search_query=%D0%B0%D0%BA%D1%82%D1%91%D1%80+%D0%BC%D1%83%D0%B7%D1%8B%D0%BA%D0%B0+shorts",
+    publishedAt: "2026-10-30",
+    dateKind: "observed",
+    mechanism: "Публичный поиск помогает вручную найти свежие варианты короткого актёрского и музыкального формата.",
+    limitation: "Это вход в поиск, а не подтверждение конкретного тренда, просмотров или качества отдельных видео.",
+  },
+];
 
 export type ScenarioScriptPurpose = "hook" | "development" | "ending";
 export type ScenarioReviewRole = "dramaturg" | "director" | "producer";
@@ -118,7 +171,7 @@ export function validateScenarioResearch(items: ScenarioResearchItem[]): Scenari
     if (!validDate(item.observedAt)) throw new Error("Research observation date is invalid");
     if (!validPlatform(item.platform)) throw new Error("Research platform is invalid");
     if (!validStatus(item.observationStatus)) throw new Error("Research observation status is invalid");
-    if (!item.evidence || !["manual_link", "allowed_search_result", "user_note"].includes(item.evidence.kind)) {
+    if (!item.evidence || !["manual_link", "allowed_search_result", "editorial_report", "user_note"].includes(item.evidence.kind)) {
       throw new Error("Research evidence is invalid");
     }
     const observedFields = uniqueFields(item.evidence.observedFields);
@@ -148,9 +201,30 @@ export function validateScenarioResearch(items: ScenarioResearchItem[]): Scenari
   });
 }
 
+export function addFreeTrendLeadToScenarioResearch(
+  current: ScenarioResearchItem[],
+  lead: FreeScenarioTrendLead,
+  observedAt: string,
+): ScenarioResearchItem[] {
+  return validateScenarioResearch([...current, {
+    id: `trend-${lead.id}`,
+    url: lead.sourceUrl,
+    platform: "other",
+    observedAt,
+    publishedAt: lead.publishedAt,
+    observationStatus: "metadata_only",
+    title: lead.title,
+    evidence: {
+      kind: "editorial_report",
+      sourceUrl: lead.sourceUrl,
+      observedFields: ["url", "title", "date", "description"],
+    },
+  }]);
+}
+
 export function analyseScenarioReference(
   research: ScenarioResearchItem,
-  input: Omit<ScenarioReferenceAnalysis, "researchId">,
+  input: Omit<ScenarioReferenceAnalysis, "researchId" | "evidenceUse">,
 ): ScenarioReferenceAnalysis {
   const [item] = validateScenarioResearch([research]);
   if (input.observationStatus !== item.observationStatus) throw new Error("Analysis status must match research evidence");
@@ -162,7 +236,18 @@ export function analyseScenarioReference(
   if (!["low", "medium", "high"].includes(input.productionComplexity)) {
     throw new Error("Reference production complexity is invalid");
   }
-  return { ...input, researchId: item.id };
+  return {
+    ...input,
+    researchId: item.id,
+    evidenceUse: assessReferenceInsight({
+      kind: "format",
+      verification: item.observationStatus === "user_reviewed" ? "plausible" : "unverified",
+      actionable: false,
+      measurable: false,
+      reversible: true,
+      manipulative: false,
+    }),
+  };
 }
 
 export function suggestScenarioIdeas(input: {
@@ -300,6 +385,27 @@ export function scenarioScriptToProductionBriefInput(script: ScenarioScript): Pe
     },
     sourceFacts: [...current.sourceFacts],
   };
+}
+
+/**
+ * Records only a named author approval as Format Memory. It preserves a reusable
+ * mechanic, not somebody else's plot and never asserts audience performance.
+ */
+export function scenarioScriptToFormatMemoryObservation(script: ScenarioScript): FormatMemoryObservation {
+  const current = requireCurrentRevision(script);
+  const approval = script.approval;
+  if (!approval || approval.revisionId !== current.id) {
+    throw new Error("Current script needs explicit author approval before Format Memory");
+  }
+  return buildFormatObservation({
+    formatKey: `persona-scenario:${script.idea.id}`,
+    label: script.idea.title,
+    mechanics: current.beats.map((beat) => beat.action),
+    sourceAssetId: current.id,
+    userSignal: "explicit_approval",
+    audienceSignal: "unknown",
+    createdAt: approval.approvedAt,
+  });
 }
 
 function canonicalUrl(value: string): string {

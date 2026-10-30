@@ -32,7 +32,9 @@
     "media:review:render": "node tools/persona-reviewed-render.mjs",
     "media:visual:review": "node tools/persona-visual-review.mjs",
     "media:visual:finalize": "node tools/persona-visual-finalize.mjs",
-    "media:creative:review": "node tools/persona-creative-review.mjs"
+    "media:creative:review": "node tools/persona-creative-review.mjs",
+    "persona:scenario:local": "node tools/persona-local-scenario.mjs",
+    "persona:scenario:local:test": "node --test tools/persona-local-scenario.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

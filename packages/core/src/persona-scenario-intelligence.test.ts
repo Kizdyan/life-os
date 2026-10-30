@@ -3,8 +3,11 @@ import {
   analyseScenarioReference,
   approveScenarioScript,
   createScenarioScript,
+  addFreeTrendLeadToScenarioResearch,
+  freeScenarioTrendLeads,
   reviewScenarioScript,
   reviseScenarioScript,
+  scenarioScriptToFormatMemoryObservation,
   scenarioScriptToProductionBriefInput,
   suggestScenarioIdeas,
   validateScenarioResearch,
@@ -56,6 +59,16 @@ describe("Persona Scenario Intelligence research core", () => {
       creativeProfile: { priorities: [], constraints: [] },
       count: 5,
     })).toThrow("available research evidence");
+  });
+
+  it("offers dated public trend leads as metadata-only evidence without inventing Reel metrics", () => {
+    expect(freeScenarioTrendLeads).toHaveLength(3);
+    expect(freeScenarioTrendLeads.every((lead) => lead.sourceUrl.startsWith("https://") && lead.publishedAt.length === 10)).toBe(true);
+    expect(freeScenarioTrendLeads.every((lead) => !("views" in lead) && !("engagementRate" in lead))).toBe(true);
+
+    const research = addFreeTrendLeadToScenarioResearch([], freeScenarioTrendLeads[0], "2026-10-30T12:00:00.000Z");
+    expect(research[0]).toMatchObject({ observationStatus: "metadata_only", evidence: { kind: "editorial_report" } });
+    expect(() => addFreeTrendLeadToScenarioResearch(research, freeScenarioTrendLeads[0], "2026-10-30T12:01:00.000Z")).toThrow("Duplicate research URL");
   });
 
   it("proposes original ideas that retain a verified reference ID without inventing trend metrics", () => {
@@ -128,5 +141,20 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(revised.revisions).toHaveLength(2);
     expect(revised.approval).toBeUndefined();
     expect(() => scenarioScriptToProductionBriefInput(revised)).toThrow("author approval");
+  });
+
+  it("keeps a reference as a format-only evidence record and records only an explicit approval in Format Memory", () => {
+    const analysis = analyseScenarioReference(source, {
+      observationStatus: "metadata_only", hook: "Смена ожидания в первой фразе.", situation: "Кастинг", desire: "Получить пробу", obstacle: "Неверная дверь", turn: "Режиссёр уже слушает", payoff: "Проба шла всё время", editing: "Смысловой переход", sound: "Пауза перед финалом", productionComplexity: "low",
+    });
+    const [idea] = suggestScenarioIdeas({ research: [source], creativeProfile: { priorities: [], constraints: [] }, count: 5 });
+    const approved = approveScenarioScript(createScenarioScript(idea, { createdAt: "2026-10-30T10:00:00.000Z", beats: [
+      { purpose: "hook", line: "Я пришёл на одну пробу и увидел три двери.", action: "Останавливается перед указателем.", durationSec: 4 },
+      { purpose: "development", line: "Администратор уверяет, что меня уже смотрели.", action: "Проверяет список и слушает ответ.", durationSec: 7 },
+      { purpose: "ending", line: "Лучшая проба началась в коридоре.", action: "Понимает шутку и оставляет паузу.", durationSec: 5 },
+    ]}), { author: "Kostya", comment: "Сохраняю этот приём, не чужой сюжет.", approvedAt: "2026-10-30T10:05:00.000Z" });
+
+    expect(analysis.evidenceUse.use).toBe("format_only");
+    expect(scenarioScriptToFormatMemoryObservation(approved).userSignal).toBe("explicit_approval");
   });
 });
