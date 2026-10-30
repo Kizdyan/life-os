@@ -26,7 +26,7 @@ export function assembleDoctorPatches(task,candidate){
   if(!Number.isInteger(index)||index<0||index>=original.length||seen.has(index)||
     !task.targetIndices.includes(index)||task.lockedIndices.includes(index))
    throw Error('Patch: duplicate, locked or unauthorized beat index');
-  if(Object.keys(patch).some(key=>!fields.has(key))||!fields.has('beatIndex'))
+  if(Object.keys(patch).some(key=>!fields.has(key)))
    throw Error('Patch: extra fields are not allowed');
   const beat={
    purpose:original[index].purpose,
