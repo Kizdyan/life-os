@@ -29,6 +29,25 @@ export const FREE_TREND_SOURCES = [
  {name:'YouTube · поиск Shorts',url:'https://www.youtube.com/results?search_query=%D0%B0%D0%BA%D1%82%D1%91%D1%80+shorts',detail:'Публичный поиск коротких актёрских видео; сравнивай даты и каналы.'}
 ] as const;
 
+/** Dated editorial leads from publicly accessible reports, NOT direct Reel playback. */
+export const PERSONA_EDITORIAL_SIGNALS=[
+ {id:'russian-self-audition-2026-10',publishedAt:'2026-10-07',
+  title:'Абсурдные «пробы на роль»',genre:'acting',sourceTitle:'360.ru',
+  sourceUrl:'https://360.ru/tekst/interesnoe/pochemu-v-sotssetjah-zavirusilsja-trend-proby-na-rol/',
+  mechanism:'Предельно серьёзное актёрское исполнение неожиданно незначительной роли.',
+  limitation:'Журналистский разбор формата, не автоматический просмотр оригинальных видео. Тренд мог устареть.'},
+ {id:'facial-reaction-2026-10',publishedAt:'2026-10-23',
+  title:'My reaction · история без реплик',genre:'acting',sourceTitle:'Later — Weekly Reels Trends',
+  sourceUrl:'https://later.com/blog/instagram-reels-trends/',
+  mechanism:'Взгляд или мимика передаёт отношение к ситуации без объясняющего монолога.',
+  limitation:'Формат описан в еженедельной подборке; без просмотра отдельного Reels нет оценки актёрской игры.'},
+ {id:'many-lanes-2026-10',publishedAt:'2026-10-23',
+  title:'Не ограничиваться одной нишей',genre:'acting-music',sourceTitle:'Later — Weekly Reels Trends',
+  sourceUrl:'https://later.com/blog/instagram-reels-trends/',
+  mechanism:'Быстрая последовательность разных занятий одного автора вместо рассказа о профессиях.',
+  limitation:'Результаты отдельных видео не проверены. Музыка из тренда может требовать лицензии.'}
+] as const;
+
 const allowedHosts=['instagram.com','tiktok.com','youtube.com','youtu.be','vk.com','vkvideo.ru','capcut.com','google.com','yandex.ru','rutube.ru','dzen.ru'];
 const text=(v:unknown,max:number)=>typeof v==='string'?v.trim().slice(0,max):'';
 export function normalizePersonaReferenceUrl(input:string):string{
