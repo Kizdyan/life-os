@@ -32,3 +32,13 @@
 .personaFreeRadar .radarSearchLinks{display:flex;flex-wrap:wrap;gap:12px}
 .personaFreeRadar .radarSearchLinks a{display:inline-block;border:1px solid #617083;padding:9px 12px;border-radius:8px;text-decoration:none}
 .personaFreeRadar .radarSearchLinks a:hover{background:#2b3f51}
+
+.personaFreeRadar .personaStoryReview{display:grid;gap:12px;padding:12px;background:#1c2731;border:1px solid #4a6173;border-radius:10px}
+.personaFreeRadar .personaStoryReview h4{margin:0;font-size:17px}
+.personaFreeRadar .personaStoryFields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.personaFreeRadar .personaStoryFields label{display:grid;gap:5px}
+.personaFreeRadar .personaStoryFields label small{font-size:11px}
+.personaFreeRadar .personaStoryAudit{display:grid;gap:8px;border-top:1px solid #42576b;padding-top:12px}
+.personaFreeRadar .personaStoryAudit>div{display:grid;gap:4px;padding:8px;border:1px solid #405264;border-radius:8px}
+.personaFreeRadar .personaStoryAudit p{font-size:12px;margin:0}
+.personaFreeRadar .personaStoryReview>button{justify-self:start}
