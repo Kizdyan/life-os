@@ -40,6 +40,14 @@ Read `doctor-suggestion.json`, especially `diagnosis.findings`, `diff`, and `rev
 
 In the same Persona project, choose **Загрузить результат локального редактора**, select the suggestion JSON and inspect every changed scene. Click **Принять как новую версию** only after review. The browser calls `applyPersonaLocalDoctorSuggestion()` and saves the new *unapproved* version through the existing `PersonaProjectStore`. Stale/tampered files, changed locked frames and nonrequested changes are rejected. No Production Brief or author approval happens automatically.
 
+## Scenario version history (also in Persona UI)
+
+The existing Scenario Workspace now has a **История сценария** disclosure after the second saved version. It compares precise dialogue, action, beat purpose and duration per scene. For inserting/deleting beats the comparison is **positional**, not a semantic scene-matching algorithm.
+
+The user can explicitly restore any prior stored version. This calls `restorePersonaScenarioRevision()`, which copies its beats to a **new unapproved revision**, preserves the entire existing history and drops approval via the canonical `reviseScenarioScript()`. It never deletes newer versions or publishes anything.
+
+A saved version and a model-proposed edit are different things: **imported model suggestions first appear as an unaccepted diff; only clicking "Принять как новую версию" changes the script.** A restored historical version likewise requires new author approval before Production Brief handoff.
+
 ## Test commands (no running Ollama required)
 
 ```powershell
