@@ -103,6 +103,39 @@ test('ASR recovery keeps recorded material available and stores a separately con
   {kind:'persona-evidence-v1',sources:failedSources},brief),/manual recovery/);
 });
 
+test('partial Preview decisions can be fully reviewed into new strict montage without rerunning ASR',()=>{
+ const asr=[source('A01_take01',aWords,'a'),source('B01_take01',[],'d')];
+ const preview={version:1,mode:'preview',analysisPath:'analysis.json',briefPath:'brief.json',
+  choices:[{beat:1,sourceId:'A01_take01',startSec:.04,durationSec:2.1}],
+  missingBeats:[2]};
+ const pack=buildCandidatePack(brief,asr,preview);
+ assert.equal(pack.beats[1].candidates.length,0);
+ const template=createSelectionTemplate(pack);
+ template.selections[0].reviewed=true;template.selections[0].reason='Проверил лучший дубль';
+ template.selections[1]={beat:2,candidateId:null,reviewed:true,
+  reason:'Проверил звук и границы фразы вручную',rejected:[],
+  recovery:{kind:'persona-manual-segment-v1',sourceId:'B01_take01',
+   sourceSha256:sha('d'),startSec:.2,durationSec:1.7,
+   transcript:'И у нас есть проблема',confirmed:true,reason:'Речь слышна на исходнике'}};
+ const {decisions:updated}=applySelections(pack,template,preview,
+  {kind:'persona-evidence-v1',sources:asr},brief);
+ assert.equal(updated.mode,'strict');
+ assert.deepEqual(updated.missingBeats,[]);
+ assert.equal(updated.choices.length,2);
+ assert.equal(updated.choices[1].transcriptSource,'manual-review');
+ assert.equal(preview.choices.length,1,'original Preview decisions not mutated');
+ const invalid={...preview,missingBeats:[]};
+ assert.throws(()=>applySelections(pack,template,invalid,{kind:'persona-evidence-v1',sources:asr},brief),
+  /schema mismatch/);
+});
+
+test('ASR recovery with no audio sources reports reshoot instead of offering a false manual transcript',()=>{
+ const silent=[{...source('silent',[],'a'),hasAudio:false}];
+ const pack=buildCandidatePack(brief,silent,{version:1,mode:'preview',choices:[],missingBeats:[1,2]});
+ assert.ok(pack.beats.every(b=>b.recovery.availableSources.length===0));
+ assert.match(formatCandidatePack(pack),/пересъёмка/);
+});
+
 test('cannot reuse overlapping source video intervals across two scene picks',()=>{
  const src=source('same',aWords,'a');
  const c1={beat:1,candidateId:'beat1-same',sourceId:'same',startSec:0,durationSec:2,transcript:'Я актёр',captionWords:[],confidence:.9,sourceSha256:sha('a')};
