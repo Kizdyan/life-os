@@ -51,7 +51,7 @@ function sameTakeWindow(a,b){
  0.5*Math.min(a.durationSec,b.durationSec);
 }
 function recoveryForSources(sources){
- return {status:'needs-transcript-review',availableSources:sources.map(source=>({
+ return {status:'needs-transcript-review',availableSources:sources.filter(source=>source.hasAudio===true).map(source=>({
   sourceId:source.id,sourceSha256:source.sha256??null,durationSec:source.durationSec,
   hasAudio:source.hasAudio===true,asrStatus:source.asrStatus??(source.segments?.length?'partial-or-unmatched':'unavailable')
  })),actions:['Просмотреть и прослушать локальный исходник','Сверить результат Whisper с речью','Вручную указать границы и текст фразы либо выбрать пересъёмку','Повторить монтаж только после явной проверки фрагмента'],
@@ -151,7 +151,9 @@ export function applySelections(pack,selection,existing,analysis,brief){
     !Array.isArray(selection.selections)||!Array.isArray(pack.beats)||
     selection.selections.length!==pack.beats.length||
     existing?.version!==1||!Array.isArray(existing.choices)||
-    existing.choices.length!==pack.beats.length||
+    (existing.recoveryRequired===true?
+     (existing.mode!=='preview'||existing.choices.length>pack.beats.length):
+     existing.choices.length!==pack.beats.length)||
     analysis?.kind!=='persona-evidence-v1'||!Array.isArray(analysis.sources)||
     brief?.version!==1||brief.script?.length!==pack.beats.length)
   fail('Candidate pack, selection, decisions or evidence schema mismatch');
@@ -197,7 +199,7 @@ export function applySelections(pack,selection,existing,analysis,brief){
    ...(manual?{recovery:'manual-segment',manualTranscriptReview:true}:{})});
  }
  return {
-  decisions:{version:1,analysisPath:existing.analysisPath,briefPath:existing.briefPath,choices},
+  decisions:{version:1,mode:'strict',analysisPath:existing.analysisPath,briefPath:existing.briefPath,choices,missingBeats:[]},
   memory:{version:1,kind:'persona-creative-decisions-v1',status:'recorded-human-choices-not-model-training',
    events,publicationApproved:false,
    note:'Reasons come from explicit human review. No automated preference learning or artistic quality claims.'}
