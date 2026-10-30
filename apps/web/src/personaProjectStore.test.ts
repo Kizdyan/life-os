@@ -61,6 +61,8 @@ describe('Persona project storage',()=>{
    analyses:[],
    ideas:[{id:'scenario-idea-1',title:'Оригинальная идея',referenceIds:['ref-1'],originalConflict:'Конфликт без копирования чужой сцены.',actingTask:'Слушать партнёра.',ending:'Точная реакция.',productionComplexity:'low',estimatedDurationSec:25,creativeProfileFit:'Естественный голос.'}],
    selectedIdeaId:'scenario-idea-1',
+   creativeProfile:{priorities:['выразительная игра','оригинальная музыка'],constraints:['не менять внешность']},
+   editorialFeedback:[{revisionId:'r1',comment:'Шутка слишком предсказуемая, переписать финал',createdAt:'2026-10-30T10:00:00Z'}],
    script:{currentRevisionId:'r1',revisions:[{id:'r1',number:1,createdAt:'2026-10-30T10:00:00.000Z',beats:[],sourceFacts:[]}],approval:undefined},
   };
 
@@ -69,6 +71,8 @@ describe('Persona project storage',()=>{
   const saved=reloaded.projects[0] as any;
 
   expect(saved.scenarioWorkspace).toMatchObject({version:1,selectedIdeaId:'scenario-idea-1'});
+  expect(saved.scenarioWorkspace.creativeProfile.priorities).toContain('оригинальная музыка');
+  expect(saved.scenarioWorkspace.editorialFeedback[0].comment).toContain('финал');
   expect(saved.mediaAssets).toEqual([{id:'original-video'}]);
   expect(saved.timeline).toEqual({clips:['original-video']});
   expect(()=>validatePersonaProjectSnapshot({...project,scenarioWorkspace:{version:2}} as any)).toThrow('invalid_persona_project_snapshot');
