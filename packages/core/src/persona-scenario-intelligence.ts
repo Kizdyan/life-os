@@ -52,6 +52,9 @@ export interface ScenarioIdea {
   productionComplexity: "low" | "medium" | "high";
   estimatedDurationSec: number;
   creativeProfileFit: string;
+  /** How the concept was actually produced, not a prediction of audience success. */
+  origin?: "reviewed_reference" | "template_fallback";
+  evidenceNote?: string;
 }
 
 export interface ScenarioCreativeProfile {
@@ -250,43 +253,73 @@ export function analyseScenarioReference(
   };
 }
 
+/**
+ * Free deterministic creative prompts. Without specifically reviewed video
+ * observations, prewritten concepts are labelled as fallback AND cannot claim
+ * a reference source. With observations, they explicitly incorporate the
+ * recorded dramatic mechanics, not a fabricated trend or invented metric.
+ * This is NOT local LLM generation and should never be described as such.
+ */
 export function suggestScenarioIdeas(input: {
   research: ScenarioResearchItem[];
+  analyses?: ScenarioReferenceAnalysis[];
   creativeProfile: ScenarioCreativeProfile;
   count: number;
 }): ScenarioIdea[] {
   if (!Number.isInteger(input.count) || input.count < 5 || input.count > 10) {
     throw new Error("Idea count must be between 5 and 10");
   }
-  const references = validateScenarioResearch(input.research)
-    .filter((item) => item.observationStatus !== "unavailable");
-  if (references.length === 0) throw new Error("Ideas need available research evidence");
+  const references = validateScenarioResearch(input.research);
+  if (!references.some((item)=>item.observationStatus !== "unavailable")) {
+    throw new Error("Ideas need available research evidence");
+  }
   const profileFit = nonEmpty(input.creativeProfile.priorities.join(", "))
-    ? `Опирается на: ${input.creativeProfile.priorities.join(", ")}.`
-    : "Нужна авторская проверка соответствия Creative Profile.";
+    ? `Учитываем направления: ${input.creativeProfile.priorities.join(", ")}.`
+    : "Creative Profile ещё не загружен; художественную пригодность нужно подтвердить.";
+  const verified = (input.analyses ?? []).filter(analysis => {
+    const linked = references.find(ref => ref.id === analysis.researchId);
+    return linked?.observationStatus === "user_reviewed" &&
+      analysis.observationStatus === "user_reviewed" &&
+      Boolean(analysis.reviewedAt && linked.reviewedAt);
+  });
   const patterns = [
-    ["Невидимая правка", "Актёр пытается выполнить всё более противоречивые заметки режиссёра в одной реплике.", "Сыграть нарастающее внутреннее сопротивление без гротеска.", "Герой находит точную, простую задачу вместо противоречий."],
-    ["Пианино слышит подтекст", "Композитор подбирает аккорд к словам героя, но музыка каждый раз выдаёт настоящий подтекст.", "Переключать внешнюю собранность и внутреннюю реакцию.", "Последний аккорд говорит правду раньше персонажа."],
-    ["Кастинг в собственной голове", "Одна и та же просьба звучит как три разных кастинговых задания.", "Разделить персонажей действием, а не только голосом.", "Обычная просьба оказывается самым сложным заданием."],
-    ["Пауза перед дублем", "Герой готовит идеальный вход, пока за кадром меняют условие сцены.", "Сохранить естественную паузу и слушание партнёра.", "Неподготовленная реакция становится лучшим дублем."],
-    ["Мелодия для неудобного разговора", "Музыкант сочиняет безопасную мелодию, чтобы не произносить важную фразу.", "Дать музыке быть действием, а не фоном.", "Фраза всё-таки звучит без музыкального прикрытия."],
-    ["POV: режиссёр просит проще", "После каждой просьбы «проще» герой понимает её всё буквальнее.", "Наращивать комедию через точные физические действия.", "Финальная простота оказывается самой выразительной."],
-    ["Репетиция с будущим собой", "Будущий герой комментирует нынешний дубль и случайно мешает ему.", "Отделить два состояния точной пластикой и ритмом.", "Совет из будущего оказывается обычным вниманием к партнёру."],
-    ["Сцена без подходящей музыки", "Герой ищет идеальный трек, пока сама ситуация требует тишины.", "Сделать тишину активным решением персонажа.", "Выключенная музыка завершает шутку."],
-    ["Один предмет меняет жанр", "Один и тот же реквизит переводит домашнюю сцену из драмы в комедию.", "Менять отношение к предмету, не меняя обстоятельство.", "Последний взгляд возвращает сцену к правде."],
-    ["Не тот темп", "Актёр и пианист спорят о темпе, хотя говорят о разных вещах.", "Строить конфликт через слушание и перебивание.", "Общий ритм появляется после честной паузы."],
+    ["Смена условий на кинопробе", "На настоящей кинопробе герой теряет возможность выполнить простую задачу: режиссёр неожиданно меняет обстоятельства.", "Добиться повторного шанса, скрывая тревогу.", "Герой обнаруживает, что важнее не задание, а его собственная реакция."],
+    ["Аккорд вместо объяснения", "Персонаж пытается скрыть неловкость, но неверный аккорд выдаёт его истинную реакцию.", "Сохранить лицо и не перестать играть.", "Правильное решение внезапно оказывается тишиной."],
+    ["Неудобная роль", "Роль, к которой герой готовился, достаётся ему в совершенно неожиданной бытовой ситуации.", "Добиться признания, не играя на публику.", "Окружающие принимают за актёрскую игру подлинное действие."],
+    ["Два внутренних голоса", "Два разных решения конкурируют прямо в момент важной встречи.", "Скрыть сомнение и всё-таки принять решение.", "Герой неожиданно выбирает третью, простую стратегию."],
+    ["Пауза в решающий момент", "На репетиции партнёр перестаёт подавать нужную реплику, и герой вынужден действовать.", "Добыть ответ, не нарушив сцену.", "Молчание меняет отношения персонажей."],
+    ["Режиссёрский комментарий", "Участники сцены по-разному понимают одну режиссёрскую задачу, и недоразумение растёт.", "Убедить партнёра в своём понимании.", "Оба понимают, что слушали не того человека."],
+    ["Слова против музыки", "Герой обещает спокойный разговор, но музыкальный мотив каждый раз обостряет конфликт.", "Вернуть спокойствие, не скрыв правду.", "Герой намеренно выбирает один простой звук."],
+    ["Незаметный предмет", "Незначительный реквизит лишает персонажа возможности продолжать привычную роль.", "Сохранить контроль без реквизита.", "Герой впервые действует по-настоящему."],
+    ["Ошибка темпа", "Два человека не могут договориться, потому что одновременно говорят о музыкальном и жизненном темпе.", "Быть услышанным партнёром.", "Общий ритм появляется из случайной паузы."],
+    ["Реакция без слов", "Человек получает сообщение, на которое невозможно ответить вслух, и каждое невербальное действие только усложняет положение.", "Сохранить достоинство в неловкой ситуации.", "Последняя реакция меняет значение первой."],
   ] as const;
-  return patterns.slice(0, input.count).map(([title, originalConflict, actingTask, ending], index) => ({
-    id: `scenario-idea-${index + 1}`,
-    title,
-    referenceIds: [references[index % references.length].id],
-    originalConflict,
-    actingTask,
-    ending,
-    productionComplexity: index % 3 === 0 ? "medium" : "low",
-    estimatedDurationSec: 20 + (index % 3) * 5,
-    creativeProfileFit: profileFit,
-  }));
+  return patterns.slice(0,input.count).map(([title, seedConflict, actingTask, seedEnding], index) => {
+    const observation = verified.length ? verified[index % verified.length] : undefined;
+    const origin = observation ? "reviewed_reference" : "template_fallback";
+    return {
+      id: `scenario-idea-${index+1}`,
+      title,
+      // NO reference attribution in fallback mode.
+      referenceIds: observation ? [observation.researchId] : [],
+      originalConflict: observation
+        ? `${seedConflict} При разработке использовать наблюдаемую механику препятствия: «${observation.obstacle}» и смены ожиданий: «${observation.turn}». Не переносить чужие конкретные реплики и события.`
+        : seedConflict,
+      actingTask: observation
+        ? `${actingTask} Для актёрской проработки учесть отмеченную цель персонажа: «${observation.desire}»; придумать новую ситуацию.`
+        : actingTask,
+      ending: observation
+        ? `${seedEnding} Проверить, как найденный принцип завершения «${observation.payoff}» применим к оригинальному герою.`
+        : seedEnding,
+      productionComplexity: index%3===0 ? "medium" : "low",
+      estimatedDurationSec: 20 + index%3*5,
+      creativeProfileFit:profileFit,
+      origin,
+      evidenceNote:observation
+        ? `Основано на ручном разборе просмотренного референса ${observation.researchId}; это структурная адаптация, не генерация ИИ и не прогноз охватов.`
+        : "Шаблонная идея: референс не просмотрен и не разобран; исследовательская связь не заявляется.",
+    };
+  });
 }
 
 /** Starts a versioned scenario script; content remains an author draft until approval. */
