@@ -38,7 +38,9 @@ export function normalizePersonaReferenceUrl(input:string):string{
   throw new Error('Поддерживаются Instagram, TikTok, YouTube, VK, CapCut, Rutube, Дзен и проверенные источники трендов.');
  if(url.pathname.length>1000)throw new Error('Слишком длинный адрес.');
  url.hash='';
- for(const name of [...url.searchParams.keys()]){
+ const queryKeys:string[]=[];
+ url.searchParams.forEach((_,name)=>queryKeys.push(name));
+ for(const name of queryKeys){
   if(/^(utm_|fbclid$|gclid$|igshid$|si$|feature$)/i.test(name))url.searchParams.delete(name);
  }
  return url.toString();
