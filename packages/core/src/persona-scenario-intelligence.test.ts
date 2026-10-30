@@ -174,6 +174,26 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(() => scenarioScriptToProductionBriefInput(revised)).toThrow("author approval");
   });
 
+  it("supports a four-beat original scene and blocks broken narrative order before approval", () => {
+    const [idea]=suggestScenarioIdeas({research:[source],creativeProfile:{priorities:[],constraints:[]},count:5});
+    const beats=[
+      {purpose:"hook" as const,line:"Один звук меняет всё.",action:"Актёр резко закрывает крышку инструмента.",durationSec:4},
+      {purpose:"development" as const,line:"Сейчас мне нужна тишина.",action:"Герой отворачивается от партнёра.",durationSec:5},
+      {purpose:"development" as const,line:"Но он снова нажимает клавишу.",action:"Герой встаёт и подходит к партнёру.",durationSec:5},
+      {purpose:"ending" as const,line:"А я просил услышать меня.",action:"Герой останавливает руку и смотрит в глаза.",durationSec:4}
+    ];
+    const draft=createScenarioScript(idea,{createdAt:"2026-10-30T15:00:00Z",beats});
+    expect(reviewScenarioScript(draft.currentRevision).status).toBe("ready_for_author");
+    const bad=createScenarioScript(idea,{createdAt:"2026-10-30T15:01:00Z",beats:[beats[1],beats[0],beats[2],beats[3]]});
+    expect(reviewScenarioScript(bad.currentRevision).findings.some(x=>x.code==="broken_drama_order")).toBe(true);
+    expect(()=>approveScenarioScript(bad,{author:"Тест",comment:"Не должно пройти",approvedAt:"2026-10-30T15:02:00Z"})).toThrow();
+    const approved=approveScenarioScript(draft,{author:"Тест",comment:"Учебное одобрение",approvedAt:"2026-10-30T15:03:00Z"});
+    const brief=scenarioScriptToProductionBrief(approved,{id:"film-1",title:"Фильм",angle:"Короткий авторский сценарий",format:"reel"});
+    expect(brief.script).toHaveLength(4);
+    expect(brief.script.map(x=>x.action)).toEqual(beats.map(x=>x.action));
+    expect(brief.adaptations.reels.durationSec).toBe(18);
+  });
+
   it("preserves every approved word, action and timing through canonical Production Brief import, QA and revisions", () => {
     const [idea] = suggestScenarioIdeas({ research: [source], creativeProfile: {priorities:["актёр"],constraints:[]}, count:5 });
     const beats = [
