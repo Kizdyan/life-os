@@ -90,6 +90,12 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(ideas.every((idea) => !("visibleMetrics" in idea))).toBe(true);
   });
 
+  it("allows an empty library as an openly labelled offline template fallback", () => {
+    const ideas=suggestScenarioIdeas({research:[],creativeProfile:{priorities:[],constraints:[]},count:5});
+    expect(ideas).toHaveLength(5);
+    expect(ideas.every(idea=>idea.origin==="template_fallback"&&idea.referenceIds.length===0)).toBe(true);
+  });
+
   it("uses actual manually reviewed notes for research-grounded concepts without inventing views", () => {
     const reviewed=validateScenarioResearch([{
       ...source,observationStatus:"user_reviewed",reviewedAt:"2026-10-30T12:30:00Z"
