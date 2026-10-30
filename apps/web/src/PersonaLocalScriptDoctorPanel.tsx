@@ -16,6 +16,7 @@ type Props = {
   latestAuthorFeedback?: string;
   unsavedChanges: boolean;
   onAcceptRevision: (updated: ScenarioScript) => void;
+  onRejectSuggestion: (reason: string, sourceRevisionId: string) => void;
 };
 type Preview = {
   sourceRevisionId: string;
@@ -43,7 +44,7 @@ function downloadJson(data: unknown, name: string): void {
  * remote model. Import validates the exact diff before author may apply it.
  */
 export default function PersonaLocalScriptDoctorPanel({
-  script, creativeProfile, latestAuthorFeedback, unsavedChanges, onAcceptRevision,
+  script, creativeProfile, latestAuthorFeedback, unsavedChanges, onAcceptRevision, onRejectSuggestion,
 }:Props){
   const currentId = script.currentRevisionId;
   const count = script.currentRevision.beats.length;
@@ -53,6 +54,7 @@ export default function PersonaLocalScriptDoctorPanel({
   const [feedback,setFeedback] = useState(latestAuthorFeedback??"");
   const [preview,setPreview] = useState<Preview|null>(null);
   const [message,setMessage] = useState("");
+  const [rejectionReason,setRejectionReason] = useState("");
   const [error,setError] = useState("");
 
   useEffect(()=>{
@@ -61,6 +63,7 @@ export default function PersonaLocalScriptDoctorPanel({
     setPreview(null);
     setError("");
     setMessage("");
+    setRejectionReason("");
   },[currentId,count]);
   useEffect(()=>{setFeedback(latestAuthorFeedback??"");},[latestAuthorFeedback]);
 
@@ -102,6 +105,7 @@ export default function PersonaLocalScriptDoctorPanel({
         throw new Error("Предложение затрагивает незапрошенную или закреплённую сцену.");
       }
       setPreview({sourceRevisionId:currentId,suggestion});
+      setRejectionReason("");
       setMessage("Предложение проверено технически. Прочитайте каждое изменение: художественное качество ещё не подтверждено.");
       setError("");
     }catch(cause){setPreview(null);setMessage("");setError(asMessage(cause))}
@@ -115,9 +119,26 @@ export default function PersonaLocalScriptDoctorPanel({
       // A conscious, explicit user click only. No auto-approval or production.
       onAcceptRevision(next);
       setPreview(null);
+      setRejectionReason("");
       setMessage("Новая версия сохранена без авторского утверждения. Проверьте её перед съёмкой.");
       setError("");
     }catch(cause){setError(asMessage(cause))}
+  };
+  const reject=()=>{
+    if(!preview||preview.sourceRevisionId!==currentId){
+      setError("Предложение устарело.");return;
+    }
+    const note=rejectionReason.trim();
+    if(note && note.length<12){
+      setError("Для сохранения причины отклонения укажите не менее 12 символов.");return;
+    }
+    if(note)onRejectSuggestion(note,currentId);
+    setPreview(null);
+    setRejectionReason("");
+    setError("");
+    setMessage(note
+      ?"Предложение отклонено. Причина сохранена в проекте для следующих редакторских проходов."
+      :"Предложение отклонено без комментария. Авторский сценарий не изменён.");
   };
   const ready=Boolean(!unsavedChanges&&targetIndices.length&&instruction.trim().length>=3);
 
@@ -171,11 +192,14 @@ export default function PersonaLocalScriptDoctorPanel({
       </article>)}
       <p><b>Объяснение модели:</b> {preview.suggestion.changeSummary}</p>
       <p className="personaDoctorWarning">Это предложение ИИ. Принятие создаст новую неутверждённую версию и сбросит прежнее одобрение.</p>
+      <label className="personaDoctorField">Почему предложение ИИ не подошло? (необязательно)
+        <textarea aria-label="Причина отказа от предложения Script Doctor" rows={2}
+          value={rejectionReason} onChange={event=>setRejectionReason(event.target.value)}
+          placeholder="Например, финал стал предсказуемее, а герой потерял активное действие"/>
+      </label>
       <div className="personaDoctorActions">
         <button type="button" className="primary" onClick={accept}>Принять как новую версию</button>
-        <button type="button" className="ghost" onClick={()=>{setPreview(null);setMessage("Предложение отклонено; авторский сценарий не изменён.");}}>
-          Отклонить предложение
-        </button>
+        <button type="button" className="ghost" onClick={reject}>Отклонить предложение</button>
       </div>
     </section>}
     {error&&<p role="alert" className="personaDoctorWarning">{error}</p>}
