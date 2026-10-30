@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {
  PERSONA_FREE_RESEARCH_KEY,normalizePersonaReferenceUrl,
- addPersonaFreeReference,readPersonaFreeReferences,exportPersonaFreeReferences
+ addPersonaFreeReference,readPersonaFreeReferences,exportPersonaFreeReferences,withPersonaReferenceStory
 } from './personaFreeResearch';
 
 describe('Persona zero-credit reference evidence',()=>{
@@ -48,6 +48,26 @@ describe('Persona zero-credit reference evidence',()=>{
   expect(readPersonaFreeReferences(storage)).toEqual([reference]);
   expect(readPersonaFreeReferences({getItem:()=>'{broken'})).toEqual([]);
  });
+ it('keeps a manually authored screenplay structure with its reference across export and reload',()=>{
+  const storyboard={
+   premise:'Герой опоздал на кастинг',hook:'Слышен финальный хлопок',
+   protagonistGoal:'Убедить режиссёра дать ему шанс',
+   obstacle:'Дверь кастинг-зала уже закрыта',
+   escalation:'Герой пытается сыграть прямо в коридоре',
+   turn:'Режиссёр выходит, чтобы попросить тишины',
+   payoff:'Режиссёр увидел настоящую эмоцию, но роль всё ещё не обещана',
+   actingAction:'Добиться внимания и скрыть неловкость',
+   visualMoment:'Одна закрытая дверь в центре композиции'
+  };
+  const withOutline=withPersonaReferenceStory(create(),'reference-1',storyboard);
+  expect(withOutline[0].storyOutline).toEqual(storyboard);
+  const exported=JSON.parse(exportPersonaFreeReferences(withOutline));
+  const loaded=readPersonaFreeReferences({getItem:()=>JSON.stringify(exported.references)});
+  expect(loaded[0].storyOutline).toEqual(storyboard);
+  expect(loaded[0].status).toBe('human-reviewed');
+  expect(()=>withPersonaReferenceStory(withOutline,'missing',storyboard)).toThrow(/не найден/);
+ });
+
  it('export includes evidence disclaimer but never fabricates views, engagement or verified claims',()=>{
   const exported=JSON.parse(exportPersonaFreeReferences(create()));
   expect(exported.kind).toBe('persona-free-reference-export-v1');
