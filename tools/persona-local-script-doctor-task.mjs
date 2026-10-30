@@ -11,6 +11,11 @@ function parseHumanIndices(input,label){
 function extractScript(payload,projectId){
  if(payload?.currentRevision&&payload?.currentRevisionId)return payload;
  if(payload?.scenarioWorkspace?.script)return payload.scenarioWorkspace.script;
+ if(payload?.version===1&&typeof payload.ideaId==='string'&&Array.isArray(payload.script)){
+  const revisionId='local-brief:'+payload.ideaId;
+  return {idea:{id:payload.ideaId,title:payload.sourceTitle,originalConflict:payload.sourceAngle},currentRevisionId:revisionId,
+   currentRevision:{id:revisionId,beats:payload.script.map((beat,index)=>({purpose:index===0?'hook':index===payload.script.length-1?'ending':'development',line:beat?.line,action:beat?.action,durationSec:beat?.durationSec}))}};
+ }
  const projects=Array.isArray(payload?.projects)?payload.projects:null;
  if(projects){
   const found=projectId?projects.find(x=>x?.id===projectId):projects.length===1?projects[0]:undefined;

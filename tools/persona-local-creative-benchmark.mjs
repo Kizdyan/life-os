@@ -93,6 +93,7 @@ export async function benchmarkPersonaLocalModel({model='qwen2.5-coder:7b',outpu
    await writeFile(resolve(dir,item.key+'.review.json'),JSON.stringify(result.review,null,2),{flag:'wx'});
    await writeFile(resolve(dir,item.key+'.generation.json'),JSON.stringify(result.generationConfig??{model,notice:'Генератор не сообщил параметры запуска.'},null,2)+'\n',{flag:'wx'});
    if(typeof result.rawResponse==='string')await writeFile(resolve(dir,item.key+'.raw-response.txt'),result.rawResponse,{flag:'wx'});
+   if(result.formatRepair?.status==='FORMAT_REPAIRED')await writeFile(resolve(dir,item.key+'.format-repair.json'),JSON.stringify(result.formatRepair,null,2)+'\n',{flag:'wx'});
    reports.push(report);
   }catch(error){
    const failure=classifyFailure(error);

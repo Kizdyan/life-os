@@ -15,3 +15,9 @@ export const LOCAL_SCENARIO_RESPONSE_SCHEMA=Object.freeze({
    }}}
  }
 });
+
+export const LOCAL_SCENARIO_DURATION_REPAIR_SCHEMA=Object.freeze({
+ type:'object',additionalProperties:false,required:['durations'],properties:{
+  durations:{type:'array',minItems:3,maxItems:12,items:{type:'number',minimum:1,maximum:10}}
+ }
+});

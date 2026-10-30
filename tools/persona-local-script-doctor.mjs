@@ -19,8 +19,16 @@ function indices(value,label,length){
      value.some(i=>!Number.isInteger(i)||i<0||i>=length))throw Error(`${label}: некорректные индексы кадров`);
  return [...value].sort((a,b)=>a-b);
 }
+function validateCanonicalTask(raw){
+ const beats=raw.beats?.map((beat,i)=>{if(!PURPOSES.has(beat?.purpose)||!Number.isFinite(beat.durationSec)||beat.durationSec<=0||beat.durationSec>90)throw Error(`Кадр ${i+1}: некорректная структура или длительность`);return {purpose:beat.purpose,line:text(beat.line,`beat ${i+1} line`,1000),action:text(beat.action,`beat ${i+1} action`,1000),durationSec:beat.durationSec};});
+ if(!Array.isArray(beats)||beats.length<3||beats.length>12||beats[0].purpose!=='hook'||beats.at(-1).purpose!=='ending'||beats.slice(1,-1).some(beat=>beat.purpose!=='development'))throw Error('Сценарий должен содержать хук, развитие и финал в правильном порядке');
+ const targetIndices=indices(raw.targetIndices,'targetIndices',beats.length),lockedIndices=raw.lockedIndices===undefined?[]:Array.isArray(raw.lockedIndices)&&raw.lockedIndices.length===0?[]:indices(raw.lockedIndices,'lockedIndices',beats.length);
+ if(targetIndices.some(index=>lockedIndices.includes(index)))throw Error('Автор закрепил кадр; его нельзя одновременно редактировать');
+ return {kind:raw.kind,version:1,sourceRevisionId:text(raw.sourceRevisionId,'sourceRevisionId',180),idea:{id:text(raw.idea?.id,'idea.id',180),title:text(raw.idea?.title,'idea.title',200),originalConflict:text(raw.idea?.originalConflict,'idea.originalConflict',2000)},beats,targetIndices,lockedIndices,instruction:text(raw.instruction,'instruction',2000),authorFeedback:raw.authorFeedback===undefined?null:text(raw.authorFeedback,'authorFeedback',2000),creativeProfile:raw.creativeProfile===undefined?null:{priorities:Array.isArray(raw.creativeProfile?.priorities)?raw.creativeProfile.priorities.filter(v=>typeof v==='string').slice(0,12):[],constraints:Array.isArray(raw.creativeProfile?.constraints)?raw.creativeProfile.constraints.filter(v=>typeof v==='string').slice(0,12):[]}};
+}
 export function validateDoctorTask(raw){
  if(!raw||raw.kind!=='persona-local-doctor-input-v1'||raw.version!==1)throw Error('Ожидается persona-local-doctor-input-v1');
+ if(!raw.script&&raw.sourceRevisionId)return validateCanonicalTask(raw);
  const script=raw.script,rev=script?.currentRevision;
  if(!script||!rev||script.currentRevisionId!==rev.id||!Array.isArray(rev.beats)||rev.beats.length<3||rev.beats.length>12)
   throw Error('Нужен сохранённый сценарий Persona с текущей версией от 3 до 12 кадров');

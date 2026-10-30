@@ -70,6 +70,15 @@ test('benchmark preserves the raw local answer and generation settings for later
  assert.equal(await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8'),'{"beats":["необработанный ответ"]}');
  assert.deepEqual(JSON.parse(await readFile(join(dir,'acting-comedy.generation.json'),'utf8')),{temperature:0.6,numPredict:3500,systemPrompt:'Системный промпт'});
 });
+test('benchmark retains the one allowed format-repair evidence separately from the original response',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-repair-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const fake=async()=>({brief:{script:[{line:'Тест'}],adaptations:{reels:{durationSec:20}}},review:{notes:{dramaturg:['Замечание'],director:['Замечание'],producer:['Замечание']}},rawResponse:'{"beats":[{"durationSec":-1}]}',formatRepair:{status:'FORMAT_REPAIRED',repairedBeatIndices:[1],repairRawResponse:'{"durations":[4]}'}});
+ await benchmarkPersonaLocalModel({model:'local-test:7b',outputDirectory:dir,cases:[CREATIVE_CASES[0]],generator:fake});
+ const repair=JSON.parse(await readFile(join(dir,'acting-comedy.format-repair.json'),'utf8'));
+ assert.equal(repair.status,'FORMAT_REPAIRED');
+ assert.equal(repair.repairRawResponse,'{"durations":[4]}');
+});
 test('benchmark records a durable running state before a local model is asked to generate',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-state-'));
  t.after(()=>rm(dir,{recursive:true,force:true}));
