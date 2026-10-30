@@ -38,6 +38,10 @@ function candidate(script: ScenarioScript){
     version:1,
     sourceRevisionId:script.currentRevisionId,
     status:"SUGGESTION_NOT_APPROVED",
+    model:"qwen2.5-coder:7b",
+    diagnosis:{editorialSummary:"Финал нуждается в переработке.",
+      findings:[{role:"dramaturg",beatIndex:3,issue:"Финал предсказуем.",evidence:"Ничего не меняется.",
+        proposal:"Герой должен предпринять неожиданное действие."}]},
     revisedBeats:[...script.currentRevision.beats.slice(0,3),after],
     diff:[{beatIndex:3,before:script.currentRevision.beats[3],after}],
     changeSummary:"Финал стал активным действием героя.",
@@ -68,6 +72,13 @@ describe("Persona local Script Doctor proposal import",()=>{
     expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,diff:[{
       ...suggestion.diff[0],before:{...suggestion.diff[0].before,line:"Придуманная прежняя реплика"}
     }]},"2026-10-30T15:05:00Z")).toThrow("diff does not match");
+  });
+  it("blocks untrusted editorial metadata before preview or import",()=>{
+    const source=original(),suggestion=candidate(source);
+    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,
+      model:"remote:cloud"},"2026-10-30T15:05:00Z")).toThrow("editorial diagnosis");
+    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,
+      diagnosis:{editorialSummary:"Valid title",findings:[]}},"2026-10-30T15:05:00Z")).toThrow("editorial diagnosis");
   });
   it("rejects repeated or missing changed entries and wrong narrative roles",()=>{
     const source=original(),suggestion=candidate(source);
