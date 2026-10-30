@@ -82,6 +82,24 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   const next=createScenarioScript(selected,{createdAt:new Date().toISOString(),beats:draftBeats(selected)});
   update({script:next,selectedIdeaId:selected.id});setBeats(next.currentRevision.beats);setError('');
  };
+ const addDevelopmentBeat=()=>{
+  if(beats.length>=12){setError('Максимум 12 смысловых блоков. Уберите лишние или сократите сцену.');return}
+  const point=Math.max(1,beats.findIndex(beat=>beat.purpose==='ending'));
+  const next={purpose:'development' as const,line:'Опишите следующую реплику или немую сцену',action:'Укажите конкретное физическое действие героя',durationSec:4};
+  setBeats(current=>[...current.slice(0,point),next,...current.slice(point)]);
+  setError('');
+ };
+ const removeDevelopmentBeat=(index:number)=>{
+  if(beats[index]?.purpose!=='development'||beats.filter(beat=>beat.purpose==='development').length<=1){
+   setError('Хук, финал и хотя бы одно развитие должны оставаться в сценарии.');return
+  }
+  setBeats(current=>current.filter((_,i)=>i!==index));setError('');
+ };
+ const moveDevelopmentBeat=(index:number,direction:-1|1)=>{
+  const other=index+direction;
+  if(beats[index]?.purpose!=='development'||beats[other]?.purpose!=='development')return;
+  setBeats(current=>{const next=[...current];[next[index],next[other]]=[next[other],next[index]];return next});
+ };
  const saveScript=()=>{
   if(!script)return;
   try{const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});update({script:next});setRevisionReason('');setError('');}
@@ -187,7 +205,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
-   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label></fieldset>)}
+   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
+     {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
+       <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
+       <button type="button" className="ghost" disabled={beats[index+1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,1)}>Ниже</button>
+       <button type="button" className="ghost" disabled={beats.filter(b=>b.purpose==='development').length<=1} onClick={()=>removeDevelopmentBeat(index)}>Удалить блок</button>
+     </div>}
+    </fieldset>)}
+    <button type="button" className="ghost" onClick={addDevelopmentBeat} disabled={beats.length>=12}>+ Добавить действие / сцену</button>
    {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
     <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
     <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
