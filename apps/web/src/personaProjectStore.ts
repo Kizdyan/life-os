@@ -1,4 +1,4 @@
-import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript } from '../../../packages/core/src/persona-scenario-intelligence';
+import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript, ScenarioCreativeProfile } from '../../../packages/core/src/persona-scenario-intelligence';
 import type { FormatMemoryObservation } from '../../../packages/core/src/format-memory';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
@@ -38,6 +38,10 @@ export type PersonaScenarioWorkspace={
  script?:ScenarioScript;
  /** Only explicit author approvals are retained as reusable format mechanics. */
  formatMemory?:FormatMemoryObservation[];
+ /** Author-controlled project creative profile, not a guessed personality profile. */
+ creativeProfile?:ScenarioCreativeProfile;
+ /** Rejection feedback remains separate from positive Format Memory. */
+ editorialFeedback?:Array<{revisionId:string;comment:string;createdAt:string}>;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -50,7 +54,12 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  if(!value||typeof value!=='object')return false;
  const workspace=value as Partial<PersonaScenarioWorkspace>;
- if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory)))return false;
+ if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory))||(workspace.creativeProfile!==undefined&&
+ (!Array.isArray(workspace.creativeProfile.priorities)||!Array.isArray(workspace.creativeProfile.constraints)||
+ workspace.creativeProfile.priorities.some(value=>typeof value!=='string')||
+ workspace.creativeProfile.constraints.some(value=>typeof value!=='string')))||
+ (workspace.editorialFeedback!==undefined&&(!Array.isArray(workspace.editorialFeedback)||
+ workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string'))))return false;
  if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
  if(workspace.script===undefined)return true;
  const script=workspace.script as Partial<ScenarioScript>;

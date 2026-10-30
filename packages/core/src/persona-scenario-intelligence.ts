@@ -1,4 +1,4 @@
-import type { PersonaProductionBriefInput } from "./persona-production-brief";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief";
 import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory";
 import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence";
 
@@ -52,6 +52,9 @@ export interface ScenarioIdea {
   productionComplexity: "low" | "medium" | "high";
   estimatedDurationSec: number;
   creativeProfileFit: string;
+  /** How the concept was actually produced, not a prediction of audience success. */
+  origin?: "reviewed_reference" | "template_fallback";
+  evidenceNote?: string;
 }
 
 export interface ScenarioCreativeProfile {
@@ -131,6 +134,45 @@ export interface ScenarioScriptReview {
   findings: ScenarioScriptFinding[];
 }
 
+/**
+ * These labels make creative problems discussable without pretending that a
+ * deterministic check can measure talent, audience response, or originality
+ * across the internet.  Categories not supported by direct evidence stay for
+ * a human or local-model editorial pass rather than being guessed here.
+ */
+export type ScenarioCreativeFailureCategory =
+  | "brief_parroting"
+  | "generic_dialogue"
+  | "repeated_line"
+  | "uniform_timing"
+  | "missing_protagonist_goal"
+  | "missing_conflict"
+  | "weak_escalation"
+  | "unearned_twist"
+  | "predictable_payoff"
+  | "unplayable_actor_action"
+  | "expository_dialogue"
+  | "unshootable_scene"
+  | "unverified_fact"
+  | "source_imitation"
+  | "format_mismatch";
+
+export interface ScenarioCreativeRiskFinding {
+  category: ScenarioCreativeFailureCategory;
+  beatOrders: number[];
+  fragment: string;
+  severity: "needs_revision" | "human_review";
+  explanation: string;
+  proposedFix: string;
+}
+
+export interface ScenarioCreativeRiskAssessment {
+  revisionId: string;
+  method: "heuristic";
+  findings: ScenarioCreativeRiskFinding[];
+  notice: string;
+}
+
 export interface ScenarioScriptRevision {
   id: string;
   number: number;
@@ -139,6 +181,49 @@ export interface ScenarioScriptRevision {
   beats: ScenarioScriptBeat[];
   sourceFacts: string[];
   review?: ScenarioScriptReview;
+}
+
+/**
+ * Detect only directly demonstrable failure patterns.  It deliberately does
+ * not infer conflict, originality or comic quality from word counts: those
+ * require a real editor or a separately labelled model pass.
+ */
+export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevision, "id" | "beats">): ScenarioCreativeRiskAssessment {
+  const findings: ScenarioCreativeRiskFinding[] = [];
+  const duplicateOrders = new Map<string, number[]>();
+  revision.beats.forEach((beat, index) => {
+    const normalized = beat.line.toLocaleLowerCase("ru-RU").replace(/\s+/gu, " ").trim();
+    if (!normalized) return;
+    duplicateOrders.set(normalized, [...(duplicateOrders.get(normalized) ?? []), index + 1]);
+  });
+  for (const [line, orders] of duplicateOrders) {
+    if (orders.length < 2) continue;
+    findings.push({
+      category: "repeated_line",
+      beatOrders: orders,
+      fragment: line,
+      severity: "needs_revision",
+      explanation: `Одна и та же реплика повторяется в кадрах ${orders.join(", ")}; это подтверждаемый признак, что действие сцены могло не развиться.`,
+      proposedFix: "Оставьте повтор только если он является осмысленным рефреном; иначе дайте каждому следующему кадру новый выбор, реакцию или изменение обстоятельств.",
+    });
+  }
+  const durations = revision.beats.map((beat) => beat.durationSec);
+  if (durations.length >= 4 && new Set(durations).size === 1) {
+    findings.push({
+      category: "uniform_timing",
+      beatOrders: revision.beats.map((_, index) => index + 1),
+      fragment: `${durations[0]} сек. во всех кадрах`,
+      severity: "human_review",
+      explanation: "Все кадры имеют одинаковую длительность. Это не доказывает плохой ритм, но требует ручной проверки пауз, хука, реакции и финала.",
+      proposedFix: "Проверьте монтаж по действию: короткий хук, достаточная пауза для реакции и длительность, оправданная музыкой или репликой, а не шаблоном.",
+    });
+  }
+  return {
+    revisionId: revision.id,
+    method: "heuristic",
+    findings,
+    notice: "Эта проверка не измеряет художественную силу, юмор, актёрскую игру, оригинальность или будущий успех ролика. Такие выводы требуют живой редакторской оценки или отдельно помеченного локального модельного разбора.",
+  };
 }
 
 export interface ScenarioScriptApproval {
@@ -250,43 +335,74 @@ export function analyseScenarioReference(
   };
 }
 
+/**
+ * Free deterministic creative prompts. Without specifically reviewed video
+ * observations, prewritten concepts are labelled as fallback AND cannot claim
+ * a reference source. With observations, they explicitly incorporate the
+ * recorded dramatic mechanics, not a fabricated trend or invented metric.
+ * This is NOT local LLM generation and should never be described as such.
+ */
 export function suggestScenarioIdeas(input: {
   research: ScenarioResearchItem[];
+  analyses?: ScenarioReferenceAnalysis[];
   creativeProfile: ScenarioCreativeProfile;
   count: number;
 }): ScenarioIdea[] {
   if (!Number.isInteger(input.count) || input.count < 5 || input.count > 10) {
     throw new Error("Idea count must be between 5 and 10");
   }
-  const references = validateScenarioResearch(input.research)
-    .filter((item) => item.observationStatus !== "unavailable");
-  if (references.length === 0) throw new Error("Ideas need available research evidence");
+  // A fully empty research inbox can still create clearly labelled fallback ideas.
+  const references = input.research.length ? validateScenarioResearch(input.research) : [];
+  if (references.length>0 && !references.some((item)=>item.observationStatus !== "unavailable")) {
+    throw new Error("Ideas need available research evidence");
+  }
   const profileFit = nonEmpty(input.creativeProfile.priorities.join(", "))
-    ? `Опирается на: ${input.creativeProfile.priorities.join(", ")}.`
-    : "Нужна авторская проверка соответствия Creative Profile.";
+    ? `Учитываем направления: ${input.creativeProfile.priorities.join(", ")}.`
+    : "Creative Profile ещё не загружен; художественную пригодность нужно подтвердить.";
+  const verified = (input.analyses ?? []).filter(analysis => {
+    const linked = references.find(ref => ref.id === analysis.researchId);
+    return linked?.observationStatus === "user_reviewed" &&
+      analysis.observationStatus === "user_reviewed" &&
+      Boolean(analysis.reviewedAt && linked.reviewedAt);
+  });
   const patterns = [
-    ["Невидимая правка", "Актёр пытается выполнить всё более противоречивые заметки режиссёра в одной реплике.", "Сыграть нарастающее внутреннее сопротивление без гротеска.", "Герой находит точную, простую задачу вместо противоречий."],
-    ["Пианино слышит подтекст", "Композитор подбирает аккорд к словам героя, но музыка каждый раз выдаёт настоящий подтекст.", "Переключать внешнюю собранность и внутреннюю реакцию.", "Последний аккорд говорит правду раньше персонажа."],
-    ["Кастинг в собственной голове", "Одна и та же просьба звучит как три разных кастинговых задания.", "Разделить персонажей действием, а не только голосом.", "Обычная просьба оказывается самым сложным заданием."],
-    ["Пауза перед дублем", "Герой готовит идеальный вход, пока за кадром меняют условие сцены.", "Сохранить естественную паузу и слушание партнёра.", "Неподготовленная реакция становится лучшим дублем."],
-    ["Мелодия для неудобного разговора", "Музыкант сочиняет безопасную мелодию, чтобы не произносить важную фразу.", "Дать музыке быть действием, а не фоном.", "Фраза всё-таки звучит без музыкального прикрытия."],
-    ["POV: режиссёр просит проще", "После каждой просьбы «проще» герой понимает её всё буквальнее.", "Наращивать комедию через точные физические действия.", "Финальная простота оказывается самой выразительной."],
-    ["Репетиция с будущим собой", "Будущий герой комментирует нынешний дубль и случайно мешает ему.", "Отделить два состояния точной пластикой и ритмом.", "Совет из будущего оказывается обычным вниманием к партнёру."],
-    ["Сцена без подходящей музыки", "Герой ищет идеальный трек, пока сама ситуация требует тишины.", "Сделать тишину активным решением персонажа.", "Выключенная музыка завершает шутку."],
-    ["Один предмет меняет жанр", "Один и тот же реквизит переводит домашнюю сцену из драмы в комедию.", "Менять отношение к предмету, не меняя обстоятельство.", "Последний взгляд возвращает сцену к правде."],
-    ["Не тот темп", "Актёр и пианист спорят о темпе, хотя говорят о разных вещах.", "Строить конфликт через слушание и перебивание.", "Общий ритм появляется после честной паузы."],
+    ["Смена условий на кинопробе", "На настоящей кинопробе герой теряет возможность выполнить простую задачу: режиссёр неожиданно меняет обстоятельства.", "Добиться повторного шанса, скрывая тревогу.", "Герой обнаруживает, что важнее не задание, а его собственная реакция."],
+    ["Аккорд вместо объяснения", "Персонаж пытается скрыть неловкость, но неверный аккорд выдаёт его истинную реакцию.", "Сохранить лицо и не перестать играть.", "Правильное решение внезапно оказывается тишиной."],
+    ["Неудобная роль", "Роль, к которой герой готовился, достаётся ему в совершенно неожиданной бытовой ситуации.", "Добиться признания, не играя на публику.", "Окружающие принимают за актёрскую игру подлинное действие."],
+    ["Два внутренних голоса", "Два разных решения конкурируют прямо в момент важной встречи.", "Скрыть сомнение и всё-таки принять решение.", "Герой неожиданно выбирает третью, простую стратегию."],
+    ["Пауза в решающий момент", "На репетиции партнёр перестаёт подавать нужную реплику, и герой вынужден действовать.", "Добыть ответ, не нарушив сцену.", "Молчание меняет отношения персонажей."],
+    ["Режиссёрский комментарий", "Участники сцены по-разному понимают одну режиссёрскую задачу, и недоразумение растёт.", "Убедить партнёра в своём понимании.", "Оба понимают, что слушали не того человека."],
+    ["Слова против музыки", "Герой обещает спокойный разговор, но музыкальный мотив каждый раз обостряет конфликт.", "Вернуть спокойствие, не скрыв правду.", "Герой намеренно выбирает один простой звук."],
+    ["Незаметный предмет", "Незначительный реквизит лишает персонажа возможности продолжать привычную роль.", "Сохранить контроль без реквизита.", "Герой впервые действует по-настоящему."],
+    ["Ошибка темпа", "Два человека не могут договориться, потому что одновременно говорят о музыкальном и жизненном темпе.", "Быть услышанным партнёром.", "Общий ритм появляется из случайной паузы."],
+    ["Реакция без слов", "Человек получает сообщение, на которое невозможно ответить вслух, и каждое невербальное действие только усложняет положение.", "Сохранить достоинство в неловкой ситуации.", "Последняя реакция меняет значение первой."],
   ] as const;
-  return patterns.slice(0, input.count).map(([title, originalConflict, actingTask, ending], index) => ({
-    id: `scenario-idea-${index + 1}`,
-    title,
-    referenceIds: [references[index % references.length].id],
-    originalConflict,
-    actingTask,
-    ending,
-    productionComplexity: index % 3 === 0 ? "medium" : "low",
-    estimatedDurationSec: 20 + (index % 3) * 5,
-    creativeProfileFit: profileFit,
-  }));
+  return patterns.slice(0,input.count).map(([title, seedConflict, actingTask, seedEnding], index) => {
+    const observation = verified.length ? verified[index % verified.length] : undefined;
+    const origin = observation ? "reviewed_reference" : "template_fallback";
+    return {
+      id: `scenario-idea-${index+1}`,
+      title,
+      // NO reference attribution in fallback mode.
+      referenceIds: observation ? [observation.researchId] : [],
+      originalConflict: observation
+        ? `${seedConflict} При разработке использовать наблюдаемую механику препятствия: «${observation.obstacle}» и смены ожиданий: «${observation.turn}». Не переносить чужие конкретные реплики и события.`
+        : seedConflict,
+      actingTask: observation
+        ? `${actingTask} Для актёрской проработки учесть отмеченную цель персонажа: «${observation.desire}»; придумать новую ситуацию.`
+        : actingTask,
+      ending: observation
+        ? `${seedEnding} Проверить, как найденный принцип завершения «${observation.payoff}» применим к оригинальному герою.`
+        : seedEnding,
+      productionComplexity: index%3===0 ? "medium" : "low",
+      estimatedDurationSec: 20 + index%3*5,
+      creativeProfileFit:profileFit,
+      origin,
+      evidenceNote:observation
+        ? `Основано на ручном разборе просмотренного референса ${observation.researchId}; это структурная адаптация, не генерация ИИ и не прогноз охватов.`
+        : "Шаблонная идея: референс не просмотрен и не разобран; исследовательская связь не заявляется.",
+    };
+  });
 }
 
 /** Starts a versioned scenario script; content remains an author draft until approval. */
@@ -331,6 +447,15 @@ export function reviseScenarioScript(
 /** Separates structural criticism by role; it never claims to measure artistic talent. */
 export function reviewScenarioScript(revision: ScenarioScriptRevision): ScenarioScriptReview {
   const findings: ScenarioScriptFinding[] = [];
+  if (revision.beats.length < 3 || revision.beats.length > 12) {
+    findings.push({role:"dramaturg",severity:"blocking",code:"invalid_beat_count",message:"Для этой редакции нужны 3–12 осмысленных сценических блоков."});
+  }
+  if (revision.beats[0]?.purpose !== "hook" ||
+      revision.beats[revision.beats.length - 1]?.purpose !== "ending" ||
+      revision.beats.filter(beat=>beat.purpose==="hook").length !== 1 ||
+      revision.beats.filter(beat=>beat.purpose==="ending").length !== 1) {
+    findings.push({role:"dramaturg",severity:"blocking",code:"broken_drama_order",message:"Один хук должен открывать сцену, один финал завершать; между ними — развитие."});
+  }
   const purposes = new Set(revision.beats.map((beat) => beat.purpose));
   if (!purposes.has("hook") || !purposes.has("development") || !purposes.has("ending")) {
     findings.push({ role: "dramaturg", severity: "blocking", code: "missing_story_beat", message: "Нужны отдельные хук, развитие и завершение мысли." });
@@ -384,6 +509,65 @@ export function scenarioScriptToProductionBriefInput(script: ScenarioScript): Pe
       format: "reel",
     },
     sourceFacts: [...current.sourceFacts],
+  };
+}
+
+/**
+ * Converts the EXACT approved words, actions and timings to the established
+ * Production Brief contract. Only technical camera/capture advice is synthesized;
+ * the author-script is never sent through the three-beat template builder.
+ * Production QA and its separate editorial gate still run on import.
+ */
+export function scenarioScriptToProductionBrief(
+  script: ScenarioScript,
+  selectedProject: PersonaProductionIdea,
+): PersonaProductionBrief {
+  const current = requireCurrentRevision(script);
+  if (!script.approval || script.approval.revisionId !== current.id) {
+    throw new Error("Current script needs explicit author approval before Production Brief");
+  }
+  if (reviewScenarioScript(current).status !== "ready_for_author") {
+    throw new Error("Script Doctor blocks Production Brief conversion");
+  }
+  if (!["reel", "short", "story"].includes(selectedProject.format)) {
+    throw new Error("A video Production Brief requires a video project");
+  }
+  // Use the original project's identity so edits and imports retain provenance.
+  const base = buildPersonaProductionBrief({
+    idea: selectedProject,
+    sourceFacts: current.sourceFacts,
+  });
+  const authored = current.beats.map((beat, index) => ({
+    order: index + 1,
+    line: beat.line,
+    action: beat.action,
+    durationSec: beat.durationSec,
+  }));
+  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => ({
+    order: beat.order,
+    durationSec: beat.durationSec,
+    framing: index === 0 || index === authored.length - 1 ? "close-up" : "medium",
+    angle: index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя",
+    cameraMovement: "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
+    lighting: base.capture.lighting,
+    // The authored physical action is copied exactly, never a generated summary.
+    action: beat.action,
+  }));
+  const durationSec = authored.reduce((sum, beat) => sum + beat.durationSec, 0);
+  return {
+    ...base,
+    hook: {
+      firstSeconds: authored[0].line,
+      visual: authored[0].action,
+      delivery: "Текст и действие утверждены автором; проверить исполнение и визуальный ритм на репетиции.",
+    },
+    script: authored,
+    shots,
+    adaptations: {
+      reels: { ...base.adaptations.reels, durationSec },
+      shorts: { ...base.adaptations.shorts, durationSec },
+      vkClips: { ...base.adaptations.vkClips, durationSec },
+    },
   };
 }
 

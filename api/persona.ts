@@ -94,9 +94,10 @@ async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:
     if(kind==='plan')throw new Error('free_ai_generate_or_revise_only');
     return freeAiGenerate(kind==='generate'?freeScriptSystem:freeReviseSystem,payload,request);
   }
-  // Preview cannot silently spend paid model credits, or conceal a failed
+  // Paid external AI is double opt-in: explicit server permission AND request header.
+   // Preview cannot silently spend paid model credits, or conceal a failed
   // model call behind a pretend AI-generated quality result.
-  if(env('PERSONA_ENABLE_EXTERNAL_AI')==='true' && env('PERSONA_ENABLE_FREE_AI')!=='true'){
+  if(env('PERSONA_ENABLE_EXTERNAL_AI')==='true' && env('PERSONA_ALLOW_PAID_REQUESTS')==='true' && request.headers.get('x-persona-paid-approved')==='true' && env('PERSONA_ENABLE_FREE_AI')!=='true'){
     try{
       const generated=kind==='plan'?await openAI(planSystem,payload):kind==='generate'?await openAI(genSystem,payload):await openAI(reviseSystem,payload);
       return {...generated,executionMode:'ai'};
@@ -107,7 +108,7 @@ async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:
   return {...localRevise(payload.draft,String(payload.feedback||'')),executionMode:'template'};
 }
 async function transcribe(request:Request){
-  if(env('PERSONA_ENABLE_EXTERNAL_AI')!=='true'){
+  if(env('PERSONA_ENABLE_EXTERNAL_AI')!=='true'||env('PERSONA_ALLOW_PAID_REQUESTS')!=='true'||request.headers.get('x-persona-paid-approved')!=='true'){
     return json({error:'В тестовом режиме голосовое распознавание ещё не подключено. Используй текстовую правку.'},503);
   }
   const form=await request.formData();

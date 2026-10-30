@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import ErikaSheet from './ErikaSheet';
-import PersonaFactory, { buildCustomPersonaIdea, buildPersonaProductionWorkflow, PersonaProductionBriefPanel } from './PersonaFactory';
+import PersonaFactory, { buildCustomPersonaIdea, buildPersonaProductionWorkflow, PersonaProductionBriefPanel, shouldRequestPersonaPlan } from './PersonaFactory';
 import MediaBrainCard from './MediaBrainCard';
 import LocalTaskEditor from './LocalTaskEditor';
 
@@ -72,6 +72,11 @@ describe('Life OS and Persona JSX runtime rendering', () => {
 });
 
 describe('Persona creative brief preservation', () => {
+  it('does not make a hidden planning request in zero-credit local startup', () => {
+    expect(shouldRequestPersonaPlan(false)).toBe(false);
+    expect(shouldRequestPersonaPlan(true)).toBe(true);
+  });
+
   it('sends the complete long brief to the model instead of silently slicing it to 180 chars', () => {
     const details = 'Хочу оригинальный рилс о театральной закулисной ситуации. '+
       'Юмор естественный. '.repeat(15)+

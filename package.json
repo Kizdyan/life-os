@@ -34,7 +34,13 @@
     "media:visual:finalize": "node tools/persona-visual-finalize.mjs",
     "media:creative:review": "node tools/persona-creative-review.mjs",
     "persona:scenario:local": "node tools/persona-local-scenario.mjs",
-    "persona:scenario:local:test": "node --test tools/persona-local-scenario.test.mjs"
+    "persona:scenario:local:test": "node --test tools/persona-local-scenario.test.mjs",
+    "persona:scenario:creative-benchmark": "node tools/persona-local-creative-benchmark.mjs",
+    "persona:scenario:creative-benchmark:test": "node --test tools/persona-local-creative-benchmark.test.mjs",
+    "persona:scenario:diagnose": "node tools/persona-local-scenario-diagnose.mjs",
+    "persona:scenario:doctor": "node tools/persona-local-script-doctor.mjs",
+    "persona:scenario:doctor:task": "node tools/persona-local-script-doctor-task.mjs",
+    "persona:scenario:doctor:test": "node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
