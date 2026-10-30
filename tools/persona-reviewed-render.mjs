@@ -51,19 +51,41 @@ export async function preflightReviewedRender({draftDir,selectionPath,outputDir,
   fail('Require draft directory, reviewed selection JSON, NEW output directory, and profile');
  const draft=resolve(draftDir),output=resolve(outputDir),selection=resolve(selectionPath);
  if(draft===output)fail('Reviewed output must be separate from original draft');
- const result=await readJson(join(draft,'RESULT.json'));
- if(result?.status!=='awaiting-author-review'||result.distributionAllowed!==false||
-    resolve(result.output||'')!==join(draft,'draft-reel.mp4')||
-    resolve(result.qaPath||'')!==join(draft,'qa.json'))
-  fail('Original draft is not an independently reviewable, unpublished Persona export');
- const qa=await readJson(join(draft,'qa.json'));
- validateDraftQa(qa,join(draft,'draft-reel.mp4'));
- if((await digest(join(draft,'draft-reel.mp4')))!==qa.evidence.sha256)
-  fail('Original draft changed since the trusted technical QA report');
+ let mode='draft';
+ const result=await readJson(join(draft,'RESULT.json')).catch(error=>{
+  if(error?.code==='ENOENT')return null;
+  throw error;
+ });
+ if(result!==null){
+  if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||
+     resolve(result.output||'')!==join(draft,'draft-reel.mp4')||
+     resolve(result.qaPath||'')!==join(draft,'qa.json'))
+   fail('Original draft is not an independently reviewable, unpublished Persona export');
+  const qa=await readJson(join(draft,'qa.json'));
+  validateDraftQa(qa,join(draft,'draft-reel.mp4'));
+  if((await digest(join(draft,'draft-reel.mp4')))!==qa.evidence.sha256)
+   fail('Original draft changed since the trusted technical QA report');
+ }else{
+  mode='recovery';
+  const recovery=await readJson(join(draft,'RECOVERY-RESULT.json'));
+  if(recovery?.kind!=='persona-asr-recovery-v1'||
+     recovery.status!=='needs-manual-transcript-review'||
+     recovery.distributionAllowed!==false||recovery.publicationApproved!==false||
+     resolve(recovery.decisionsPath||'')!==join(draft,'decisions.json')||
+     resolve(recovery.analysisPath||'')!==join(draft,'evidence','analysis.json')||
+     resolve(recovery.reviewKit||'')!==join(draft,'editorial-review-kit'))
+   fail('Missing or unsafe offline ASR recovery manifest');
+  const original=await readJson(join(draft,'decisions.json'));
+  if(original?.recoveryRequired!==true||original.mode!=='preview'||
+     resolve(original.analysisPath||'')!==resolve(recovery.analysisPath)||
+     resolve(original.briefPath||'')!==resolve(recovery.briefPath))
+   fail('Missing or mismatched evidence for ASR recovery');
+ }
  const kit=join(draft,'editorial-review-kit');
  const kitResult=await readJson(join(kit,'KIT.json'));
  if(kitResult?.kind!=='persona-review-kit-v1'||kitResult.publicationApproved!==false||
-    kitResult.status!=='ready-for-human-selection')
+    kitResult.status!=='ready-for-human-selection'||
+    (mode==='recovery'&&kitResult.recovery!==true))
   fail('Missing or unsafe editorial review kit');
  const packPath=join(kit,'candidate-pack.json');
  const pack=await readJson(packPath);
@@ -75,7 +97,7 @@ export async function preflightReviewedRender({draftDir,selectionPath,outputDir,
  if(human.selections.some(item=>item?.reviewed!==true))
   fail('Every scene must have an explicitly reviewed take');
  await stat(resolve(profilePath));
- return {draft,output,selection,kit,packPath,profilePath:resolve(profilePath),
+ return {draft,output,selection,kit,packPath,profilePath:resolve(profilePath),mode,
   decisionsPath:join(draft,'decisions.json')};
 }
 export function formatReviewedResult(report){
@@ -85,7 +107,7 @@ export function formatReviewedResult(report){
  return [
   '# Persona · повторный монтаж выбранных дублей','',
   '**Статус:** технический черновик готов к личному просмотру. **Публикация не разрешена.**','',
-  '- Первый черновик: '+report.originalDraft,
+  '- Первый черновик: '+(report.originalDraft??'не создан, исходный ASR не прошёл'),
   '- Новая версия: '+report.output,
   '- Проверка MP4: '+report.qaPath,
   '- Новые субтитры: '+report.subtitleDraft.srtPath,
@@ -130,7 +152,8 @@ export async function renderReviewedReel({draftDir,selectionPath,outputDir,ffmpe
   const creative=await initReview(p.packPath,p.profilePath,join(p.output,'creative-review.json'),p.selection);
   const report={version:1,kind:'persona-reviewed-reel-v1',
    status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
-   originalDraft:join(p.draft,'draft-reel.mp4'),
+   originalDraft:p.mode==='recovery'?null:join(p.draft,'draft-reel.mp4'),
+   recoveredFromAsr:p.mode==='recovery',
    output:mp4,qaPath,decisionsPath,memoryPath,
    timelinePath:assembled.project,subtitleDraft:captions,creativeReviewTemplate:creative.reviewPath,
    steps:stage,caveat:'Selected clips were human-chosen; Creative QA still requires viewing the final MP4. No publication approval.'};
