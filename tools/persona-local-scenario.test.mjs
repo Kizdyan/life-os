@@ -58,6 +58,14 @@ test('local request creates exact importable brief, three review roles and no pu
  assert.ok(review.notes.producer[0].includes('дверь'));
  assert.equal(brief.editorialDecision,undefined);
 });
+test('passes only explicitly rejected editorial feedback to local model, preserving notes for review',async()=>{
+ const {calls,fetchImpl}=mocked();
+ const input={...req,previousEditorialFeedback:'Финал примитивен; нет причинной эскалации и актёрской задачи.'};
+ const result=await generatePersonaLocalScenario(input,{fetchImpl});
+ const outbound=JSON.parse(calls[1].opt.body);
+ assert.equal(JSON.parse(outbound.messages[1].content.split('Верни JSON.\\n')[1]).previousEditorialFeedback,input.previousEditorialFeedback);
+ assert.equal(result.review.previousEditorialFeedback,input.previousEditorialFeedback);
+});
 test('rejects cloud model, remote endpoint and disallows even a tags request',async()=>{
  const {calls,fetchImpl}=mocked();
  await assert.rejects(generatePersonaLocalScenario(req,{fetchImpl,model:'qwen3:cloud'}),/локальные модели/);
