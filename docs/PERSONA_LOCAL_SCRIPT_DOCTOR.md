@@ -29,7 +29,7 @@ Here, scenes 3 and 4 can change; scene 1 is explicitly locked; all other scenes 
 **Step 2 — run the two-pass editor (local only):**
 
 ```powershell
-node tools/persona-local-script-doctor.mjs "C:\path\doctor-task.json" "C:\path\doctor-suggestion.json" --model qwen2.5-coder:7b
+node tools/persona-local-script-doctor.mjs "C:\path\doctor-task.json" "C:\path\doctor-suggestion.json" --model qwen3:4b-instruct --timeout-ms 180000
 ```
 
 No model is downloaded by these commands. The model must appear in `ollama list`. The local Ollama endpoint is restricted to loopback.
