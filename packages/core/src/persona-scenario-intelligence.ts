@@ -364,6 +364,15 @@ export function reviseScenarioScript(
 /** Separates structural criticism by role; it never claims to measure artistic talent. */
 export function reviewScenarioScript(revision: ScenarioScriptRevision): ScenarioScriptReview {
   const findings: ScenarioScriptFinding[] = [];
+  if (revision.beats.length < 3 || revision.beats.length > 12) {
+    findings.push({role:"dramaturg",severity:"blocking",code:"invalid_beat_count",message:"Для этой редакции нужны 3–12 осмысленных сценических блоков."});
+  }
+  if (revision.beats[0]?.purpose !== "hook" ||
+      revision.beats[revision.beats.length - 1]?.purpose !== "ending" ||
+      revision.beats.filter(beat=>beat.purpose==="hook").length !== 1 ||
+      revision.beats.filter(beat=>beat.purpose==="ending").length !== 1) {
+    findings.push({role:"dramaturg",severity:"blocking",code:"broken_drama_order",message:"Один хук должен открывать сцену, один финал завершать; между ними — развитие."});
+  }
   const purposes = new Set(revision.beats.map((beat) => beat.purpose));
   if (!purposes.has("hook") || !purposes.has("development") || !purposes.has("ending")) {
     findings.push({ role: "dramaturg", severity: "blocking", code: "missing_story_beat", message: "Нужны отдельные хук, развитие и завершение мысли." });
