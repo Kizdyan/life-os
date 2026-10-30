@@ -46,7 +46,11 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const workspace=received??emptyWorkspace();
  const[selectedIdeaId,setSelectedIdeaId]=useState(workspace.selectedIdeaId??'');
  const[link,setLink]=useState('');const[title,setTitle]=useState('');const[platform,setPlatform]=useState<ScenarioPlatform>('youtube');
- const[analysisNote,setAnalysisNote]=useState('');const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
+ const[analysisNote,setAnalysisNote]=useState('');
+ const[analysisDetails,setAnalysisDetails]=useState({situation:'',desire:'',obstacle:'',turn:'',payoff:'',editing:'',sound:''});
+ const[selectedResearchId,setSelectedResearchId]=useState(workspace.research[0]?.id??'');
+ const[watchedByAuthor,setWatchedByAuthor]=useState(false);
+ const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>script?.currentRevision.beats??[]);
  useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
@@ -65,7 +69,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить источник.');}
  };
  const buildIdeas=()=>{
-  try{const ideas=suggestScenarioIdeas({research:workspace.research,creativeProfile,count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
+  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile,count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала добавьте проверяемую ссылку.');}
  };
  const selectIdea=(id:string)=>{setSelectedIdeaId(id);update({selectedIdeaId:id});};
@@ -90,12 +94,28 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{
-  const reference=workspace.research[0];
-  if(!reference||!analysisNote.trim())return;
+  const reference=workspace.research.find(ref=>ref.id===selectedResearchId)??workspace.research[0];
+  if(!reference){setError('Добавьте ссылку и выберите референс.');return}
+  const content=[analysisNote,...Object.values(analysisDetails)];
+  if(content.some(value=>value.trim().length<10)){
+   setError('Заполните все восемь наблюдений содержательно (не менее 10 символов каждое), без шаблонных заглушек.');
+   return;
+  }
   try{
-   const next=analyseScenarioReference(reference,{observationStatus:reference.observationStatus,hook:analysisNote,situation:'Нужно уточнить после просмотра автором.',desire:'Нужно уточнить после просмотра автором.',obstacle:'Нужно уточнить после просмотра автором.',turn:'Нужно уточнить после просмотра автором.',payoff:'Нужно уточнить после просмотра автором.',editing:'Нужно уточнить после просмотра автором.',sound:'Нужно уточнить после просмотра автором.',productionComplexity:'low'});
-   update({analyses:[...workspace.analyses,next]});setAnalysisNote('');setError('');
-  }catch(cause){setError(cause instanceof Error?cause.message:'Анализ требует проверяемого статуса источника.');}
+   const reviewedAt=watchedByAuthor?new Date().toISOString():undefined;
+   const updatedResearch=workspace.research.map(item=>item.id===reference.id
+    ?{...item,observationStatus:watchedByAuthor?'user_reviewed' as const:'metadata_only' as const,
+      reviewedAt:watchedByAuthor?reviewedAt:undefined}
+    :item);
+   const updated=updatedResearch.find(item=>item.id===reference.id)!;
+   const next=analyseScenarioReference(updated,{
+    observationStatus:updated.observationStatus,reviewedAt:updated.reviewedAt,
+    hook:analysisNote.trim(),...Object.fromEntries(Object.entries(analysisDetails).map(([key,value])=>[key,value.trim()])) as typeof analysisDetails,
+    productionComplexity:'low'
+   });
+   update({research:updatedResearch,analyses:[...workspace.analyses.filter(x=>x.researchId!==reference.id),next]});
+   setAnalysisNote('');setAnalysisDetails({situation:'',desire:'',obstacle:'',turn:'',payoff:'',editing:'',sound:''});setWatchedByAuthor(false);setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить проверяемый разбор.')}
  };
  return <section className="personaScenario" aria-label="Сценарий и референсы">
   <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">Perplexity отключён · Ollama только через CLI на Windows</span></header>
@@ -104,11 +124,21 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    <article className="personaScenarioCard"><h4>Референсы</h4><p>Ссылка сохраняется с её статусом. Метаданные не означают просмотр видео.</p><label>Ссылка<input aria-label="Ссылка на референс" value={link} onChange={event=>setLink(event.target.value)} placeholder="https://…" inputMode="url"/></label><label>Короткое название<input aria-label="Название референса" value={title} onChange={event=>setTitle(event.target.value)} placeholder="Что именно в формате важно"/></label><label>Платформа<select aria-label="Платформа референса" value={platform} onChange={event=>setPlatform(event.target.value as ScenarioPlatform)}>{Object.entries(platformLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label><button type="button" className="primary" onClick={addReference}>Добавить ссылку</button>
     <ul className="personaScenarioList">{workspace.research.map(reference=><li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.title||reference.url}</a><span className={`personaEvidence ${reference.observationStatus}`}>{sourceLabel(reference.observationStatus)}</span></li>)}</ul>
    </article>
-   <article className="personaScenarioCard"><h4>Разбор формата</h4><p>Заметка помогает сформулировать, что именно вы берёте как приём, а не как чужой сценарий.</p><label>Что здесь работает<textarea aria-label="Что работает в референсе" value={analysisNote} onChange={event=>setAnalysisNote(event.target.value)} placeholder="Например: хук строится на смене ожидания в первой фразе."/></label><button type="button" className="ghost" disabled={!workspace.research.length||!analysisNote.trim()} onClick={addAnalysis}>Сохранить заметку</button><p className="personaScenarioHint">{workspace.analyses.length?`Сохранено разборов: ${workspace.analyses.length}.`:'Разбор не выдаёт описание за просмотр, пока источник не отмечен как просмотренный автором.'}</p>
+   <article className="personaScenarioCard"><h4>Разбор формата</h4><p>Выберите конкретный источник и разберите реальные обстоятельства, действие и монтаж. Ссылка и метаданные не доказывают просмотр.</p>
+     <label>Референс для разбора<select aria-label="Референс для разбора" value={selectedResearchId||workspace.research[0]?.id||''} onChange={event=>{setSelectedResearchId(event.target.value);setWatchedByAuthor(false)}}>
+     {workspace.research.map(item=><option key={item.id} value={item.id}>{item.title||item.url}</option>)}</select></label>
+     <label>Хук и начало<textarea aria-label="Что работает в референсе" value={analysisNote} onChange={event=>setAnalysisNote(event.target.value)} placeholder="Что показано или утверждается источником? Не додумывайте содержание."/></label>
+     {([
+      ['situation','Обстоятельства'],['desire','Цель персонажа'],['obstacle','Препятствие'],
+      ['turn','Поворот'],['payoff','Финал'],['editing','Монтажный приём'],['sound','Звук и музыка']
+     ] as const).map(([field,label])=><label key={field}>{label}<textarea aria-label={label} value={analysisDetails[field]} onChange={event=>setAnalysisDetails(current=>({...current,[field]:event.target.value}))} placeholder="Только то, что действительно наблюдали или прочитали."/></label>)}
+     <label className="personaScenarioWatch"><input type="checkbox" checked={watchedByAuthor} onChange={event=>setWatchedByAuthor(event.target.checked)}/> Я лично просмотрел этот конкретный ролик и подтверждаю наблюдения</label>
+     <button type="button" className="ghost" disabled={!workspace.research.length} onClick={addAnalysis}>Сохранить разбор и источник</button>
+     <p className="personaScenarioHint">{workspace.analyses.length?`Сохранено разборов: ${workspace.analyses.length}.`:'Нет содержательного разбора. Без него Idea Engine выдаёт только явно обозначенные шаблонные варианты.'}</p>
    </article>
   </div>
   <section className="personaScenarioIdeas"><div><h4>Оригинальные идеи</h4><p>Локальные варианты опираются на выбранные ссылки и ограничения Creative Profile. Это не прогноз охватов и не копирование чужих сцен.</p></div><button type="button" className="ghost" disabled={!workspace.research.length} onClick={buildIdeas}>Собрать 5 идей</button></section>
-  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>Основание: {idea.referenceIds.join(', ')} · {idea.estimatedDurationSec} сек.</small></button>)}</div>
+  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
    {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label></fieldset>)}
