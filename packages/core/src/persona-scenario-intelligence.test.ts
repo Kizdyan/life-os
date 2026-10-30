@@ -85,9 +85,38 @@ describe("Persona Scenario Intelligence research core", () => {
     });
 
     expect(ideas).toHaveLength(5);
-    expect(ideas.every((idea) => idea.referenceIds.includes("ref-piano-pov"))).toBe(true);
+    expect(ideas.every((idea) => idea.referenceIds.length === 0 && idea.origin === "template_fallback")).toBe(true);
     expect(ideas.every((idea) => idea.originalConflict.length > 10)).toBe(true);
     expect(ideas.every((idea) => !("visibleMetrics" in idea))).toBe(true);
+  });
+
+  it("uses actual manually reviewed notes for research-grounded concepts without inventing views", () => {
+    const reviewed=validateScenarioResearch([{
+      ...source,observationStatus:"user_reviewed",reviewedAt:"2026-10-30T12:30:00Z"
+    }]);
+    const observation=analyseScenarioReference(reviewed[0],{
+      observationStatus:"user_reviewed",reviewedAt:"2026-10-30T12:30:00Z",
+      hook:"Неожиданный звук сразу в первых двух секундах",
+      situation:"Человек не хочет признавать, что он нервничает",
+      desire:"Оставаться собранным перед своим собеседником",
+      obstacle:"Звучащий инструмент раскрывает скрытую эмоцию",
+      turn:"Мелодия меняется раньше, чем герой объясняется",
+      payoff:"Герой наконец слушает другого человека",
+      editing:"Пауза перед крупным планом меняет смысл",
+      sound:"Резкий диссонанс на сильной доле",
+      productionComplexity:"low"
+    });
+    const researchBased=suggestScenarioIdeas({research:reviewed,analyses:[observation],
+      creativeProfile:{priorities:["фортепиано"],constraints:[]},count:5});
+    expect(researchBased).toHaveLength(5);
+    expect(researchBased.every(idea=>idea.origin==="reviewed_reference" && idea.referenceIds[0]===source.id)).toBe(true);
+    expect(researchBased[0].originalConflict).toContain("Звучащий инструмент раскрывает скрытую эмоцию");
+    expect(researchBased[0].originalConflict).toContain("Мелодия меняется раньше");
+    expect(researchBased[0].evidenceNote).toContain("ручном разборе");
+    expect(researchBased[0]).not.toHaveProperty("views");
+    const unreliable=suggestScenarioIdeas({research:reviewed,analyses:[{...observation,observationStatus:"metadata_only"}],
+      creativeProfile:{priorities:[],constraints:[]},count:5});
+    expect(unreliable.every(idea=>idea.origin==="template_fallback" && idea.referenceIds.length===0)).toBe(true);
   });
 
   it("keeps dramaturg, director and producer criticism separate and blocks an unshootable draft", () => {
