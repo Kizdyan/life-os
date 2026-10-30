@@ -48,6 +48,20 @@ The user can explicitly restore any prior stored version. This calls `restorePer
 
 A saved version and a model-proposed edit are different things: **imported model suggestions first appear as an unaccepted diff; only clicking "Принять как новую версию" changes the script.** A restored historical version likewise requires new author approval before Production Brief handoff.
 
+## Proposal source identity
+
+As of the latest version, a generated proposal carries the source **idea ID**, current **revision ID** and an exact snapshot of every scene before editing. The canonical importer checks these against the saved project script before reviewing or applying any suggested diff. This blocks accidental cross-project import when two projects reuse the same generated revision ID. A proposal generated with an older CLI lacks the full source binding and must be regenerated; it will not be silently accepted.
+
+The Scene Workspace component and both per-script tools are keyed by project ID plus revision ID, so switching between projects cannot carry an earlier project's pending suggestion or locked-scene selection into the next project.
+
+### npm convenience commands
+
+```powershell
+npm run persona:scenario:doctor:task -- --input project.json --out task.json --target 2,3 --lock 1 --instruction "Исправь эскалацию"
+npm run persona:scenario:doctor -- task.json suggestion.json --model qwen2.5-coder:7b
+npm run persona:scenario:doctor:test
+```
+
 ## Test commands (no running Ollama required)
 
 ```powershell
