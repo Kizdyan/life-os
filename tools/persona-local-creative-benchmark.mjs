@@ -64,6 +64,9 @@ export async function benchmarkPersonaLocalModel({model='qwen2.5-coder:7b',outpu
  const reports=[];
  for(const item of CREATIVE_CASES){
   const started=Date.now();
+  // Keep the exact, local prompt beside the result. This makes a creative
+  // comparison reproducible without claiming it was generated from other data.
+  await writeFile(resolve(dir,item.key+'.input.json'),JSON.stringify(item.input,null,2),{flag:'wx'});
   try{
    const result=await generator(item.input,{model});
    const report={key:item.key,label:item.label,state:'generated',

@@ -30,7 +30,10 @@ test('offline mocked benchmark writes technical results, never invents artistic 
  assert.ok(result.cases.every(x=>x.elapsedMs>=0));
  assert.deepEqual(called.map(x=>x[0]),CREATIVE_CASES.map(x=>x.input.idea.id));
  const list=await readdir(dir);
- assert.equal(list.length,7);
+ assert.equal(list.length,10);
+ for(const item of CREATIVE_CASES){
+  assert.deepEqual(JSON.parse(await readFile(join(dir,item.key+'.input.json'),'utf8')),item.input);
+ }
  assert.equal(JSON.parse(await readFile(join(dir,'benchmark-report.json'),'utf8')).cases.length,3);
  await assert.rejects(benchmarkPersonaLocalModel({outputDirectory:dir,generator:fake}),/должен быть пустым/);
 });
@@ -40,6 +43,6 @@ test('model failure is recorded as failed and never faked as success',async(t)=>
  const result=await benchmarkPersonaLocalModel({outputDirectory:dir,
   generator:async()=>{throw Error('Ollama не запущена')}});
  assert.equal(result.cases.filter(x=>x.state==='failed').length,3);
- assert.equal((await readdir(dir)).length,1);
+ assert.equal((await readdir(dir)).length,4);
  assert.match(result.cases[0].error,/Ollama/);
 });
