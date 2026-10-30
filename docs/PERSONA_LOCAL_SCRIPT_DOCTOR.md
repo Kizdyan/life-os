@@ -8,14 +8,17 @@ This is a **standalone Windows-local two-pass Script Doctor**, not a claim that 
 - Second local `/api/chat` call rewrites **only** permitted frames with the first pass's diagnosis.
 - Hard validators reject changed locked/untargeted frames, changed beat count or purpose, empty changes, duplicate lines, mechanical timing and invalid structure.
 - Output `SUGGESTION_NOT_APPROVED` has exact per-frame diffs, **no publication or author approval**.
-- A separate, typed core adapter `applyPersonaLocalDoctorSuggestion()` can convert this output into a **new unapproved revision**, strictly matching the current script revision and entire change diff. UI import wiring is still needed.
+- A separate typed core adapter `applyPersonaLocalDoctorSuggestion()` converts this output into a **new unapproved revision**, strictly matching the saved revision, model/diagnostic fields and full diff.
+- **Persona UI integration is wired:** open the Script Doctor panel, choose which scenes may change, lock protected scenes, export a task, import the suggestion, inspect evidence and before/after, and explicitly accept as a new unapproved revision.
 - No paid cloud APIs, model downloads, background tasks, public network exposure or software installation. Author still decides whether the revision is any good.
 
 ## Windows CLI (uses the existing repo and installed Ollama)
 
 Export a *saved* Persona project containing `scenarioWorkspace.script`, or a plain saved `ScenarioScript` JSON. For a multi-project collection, include `--project-id <id>`.
 
-**Step 1 — make a task for the specific scenes (numbers start at 1):**
+**Step 1 — export from Persona's new Script Doctor panel** (preferred): open a saved scenario, select rewritable scenes and locked scenes, add instructions and previous author feedback, and click **Скачать локальное задание · 0 кредитов**. This creates `persona-doctor-task.json` without contacting any network service.
+
+For offline project JSON files, the CLI alternative remains (scene numbers begin at 1):
 
 ```powershell
 node tools/persona-local-script-doctor-task.mjs --input "C:\path\project.json" --out "C:\path\doctor-task.json" --target 3,4 --lock 1 --instruction "Make the climax and ending less predictable without changing the opening" --author-feedback "The original punchline is predictable"
@@ -35,7 +38,7 @@ No model is downloaded by these commands. The model must appear in `ollama list`
 
 Read `doctor-suggestion.json`, especially `diagnosis.findings`, `diff`, and `revisedBeats`. The editor may fail to propose good changes; this does **not** constitute artistic validation.
 
-A future Persona UI addition can invoke `applyPersonaLocalDoctorSuggestion(workspace.script, parsedSuggestion, timestamp)`, then save the returned script through the **existing** `PersonaProjectStore`. That adapter rejects stale or tampered changes and drops any previous author approval. It must **not** call Production Brief approval automatically.
+In the same Persona project, choose **Загрузить результат локального редактора**, select the suggestion JSON and inspect every changed scene. Click **Принять как новую версию** only after review. The browser calls `applyPersonaLocalDoctorSuggestion()` and saves the new *unapproved* version through the existing `PersonaProjectStore`. Stale/tampered files, changed locked frames and nonrequested changes are rejected. No Production Brief or author approval happens automatically.
 
 ## Test commands (no running Ollama required)
 
@@ -43,16 +46,17 @@ A future Persona UI addition can invoke `applyPersonaLocalDoctorSuggestion(works
 node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs
 npm run typecheck
 npm test
+npm run web:build
 ```
 
-The 12 new local Node tests were executed successfully in an isolated Node 22 environment. The full repository checks, new Vitest adapter tests, Windows real Ollama output and browser integration **have not** been verified by this authoring environment.
+The 12 standalone Node tests were previously executed in an isolated Node 22 environment with mocked Ollama. Newly authored Vitest task-builder and adapter tests, the full repository suite, TypeScript/web build, real Windows Ollama output and Playwright browser integration **have not been executed in this GitHub-only session**.
 
 ## Cooperation with parallel Codex work
 
 PR #132's local Windows worktree may contain unpublished modifications to existing `persona-scenario-intelligence.ts`, `PersonaFactory.tsx` and tests. This PR only adds new modules and documentation, and is intentionally **stacked on the published #132 head**. Check for live conflicts and cherry-pick/integrate carefully; don't merge blindly or overwrite Codex changes.
 
 ## Not implemented here
-- No in-browser button for local model requests.
+- The browser never calls Ollama directly. UI task export/import is implemented; direct secure browser-to-local bridge is not.
 - No remote iPhone-to-Windows access.
 - No proof that a chosen local model writes professionally good scripts.
 - No automatic user approval or video production.
