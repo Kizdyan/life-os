@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
 import {initReview} from './persona-creative-review.mjs';
@@ -147,6 +147,12 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
   events.push('offline_asr_completed');
   const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode);
+  if(decisions.choices===0){
+   // The zero-choice preview cannot be rendered. It is an ASR recovery,
+   // not a malformed user project. Remove only the file just created by plan().
+   await rm(decisions.decisions,{force:true});
+   throw Error('No confidently matched dialogue remains; manual Recovery Review required');
+  }
   events.push('dialogue_cuts_proposed');
   const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
