@@ -6,6 +6,8 @@ export type PersonaProject={
  title:string;
  contentType:PersonaContentType;
  sourceIdea:string;
+ /** Optional public source URL for an author-adapted reference. */
+ sourceReferenceUrl?:string;
  script:unknown|null;
  shootingPlan:unknown|null;
  editPlan:unknown|null;
@@ -34,7 +36,7 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isProject(value:unknown):value is PersonaProject{
  if(!value||typeof value!=='object')return false;
  const project=value as Partial<PersonaProject>;
- return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string');
+ return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.sourceReferenceUrl===undefined||typeof project.sourceReferenceUrl==='string');
 }
 export function validatePersonaProjectCollection(value:unknown):PersonaProjectCollection{
  const parsed=value as Partial<PersonaProjectCollection>;
