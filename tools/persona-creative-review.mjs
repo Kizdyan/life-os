@@ -25,15 +25,25 @@ export function makeCreativeReview(pack,profile,selection=null){
   fail('Invalid editorial candidate pack');
  if(selection&&(selection.kind!=='persona-editorial-selection-v1'||!Array.isArray(selection.selections)||selection.selections.length!==pack.beats.length))
   fail('Invalid reviewed selection');
- if(selection&&selection.selections.some((row,i)=>
-  row?.beat!==i+1||row.reviewed!==true||
-  !pack.beats[i].candidates?.some(c=>c.candidateId===row.candidateId)))
-  fail('Creative review requires explicitly reviewed candidates from the pack');
+ if(selection&&selection.selections.some((row,i)=>{
+  if(row?.beat!==i+1||row.reviewed!==true)return true;
+  if(pack.beats[i].candidates?.some(c=>c.candidateId===row.candidateId))return false;
+  const manual=row.recovery,available=pack.beats[i].recovery?.availableSources??[];
+  return !manual||manual.kind!=='persona-manual-segment-v1'||manual.confirmed!==true||
+   !available.some(src=>src.sourceId===manual.sourceId&&src.sourceSha256===manual.sourceSha256&&
+    src.hasAudio===true&&Number.isFinite(manual.startSec)&&manual.startSec>=0&&
+    Number.isFinite(manual.durationSec)&&manual.durationSec>=0.25&&
+    manual.startSec+manual.durationSec<=src.durationSec+0.02)||
+   typeof manual.transcript!=='string'||manual.transcript.trim().length<3;
+ }))
+  fail('Creative review requires explicitly reviewed candidates or manual recovery evidence');
  return {version:1,kind:'persona-creative-review-v1',status:'unreviewed',publicationApproved:false,
   profileKind:profile.kind,profileVersion:profile.version,
   scenes:pack.beats.map((beat,index)=>({
    beat:index+1,scriptLine:beat.scriptLine,
-   selectedCandidateId:selection?selection.selections[index]?.candidateId:beat.defaultCandidateId,
+   selectedCandidateId:selection?(selection.selections[index]?.candidateId??
+    (selection.selections[index]?.recovery?('manual:'+selection.selections[index].recovery.sourceId+':'+
+     selection.selections[index].recovery.startSec+':'+selection.selections[index].recovery.durationSec):null)):beat.defaultCandidateId,
    checks:Object.fromEntries(profile.reviewCategories.map(key=>[key,null])),
    remarks:'',issues:[],
    note:'Null means not checked. Never treat blank checks as passing.'
