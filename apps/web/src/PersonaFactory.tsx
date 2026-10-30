@@ -168,6 +168,11 @@ export default function PersonaFactory(){
   {!chosen&&<section className="personaQuickStart" aria-label="Быстрый старт Persona"><h3>Быстрый старт</h3><div className="personaQuickStartGrid">{(['reel','photo','carousel'] as const).map(format=><button key={format} type="button" onClick={()=>select({id:crypto.randomUUID(),title:format==='reel'?'Новый Reels':format==='photo'?'Новое фото':'Новая карусель',angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}>{format==='reel'?'Создать Reels':format==='photo'?'Обработать фото':'Создать карусель'}</button>)}</div><p>Экспорт MP4 с телефона пока не подключён.</p></section>}
   <details className="personaDeveloperDisclosure"><summary>Дополнительные инструменты</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'});window.setTimeout(()=>navigate('project'),0)}}/></details>
   {!chosen&&<PersonaFreeTrendRadar onCreateIdea={idea=>{select({id:newProjectId(),title:idea.title,angle:idea.angle,format:'reel',score:0,source:'reference-adaptation',referenceUrl:idea.referenceUrl,storyOutline:idea.storyOutline});window.setTimeout(()=>navigate('project'),0)}}/>}
+  {chosen?.referenceUrl&&<aside className="personaReferenceProvenance">
+    <strong>Референс идеи:</strong> <a href={chosen.referenceUrl} target="_blank" rel="noopener noreferrer">Открыть первоначальный источник ↗</a>
+    <small>Это ссылка на референс, а не подтверждение популярности или авторское одобрение сценария.</small>
+    {chosen.storyOutline&&<small>Ручная структура сохранена в проекте; художественная редактура и утверждение ещё требуются.</small>}
+   </aside>}
   {chosen&&<label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label>}
   {chosen&&workspaceStep==='script'&&<div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>
