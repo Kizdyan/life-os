@@ -130,7 +130,7 @@ function verifyDiagnosis(value,task){
  return {storyMap,findings,editorialSummary:text(value.summary,'summary',1200)};
 }
 
-export async function runLocalScriptDoctor(raw,{model=DEFAULT_MODEL,endpoint='http://127.0.0.1:11434/',fetchImpl=fetch,onStage,timeoutMs=240000}={}){
+export async function runLocalScriptDoctor(raw,{model=DEFAULT_MODEL,endpoint='http://127.0.0.1:11434/',fetchImpl=fetch,onStage,timeoutMs=240000,resumeDiagnosis}={}){
  if(!Number.isInteger(timeoutMs)||timeoutMs<10_000||timeoutMs>600_000)throw Error('Invalid local Doctor timeout');
  const task=validateDoctorTask(raw),url=loopback(endpoint),name=modelName(model);
  const tags=await fetchImpl(new URL('/api/tags',url),{signal:AbortSignal.timeout(12000)});
@@ -162,8 +162,16 @@ export async function runLocalScriptDoctor(raw,{model=DEFAULT_MODEL,endpoint='ht
   }
  };
  const critiqueSystem='Ты строгий редактор коротких русскоязычных сцен. НЕ переписывай сценарий. Укажи только конкретные проблемы разрешённых targetIndices: что не работает, точное свидетельство в тексте и конкретную правку. FACTUAL_CONSTRAINT_VIOLATION означает доказанное нарушение заданного факта; INTERPRETIVE_WEAKNESS — редакторскую гипотезу; JUSTIFIED_SURPRISE — подготовленную неожиданность. Не придумывай цитаты и авторские факты. Верни JSON с summary и findings; storyMap необязательна. Не создавай дополнительный анализ каждого кадра ради соблюдения формата.';
- const rawDiagnosis=await call(critiqueSystem,task,'Диагностика',DIAGNOSIS_SCHEMA,'diagnosis',1800);
- const diagnosis=verifyDiagnosis(rawDiagnosis,task);
+ let diagnosis;
+ if(resumeDiagnosis!==undefined){
+  // Even local persisted artifacts may have been edited; validate once more.
+  diagnosis=verifyDiagnosis(resumeDiagnosis,task);
+  await onStage?.('diagnosis.reused',{source:'previous-validated-local-artifacts',
+   model:name,revisionId:task.sourceRevisionId,ideaId:task.idea.id});
+ }else{
+  const rawDiagnosis=await call(critiqueSystem,task,'Диагностика',DIAGNOSIS_SCHEMA,'diagnosis',1800);
+  diagnosis=verifyDiagnosis(rawDiagnosis,task);
+ }
  await onStage?.('diagnosis.validated',diagnosis);
  const rewriteSystem='Ты сценарист-редактор. Верни ТОЛЬКО патчи к разрешённым targetIndices, НЕ копируй все исходные кадры. Для каждого реально изменённого кадра верни beatIndex (с нуля), новую line, новое сыгрываемое action и durationSec. Не меняй количество кадров, порядок, цель, утверждённые автором факты или смысл защищённых сцен. Не добавляй несуществующие события без причинной связи. Все неизменяемые кадры программа автоматически скопирует из источника. JSON: patches и changeSummary.';
  const rawCandidate=await call(rewriteSystem,{...task,diagnosis},'Редактура',REVISION_SCHEMA,'revision',1800);
@@ -183,6 +191,23 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  catch(error){if(error.code!=='ENOENT')throw error}
  const bytes=await readFile(input);
  if(bytes.length>MAX_FILE_BYTES)throw Error('Сценарный файл превышает 100 КБ');
+ let resumeDiagnosis;
+ if(options.resumeFrom!==undefined){
+  if(typeof options.resumeFrom!=='string'||!options.resumeFrom.trim())
+   throw Error('Resume: invalid previous artifacts directory');
+  const prev=resolve(options.resumeFrom);
+  const previousTask=await readFile(resolve(prev,'task.json'),'utf8');
+  if(previousTask.trim()!==bytes.toString('utf8').trim())
+   throw Error('Resume: previous task differs from current saved screenplay task');
+  const previousRun=JSON.parse(await readFile(resolve(prev,'run.json'),'utf8'));
+  if(previousRun.model!==(options.model??DEFAULT_MODEL))
+   throw Error('Resume: model differs from original local Doctor run');
+  const failure=JSON.parse(await readFile(resolve(prev,'failure.json'),'utf8'));
+  if(failure.state!=='FAILED')
+   throw Error('Resume: old run was not a recorded failure');
+  resumeDiagnosis=JSON.parse(await readFile(resolve(prev,'diagnosis.validated.json'),'utf8'));
+  verifyDiagnosis(resumeDiagnosis,validateDoctorTask(JSON.parse(bytes.toString('utf8'))));
+ }
  const artifacts=resolve(output+'.artifacts');
  await mkdir(artifacts); // fail if a previous experiment exists; never overwrite
  const save=async(name,data)=>writeFile(resolve(artifacts,name),
@@ -192,6 +217,7 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
   state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output});
  try{
   const result=await runLocalScriptDoctor(JSON.parse(bytes.toString('utf8')),{...options,
+   ...(resumeDiagnosis===undefined?{}:{resumeDiagnosis}),
    onStage:async(stage,value)=>{
     await save(stage.endsWith('.raw')?stage+'.txt':stage+'.json',value);
     await options.onStage?.(stage,value);
@@ -212,19 +238,20 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const args=process.argv.slice(2),flags={},positionals=[];
  let invalid=false;
  for(let i=0;i<args.length;i++){
-  if(args[i]==='--model'||args[i]==='--timeout-ms'){
+  if(args[i]==='--model'||args[i]==='--timeout-ms'||args[i]==='--resume-from'){
    if(!args[i+1]||args[i+1].startsWith('--')){invalid=true;break}
    if(flags[args[i]]){invalid=true;break}
    flags[args[i]]=args[++i];
   }else if(args[i].startsWith('--')){if(args[i]!=='--help')invalid=true;}
   else positionals.push(args[i]);
  }
- if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen3:4b-instruct] [--timeout-ms 180000]');
+ if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen3:4b-instruct] [--timeout-ms 180000] [--resume-from previous-suggestion.json.artifacts]');
  else if(invalid||positionals.length!==2){
   console.error('Ожидаются task.json suggestion.json [--model NAME] [--timeout-ms 180000]');process.exitCode=2;
  }else runLocalScriptDoctorFiles(positionals[0],positionals[1],{
   model:flags['--model']??DEFAULT_MODEL,
-  timeoutMs:flags['--timeout-ms']===undefined?240000:Number(flags['--timeout-ms'])
+  timeoutMs:flags['--timeout-ms']===undefined?240000:Number(flags['--timeout-ms']),
+  ...(flags['--resume-from']?{resumeFrom:flags['--resume-from']}:{})
  }).then(file=>console.log('Редакторские замечания и предложение (НЕ утверждено): '+file),
   error=>{console.error('Редактура не создана: '+error.message);process.exitCode=1});
 }
