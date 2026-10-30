@@ -179,6 +179,26 @@ test('resume refuses stale task, wrong model and edited diagnosis without produc
  await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/не содержит конкретных замечаний/);
  await assert.rejects(readFile(newOut),/ENOENT/);
 });
+test('a second-pass timeout records an interruptible stage, preserves critique and permits later resume',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-timeout-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),output=join(dir,'time-out.json');
+ await writeFile(input,JSON.stringify(task));
+ let calls=0;
+ const mock=async(url)=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  calls++;
+  if(calls===2)throw Object.assign(new Error('deadline exceeded'),{name:'TimeoutError'});
+  return {ok:true,json:async()=>({message:{content:JSON.stringify(diagnosis)}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,output,{fetchImpl:mock}),/deadline exceeded/);
+ const folder=output+'.artifacts';
+ const failure=JSON.parse(await readFile(join(folder,'failure.json'),'utf8'));
+ assert.equal(failure.state,'TIMEOUT');
+ assert.equal(failure.stage,'revision.metrics');
+ assert.equal(JSON.parse(await readFile(join(folder,'diagnosis.validated.json'),'utf8')).editorialSummary,diagnosis.summary);
+ await assert.rejects(readFile(output),/ENOENT/);
+});
 test('bad JSON from local creative model fails rather than approving or writing anything',async()=>{
  const {fetchImpl}=fakeLocal();let seen=0;
  const corrupted=async(url,opts)=>{seen++;if(seen===3)return {ok:true,json:async()=>({message:{content:'not-json'}})};return fetchImpl(url,opts)};
