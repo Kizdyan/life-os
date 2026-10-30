@@ -12,7 +12,7 @@ const beats=[
  {purpose:'ending',line:'На роль утвердили пианино, а не меня.',action:'Закрываю крышку и пожимаю плечами.',durationSec:4},
 ];
 const task={kind:'persona-local-doctor-input-v1',version:1,script:{
- idea:{title:'Неправильные пробы',originalConflict:'Актёр хочет получить роль, но внимание режиссёра достаётся пианино'},
+ idea:{id:'idea-audition-01',title:'Неправильные пробы',originalConflict:'Актёр хочет получить роль, но внимание режиссёра достаётся пианино'},
  currentRevisionId:'scenario-r3',currentRevision:{id:'scenario-r3',beats},approval:{revisionId:'scenario-r3',author:'Тестовый автор'}},
  targetIndices:[2,3],lockedIndices:[0],instruction:'Усилить финальную неожиданность, но оставить начало неизменным',
  authorFeedback:'В текущем финале нет драматургического поворота.'};
@@ -32,7 +32,7 @@ function fakeLocal({foundModels=['qwen2.5-coder:7b'],notes=diagnosis,revision=ca
 }
 test('local two-pass editor returns meaningful scene-specific critique and unapproved targeted diff',async()=>{
  const {fetchImpl,calls}=fakeLocal();const out=await runLocalScriptDoctor(task,{fetchImpl});
- assert.equal(out.status,'SUGGESTION_NOT_APPROVED');assert.equal(out.sourceRevisionId,'scenario-r3');
+ assert.equal(out.status,'SUGGESTION_NOT_APPROVED');assert.equal(out.sourceRevisionId,'scenario-r3');assert.equal(out.sourceIdeaId,'idea-audition-01');assert.deepEqual(out.sourceBeats,beats);
  assert.equal(out.revisedBeats[0].line,beats[0].line);assert.equal(out.revisedBeats[1].action,beats[1].action);
  assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);assert.equal(out.diagnosis.findings.length,2);
  assert.equal(out.totalDurationSec,19);assert.equal(out.approval,undefined);assert.equal(out.editorialDecision,undefined);
