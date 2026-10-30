@@ -11,7 +11,7 @@ type Props={
   onRestore:(newScript:ScenarioScript)=>void;
 };
 export default function PersonaScenarioVersionHistory({script,unsavedChanges,onRestore}:Props){
-  const choosePrevious=()=>script.revisions.findLast(item=>item.id!==script.currentRevisionId)?.id??"";
+  const choosePrevious=()=>script.revisions.slice().reverse().find(item=>item.id!==script.currentRevisionId)?.id??"";
   const [selectedId,setSelectedId]=useState(choosePrevious);
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
