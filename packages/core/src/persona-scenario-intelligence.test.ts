@@ -4,6 +4,7 @@ import {
   approveScenarioScript,
   createScenarioScript,
   addFreeTrendLeadToScenarioResearch,
+  assessScenarioCreativeRisks,
   freeScenarioTrendLeads,
   reviewScenarioScript,
   reviseScenarioScript,
@@ -27,6 +28,23 @@ const source: ScenarioResearchItem = {
 };
 
 describe("Persona Scenario Intelligence research core", () => {
+  it("labels only demonstrable creative risks as heuristics, not as a verdict on artistic quality", () => {
+    const revision = {
+      id: "failure-corpus-r1", number: 1, createdAt: "2026-10-30T10:00:00Z", sourceFacts: [],
+      beats: [
+        { purpose: "hook" as const, line: "Я уже подъехал.", action: "Смотрит в телефон.", durationSec: 3 },
+        { purpose: "development" as const, line: "Я уже подъехал.", action: "Отворачивается от двери.", durationSec: 3 },
+        { purpose: "development" as const, line: "Я уже подъехал.", action: "Прячет тапочки.", durationSec: 3 },
+        { purpose: "ending" as const, line: "Я уже подъехал.", action: "Открывает дверь.", durationSec: 3 },
+      ],
+    };
+    const assessment = assessScenarioCreativeRisks(revision);
+    expect(assessment.method).toBe("heuristic");
+    expect(assessment.findings.map((finding) => finding.category)).toEqual(expect.arrayContaining(["repeated_line", "uniform_timing"]));
+    expect(assessment.findings.every((finding) => finding.explanation.length > 20 && finding.proposedFix.length > 20)).toBe(true);
+    expect(assessment.findings.some((finding) => finding.category === "missing_conflict")).toBe(false);
+    expect(assessment.notice).toMatch(/не измеряет художественную силу/i);
+  });
   it("keeps a manual link metadata-only and rejects a duplicate evidence URL", () => {
     const [item] = validateScenarioResearch([source]);
     expect(item.observationStatus).toBe("metadata_only");

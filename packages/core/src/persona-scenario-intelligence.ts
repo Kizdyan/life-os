@@ -134,6 +134,45 @@ export interface ScenarioScriptReview {
   findings: ScenarioScriptFinding[];
 }
 
+/**
+ * These labels make creative problems discussable without pretending that a
+ * deterministic check can measure talent, audience response, or originality
+ * across the internet.  Categories not supported by direct evidence stay for
+ * a human or local-model editorial pass rather than being guessed here.
+ */
+export type ScenarioCreativeFailureCategory =
+  | "brief_parroting"
+  | "generic_dialogue"
+  | "repeated_line"
+  | "uniform_timing"
+  | "missing_protagonist_goal"
+  | "missing_conflict"
+  | "weak_escalation"
+  | "unearned_twist"
+  | "predictable_payoff"
+  | "unplayable_actor_action"
+  | "expository_dialogue"
+  | "unshootable_scene"
+  | "unverified_fact"
+  | "source_imitation"
+  | "format_mismatch";
+
+export interface ScenarioCreativeRiskFinding {
+  category: ScenarioCreativeFailureCategory;
+  beatOrders: number[];
+  fragment: string;
+  severity: "needs_revision" | "human_review";
+  explanation: string;
+  proposedFix: string;
+}
+
+export interface ScenarioCreativeRiskAssessment {
+  revisionId: string;
+  method: "heuristic";
+  findings: ScenarioCreativeRiskFinding[];
+  notice: string;
+}
+
 export interface ScenarioScriptRevision {
   id: string;
   number: number;
@@ -142,6 +181,49 @@ export interface ScenarioScriptRevision {
   beats: ScenarioScriptBeat[];
   sourceFacts: string[];
   review?: ScenarioScriptReview;
+}
+
+/**
+ * Detect only directly demonstrable failure patterns.  It deliberately does
+ * not infer conflict, originality or comic quality from word counts: those
+ * require a real editor or a separately labelled model pass.
+ */
+export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevision, "id" | "beats">): ScenarioCreativeRiskAssessment {
+  const findings: ScenarioCreativeRiskFinding[] = [];
+  const duplicateOrders = new Map<string, number[]>();
+  revision.beats.forEach((beat, index) => {
+    const normalized = beat.line.toLocaleLowerCase("ru-RU").replace(/\s+/gu, " ").trim();
+    if (!normalized) return;
+    duplicateOrders.set(normalized, [...(duplicateOrders.get(normalized) ?? []), index + 1]);
+  });
+  for (const [line, orders] of duplicateOrders) {
+    if (orders.length < 2) continue;
+    findings.push({
+      category: "repeated_line",
+      beatOrders: orders,
+      fragment: line,
+      severity: "needs_revision",
+      explanation: `Одна и та же реплика повторяется в кадрах ${orders.join(", ")}; это подтверждаемый признак, что действие сцены могло не развиться.`,
+      proposedFix: "Оставьте повтор только если он является осмысленным рефреном; иначе дайте каждому следующему кадру новый выбор, реакцию или изменение обстоятельств.",
+    });
+  }
+  const durations = revision.beats.map((beat) => beat.durationSec);
+  if (durations.length >= 4 && new Set(durations).size === 1) {
+    findings.push({
+      category: "uniform_timing",
+      beatOrders: revision.beats.map((_, index) => index + 1),
+      fragment: `${durations[0]} сек. во всех кадрах`,
+      severity: "human_review",
+      explanation: "Все кадры имеют одинаковую длительность. Это не доказывает плохой ритм, но требует ручной проверки пауз, хука, реакции и финала.",
+      proposedFix: "Проверьте монтаж по действию: короткий хук, достаточная пауза для реакции и длительность, оправданная музыкой или репликой, а не шаблоном.",
+    });
+  }
+  return {
+    revisionId: revision.id,
+    method: "heuristic",
+    findings,
+    notice: "Эта проверка не измеряет художественную силу, юмор, актёрскую игру, оригинальность или будущий успех ролика. Такие выводы требуют живой редакторской оценки или отдельно помеченного локального модельного разбора.",
+  };
 }
 
 export interface ScenarioScriptApproval {

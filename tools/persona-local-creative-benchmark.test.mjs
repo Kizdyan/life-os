@@ -30,7 +30,7 @@ test('offline mocked benchmark writes technical results, never invents artistic 
  assert.ok(result.cases.every(x=>x.elapsedMs>=0));
  assert.deepEqual(called.map(x=>x[0]),CREATIVE_CASES.map(x=>x.input.idea.id));
  const list=await readdir(dir);
- assert.equal(list.length,10);
+ assert.equal(list.length,13);
  for(const item of CREATIVE_CASES){
   assert.deepEqual(JSON.parse(await readFile(join(dir,item.key+'.input.json'),'utf8')),item.input);
  }
@@ -45,4 +45,18 @@ test('model failure is recorded as failed and never faked as success',async(t)=>
  assert.equal(result.cases.filter(x=>x.state==='failed').length,3);
  assert.equal((await readdir(dir)).length,4);
  assert.match(result.cases[0].error,/Ollama/);
+});
+test('benchmark preserves the raw local answer and generation settings for later creative review',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-evidence-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const fake=async()=>({
+  brief:{script:[{line:'Тест'}],adaptations:{reels:{durationSec:20}}},
+  review:{notes:{dramaturg:['Замечание'],director:['Замечание'],producer:['Замечание']}},
+  rawResponse:'{"beats":["необработанный ответ"]}',
+  generationConfig:{temperature:0.6,numPredict:3500,systemPrompt:'Системный промпт'}
+ });
+ const result=await benchmarkPersonaLocalModel({model:'local-test:7b',outputDirectory:dir,generator:fake});
+ assert.equal(result.cases[0].generation.temperature,0.6);
+ assert.equal(await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8'),'{"beats":["необработанный ответ"]}');
+ assert.deepEqual(JSON.parse(await readFile(join(dir,'acting-comedy.generation.json'),'utf8')),{temperature:0.6,numPredict:3500,systemPrompt:'Системный промпт'});
 });
