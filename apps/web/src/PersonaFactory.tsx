@@ -141,7 +141,8 @@ export default function PersonaFactory(){
   if(!chosen?.storyOutline||!['reel','short','story'].includes(chosen.format)){setStatus('Сначала выбери идею с заполненной драматургической структурой.');return}
   const payload={kind:'persona-scenario-local-input-v1',version:1,
    idea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format},
-   storyOutline:chosen.storyOutline,...(chosen.referenceUrl?{sourceReferenceUrl:chosen.referenceUrl}:{})};
+   storyOutline:chosen.storyOutline,...(chosen.referenceUrl?{sourceReferenceUrl:chosen.referenceUrl}:{}),
+   ...(production?.materials.editorialDecision?.decision==='rejected'&&production.materials.editorialDecision.comment.trim()?{previousEditorialFeedback:production.materials.editorialDecision.comment.trim()}: {})};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='persona-scenario-input.json';document.body.appendChild(a);a.click();a.remove();
