@@ -137,6 +137,17 @@ export default function PersonaFactory(){
    setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Нужна редакторская проверка; утверждение из файла не принимается.`);
   }catch(error){setStatus(`Импорт не выполнен: ${String((error as Error).message||'некорректный JSON')}`)}
  }
+ function exportLocalScenarioRequest(){
+  if(!chosen?.storyOutline||!['reel','short','story'].includes(chosen.format)){setStatus('Сначала выбери идею с заполненной драматургической структурой.');return}
+  const payload={kind:'persona-scenario-local-input-v1',version:1,
+   idea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format},
+   storyOutline:chosen.storyOutline,...(chosen.referenceUrl?{sourceReferenceUrl:chosen.referenceUrl}:{})};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='persona-scenario-input.json';document.body.appendChild(a);a.click();a.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  setStatus('Задание для локального Ollama экспортировано. Никаких данных в облако не отправлено. После локальной генерации импортируй готовый Production Brief для редакторской проверки.');
+ }
  function reviseProductionBrief(brief:PersonaProductionBrief){
   if(!production)return;
   try{const next=revisePersonaProductionBrief(production,brief);setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('final_qa');setStatus('Правка сохранена. Предыдущее утверждение сброшено, структурная проверка выполнена повторно.');}
@@ -171,7 +182,11 @@ export default function PersonaFactory(){
   {chosen?.referenceUrl&&<aside className="personaReferenceProvenance">
     <strong>Референс идеи:</strong> <a href={chosen.referenceUrl} target="_blank" rel="noopener noreferrer">Открыть первоначальный источник ↗</a>
     <small>Это ссылка на референс, а не подтверждение популярности или авторское одобрение сценария.</small>
-    {chosen.storyOutline&&<small>Ручная структура сохранена в проекте; художественная редактура и утверждение ещё требуются.</small>}
+    {chosen.storyOutline&&<>
+     <small>Ручная структура сохранена; художественная редактура и утверждение ещё требуются.</small>
+     <button type="button" className="ghost" onClick={exportLocalScenarioRequest}>Скачать задание для локального ИИ · 0 кредитов</button>
+     <small>Работает на Windows с установленной локальной Ollama, не через сервер Vercel. Готовый бриф загрузить через «Импортировать съёмочный бриф JSON» ниже.</small>
+    </>}
    </aside>}
   {chosen&&<label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label>}
   {chosen&&workspaceStep==='script'&&<div className="pfTrialBanner">
