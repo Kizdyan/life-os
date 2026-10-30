@@ -203,8 +203,8 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
   if(previousRun.model!==(options.model??DEFAULT_MODEL))
    throw Error('Resume: model differs from original local Doctor run');
   const failure=JSON.parse(await readFile(resolve(prev,'failure.json'),'utf8'));
-  if(failure.state!=='FAILED')
-   throw Error('Resume: old run was not a recorded failure');
+  if(!['FAILED','TIMEOUT','CANCELLED'].includes(failure.state))
+   throw Error('Resume: previous run was not a recorded failed or interrupted run');
   resumeDiagnosis=JSON.parse(await readFile(resolve(prev,'diagnosis.validated.json'),'utf8'));
   verifyDiagnosis(resumeDiagnosis,validateDoctorTask(JSON.parse(bytes.toString('utf8'))));
  }
@@ -213,12 +213,14 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  const save=async(name,data)=>writeFile(resolve(artifacts,name),
   (typeof data==='string'?data:JSON.stringify(data,null,2)+'\n'),{flag:'wx'});
  await save('task.json',bytes.toString('utf8').trim());
+ let lastStage='model-availability';
  await save('run.json',{kind:'persona-local-doctor-run-v2',model:options.model??DEFAULT_MODEL,
   state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output});
  try{
   const result=await runLocalScriptDoctor(JSON.parse(bytes.toString('utf8')),{...options,
    ...(resumeDiagnosis===undefined?{}:{resumeDiagnosis}),
    onStage:async(stage,value)=>{
+    lastStage=stage;
     await save(stage.endsWith('.raw')?stage+'.txt':stage+'.json',value);
     await options.onStage?.(stage,value);
    }});
@@ -228,9 +230,11 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
    status:'SUGGESTION_NOT_APPROVED'});
   return output;
  }catch(error){
-  await save('failure.json',{state:'FAILED',completedAt:new Date().toISOString(),
-   message:error instanceof Error?error.message:String(error),
-   name:error instanceof Error?error.name:'UnknownError'}).catch(()=>{});
+  const name=error instanceof Error?error.name:'UnknownError';
+  const state=name==='TimeoutError'?'TIMEOUT':
+   name==='AbortError'?'CANCELLED':'FAILED';
+  await save('failure.json',{state,stage:lastStage,completedAt:new Date().toISOString(),
+   message:error instanceof Error?error.message:String(error),name}).catch(()=>{});
   throw error;
  }
 }
