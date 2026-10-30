@@ -4,7 +4,7 @@ import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildLocalDoctorTask,createLocalDoctorTaskFile} from './persona-local-script-doctor-task.mjs';
-const script={idea:{title:'Сцена с письмом',originalConflict:'Герой пытается скрыть письмо от партнёра'},currentRevisionId:'scene-r2',
+const script={idea:{id:'idea-letter-01',title:'Сцена с письмом',originalConflict:'Герой пытается скрыть письмо от партнёра'},currentRevisionId:'scene-r2',
  currentRevision:{id:'scene-r2',beats:[
  {purpose:'hook',line:'Письмо пришло раньше меня.',action:'Убирает конверт под книгу.',durationSec:4},
  {purpose:'development',line:'Он уже видел открытую книгу.',action:'Взглядом ищет выход.',durationSec:5},
