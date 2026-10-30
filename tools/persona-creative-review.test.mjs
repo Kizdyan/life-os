@@ -41,6 +41,26 @@ test('creative QA follows explicitly reviewed replacement takes, not obsolete de
  assert.throws(()=>makeCreativeReview(options,profile,invalid),/explicitly reviewed/);
 });
 
+test('creative review tracks verified manually recovered speech and rejects changed source IDs',()=>{
+ const pack={kind:'persona-editorial-candidate-pack-v1',beats:[
+  {beat:1,scriptLine:'Я актёр',defaultCandidateId:'existing',candidates:[{candidateId:'existing'}]},
+  {beat:2,scriptLine:'И у нас есть проблема',defaultCandidateId:null,candidates:[],
+   recovery:{availableSources:[{sourceId:'B01',sourceSha256:'b'.repeat(64),durationSec:3,hasAudio:true}]}}
+ ]};
+ const selection={kind:'persona-editorial-selection-v1',selections:[
+  {beat:1,candidateId:'existing',reviewed:true,reason:'Проверил'},
+  {beat:2,candidateId:null,reviewed:true,reason:'Услышал реплику',
+   recovery:{kind:'persona-manual-segment-v1',confirmed:true,sourceId:'B01',
+    sourceSha256:'b'.repeat(64),startSec:.2,durationSec:1.8,
+    transcript:'И у нас есть проблема'}}
+ ]};
+ const review=makeCreativeReview(pack,profile,selection);
+ assert.match(review.scenes[1].selectedCandidateId,/^manual:B01:/);
+ assert.equal(review.publicationApproved,false);
+ selection.selections[1].recovery.sourceSha256='c'.repeat(64);
+ assert.throws(()=>makeCreativeReview(pack,profile,selection),/explicitly reviewed/);
+});
+
 test('human checks and issues persist; even green QA cannot authorize publication',()=>{
  const review=makeCreativeReview(pack,profile);
  for(const scene of review.scenes)
