@@ -97,7 +97,7 @@ export function buildReviewHtml(pack,template,files){
   'const reason=document.getElementById("reason"+item.beat).value.trim();'+
   'if((!pick&&!recoveryPick)||reason.length<3){alert("Для каждой сцены нужно посмотреть видео, выбрать дубль или Recovery Review и объяснить выбор.");return;}'+
   'if(recoveryPick){const start=Number(document.getElementById("recoveryStart"+item.beat).value),duration=Number(document.getElementById("recoveryDuration"+item.beat).value),transcript=document.getElementById("recoveryText"+item.beat).value.trim(),source=template.recoverySources[item.beat].find(x=>x.sourceId===recoveryPick.value);'+
-  'if(!source||!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<.25||transcript.length<3){alert("Для ручной разметки нужны источник, границы и текст фразы.");return;}'+
+  'if(!source||!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<.25||transcript.length<3){alert("Для ручной разметки нужны источник, границы и текст фразы.");return;}if(start+duration>source.durationSec){alert("Границы фразы выходят за доступную длительность исходника.");return;}'+
   'item.candidateId=null;item.recovery={kind:"persona-manual-segment-v1",transcriptSource:"manual-review",sourceId:source.sourceId,sourceSha256:source.sourceSha256,startSec:start,durationSec:duration,transcript,confirmed:true,reason};'+
   '}else item.candidateId=pick.value;item.reason=reason;item.reviewed=true;}'+
   'result.status="human-reviewed-not-published";'+
@@ -109,7 +109,7 @@ export function buildReviewHtml(pack,template,files){
   '<title>Persona · Выбор дублей</title><style>'+
   'body{font:16px/1.5 system-ui,sans-serif;background:#12161d;color:#eee;margin:0;padding:24px;max-width:1100px;margin:auto}'+
   'h1{font-size:28px}.lead{color:#b5c0cb}.scene{padding:16px 0 24px;border-top:1px solid #333}'+
-  '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}.recovery-form{border:1px dashed #8c7960;border-radius:12px;padding:12px;display:grid;gap:10px}'+
+  '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}.recovery-form{border:1px dashed #8c7960;border-radius:12px;padding:12px;display:grid;gap:10px}.recovery-form>label{display:grid;gap:5px;font-weight:600}.recovery-form input[type=number]{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:8px;min-height:40px;box-sizing:border-box}.recovery-form textarea{box-sizing:border-box;width:100%;min-height:64px}'+
   'video{width:100%;max-height:360px;background:black;border-radius:6px}small{display:block;color:#bbc6d1;overflow-wrap:anywhere}.warning{color:#e6c99d}'+
   '.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
   'button{font:inherit;background:#e8eee6;color:#171e22;border:0;border-radius:10px;padding:12px 20px;cursor:pointer}'+

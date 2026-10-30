@@ -63,6 +63,7 @@ test('recovery review page keeps an unmatched recorded take available for a sepa
  assert.match(html,/manual-segment-v1/);
  assert.match(html,/не подменяет исходный Whisper/);
  assert.match(html,/transcriptSource/);
+ assert.match(html,/Границы фразы выходят за доступную длительность исходника/);
 });
 
 const installed=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'utf8'}).status===0);

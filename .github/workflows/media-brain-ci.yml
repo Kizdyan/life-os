@@ -7,6 +7,7 @@ on:
       - "docs/MEDIA_BRAIN.md"
       - "docs/YANDEX_DISK.md"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/media-brain-ci.yml"
   push:
@@ -22,7 +23,7 @@ jobs:
         with:
           node-version: "22"
       - name: Install
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Test
         run: npm test
       - name: Typecheck
