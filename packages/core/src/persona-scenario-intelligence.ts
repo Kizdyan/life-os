@@ -1,4 +1,4 @@
-import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionIdea } from "./persona-production-brief";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief";
 import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory";
 import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence";
 
