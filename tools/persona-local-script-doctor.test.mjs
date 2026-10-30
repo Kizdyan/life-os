@@ -19,9 +19,9 @@ const task={kind:'persona-local-doctor-input-v1',version:1,script:{
 const diagnosis={summary:'Финальный поворот не подготовлен.',storyMap:beats.map((beat,beatIndex)=>({beatIndex,sceneFunction:beatIndex===0?'hook':beatIndex===beats.length-1?'payoff':'escalation',causedByBeatIndex:beatIndex===0?null:beatIndex-1,changedCondition:beatIndex===0?'Герой просит пробу.':'Обстоятельства меняются после действия героя.',goalObstacleRelation:'Герой добивается роли, а пианино перехватывает внимание.',turnPreparation:beatIndex===beats.length-1?'Подготовлено тем, что режиссёр слушает только пианино.':'Ещё не финальный поворот.'})),findings:[
  {role:'dramaturg',classification:'INTERPRETIVE_WEAKNESS',beatIndex:2,issue:'Не проявлена новая цель.',evidence:'Пианино отвечает без изменения обстоятельств.',proposal:'Герой пробует перехватить инициативу и терпит неудачу.'},
  {role:'comedy',classification:'INTERPRETIVE_WEAKNESS',beatIndex:3,issue:'Панчлайн известен заранее.',evidence:'Финальная реплика буквально повторяет ожидаемую ситуацию.',proposal:'Пусть режиссёр зовёт пианино на следующую пробу, а герой становится аккомпаниатором.'}]};
-const candidate={beats:[beats[0],beats[1],
- {...beats[2],line:'Я играю громче, но режиссёр обращается только к клавишам.',action:'Захлопываю партитуру и беззвучно показываю жест «я здесь».',durationSec:7},
- {...beats[3],line:'Меня взяли. Аккомпанировать пианино.',action:'Убираю стул и торжественно уступаю место инструменту.',durationSec:4}],
+const candidate={patches:[
+ {beatIndex:2,line:'Я играю громче, но режиссёр обращается только к клавишам.',action:'Захлопываю партитуру и беззвучно показываю жест «я здесь».',durationSec:7},
+ {beatIndex:3,line:'Меня взяли. Аккомпанировать пианино.',action:'Убираю стул и торжественно уступаю место инструменту.',durationSec:4}],
  changeSummary:'Финал теперь вытекает из двух конкретных действий.'};
 function fakeLocal({foundModels=['qwen2.5-coder:7b'],notes=diagnosis,revision=candidate}={}){
  const calls=[];const fetchImpl=async(url,options)=>{calls.push({url:String(url),options});
@@ -37,10 +37,12 @@ test('local two-pass editor returns meaningful scene-specific critique and unapp
  assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);assert.equal(out.diagnosis.findings.length,2);assert.equal(out.diagnosis.storyMap.length,beats.length);assert.equal(out.diagnosis.findings[0].classification,'INTERPRETIVE_WEAKNESS');
  assert.equal(out.totalDurationSec,19);assert.equal(out.approval,undefined);assert.equal(out.editorialDecision,undefined);
  assert.equal(calls.length,3);assert.deepEqual(calls.map(c=>new URL(c.url).pathname),['/api/tags','/api/chat','/api/chat']);
- const first=JSON.parse(calls[1].options.body);assert.equal(first.format.type,'object');assert.deepEqual(first.format.required,['summary','storyMap','findings']);
+ const first=JSON.parse(calls[1].options.body);assert.equal(first.format.type,'object');assert.deepEqual(first.format.required,['summary','findings']);
  const second=JSON.parse(calls[2].options.body);assert.equal(second.stream,false);assert.equal(second.model,'qwen2.5-coder:7b');
- assert.equal(second.format.type,'object');assert.deepEqual(second.format.required,['beats','changeSummary']);
+ assert.equal(second.format.type,'object');assert.deepEqual(second.format.required,['patches','changeSummary']);
  assert.equal(second.messages[1].content.includes('Финальный поворот не подготовлен.'),true);
+ assert.equal(first.think,false);assert.equal(second.think,false);
+ assert.equal(second.messages[1].content.includes('targetIndices'),true);
 });
 test('explicitly rejects remote and cloud endpoints and missing models before an AI request',async()=>{
  const {fetchImpl,calls}=fakeLocal({foundModels:['different:3b']});
@@ -57,23 +59,37 @@ test('locked or invalid indices are blocked without any model query',async()=>{
  await assert.rejects(runLocalScriptDoctor({...task,script:{...task.script,currentRevisionId:'wrong'}},{fetchImpl}),/сохранённый сценарий/);
  assert.equal(calls.length,0);
 });
-test('unrequested edits, removed beats and wrong narrative purpose are rejected',async()=>{
+test('unrequested, locked, duplicate and structurally invalid patches are rejected',async()=>{
  for(const revision of [
-  {...candidate,beats:[{...beats[0],line:'Новый хук'},...candidate.beats.slice(1)]},
-  {...candidate,beats:candidate.beats.slice(0,3)},
-  {...candidate,beats:candidate.beats.map((b,i)=>i===2?{...b,purpose:'ending'}:b)},
+  {...candidate,patches:[{...candidate.patches[0],beatIndex:0}]},
+  {...candidate,patches:[{...candidate.patches[0],beatIndex:1}]},
+  {...candidate,patches:[candidate.patches[0],candidate.patches[0]]},
+  {...candidate,patches:[{...candidate.patches[0],purpose:'ending'}]},
+  {...candidate,patches:[{...candidate.patches[0],durationSec:0}]}
  ]){
   await assert.rejects(runLocalScriptDoctor(task,{fetchImpl:fakeLocal({revision}).fetchImpl}));
  }
 });
 test('no changes, duplicated dialogue and uniform mechanical timing are rejected',async()=>{
  const cases=[
-  {...candidate,beats},
-  {...candidate,beats:candidate.beats.map((b,i)=>i===2?{...b,line:beats[1].line}:b)},
-  {...candidate,beats:candidate.beats.map((b,i)=>({...b,durationSec:5}))},
+  {...candidate,patches:[{beatIndex:2,line:beats[2].line,action:beats[2].action,durationSec:beats[2].durationSec}]},
+  {...candidate,patches:[{...candidate.patches[0],line:beats[1].line}]}
  ];
- for(const revision of cases)await assert.rejects(runLocalScriptDoctor(task,{fetchImpl:fakeLocal({revision}).fetchImpl}));
+ for(const revision of cases)
+  await assert.rejects(runLocalScriptDoctor(task,{fetchImpl:fakeLocal({revision}).fetchImpl}));
+ const wide={...task,targetIndices:[1,2,3]};
+ const uniform={...candidate,patches:[1,2,3].map(beatIndex=>({
+  beatIndex,line:'Изменённый кадр '+beatIndex,
+  action:'Герой делает новое действие '+beatIndex,durationSec:3}))};
+ await assert.rejects(runLocalScriptDoctor(wide,{fetchImpl:fakeLocal({revision:uniform}).fetchImpl}),/uniform/);
 });
+test('a minimal diagnosis without full story map is accepted for patch-only rewrite',async()=>{
+ const minimal={summary:'Два финальных кадра слабы.',findings:diagnosis.findings};
+ const out=await runLocalScriptDoctor(task,{fetchImpl:fakeLocal({notes:minimal}).fetchImpl});
+ assert.equal(out.diagnosis.storyMap.length,0);
+ assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);
+});
+
 test('model critique cannot address locked or irrelevant frames',async()=>{
  const wrong={...diagnosis,findings:[{...diagnosis.findings[0],beatIndex:0}]};
  await assert.rejects(runLocalScriptDoctor(task,{fetchImpl:fakeLocal({notes:wrong}).fetchImpl}),/неверная роль или кадр/);
@@ -85,7 +101,29 @@ test('nonexistent output does not become a fake draft; existing outputs cannot b
  assert.equal(JSON.parse(await readFile(output,'utf8')).status,'SUGGESTION_NOT_APPROVED');
  assert.equal(await readFile(input,'utf8'),original);
  await assert.rejects(runLocalScriptDoctorFiles(input,output,{fetchImpl:fakeLocal().fetchImpl}),/EEXIST/);
- assert.deepEqual((await readdir(dir)).sort(),['suggestion.json','task.json']);
+ assert.deepEqual((await readdir(dir)).sort(),['suggestion.json','suggestion.json.artifacts','task.json']);
+ const artifactDir=join(dir,'suggestion.json.artifacts');
+ const stages=await readdir(artifactDir);
+ for(const name of ['run.json','task.json','diagnosis.raw.txt','diagnosis.validated.json','revision.raw.txt','revision.validated.json','success.json'])assert.ok(stages.includes(name),name);
+});
+test('a failed second pass leaves complete diagnostic artifacts without creating suggestion',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-failed-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),output=join(dir,'suggestion.json');
+ await writeFile(input,JSON.stringify(task));
+ let calls=0;const original=fakeLocal().fetchImpl;
+ const corrupted=async(url,opts)=>{
+  if(String(url).endsWith('/api/chat')&&++calls===2)
+   return {ok:true,json:async()=>({message:{content:'broken-json'}})};
+  return original(url,opts);
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,output,{fetchImpl:corrupted}),/невалидный JSON/);
+ const stages=await readdir(join(dir,'suggestion.json.artifacts'));
+ for(const name of ['run.json','task.json','diagnosis.raw.txt','diagnosis.validated.json','revision.raw.txt','failure.json'])
+  assert.ok(stages.includes(name),name);
+ const failure=JSON.parse(await readFile(join(dir,'suggestion.json.artifacts','failure.json'),'utf8'));
+ assert.equal(failure.state,'FAILED');assert.equal(failure.name,'Error');
+ await assert.rejects(readFile(output),/ENOENT/);
 });
 test('bad JSON from local creative model fails rather than approving or writing anything',async()=>{
  const {fetchImpl}=fakeLocal();let seen=0;
