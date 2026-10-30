@@ -71,11 +71,11 @@
 - `resolveScenarioResearchProvider(request, env)` returns manual evidence or a disabled Perplexity status.
 - It may expose configuration status but never returns a key or calls network without enable flag, key, and positive limit.
 
-- [ ] Write tests for disabled, absent-key, absent-limit and manual evidence cases; mock `fetch` and assert zero calls.
-- [ ] Run tests and confirm the endpoint is absent.
-- [ ] Implement the server-only boundary and explicit disabled messages.
-- [ ] Run endpoint tests and full API tests.
-- [ ] Commit the provider guard.
+- [x] Write tests for disabled, absent-key, absent-limit and manual evidence cases; mock `fetch` and assert zero calls.
+- [x] Run tests and confirm the endpoint is absent.
+- [x] Implement the server-only boundary and explicit disabled messages.
+- [x] Run endpoint tests and full API tests.
+- [x] Commit the provider guard.
 
 ### Task 4: Persist scenario workspace in Persona projects
 
