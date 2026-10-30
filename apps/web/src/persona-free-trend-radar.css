@@ -27,3 +27,8 @@
 .personaFreeRadar .radarMessage{color:#e0cc9a}
 .personaFreeRadar .radarEmpty{opacity:.8}
 @media(max-width:520px){.personaFreeRadar{padding:13px;margin:12px 0}.personaFreeRadar .freeRadarForm{grid-template-columns:1fr}}
+
+.personaFreeRadar .radarSearch{display:grid;gap:9px;padding:12px;border:1px solid #405364;border-radius:10px}
+.personaFreeRadar .radarSearchLinks{display:flex;flex-wrap:wrap;gap:12px}
+.personaFreeRadar .radarSearchLinks a{display:inline-block;border:1px solid #617083;padding:9px 12px;border-radius:8px;text-decoration:none}
+.personaFreeRadar .radarSearchLinks a:hover{background:#2b3f51}
