@@ -258,6 +258,29 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(()=>recordPersonaEditorialDecision(revised,{decision:"approved",editor:"Тест",comment:"Тест",factReviewCompleted:true,decidedAt:"2026-10-30T14:12:00Z"})).toThrow();
   });
 
+  it("keeps a seven-beat approved scene lossless through the production handoff", () => {
+    const [idea] = suggestScenarioIdeas({ research: [source], creativeProfile: { priorities: ["актёрская игра", "авторская музыка"], constraints: ["не менять внешность"] }, count: 5 });
+    const beats = [
+      { purpose: "hook" as const, line: "Я обещал сыграть спокойно — и сразу взял не тот аккорд.", action: "Замереть у клавиатуры, не отводя взгляд от камеры.", durationSec: 3 },
+      { purpose: "development" as const, line: "В трубке говорят: «Ничего, продолжай».", action: "Сжать телефон и осторожно нажать следующую клавишу.", durationSec: 4 },
+      { purpose: "development" as const, line: "Но каждый спокойный ответ превращается в более тревожный мотив.", action: "Перейти от лица к пальцам и вернуть взгляд на партнёра.", durationSec: 6 },
+      { purpose: "development" as const, line: "Я пытаюсь заглушить музыку, а она отвечает раньше слов.", action: "Закрыть крышку пианино и услышать короткую паузу.", durationSec: 2 },
+      { purpose: "development" as const, line: "Тогда я впервые говорю: «Мне вовсе не спокойно».", action: "Открыть крышку и сыграть один тихий чистый звук.", durationSec: 5 },
+      { purpose: "development" as const, line: "Собеседник молчит — и эта пауза оказывается ответом.", action: "Не заполнять тишину, выдержать реакцию в крупном плане.", durationSec: 4 },
+      { purpose: "ending" as const, line: "Я не закончил разговор; я наконец начал его слушать.", action: "Убрать руку с клавиш и оставить естественное затухание ноты.", durationSec: 5 },
+    ];
+    const draft = createScenarioScript(idea, { createdAt: "2026-10-30T16:00:00.000Z", beats });
+    const approved = approveScenarioScript(draft, { author: "Тестовый автор", comment: "Утверждаю точный текст и действия для съёмки.", approvedAt: "2026-10-30T16:02:00.000Z" });
+    const selected = { id: "seven-beat-project", title: "Разговор с фортепиано", angle: "Музыка выдаёт скрытую реакцию героя", format: "reel" as const };
+    const brief = scenarioScriptToProductionBrief(approved, selected);
+    expect(brief.script).toEqual(beats.map((beat, index) => ({ order: index + 1, line: beat.line, action: beat.action, durationSec: beat.durationSec })));
+    expect(brief.shots.map(shot => shot.action)).toEqual(beats.map(beat => beat.action));
+    expect(brief.adaptations.reels.durationSec).toBe(29);
+    const pipeline = importPersonaProductionBrief({ brief, selectedIdea: selected });
+    expect(pipeline.materials.productionBrief?.script).toEqual(brief.script);
+    expect(pipeline.statuses.READY_FOR_SHOOT).toBe("pending");
+  });
+
   it("keeps a reference as a format-only evidence record and records only an explicit approval in Format Memory", () => {
     const analysis = analyseScenarioReference(source, {
       observationStatus: "metadata_only", hook: "Смена ожидания в первой фразе.", situation: "Кастинг", desire: "Получить пробу", obstacle: "Неверная дверь", turn: "Режиссёр уже слушает", payoff: "Проба шла всё время", editing: "Смысловой переход", sound: "Пауза перед финалом", productionComplexity: "low",
