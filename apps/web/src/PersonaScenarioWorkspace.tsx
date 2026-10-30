@@ -214,7 +214,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     <ul className="personaScenarioList">{workspace.research.map(reference=><li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.title||reference.url}</a><span className={`personaEvidence ${reference.observationStatus}`}>{sourceLabel(reference.observationStatus)}</span></li>)}</ul>
    </article>
    <article className="personaScenarioCard"><h4>Разбор формата</h4><p>Выберите конкретный источник и разберите реальные обстоятельства, действие и монтаж. Ссылка и метаданные не доказывают просмотр.</p>
-     <label>Референс для разбора<select aria-label="Референс для разбора" value={selectedResearchId||workspace.research[0]?.id||''} onChange={event=>{setSelectedResearchId(event.target.value);setWatchedByAuthor(workspace.research.find(ref=>ref.id===event.target.value)?.observationStatus==='user_reviewed')}}>
+     <label>Референс для разбора<select aria-label="Референс для разбора" value={selectedResearchId||workspace.research[0]?.id||''} onChange={event=>{setSelectedResearchId(event.target.value);setAnalysisNote('');setAnalysisDetails({situation:'',desire:'',obstacle:'',turn:'',payoff:'',editing:'',sound:''});setWatchedByAuthor(workspace.research.find(ref=>ref.id===event.target.value)?.observationStatus==='user_reviewed')}}>
      {workspace.research.map(item=><option key={item.id} value={item.id}>{item.title||item.url}</option>)}</select></label>
      <label>Хук и начало<textarea aria-label="Что работает в референсе" value={analysisNote} onChange={event=>setAnalysisNote(event.target.value)} placeholder="Что показано или утверждается источником? Не додумывайте содержание."/></label>
      {([
