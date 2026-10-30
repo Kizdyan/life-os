@@ -100,6 +100,31 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback]});
   setRejectionFeedback('');setError('Критика сохранена отдельно от одобрений; следующий набор идей получит эту причину как ограничение.');
  };
+ const exportLocalAiTask=()=>{
+  if(!script){setError('Сначала сохраните сценарий.');return}
+  if(hasUnsavedChanges){setError('Сначала сохраните правки новой версией, чтобы локальная модель получила актуальный текст.');return}
+  const current=script.currentRevision;
+  const idea=script.idea;
+  const first=current.beats[0],last=current.beats[current.beats.length-1];
+  if(!first||!last){setError('В сценарии нет кадров для передачи локальному редактору.');return}
+  const task={
+   kind:'persona-scenario-local-input-v1',version:1,
+   idea:{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType},
+   storyOutline:{
+    premise:idea.originalConflict,hook:first.line,protagonistGoal:idea.actingTask,
+    obstacle:idea.originalConflict,escalation:current.beats.slice(1,-1).map(beat=>beat.action).join(' ')||'Герой сталкивается с препятствием.',
+    turn:idea.ending,payoff:last.line,actingAction:idea.actingTask,visualMoment:first.action
+   },
+   ...(workspace.editorialFeedback?.length?{previousEditorialFeedback:workspace.editorialFeedback[workspace.editorialFeedback.length-1].comment}:{}),
+   ...(workspace.research.find(item=>item.id===idea.referenceIds[0])?.url
+      ?{sourceReferenceUrl:workspace.research.find(item=>item.id===idea.referenceIds[0])!.url}:{})
+  };
+  const blob=new Blob([JSON.stringify(task,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='persona-scenario-input.json';document.body.appendChild(a);a.click();a.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  setError('Задание скачано локально. Запустите Ollama CLI на Windows, затем импортируйте готовый бриф в этом же проекте. Облачных запросов не было.');
+ };
  const createBrief=()=>{
   if(!script)return;
   if(hasUnsavedChanges){setError('В бриф нельзя переносить несохранённые правки: сначала сохраните новую версию и утвердите её.');return}
@@ -165,6 +190,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label></fieldset>)}
    {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
     <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
+    <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
+    <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК. Результат импортируется через существующий Production Brief, без автоматического одобрения.</small>
     <div className="personaScenarioFeedback">
       <h5>Редакторская критика автора</h5>
       <label>Почему текущую версию нужно переделать<textarea aria-label="Причина отклонения сценария" value={rejectionFeedback} onChange={event=>setRejectionFeedback(event.target.value)} placeholder="Например: слабая эскалация, предсказуемый финал, реплики слишком искусственные"/></label>
