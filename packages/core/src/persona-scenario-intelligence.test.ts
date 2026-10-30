@@ -171,7 +171,7 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(pipeline.materials.productionBrief?.script).toEqual(brief.script);
     expect(pipeline.materials.editorialDecision).toBeUndefined();
     expect(pipeline.statuses.READY_FOR_SHOOT).toBe("pending");
-    const shotChanged={...brief,script:brief.script.map((line,i)=>i===1?{...line,line:"Переписано после одобрения"}:line)};
+    const shotChanged={...brief,script:brief.script.map((line,i)=>i===0?{...line,line:"Переписано после одобрения"}:line)};
     const revised=revisePersonaProductionBrief(pipeline,shotChanged);
     expect(revised.materials.editorialDecision).toBeUndefined();
     expect(revised.materials.qa?.status).toBe("needs_revision");
