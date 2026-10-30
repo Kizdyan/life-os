@@ -209,10 +209,22 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const args=process.argv.slice(2);
- if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen2.5-coder:7b]');
- else if(args.length<2||args.length>4||(args.length>2&&(args[2]!=='--model'||!args[3]))){console.error('Ожидаются task.json suggestion.json [--model NAME]');process.exitCode=2;}
- else runLocalScriptDoctorFiles(args[0],args[1],{model:args[3]??DEFAULT_MODEL})
-  .then(file=>console.log('Редакторские замечания и предложение (НЕ утверждено): '+file),
-   error=>{console.error('Редактура не создана: '+error.message);process.exitCode=1;});
+ const args=process.argv.slice(2),flags={},positionals=[];
+ let invalid=false;
+ for(let i=0;i<args.length;i++){
+  if(args[i]==='--model'||args[i]==='--timeout-ms'){
+   if(!args[i+1]||args[i+1].startsWith('--')){invalid=true;break}
+   if(flags[args[i]]){invalid=true;break}
+   flags[args[i]]=args[++i];
+  }else if(args[i].startsWith('--')){if(args[i]!=='--help')invalid=true;}
+  else positionals.push(args[i]);
+ }
+ if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen3:4b-instruct] [--timeout-ms 180000]');
+ else if(invalid||positionals.length!==2){
+  console.error('Ожидаются task.json suggestion.json [--model NAME] [--timeout-ms 180000]');process.exitCode=2;
+ }else runLocalScriptDoctorFiles(positionals[0],positionals[1],{
+  model:flags['--model']??DEFAULT_MODEL,
+  timeoutMs:flags['--timeout-ms']===undefined?240000:Number(flags['--timeout-ms'])
+ }).then(file=>console.log('Редакторские замечания и предложение (НЕ утверждено): '+file),
+  error=>{console.error('Редактура не создана: '+error.message);process.exitCode=1});
 }
