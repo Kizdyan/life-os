@@ -56,7 +56,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
- const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id);
+ const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
+ const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasUnsavedChanges);
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
  const addReference=()=>{
   try{
@@ -85,11 +86,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  };
  const approveScript=()=>{
   if(!script)return;
+  if(hasUnsavedChanges){setError('Сначала сохраните изменённые реплики и действия новой версией. Старое утверждение нельзя переносить на правки.');return}
   try{const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
  };
  const createBrief=()=>{
   if(!script)return;
+  if(hasUnsavedChanges){setError('В бриф нельзя переносить несохранённые правки: сначала сохраните новую версию и утвердите её.');return}
   try{onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
@@ -142,9 +145,9 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
    {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label></fieldset>)}
-   <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
+   {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}
-   {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={review?.status!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
+   {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasUnsavedChanges||review?.status!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
    {isApproved&&<><p className="personaScenarioHint">В памяти форматов сохранены только одобренные вами приёмы, без выдуманных охватов: {workspace.formatMemory?.length??0}.</p><button type="button" className="primary" onClick={createBrief}>Создать съёмочный бриф</button></>}
   </section>}
   {error&&<p className="personaScenarioError" role="alert">{error}</p>}
