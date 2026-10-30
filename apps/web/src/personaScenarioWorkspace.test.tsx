@@ -51,6 +51,7 @@ describe("Persona Scenario workspace", () => {
     expect(markup).toContain("Локальный Script Doctor");
     expect(markup).toContain("Скачать локальное задание");
     expect(markup).toContain("Импорт предложений Script Doctor");
+    expect(markup).toContain("Скачать локальное задание");
     expect(markup).toContain("Закрепить");
     expect(markup).not.toContain("Принять как новую версию");
   });
