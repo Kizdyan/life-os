@@ -29,7 +29,7 @@ function validateRequest(v){
  if(!v||typeof v!=='object'||v.kind!=='persona-scenario-local-input-v1'||v.version!==1)throw Error('Неверный формат входного JSON. Экспортируй сценарий из Persona.');
  const idea=v.idea;
  if(!idea||typeof idea!=='object'||!['reel','short','story'].includes(idea.format))throw Error('Формат проекта должен быть reel, short или story.');
- const input={kind:v.kind,version:1,idea:{id:required(idea.id,'idea.id',160),title:required(idea.title,'idea.title',160),angle:required(idea.angle,'idea.angle',3000),format:idea.format},storyOutline:{}};
+ const input={kind:v.kind,version:1,idea:{id:required(idea.id,'idea.id',160),title:required(idea.title,'idea.title',160),angle:required(idea.angle,'idea.angle',12000),format:idea.format},storyOutline:{}};
  for(const field of FIELDS)input.storyOutline[field]=required(v.storyOutline?.[field],'storyOutline.'+field);
  if(v.previousEditorialFeedback!==undefined)input.previousEditorialFeedback=required(v.previousEditorialFeedback,'previousEditorialFeedback',1500);
  if(v.sourceReferenceUrl!==undefined){
