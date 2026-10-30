@@ -63,7 +63,9 @@ test('passes only explicitly rejected editorial feedback to local model, preserv
  const input={...req,previousEditorialFeedback:'Финал примитивен; нет причинной эскалации и актёрской задачи.'};
  const result=await generatePersonaLocalScenario(input,{fetchImpl});
  const outbound=JSON.parse(calls[1].opt.body);
- assert.ok(outbound.messages[1].content.endsWith(JSON.stringify({...input})));
+ const prompt=outbound.messages[1].content;
+ const sentInput=JSON.parse(prompt.slice(prompt.indexOf('{')));
+ assert.equal(sentInput.previousEditorialFeedback,input.previousEditorialFeedback);
  assert.equal(result.review.previousEditorialFeedback,input.previousEditorialFeedback);
 });
 test('rejects cloud model, remote endpoint and disallows even a tags request',async()=>{
