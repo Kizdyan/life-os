@@ -88,7 +88,7 @@ export function buildCandidatePack(brief,sources,planned=null){
     .map(rank=>candidateFromRank(beat,rank,source,shot))
     .filter(Boolean);
   }).sort((a,b)=>b.confidence-a.confidence||a.startSec-b.startSec);
-  const selected=planned?.choices?.[i];
+  const selected=planned?.choices?.find(choice=>choice?.beat===beat);
   // Keep the previous planner's choice when it remains a valid, ranked ASR window.
   let previous=selected&&options.find(option=>
    option.sourceId===selected.sourceId&&
@@ -151,8 +151,10 @@ export function applySelections(pack,selection,existing,analysis,brief){
     !Array.isArray(selection.selections)||!Array.isArray(pack.beats)||
     selection.selections.length!==pack.beats.length||
     existing?.version!==1||!Array.isArray(existing.choices)||
-    (existing.recoveryRequired===true?
-     (existing.mode!=='preview'||existing.choices.length>pack.beats.length):
+    (existing.mode==='preview'?
+     (!Array.isArray(existing.missingBeats)||existing.choices.length>pack.beats.length||
+      existing.choices.length+existing.missingBeats.length!==pack.beats.length||
+      new Set([...existing.choices.map(x=>x?.beat),...existing.missingBeats]).size!==pack.beats.length):
      existing.choices.length!==pack.beats.length)||
     analysis?.kind!=='persona-evidence-v1'||!Array.isArray(analysis.sources)||
     brief?.version!==1||brief.script?.length!==pack.beats.length)
