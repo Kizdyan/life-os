@@ -37,6 +37,7 @@ export function validateDoctorTask(raw){
  const lockedIndices=raw.lockedIndices===undefined?[]:Array.isArray(raw.lockedIndices)&&raw.lockedIndices.length===0?[]:indices(raw.lockedIndices,'lockedIndices',beats.length);
  if(targetIndices.some(i=>lockedIndices.includes(i)))throw Error('Автор закрепил кадр; его нельзя одновременно редактировать');
  return {kind:raw.kind,version:1,sourceRevisionId:rev.id,idea:{
+  id:text(script.idea?.id??'','idea.id',180),
   title:text(script.idea?.title??'','idea.title',200),
   originalConflict:text(script.idea?.originalConflict??'','idea.originalConflict',2000)},
   beats,targetIndices,lockedIndices,
@@ -114,6 +115,7 @@ export async function runLocalScriptDoctor(raw,{model=DEFAULT_MODEL,endpoint='ht
  const rewriteSystem='Ты сценарист, исправляющий только targetIndices по конкретной критике. Защищённые и остальные кадры копируй посимвольно, без сокращений, переводов и перестановки. Сохрани число кадров, purpose и драматургическую причинность. Живые русские реплики и конкретные актёрские действия. Запрещено копировать чужие сцены, выдумывать метрики и менять авторские факты. Только JSON {"beats":[{"purpose":"hook|development|ending","line":"...","action":"...","durationSec":4}],"changeSummary":"..."}.';
  const candidate=checkCandidate(await call(rewriteSystem,{...task,diagnosis},'Редактура'),task);
  return {kind:'persona-local-doctor-suggestion-v1',version:1,sourceRevisionId:task.sourceRevisionId,
+  sourceIdeaId:task.idea.id,sourceBeats:task.beats.map(beat=>({...beat})),
   model:name,status:'SUGGESTION_NOT_APPROVED',diagnosis,...candidate,
   warning:'Это машинная критика и кандидат на редакцию, не художественная приёмка. Импорт в Persona должен создать новую неутверждённую версию; никакого разрешения на съёмку.'};
 }
