@@ -104,7 +104,9 @@ test('nonexistent output does not become a fake draft; existing outputs cannot b
  assert.deepEqual((await readdir(dir)).sort(),['suggestion.json','suggestion.json.artifacts','task.json']);
  const artifactDir=join(dir,'suggestion.json.artifacts');
  const stages=await readdir(artifactDir);
- for(const name of ['run.json','task.json','diagnosis.raw.txt','diagnosis.validated.json','revision.raw.txt','revision.validated.json','success.json'])assert.ok(stages.includes(name),name);
+ for(const name of ['run.json','task.json','diagnosis.started.json','diagnosis.raw.txt','diagnosis.metrics.json','diagnosis.validated.json','revision.started.json','revision.raw.txt','revision.metrics.json','revision.validated.json','success.json'])assert.ok(stages.includes(name),name);
+ const timings=JSON.parse(await readFile(join(artifactDir,'revision.metrics.json'),'utf8'));
+ assert.equal(timings.status,'PARSED');assert.ok(timings.elapsedMs>=0);
 });
 test('a failed second pass leaves complete diagnostic artifacts without creating suggestion',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-doctor-failed-'));
@@ -119,10 +121,11 @@ test('a failed second pass leaves complete diagnostic artifacts without creating
  };
  await assert.rejects(runLocalScriptDoctorFiles(input,output,{fetchImpl:corrupted}),/невалидный JSON/);
  const stages=await readdir(join(dir,'suggestion.json.artifacts'));
- for(const name of ['run.json','task.json','diagnosis.raw.txt','diagnosis.validated.json','revision.raw.txt','failure.json'])
+ for(const name of ['run.json','task.json','diagnosis.started.json','diagnosis.metrics.json','diagnosis.raw.txt','diagnosis.validated.json','revision.started.json','revision.metrics.json','revision.raw.txt','failure.json'])
   assert.ok(stages.includes(name),name);
  const failure=JSON.parse(await readFile(join(dir,'suggestion.json.artifacts','failure.json'),'utf8'));
  assert.equal(failure.state,'FAILED');assert.equal(failure.name,'Error');
+ assert.equal(JSON.parse(await readFile(join(dir,'suggestion.json.artifacts','revision.metrics.json'),'utf8')).status,'FAILED');
  await assert.rejects(readFile(output),/ENOENT/);
 });
 test('bad JSON from local creative model fails rather than approving or writing anything',async()=>{
