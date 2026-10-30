@@ -1,7 +1,9 @@
 import React,{useState} from 'react';
+import PersonaStoryReview from './PersonaStoryReview';
+import type {PersonaStoryOutline} from './personaStoryMechanics';
 import {
  FREE_TREND_SOURCES,addPersonaFreeReference,readPersonaFreeReferences,
- savePersonaFreeReferences,exportPersonaFreeReferences,
+ savePersonaFreeReferences,exportPersonaFreeReferences,withPersonaReferenceStory,
  type PersonaFreeReference,type PersonaReferenceCategory
 } from './personaFreeResearch';
 import './persona-free-trend-radar.css';
@@ -16,7 +18,7 @@ const categories:{value:PersonaReferenceCategory;label:string}[]=[
  * No API call, video scraping, upload or claim that a source was watched.
  */
 export default function PersonaFreeTrendRadar({onCreateIdea}:{
- onCreateIdea?:(idea:{title:string;angle:string;referenceUrl:string})=>void;
+ onCreateIdea?:(idea:{title:string;angle:string;referenceUrl:string;storyOutline?:PersonaStoryOutline})=>void;
 }){
  const [items,setItems]=useState<PersonaFreeReference[]>(()=>readPersonaFreeReferences(localStorage));
  const [url,setUrl]=useState('');
@@ -61,6 +63,17 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
   onCreateIdea({title,angle,referenceUrl:reference.url});
   setSelectedId(null);setAdaptation('');setNewTitle('');
  }
+ function saveStory(id:string,story:PersonaStoryOutline){
+  const updated=withPersonaReferenceStory(items,id,story);
+  persist(updated);
+ }
+ function createStructuredIdea(reference:PersonaFreeReference,angle:string,storyOutline:PersonaStoryOutline){
+  if(!onCreateIdea){setMessage('Создание проекта недоступно.');return}
+  const title=newTitle.trim();
+  if(title.length<3){setMessage('Сначала укажи название своей идеи.');return}
+  onCreateIdea({title,angle,referenceUrl:reference.url,storyOutline});
+  setSelectedId(null);setNewTitle('');setAdaptation('');
+ }
  return <section className="personaFreeRadar" aria-label="Бесплатная разведка трендов">
   <header><div><small>ZERO-CREDIT · БЕЗ ПЛАТНЫХ API</small><h3>Источники трендов и референсы</h3><p>Открывай бесплатные публичные источники, сохраняй ссылки и наблюдения. Это ручное исследование: Persona не заявляет о просмотре видео, если ты его не смотрел.</p></div></header>
   <div className="radarSearch">
@@ -97,7 +110,12 @@ export default function PersonaFreeTrendRadar({onCreateIdea}:{
      <p>Используй приём, но не копируй сюжет. Идея перейдёт в существующий проект Persona и не будет автоматически одобрена.</p>
      <label>Название своей идеи<input aria-label="Название собственной идеи" value={newTitle} onChange={e=>setNewTitle(e.target.value)} maxLength={150}/></label>
      <label>Собственный сюжет / новая ситуация<textarea aria-label="Оригинальный замысел" value={adaptation} onChange={e=>setAdaptation(e.target.value)} maxLength={1000}/></label>
-     <button type="button" onClick={createIdea} disabled={!onCreateIdea}>Создать проект Persona</button>
+     <button type="button" onClick={createIdea} disabled={!onCreateIdea}>Создать проект Persona из краткого замысла</button>
+     <details><summary>Подробный разбор драматургии · без AI-кредитов</summary>
+      <PersonaStoryReview key={item.id} initial={item.storyOutline}
+       referenceStatus={item.status} onChange={story=>saveStory(item.id,story)}
+       onCreate={(angle,outline)=>createStructuredIdea(item,angle,outline)}/>
+     </details>
     </div>}
    </article>)}</div>}
   <p className="radarCaution">Без платных AI-кредитов. Локальное хранилище браузера: используй экспорт как резервную копию. Автоматического исследования содержания и художественного QA пока нет.</p>
