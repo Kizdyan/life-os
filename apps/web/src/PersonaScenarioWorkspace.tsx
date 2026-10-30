@@ -267,6 +267,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
         setBeats(next.currentRevision.beats);
         setError('');
       }}
+      onRejectSuggestion={(reason,sourceRevisionId)=>{
+        update({editorialFeedback:[
+          ...(workspace.editorialFeedback??[]),
+          {revisionId:sourceRevisionId,
+           comment:'Отклонено предложение Script Doctor: '+reason,
+           createdAt:new Date().toISOString()}
+        ]});
+      }}
     />
     <div className="personaScenarioFeedback">
       <h5>Редакторская критика автора</h5>
