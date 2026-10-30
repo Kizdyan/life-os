@@ -1,3 +1,5 @@
+import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript } from '../../../packages/core/src/persona-scenario-intelligence';
+
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
 
@@ -17,11 +19,22 @@ export type PersonaProject={
  socialCaptions:unknown|null;
  stage:PersonaProjectStage;
  qa:unknown|null;
+ /** Optional, versioned Scenario Intelligence state. Existing v1 projects stay valid without it. */
+ scenarioWorkspace?:PersonaScenarioWorkspace;
  lastOpenStep?:string;
  createdAt:string;
  updatedAt:string;
  schemaVersion:1;
  revision:number;
+};
+
+export type PersonaScenarioWorkspace={
+ version:1;
+ research:ScenarioResearchItem[];
+ analyses:ScenarioReferenceAnalysis[];
+ ideas:ScenarioIdea[];
+ selectedIdeaId?:string;
+ script?:ScenarioScript;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -31,10 +44,19 @@ const CORRUPT_KEY=PERSONA_PROJECTS_KEY+':corrupt';
 
 function isContentType(value:unknown):value is PersonaContentType{return value==='reel'||value==='short'||value==='story'||value==='photo'||value==='carousel'}
 function isStage(value:unknown):value is PersonaProjectStage{return value==='strategy'||value==='needs_assets'||value==='production'||value==='marketing_qa'||value==='media_qa'||value==='final_qa'||value==='approval'}
+function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
+ if(!value||typeof value!=='object')return false;
+ const workspace=value as Partial<PersonaScenarioWorkspace>;
+ if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string'))return false;
+ if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
+ if(workspace.script===undefined)return true;
+ const script=workspace.script as Partial<ScenarioScript>;
+ return typeof script.currentRevisionId==='string'&&Array.isArray(script.revisions)&&script.revisions.every(revision=>revision&&typeof revision==='object')&&(!script.approval||typeof script.approval==='object');
+}
 function isProject(value:unknown):value is PersonaProject{
  if(!value||typeof value!=='object')return false;
  const project=value as Partial<PersonaProject>;
- return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string');
+ return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.scenarioWorkspace===undefined||isScenarioWorkspace(project.scenarioWorkspace));
 }
 export function validatePersonaProjectCollection(value:unknown):PersonaProjectCollection{
  const parsed=value as Partial<PersonaProjectCollection>;

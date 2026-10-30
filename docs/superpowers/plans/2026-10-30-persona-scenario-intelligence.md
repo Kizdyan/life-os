@@ -87,11 +87,11 @@
 - Add optional, versioned `scenarioWorkspace` to `PersonaProject`; legacy projects deserialize unchanged.
 - `savePersonaProject` persists workspace revisions without altering media assets or timeline.
 
-- [ ] Write migration/round-trip tests for a project with research, references and script revisions and a legacy project without them.
-- [ ] Run the test and confirm it fails.
-- [ ] Implement backward-compatible persistence.
-- [ ] Run project-store tests.
-- [ ] Commit persistence.
+- [x] Write migration/round-trip tests for a project with research, references and script revisions and a legacy project without them.
+- [x] Run the test and confirm it fails.
+- [x] Implement backward-compatible persistence.
+- [x] Run project-store tests.
+- [x] Commit persistence.
 
 ### Task 5: Integrate one Persona Scenario workspace
 
