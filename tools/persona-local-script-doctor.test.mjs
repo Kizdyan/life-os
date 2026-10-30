@@ -37,7 +37,9 @@ test('local two-pass editor returns meaningful scene-specific critique and unapp
  assert.deepEqual(out.diff.map(x=>x.beatIndex),[2,3]);assert.equal(out.diagnosis.findings.length,2);
  assert.equal(out.totalDurationSec,19);assert.equal(out.approval,undefined);assert.equal(out.editorialDecision,undefined);
  assert.equal(calls.length,3);assert.deepEqual(calls.map(c=>new URL(c.url).pathname),['/api/tags','/api/chat','/api/chat']);
+ const first=JSON.parse(calls[1].options.body);assert.equal(first.format.type,'object');assert.deepEqual(first.format.required,['summary','findings']);
  const second=JSON.parse(calls[2].options.body);assert.equal(second.stream,false);assert.equal(second.model,'qwen2.5-coder:7b');
+ assert.equal(second.format.type,'object');assert.deepEqual(second.format.required,['beats','changeSummary']);
  assert.equal(second.messages[1].content.includes('Финальный поворот не подготовлен.'),true);
 });
 test('explicitly rejects remote and cloud endpoints and missing models before an AI request',async()=>{
