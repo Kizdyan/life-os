@@ -21,6 +21,7 @@ export interface PersonaFreeReference {
 export const FREE_TREND_SOURCES = [
  {name:'CapCut · трендовые шаблоны',url:'https://www.capcut.com/explore/trending-now',detail:'Смотри структуру и монтаж. Бесплатность отдельного шаблона проверяй в CapCut.'},
  {name:'TikTok Creative Center',url:'https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en',detail:'Актуальные темы и хештеги. Часть функций может требовать входа.'},
+ {name:'VK Клипы · вкладка «Тренды»',url:'https://vk.com/clips',detail:'Российские короткие видео; раздел «Тренды» доступен внутри VK Клипов.'},
  {name:'Google Trends',url:'https://trends.google.com/trends/',detail:'Проверка интереса к теме; не является статистикой Reels.'},
  {name:'Яндекс Вордстат',url:'https://wordstat.yandex.ru/',detail:'Российский поисковый спрос; не число просмотров видео.'},
  {name:'YouTube · поиск Shorts',url:'https://www.youtube.com/results?search_query=%D0%B0%D0%BA%D1%82%D1%91%D1%80+shorts',detail:'Публичный поиск коротких актёрских видео; сравнивай даты и каналы.'}
