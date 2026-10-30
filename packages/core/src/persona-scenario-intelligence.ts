@@ -269,8 +269,9 @@ export function suggestScenarioIdeas(input: {
   if (!Number.isInteger(input.count) || input.count < 5 || input.count > 10) {
     throw new Error("Idea count must be between 5 and 10");
   }
-  const references = validateScenarioResearch(input.research);
-  if (!references.some((item)=>item.observationStatus !== "unavailable")) {
+  // A fully empty research inbox can still create clearly labelled fallback ideas.
+  const references = input.research.length ? validateScenarioResearch(input.research) : [];
+  if (references.length>0 && !references.some((item)=>item.observationStatus !== "unavailable")) {
     throw new Error("Ideas need available research evidence");
   }
   const profileFit = nonEmpty(input.creativeProfile.priorities.join(", "))
