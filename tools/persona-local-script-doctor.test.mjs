@@ -128,6 +128,57 @@ test('a failed second pass leaves complete diagnostic artifacts without creating
  assert.equal(JSON.parse(await readFile(join(dir,'suggestion.json.artifacts','revision.metrics.json'),'utf8')).status,'FAILED');
  await assert.rejects(readFile(output),/ENOENT/);
 });
+test('resume after a failed second pass reuses validated critique and calls only the patch model',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-resume-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),failedOut=join(dir,'attempt-1.json'),resumedOut=join(dir,'attempt-2.json');
+ await writeFile(input,JSON.stringify(task));
+ let firstCalls=0;
+ const original=async(url,opts)=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  firstCalls++;
+  return {ok:true,json:async()=>({message:{content:firstCalls===1?JSON.stringify(diagnosis):'broken JSON'}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,failedOut,{fetchImpl:original}),/невалидный JSON/);
+ const previous=failedOut+'.artifacts';
+ assert.equal(JSON.parse(await readFile(join(previous,'failure.json'),'utf8')).state,'FAILED');
+ let secondCalls=0;
+ const patchOnly=async(url,opts)=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  secondCalls++;
+  return {ok:true,json:async()=>({message:{content:JSON.stringify(candidate)}})};
+ };
+ await runLocalScriptDoctorFiles(input,resumedOut,{fetchImpl:patchOnly,resumeFrom:previous});
+ assert.equal(secondCalls,1);
+ const output=JSON.parse(await readFile(resumedOut,'utf8'));
+ assert.deepEqual(output.diff.map(item=>item.beatIndex),[2,3]);
+ assert.equal(output.status,'SUGGESTION_NOT_APPROVED');
+ assert.equal(JSON.parse(await readFile(join(resumedOut+'.artifacts','diagnosis.reused.json'),'utf8')).revisionId,'scenario-r3');
+ const files=await readdir(resumedOut+'.artifacts');
+ assert.ok(files.includes('diagnosis.validated.json'));
+ assert.ok(!files.includes('diagnosis.raw.txt'),'A resumed critique must not be falsely attributed to a new generation');
+ assert.equal(await readFile(input,'utf8'),JSON.stringify(task));
+});
+test('resume refuses stale task, wrong model and edited diagnosis without producing an output',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-resume-unsafe-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),old=join(dir,'failed.json'),newOut=join(dir,'resumed.json');
+ await writeFile(input,JSON.stringify(task));
+ let calls=0;const fail=async(url)=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  calls++;return {ok:true,json:async()=>({message:{content:calls===1?JSON.stringify(diagnosis):'not-json'}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,old,{fetchImpl:fail}));
+ const folder=old+'.artifacts';
+ await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{model:'qwen3:4b-instruct',resumeFrom:folder}),/model differs/);
+ const changed={...task,instruction:'Новое совсем другое указание'};
+ await writeFile(input,JSON.stringify(changed));
+ await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/task differs/);
+ await writeFile(input,JSON.stringify(task));
+ await writeFile(join(folder,'diagnosis.validated.json'),JSON.stringify({...diagnosis,findings:[]}));
+ await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/не содержит конкретных замечаний/);
+ await assert.rejects(readFile(newOut),/ENOENT/);
+});
 test('bad JSON from local creative model fails rather than approving or writing anything',async()=>{
  const {fetchImpl}=fakeLocal();let seen=0;
  const corrupted=async(url,opts)=>{seen++;if(seen===3)return {ok:true,json:async()=>({message:{content:'not-json'}})};return fetchImpl(url,opts)};
