@@ -25,6 +25,16 @@ function run(bin,args){
   p.on('close',code=>{if(finished)return;finished=true;clearTimeout(timer);code===0?ok({stderr,stdout}):bad(Error('Media command failed: '+stderr.slice(-1200)))});
  });
 }
+function visualProvenance(timeline,timelinePath,timelineSha256,scenes){
+ const projectId=typeof timeline.projectId==='string'&&timeline.projectId.trim()
+  ?timeline.projectId.trim():`local-${timelineSha256.slice(0,16)}`;
+ return {version:1,kind:'persona-artifact-provenance-v1',projectId,
+  revisionId:`timeline-sha256:${timelineSha256}`,artifact:'timeline',
+  timelinePath,timelineSha256,
+  dependencies:scenes.map(scene=>({beat:scene.beat,path:scene.path,
+   sourceSha256:scene.sourceSha256,startSec:scene.startSec,durationSec:scene.durationSec})),
+  operation:'visual-review'};
+}
 export function validateTimeline(timeline){
  if(timeline?.version!==1||!Array.isArray(timeline.clips)||timeline.clips.length<1||timeline.clips.length>30)fail('Invalid timeline');
  let prev=0;
@@ -33,7 +43,7 @@ export function validateTimeline(timeline){
   if(!Number.isSafeInteger(beat)||beat<=prev||beat>30||
      typeof c.path!=='string'||!c.path.trim()||!finite(c.startSec)||
      c.startSec<0||!finite(c.durationSec)||c.durationSec<.25||c.durationSec>60)
-   fail('Invalid scene order or interval');
+   fail('Timeline clips are reordered or interval is invalid');
   prev=beat;
  }
  return true;
@@ -41,11 +51,13 @@ export function validateTimeline(timeline){
 export function applyManualFraming(pack,selection,timeline){
  validateTimeline(timeline);
  if(pack?.version!==1||pack.kind!=='persona-visual-review-pack-v1'||
+    !/^[a-f0-9]{64}$/.test(pack.timelineSha256??'')||
     !Array.isArray(pack.scenes)||pack.scenes.length!==timeline.clips.length||
     selection?.kind!=='persona-visual-framing-selection-v1'||
     selection.publicationApproved!==false||selection.approved!==undefined||
     selection.authorApproved!==undefined||!Array.isArray(selection.scenes)||
-    selection.scenes.length!==pack.scenes.length)fail('Invalid visual review / approval guard');
+    selection.scenes.length!==pack.scenes.length||selection.timelineSha256!==pack.timelineSha256)
+   fail('Invalid visual review / approval guard');
  const result=structuredClone(timeline);
  for(let i=0;i<pack.scenes.length;i++){
   const c=result.clips[i],scene=pack.scenes[i],choice=selection.scenes[i];
@@ -60,7 +72,13 @@ export function applyManualFraming(pack,selection,timeline){
      x<0||x>1||y<0||y>1)fail('Invalid crop mode or position');
   c.framing={mode,position:{x,y}};
  }
- result.visualReview={kind:'persona-manual-framing-v1',publicationApproved:false,reviewedBeats:pack.scenes.map(s=>s.beat)};
+ result.visualReview={kind:'persona-manual-framing-v1',publicationApproved:false,
+  reviewedBeats:pack.scenes.map(s=>s.beat),timelineSha256:pack.timelineSha256,
+  projectId:pack.provenance?.projectId??null};
+ result.artifactProvenance={version:1,kind:'persona-artifact-provenance-v1',
+  projectId:pack.provenance?.projectId??null,
+  parentTimelineSha256:pack.timelineSha256,operation:'manual-framing',
+  dependencies:pack.provenance?.dependencies??[]};
  return result;
 }
 export function makeVisualHtml(pack){
@@ -89,7 +107,7 @@ export function makeVisualHtml(pack){
   'for(const input of [mode,x,y])input.addEventListener("input",update);update();',
   '}',
   'document.getElementById("save").addEventListener("click",()=>{',
-  'const output={version:1,kind:"persona-visual-framing-selection-v1",publicationApproved:false,scenes:[]};',
+  'const output={version:1,kind:"persona-visual-framing-selection-v1",publicationApproved:false,timelineSha256:pack.timelineSha256,scenes:[]};',
   'for(const s of pack.scenes){const id="beat"+s.beat,reason=document.getElementById(id+"reason").value.trim();',
   'if(reason.length<3){alert("Посмотрите кадры и впишите причину для сцены "+s.beat);return;}',
   'output.scenes.push({beat:s.beat,sourceSha256:s.sourceSha256,reviewed:true,reason,framing:{mode:document.getElementById(id+"mode").value,',
@@ -101,7 +119,7 @@ export function makeVisualHtml(pack){
  const continuity=(pack.continuityWarnings??[]).map(w=>
   '<li>Склейка '+w.fromBeat+' → '+w.toBeat+': средняя яркость изменилась на '+
    escapeHtml(w.yavgDelta)+' YAVG. Это сигнал для ручного просмотра, а не автоматическая ошибка.</li>').join('');
- const embedded=embedJson({scenes:pack.scenes.map(s=>({beat:s.beat,sourceSha256:s.sourceSha256,originalFraming:s.originalFraming}))});
+ const embedded=embedJson({timelineSha256:pack.timelineSha256,scenes:pack.scenes.map(s=>({beat:s.beat,sourceSha256:s.sourceSha256,originalFraming:s.originalFraming}))});
  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
   '<title>Persona · визуальный контроль</title><style>'+
   'body{font:16px/1.5 system-ui,sans-serif;max-width:1050px;margin:auto;padding:24px;background:#131920;color:#f1f4f6}'+
@@ -119,7 +137,7 @@ export function makeVisualHtml(pack){
   '<script type="application/json" id="data">'+embedded+'</script><script>'+browserScript+'</script></body></html>';
 }
 export async function prepareVisualReview(timelinePath,outputDir){
- const timelineFile=resolve(timelinePath),timeline=await readJson(timelineFile);
+ const timelineFile=resolve(timelinePath),timeline=await readJson(timelineFile),timelineSha256=await hash(timelineFile);
  validateTimeline(timeline);
  const root=resolve(outputDir),ffmpeg=process.env.PERSONA_FFMPEG||'ffmpeg',ffprobe=process.env.PERSONA_FFPROBE||'ffprobe';
  const scenes=[],hashes=new Map();
@@ -163,8 +181,9 @@ export async function prepareVisualReview(timelinePath,outputDir){
     continuityWarnings.push({fromBeat:scenes[i-1].beat,toBeat:scenes[i].beat,
      yavgDelta:Number((right-left).toFixed(1)),warning:'Возможный скачок яркости на склейке — проверить визуально'});
   }
-  const pack={version:1,kind:'persona-visual-review-pack-v1',timelinePath:timelineFile,
+  const pack={version:1,kind:'persona-visual-review-pack-v1',timelinePath:timelineFile,timelineSha256,
    scenes,continuityWarnings,publicationApproved:false,
+   provenance:visualProvenance(timeline,timelineFile,timelineSha256,scenes),
    note:'Signalstats brightness is not focus, skin tone, white balance, makeup, artistic quality or visual approval.'};
   await writeFile(join(root,'visual-review-pack.json'),JSON.stringify(pack,null,2)+'\n',{flag:'wx'});
   await writeFile(join(root,'review.html'),makeVisualHtml(pack),{flag:'wx'});
@@ -178,8 +197,10 @@ export async function prepareVisualReview(timelinePath,outputDir){
 }
 export async function applyVisualReview({timelinePath,packPath,selectionPath,outputPath}={}){
  if(![timelinePath,packPath,selectionPath,outputPath].every(x=>typeof x==='string'&&x.trim()))fail('Required: timeline, pack, selection, new timeline JSON');
- const [timeline,pack,selection]=await Promise.all([readJson(timelinePath),readJson(packPath),readJson(selectionPath)]);
- if(pack.timelinePath!==resolve(timelinePath))fail('Visual pack is from another timeline');
+ const timelineFile=resolve(timelinePath);
+ const [timeline,pack,selection,timelineSha256]=await Promise.all([readJson(timelineFile),readJson(packPath),readJson(selectionPath),hash(timelineFile)]);
+ if(pack.timelinePath!==timelineFile)fail('Visual pack is from another timeline');
+ if(pack.timelineSha256!==timelineSha256)fail('Timeline revision changed after visual review');
  const output=applyManualFraming(pack,selection,timeline),hashes=new Map();
  for(const scene of pack.scenes){
   if(!hashes.has(scene.path))hashes.set(scene.path,await hash(scene.path));

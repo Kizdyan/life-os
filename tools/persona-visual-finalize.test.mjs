@@ -78,6 +78,7 @@ test('real local visual approval -> newly cropped MP4 -> H264/AAC, SRT, fresh cr
   assert.equal(prepared.scenes,2);
   const pack=JSON.parse(await readFile(prepared.packPath,'utf8'));
   const selections={version:1,kind:'persona-visual-framing-selection-v1',publicationApproved:false,
+   timelineSha256:pack.timelineSha256,
    scenes:pack.scenes.map(x=>({beat:x.beat,sourceSha256:x.sourceSha256,
     framing:{mode:'cover',position:{x:.75,y:.5}},reviewed:true,reason:'Лицо и клавиши в кадре'}))};
   const selectionPath=join(root,'visual.reviewed.json');

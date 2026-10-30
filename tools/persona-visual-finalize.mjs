@@ -48,11 +48,14 @@ export async function preflightVisualFinalize({reviewedDir,packPath,selectionPat
  validateDraftQa(qa,result.output);
  if(await sha256(result.output)!==qa.evidence.sha256)fail('Reviewed MP4 changed since last QA');
  const pack=await readJson(resolve(packPath));
- if(pack?.timelinePath!==resolve(result.timelinePath)||pack.publicationApproved!==false)
+ if(pack?.timelinePath!==resolve(result.timelinePath)||pack.publicationApproved!==false||
+    !/^[a-f0-9]{64}$/.test(pack.timelineSha256??'')||
+    pack.timelineSha256!==await sha256(result.timelinePath))
   fail('Visual pack is not from this exact reviewed timeline');
  const selection=await readJson(resolve(selectionPath));
  if(selection?.kind!=='persona-visual-framing-selection-v1'||selection.publicationApproved!==false||
-    selection.approved!==undefined||selection.authorApproved!==undefined)
+    selection.approved!==undefined||selection.authorApproved!==undefined||
+    selection.timelineSha256!==pack.timelineSha256)
   fail('Missing explicit human visual review');
  return {reviewed,output,result,pack,selection};
 }

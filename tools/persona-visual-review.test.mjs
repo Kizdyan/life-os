@@ -14,12 +14,14 @@ const baseTimeline={version:1,clips:[
 ]};
 function fixturePack(timeline=baseTimeline){
  return {version:1,kind:'persona-visual-review-pack-v1',timelinePath:join(process.cwd(),'safe','timeline.json'),
+ timelineSha256:sha('c'),
  scenes:timeline.clips.map((c,i)=>({beat:c.beat,path:c.path,startSec:c.startSec,
   durationSec:c.durationSec,sourceSha256:sha(i?'b':'a'),
   sourceLabel:'clip.mp4',frames:[1,2,3].map(j=>({file:'f'+j+'.jpg',yavg:100})),warnings:[]}))};
 }
 function approvedReview(pack){
  return {version:1,kind:'persona-visual-framing-selection-v1',publicationApproved:false,
+ timelineSha256:pack.timelineSha256,
  scenes:pack.scenes.map(s=>({beat:s.beat,sourceSha256:s.sourceSha256,
   framing:{mode:'cover',position:{x:.75,y:.25}},reviewed:true,reason:'Оставляю лицо и клавиши в кадре'}))};
 }
@@ -88,6 +90,11 @@ test('synthetic videos: real FFmpeg stills, luma continuity warnings, manual cro
    selectionPath:decisionsPath,outputPath:derivedPath});
   assert.equal(JSON.parse(await readFile(derivedPath,'utf8')).clips[1].framing.mode,'cover');
   for(const [idx,path] of paths.entries())assert.deepEqual(await readFile(path),originals[idx]);
+  const soundtrackChanged={...timeline,soundtrack:{path:join(root,'different-music.wav'),gainDb:-8}};
+  await writeFile(timelinePath,JSON.stringify(soundtrackChanged));
+  await assert.rejects(()=>applyVisualReview({timelinePath,packPath:prepared.packPath,
+   selectionPath:decisionsPath,outputPath:join(root,'soundtrack-mismatch.json')}),/Timeline revision changed/);
+  await writeFile(timelinePath,JSON.stringify(timeline));
   await assert.rejects(()=>applyVisualReview({timelinePath,packPath:prepared.packPath,
    selectionPath:decisionsPath,outputPath:derivedPath}),/EEXIST/);
   await writeFile(paths[0],'changed');
