@@ -20,7 +20,8 @@ async function json(req){let chunks=[],n=0;for await(const part of req){n+=part.
 function run(args){return new Promise((ok,fail)=>{const p=spawn(process.execPath,[fileURLToPath(new URL('./persona-timeline-render.mjs',import.meta.url)),...args],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let err='';p.stderr.on('data',b=>err=(err+b.toString()).slice(-2000));p.on('error',fail);p.on('close',code=>code===0?ok():fail(Error(err||'Render failed')))})}
 async function cleanup(s){sessions.delete(s.id);await rm(s.dir,{recursive:true,force:true})}
 const server=createServer(async(req,res)=>{
- const expectedHosts=new Set(['127.0.0.1:'+port,'localhost:'+port]);
+ const listeningPort=server.address()?.port??port;
+ const expectedHosts=new Set(['127.0.0.1:'+listeningPort,'localhost:'+listeningPort]);
  if(!expectedHosts.has(req.headers.host)){respond(res,403,{error:'Host not allowed'});return}
  const origin=req.headers.origin;
  if(origin&&!origins.has(origin)){respond(res,403,{error:'Origin not allowed'});return}
@@ -82,4 +83,7 @@ const server=createServer(async(req,res)=>{
  }catch(e){respond(res,400,{error:e instanceof Error?e.message:'Request failed'})}
 });
 setInterval(()=>{for(const s of sessions.values())if(!s.busy&&Date.now()-s.created>60*60*1000)void cleanup(s)},60000).unref();
-server.listen(port,host,()=>console.log('Persona local renderer: http://'+host+':'+port));
+server.listen(port,host,()=>{
+ const listeningPort=server.address()?.port;
+ console.log('Persona local renderer: http://'+host+':'+listeningPort);
+});

@@ -19,11 +19,19 @@ function requestWithHost(url, host) {
   req.end();
  });
 }
+async function startBridge(cwd) {
+ const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{cwd,env:{...process.env,PERSONA_RENDER_PORT:'0'},stdio:['ignore','pipe','pipe']});
+ let output='',errors='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{errors+=chunk});
+ for(let i=0;i<50;i++){
+  const match=output.match(/127\.0\.0\.1:(\d+)/u);
+  if(match&&Number(match[1])>0)return {child,base:'http://127.0.0.1:'+match[1]};
+  await delay(100);
+ }
+ child.kill();throw Error('Bridge did not report an assigned ephemeral port: '+errors);
+}
 
 test('local Persona bridge rejects invalid requests and accepts valid timeline sessions',async()=>{
- const port=48000+Math.floor(Math.random()*1000);
- const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{cwd:tmpdir(),env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
- const base='http://127.0.0.1:'+port;
+ const {child,base}=await startBridge(tmpdir());
  try{
   let ready=false;
   for(let i=0;i<40;i++){try{const r=await fetch(base+'/health');if(r.ok){ready=true;break}}catch{}await delay(100)}
@@ -60,9 +68,7 @@ test('local Persona bridge rejects invalid requests and accepts valid timeline s
 
 test('end-to-end local bridge renders and downloads a real MP4',{timeout:180000},async()=>{
  assert.ok(['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{stdio:'ignore'}).status===0),'FFmpeg and FFprobe are required for this integration test');
- const port=49000+Math.floor(Math.random()*1000);
- const child=spawn(process.execPath,[resolve('tools/persona-render-bridge.mjs')],{env:{...process.env,PERSONA_RENDER_PORT:String(port)},stdio:'ignore'});
- const base='http://127.0.0.1:'+port;
+ const {child,base}=await startBridge();
  try{
   let ready=false;
   for(let i=0;i<50;i++){try{if((await fetch(base+'/health')).ok){ready=true;break}}catch{}await delay(100)}

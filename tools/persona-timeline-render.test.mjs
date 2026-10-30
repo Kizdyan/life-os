@@ -66,3 +66,72 @@ test('renders three real clips, inserts silent audio, preserves originals and wr
     assert.match(invalid.stderr,/Invalid startSec/);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+test('levels different source loudness safely and records measured before/after values',{skip:!available},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-audio-leveling-'));
+ try{
+  const sources=[join(dir,'a.mp4'),join(dir,'b.mp4')];
+  for(const [index,path] of sources.entries()){
+   const made=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c='+(index?'blue':'red')+':s=240x320:r=30','-f','lavfi','-i','sine=frequency='+(index?640:440)+':sample_rate=48000','-t','3','-vf','format=yuv420p','-af','volume='+(index?'-6dB':'0dB'),'-c:v','mpeg4','-c:a','aac','-shortest',path],{encoding:'utf8',timeout:30000});
+   assert.equal(made.status,0,made.stderr);
+  }
+  const originals=await Promise.all(sources.map(path=>readFile(path)));
+  const project=join(dir,'project.json'),output=join(dir,'leveled.mp4');
+  await writeFile(project,JSON.stringify({version:1,width:240,height:320,fps:30,clips:sources.map(path=>({path,startSec:0,durationSec:2.5}))}));
+  const rendered=call([project,output]);
+  assert.equal(rendered.status,0,rendered.stderr);
+  const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
+  assert.equal(manifest.output.audio,true);
+  assert.equal(manifest.settings.fps,30);
+  assert.equal(manifest.audioLeveling.strategy,'per-clip-integrated-loudness-gain-capped');
+  const [loud,quiet]=manifest.audioLeveling.clips;
+  assert.ok(loud.beforeLufs-quiet.beforeLufs>5,'fixture must begin with materially unequal loudness');
+  assert.ok(Math.abs(loud.afterLufs-quiet.afterLufs)<2,'rendered clips should be levelled close enough for a cut');
+  assert.ok(manifest.audioLeveling.clips.every(clip=>clip.afterTruePeakDb<=-0.5),'leveling must leave peak headroom');
+  for(const [index,path] of sources.entries())assert.deepEqual(await readFile(path),originals[index]);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('cover framing records manual crop position and writes inspectable previews',{skip:!available},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-cover-preview-'));
+ try{
+  const source=join(dir,'wide.mp4');
+  const made=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=s=640x240:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','1.5','-c:v','mpeg4','-c:a','aac','-shortest',source],{encoding:'utf8',timeout:30000});
+  assert.equal(made.status,0,made.stderr);
+  const original=await readFile(source),project=join(dir,'project.json'),previews=join(dir,'previews'),output=join(dir,'cover.mp4');
+  await writeFile(project,JSON.stringify({version:1,width:240,height:320,fps:30,clips:[
+   {path:source,startSec:0,durationSec:.7,framing:{mode:'cover',position:{x:0,y:.25}}},
+   {path:source,startSec:.7,durationSec:.7,framing:{mode:'contain'}}
+  ]}));
+  const preview=call(['preview',project,previews]);
+  assert.equal(preview.status,0,preview.stderr);
+  const previewManifest=JSON.parse(await readFile(join(previews,'framing-previews.json'),'utf8'));
+  assert.equal(previewManifest.manualReviewRequired,true);
+  assert.equal(previewManifest.previews[0].framing.mode,'cover');
+  assert.deepEqual(previewManifest.previews[0].framing.position,{x:0,y:.25});
+  assert.ok((await stat(previewManifest.previews[0].path)).size>100);
+  const rendered=call([project,output]);assert.equal(rendered.status,0,rendered.stderr);
+  const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
+  assert.equal(manifest.clips[0].framing.mode,'cover');
+  assert.deepEqual(await readFile(source),original);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('preserves a marked B03 music tail without dialogue gain',{skip:!available},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-music-tail-'));
+ try{
+  const source=join(dir,'b03.mp4');
+  const made=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=black:s=240x320:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','mpeg4','-c:a','aac','-shortest',source],{encoding:'utf8',timeout:30000});
+  assert.equal(made.status,0,made.stderr);
+  const project=join(dir,'project.json'),output=join(dir,'tail.mp4');
+  await writeFile(project,JSON.stringify({version:1,width:240,height:320,fps:30,clips:[
+   {path:source,startSec:0,durationSec:2,audioTreatment:{speechDurationSec:1,preserveMusicTail:true,boundarySource:'whisper-word'}},
+   {path:source,startSec:0,durationSec:.7}
+  ]}));
+  const rendered=call([project,output]);assert.equal(rendered.status,0,rendered.stderr);
+  const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
+  assert.equal(manifest.audioLeveling.clips[0].musicTail.gainDb,0);
+  assert.equal(manifest.audioLeveling.clips[0].speech.durationSec,1);
+  assert.equal(manifest.audioLeveling.clips[0].musicTail.preserved,true);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});

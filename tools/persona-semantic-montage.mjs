@@ -11,6 +11,7 @@ import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectTake } from './persona-take-qa.mjs';
 
 const exts = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const MAX_INPUTS = 12;
@@ -57,7 +58,7 @@ async function mediaInfo(path) {
 async function analyze(inputArg, outputArg) {
   const input = resolve(inputArg), base = dirname(input);
   const request = await readJson(input);
-  assert(request?.version === 1 && Array.isArray(request.sources) && request.sources.length >= 2 && request.sources.length <= MAX_INPUTS, 'Expected 2–12 source clips');
+  assert(request?.version === 1 && Array.isArray(request.sources) && request.sources.length >= 1 && request.sources.length <= MAX_INPUTS, 'Expected 1–12 source clips');
   const ids = new Set(); const sources = [];
   for (const entry of request.sources) {
     assert(typeof entry?.id==='string' && /^[A-Za-z0-9_-]{1,48}$/.test(entry.id) && !ids.has(entry.id), 'Invalid or repeated source ID');
@@ -70,7 +71,7 @@ async function analyze(inputArg, outputArg) {
     const file = await stat(path);
     assert(file.isFile() && file.size > 0 && file.size <= MAX_BYTES, 'Source exceeds file safety limits');
     const info = await mediaInfo(path);
-    sources.push({id:entry.id,path,bytes:file.size,sha256:await sha256(path),...info});
+    sources.push({id:entry.id,path,bytes:file.size,sha256:await sha256(path),...info,technicalQuality:await inspectTake({path,...info})});
   }
   const output = resolve(outputArg);
   await mkdir(output, {recursive:false});
@@ -105,33 +106,51 @@ async function assemble(decisionsArg, projectArg) {
   const analysis=await readJson(absolute(base,d.analysisPath)),brief=await readJson(absolute(base,d.briefPath));
   assert(analysis?.kind==='persona-evidence-v1' && analysis.version===1 && Array.isArray(analysis.sources), 'Unrecognized analysis packet');
   assert(brief?.version===1 && brief.sourceFormat==='reel' && Array.isArray(brief.script) && brief.script.length>=2 && brief.script.length<=30, 'Invalid original Persona Reel brief');
-  assert(Array.isArray(brief.shots) && brief.shots.length===brief.script.length && Array.isArray(d.choices) && d.choices.length===brief.script.length, 'Every script beat must have one timed choice');
+  const mode=d.mode??'strict';
+  assert(['strict','preview'].includes(mode), 'Invalid editorial decision mode');
+  assert(Array.isArray(brief.shots) && brief.shots.length===brief.script.length && Array.isArray(d.choices) && d.choices.length>=1 && d.choices.length<=brief.script.length, 'Every rendered choice must be timed');
+  const missingBeats=mode==='preview'?(Array.isArray(d.missingBeats)?d.missingBeats:[]):[];
+  if(mode==='strict')assert(d.choices.length===brief.script.length, 'Every script beat must have one timed choice');
   assert(!own(d,'approved') && !own(d,'authorApproved') && !own(d,'editorialApproved'), 'Do not import approval through decision files');
   const sources=new Map();
   for (const source of analysis.sources){
     assert(typeof source.id==='string'&&!sources.has(source.id)&&typeof source.path==='string'&&/^[a-f0-9]{64}$/.test(source.sha256), 'Invalid analysis source');
     sources.set(source.id,source);
   }
-  const checkedSources=new Set(), clips=[],audit=[];
+  const checkedSources=new Set(), clips=[],audit=[],usedIntervals=[];
+  let previousBeat=0;
   for(let i=0;i<d.choices.length;i++){
-    const c=d.choices[i],beat=brief.script[i],shot=brief.shots[i];
-    assert(c?.beat===i+1 && beat?.order===i+1 && shot?.order===i+1, 'Beat order mismatch');
+    const c=d.choices[i],beatNumber=c?.beat,beat=brief.script[beatNumber-1],shot=brief.shots[beatNumber-1];
+    assert(Number.isSafeInteger(beatNumber) && beatNumber>previousBeat && beatNumber<=brief.script.length && beat?.order===beatNumber && shot?.order===beatNumber, 'Beat order mismatch');
+    previousBeat=beatNumber;
     assert(typeof c.sourceId==='string' && sources.has(c.sourceId), 'Unknown source clip');
     assert(finite(c.startSec,0,180) && finite(c.durationSec,0.25,60), 'Invalid choice time range');
     assert(typeof c.reason==='string' && c.reason.trim().length>=10 && c.reason.length<=1000, 'Missing editorial cut rationale');
-    assert(finite(c.confidence,0,1) && c.confidence>=0.65, 'Low confidence: manual review needed, no automatic montage');
+    const manuallyConfirmed=c.transcriptSource==='manual-review'&&c.manualTranscriptReview===true;
+    assert(manuallyConfirmed||(finite(c.confidence,0,1)&&c.confidence>=0.65), 'Low confidence: manual review needed, no automatic montage');
     assert(typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
     const overlap=sharedWords(beat.line,c.transcript);
-    assert(overlap>=0.45, 'Beat ' + (i + 1) + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
+    assert(overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
     const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
+    assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
     if(!checkedSources.has(src.id)){
       const file=await stat(src.path);
       assert(file.isFile()&&file.size===src.bytes&&(await sha256(src.path))===src.sha256, 'Source modified since evidence capture');
       checkedSources.add(src.id);
     }
-    clips.push({path:src.path,startSec:c.startSec,durationSec:c.durationSec});
-    audit.push({beat:i+1,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,reason:c.reason});
+    usedIntervals.push({id:c.sourceId,startSec:c.startSec,endSec:c.startSec+c.durationSec});
+    const musicHold=c.postSpeechMusicPreserved===true;
+    let audioTreatment;
+    if(musicHold){
+      assert(c.speechBoundaryConfidence==='word'||Number.isFinite(c.manualMusicBoundarySec), 'Post-speech music needs word timing or manual boundary');
+      const boundary=c.speechBoundaryConfidence==='word'?c.speechEndSec:c.manualMusicBoundarySec;
+      assert(finite(boundary,c.startSec,c.startSec+c.durationSec), 'Invalid post-speech music boundary');
+      audioTreatment={speechDurationSec:Number((boundary-c.startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
+    }
+    clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{})});
+    audit.push({beat:beatNumber,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,
+      transcriptSource:manuallyConfirmed?'manual-review':'whisper',reason:c.reason,...(audioTreatment?{audioTreatment}:{})});
   }
   const output=resolve(projectArg);
   assert(extname(output).toLowerCase()==='.json', 'Render project must be JSON');
@@ -139,8 +158,9 @@ async function assemble(decisionsArg, projectArg) {
   assert(reviewPath!==output,'Review path collision');
   await access(output).then(()=>{throw Error('Output exists');},()=>{});
   await access(reviewPath).then(()=>{throw Error('Review report exists');},()=>{});
-  const project={version:1,width:1080,height:1920,fps:30,clips};
-  const review={version:1,kind:'persona-semantic-draft-v1',status:'needs-human-review',sourceBrief:absolute(base,d.briefPath),sourceAnalysis: absolute(base,d.analysisPath),originalSourceHashesVerified:true,notes:'Timed words/choices and rationale were supplied by a separate editor/model, not generated or validated as ground truth by this CLI. Visual, acting, sound, subtitles and publication require human review.',cuts:audit};
+  const project={version:1,width:1080,height:1920,fps:30,mode,missingBeats,clips};
+  const hasManualTranscript=audit.some(c=>c.transcriptSource==='manual-review');
+  const review={version:1,kind:'persona-semantic-draft-v1',status:'needs-human-review',mode,missingBeats,sourceBrief:absolute(base,d.briefPath),sourceAnalysis: absolute(base,d.analysisPath),originalSourceHashesVerified:true,notes:'Timed words/choices and rationale were supplied by a separate editor/model, not generated or validated as ground truth by this CLI.'+(hasManualTranscript?' At least one manual transcript was author-confirmed after ASR recovery; it is not an automatic Whisper accuracy claim.':'')+' Visual, acting, sound, subtitles and publication require human review.',cuts:audit};
   await writeFile(output,JSON.stringify(project,null,2)+'\n',{flag:'wx'});
   try{await writeFile(reviewPath,JSON.stringify(review,null,2)+'\n',{flag:'wx'});}
   catch(e){await rm(output,{force:true});throw e;}

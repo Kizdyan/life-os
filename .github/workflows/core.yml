@@ -12,6 +12,7 @@ on:
       - "scripts/**"
       - "tools/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
   pull_request:
@@ -24,6 +25,7 @@ on:
       - "scripts/**"
       - "tools/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
 # Only the latest commit of each PR needs the expensive typecheck/test result.
@@ -39,7 +41,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - name: Persona calendar and distribution regression tests
         run: |
           set -o pipefail
