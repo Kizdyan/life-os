@@ -36,7 +36,7 @@ describe("Persona local Script Doctor task export",()=>{
     });
     expect(exported.targetIndices).toEqual([2,3]);
     expect(exported.lockedIndices).toEqual([0]);
-    expect(exported.sourceRevisionId).toBeUndefined();
+    expect("sourceRevisionId" in exported).toBe(false);
     expect(exported.script.currentRevisionId).toBe(script.currentRevisionId);
     expect(exported.script.currentRevision.beats).toEqual(beats);
     expect(exported.script).not.toHaveProperty("approval");
