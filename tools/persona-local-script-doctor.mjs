@@ -174,7 +174,7 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  const artifacts=resolve(output+'.artifacts');
  await mkdir(artifacts); // fail if a previous experiment exists; never overwrite
  const save=async(name,data)=>writeFile(resolve(artifacts,name),
-  (typeof data==='string'?data:JSON.stringify(data,null,2))+'\n',{flag:'wx'});
+  (typeof data==='string'?data:JSON.stringify(data,null,2)+'\n'),{flag:'wx'});
  await save('task.json',bytes.toString('utf8').trim());
  await save('run.json',{kind:'persona-local-doctor-run-v2',model:options.model??DEFAULT_MODEL,
   state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output});
