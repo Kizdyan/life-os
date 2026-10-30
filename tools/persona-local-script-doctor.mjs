@@ -127,7 +127,7 @@ function verifyDiagnosis(value,task){
   return {role:f.role,classification:f.classification,beatIndex:f.beatIndex,issue:text(f.issue,'issue',600),
    evidence:text(f.evidence,'evidence',600),proposal:text(f.proposal,'proposal',900)};
  });
- return {storyMap,findings,editorialSummary:text(value.summary,'summary',1200)};
+ return {storyMap,findings,editorialSummary:text(value.summary??value.editorialSummary,'summary',1200)};
 }
 
 export async function runLocalScriptDoctor(raw,{model=DEFAULT_MODEL,endpoint='http://127.0.0.1:11434/',fetchImpl=fetch,onStage,timeoutMs=240000,resumeDiagnosis}={}){
