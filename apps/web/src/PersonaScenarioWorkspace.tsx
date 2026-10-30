@@ -50,6 +50,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[analysisDetails,setAnalysisDetails]=useState({situation:'',desire:'',obstacle:'',turn:'',payoff:'',editing:'',sound:''});
  const[selectedResearchId,setSelectedResearchId]=useState(workspace.research[0]?.id??'');
  const[watchedByAuthor,setWatchedByAuthor]=useState(false);
+ const[rejectionFeedback,setRejectionFeedback]=useState('');
+ const[revisionReason,setRevisionReason]=useState('');
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>script?.currentRevision.beats??[]);
@@ -58,6 +60,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasUnsavedChanges);
+ const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
  const addReference=()=>{
   try{
@@ -70,7 +73,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить источник.');}
  };
  const buildIdeas=()=>{
-  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile,count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
+  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile:{...effectiveProfile,constraints:[...effectiveProfile.constraints,...(workspace.editorialFeedback??[]).slice(-3).map(item=>'Автор ранее отклонил сценарий: '+item.comment)]},count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала добавьте проверяемую ссылку.');}
  };
  const selectIdea=(id:string)=>{setSelectedIdeaId(id);update({selectedIdeaId:id});};
@@ -81,7 +84,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  };
  const saveScript=()=>{
   if(!script)return;
-  try{const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:'Автор отредактировал сценарий в Persona.'});update({script:next});setError('');}
+  try{const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});update({script:next});setRevisionReason('');setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
  };
  const approveScript=()=>{
@@ -89,6 +92,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   if(hasUnsavedChanges){setError('Сначала сохраните изменённые реплики и действия новой версией. Старое утверждение нельзя переносить на правки.');return}
   try{const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
+ };
+ const rejectWithFeedback=()=>{
+  if(!script||rejectionFeedback.trim().length<12){setError('Укажите конкретную причину отклонения (не менее 12 символов).');return}
+  const current=script.currentRevision.id;
+  const feedback={revisionId:current,comment:rejectionFeedback.trim(),createdAt:new Date().toISOString()};
+  update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback]});
+  setRejectionFeedback('');setError('Критика сохранена отдельно от одобрений; следующий набор идей получит эту причину как ограничение.');
  };
  const createBrief=()=>{
   if(!script)return;
@@ -123,6 +133,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  return <section className="personaScenario" aria-label="Сценарий и референсы">
   <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">Perplexity отключён · Ollama только через CLI на Windows</span></header>
   <section className="personaTrendLeads"><div><h4>Бесплатные сигналы формата</h4><p>Датированные публичные источники. Это не метрики Reels и не доказательство просмотра конкретного ролика.</p></div>{freeScenarioTrendLeads.map((lead,index)=><article key={lead.id}><div><b>{lead.title}</b><p>{lead.mechanism}</p><small>{lead.publishedAt} · {lead.sourceTitle} · {lead.dateKind==='observed'?'дата проверки':'дата публикации'}</small><p><a href={lead.sourceUrl} target="_blank" rel="noreferrer">Открыть источник</a></p><small>{lead.limitation}</small></div><button type="button" className="ghost" onClick={()=>addTrendLead(index)}>Добавить в проект</button></article>)}</section>
+  <details className="personaScenarioCard"><summary>Творческий профиль проекта · редактировать</summary>
+    <p>Сохранённые требования этого проекта, а не выдуманная биография. Настрой свои приоритеты и ограничения для следующих идей.</p>
+    <label>Творческие приоритеты<textarea aria-label="Приоритеты творческого профиля" value={effectiveProfile.priorities.join('\n')}
+      onChange={event=>update({creativeProfile:{...effectiveProfile,priorities:event.target.value.split('\n').map(v=>v.trim()).filter(Boolean).slice(0,25)}})}/></label>
+    <label>Ограничения съёмки и образа<textarea aria-label="Ограничения творческого профиля" value={effectiveProfile.constraints.join('\n')}
+      onChange={event=>update({creativeProfile:{...effectiveProfile,constraints:event.target.value.split('\n').map(v=>v.trim()).filter(Boolean).slice(0,25)}})}/></label>
+    <small>Редакторские предпочтения сохраняются в текущем проекте, без отправки в облачные AI.</small>
+  </details>
   <div className="personaScenarioGrid">
    <article className="personaScenarioCard"><h4>Референсы</h4><p>Ссылка сохраняется с её статусом. Метаданные не означают просмотр видео.</p><label>Ссылка<input aria-label="Ссылка на референс" value={link} onChange={event=>setLink(event.target.value)} placeholder="https://…" inputMode="url"/></label><label>Короткое название<input aria-label="Название референса" value={title} onChange={event=>setTitle(event.target.value)} placeholder="Что именно в формате важно"/></label><label>Платформа<select aria-label="Платформа референса" value={platform} onChange={event=>setPlatform(event.target.value as ScenarioPlatform)}>{Object.entries(platformLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label><button type="button" className="primary" onClick={addReference}>Добавить ссылку</button>
     <ul className="personaScenarioList">{workspace.research.map(reference=><li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.title||reference.url}</a><span className={`personaEvidence ${reference.observationStatus}`}>{sourceLabel(reference.observationStatus)}</span></li>)}</ul>
@@ -145,7 +163,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
    {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label></fieldset>)}
-   {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
+   {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
+    <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
+    <div className="personaScenarioFeedback">
+      <h5>Редакторская критика автора</h5>
+      <label>Почему текущую версию нужно переделать<textarea aria-label="Причина отклонения сценария" value={rejectionFeedback} onChange={event=>setRejectionFeedback(event.target.value)} placeholder="Например: слабая эскалация, предсказуемый финал, реплики слишком искусственные"/></label>
+      <button type="button" className="ghost" onClick={rejectWithFeedback} disabled={rejectionFeedback.trim().length<12}>Сохранить причину отклонения</button>
+      {(workspace.editorialFeedback??[]).length>0&&<p className="personaScenarioHint">Сохранено критических замечаний: {workspace.editorialFeedback?.length}. Они будут учитываться как ограничения при следующем формировании идей.</p>}
+    </div>
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}
    {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasUnsavedChanges||review?.status!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
    {isApproved&&<><p className="personaScenarioHint">В памяти форматов сохранены только одобренные вами приёмы, без выдуманных охватов: {workspace.formatMemory?.length??0}.</p><button type="button" className="primary" onClick={createBrief}>Создать съёмочный бриф</button></>}
