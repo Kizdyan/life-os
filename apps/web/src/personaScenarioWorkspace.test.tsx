@@ -56,6 +56,12 @@ describe("Persona Scenario workspace", () => {
     expect(markup).not.toContain("Принять как новую версию");
   });
 
+  it("assigns distinct remount keys to history and Script Doctor for the same scenario revision", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./PersonaScenarioWorkspace.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('key={`history:${project.id}:${script.currentRevisionId}`}');
+    expect(source).toContain('key={`doctor:${project.id}:${script.currentRevisionId}`}');
+  });
+
   it("reveals saved version history and restore, without manufacturing author approval", () => {
     const revised=reviseScenarioScript(draft,{
       createdAt:"2026-10-30T11:00:00.000Z",

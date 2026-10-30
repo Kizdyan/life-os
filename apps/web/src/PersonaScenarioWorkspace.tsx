@@ -247,7 +247,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
     <small>Импорт не принимает никакого предыдущего утверждения. После редакторской проверки и вашего утверждения новая версия перейдёт в Production Brief без шаблонной перегенерации.</small>
     <PersonaScenarioVersionHistory
-      key={`${project.id}:${script.currentRevisionId}`}
+      key={`history:${project.id}:${script.currentRevisionId}`}
       script={script}
       unsavedChanges={hasUnsavedChanges}
       onRestore={next=>{
@@ -257,7 +257,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       }}
     />
     <PersonaLocalScriptDoctorPanel
-      key={`${project.id}:${script.currentRevisionId}`}
+      key={`doctor:${project.id}:${script.currentRevisionId}`}
       script={script}
       creativeProfile={effectiveProfile}
       latestAuthorFeedback={workspace.editorialFeedback?.at(-1)?.comment}
