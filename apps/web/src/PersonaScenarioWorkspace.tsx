@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
+import { importPersonaProductionBrief } from '../../../packages/core/src/persona-production-pipeline';
 import {
  analyseScenarioReference,
  addFreeTrendLeadToScenarioResearch,
@@ -143,6 +144,30 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   window.setTimeout(()=>URL.revokeObjectURL(url),1000);
   setError('Задание скачано локально. Запустите Ollama CLI на Windows, затем импортируйте готовый бриф в этом же проекте. Облачных запросов не было.');
  };
+ const importLocalAiRevision=async(file:File|undefined)=>{
+  if(!file||!script)return;
+  try{
+   if(file.size>200_000)throw new Error('Файл сценария слишком большой (максимум 200 КБ).');
+   const decoded=JSON.parse(await file.text()) as unknown;
+   const imported=importPersonaProductionBrief({
+    brief:decoded,
+    selectedIdea:{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}
+   });
+   const brief=imported.materials.productionBrief;
+   if(!brief||brief.script.length<3||brief.script.length>12)throw new Error('Ожидается 3–12 сценарных частей.');
+   const beats:ScenarioScriptBeat[]=brief.script.map((beat,index)=>({
+    purpose:index===0?'hook':index===brief.script.length-1?'ending':'development',
+    line:beat.line,action:beat.action,durationSec:beat.durationSec
+   }));
+   const candidate=reviseScenarioScript(script,{
+    createdAt:new Date().toISOString(),beats,
+    reason:'Импортирована локальная Ollama-редакция. Требует новой авторской проверки.'
+   });
+   update({script:candidate});setBeats(candidate.currentRevision.beats);setError('');
+  }catch(cause){
+   setError(cause instanceof Error?cause.message:'Файл локального сценария не импортирован.');
+  }
+ };
  const createBrief=()=>{
   if(!script)return;
   if(hasUnsavedChanges){setError('В бриф нельзя переносить несохранённые правки: сначала сохраните новую версию и утвердите её.');return}
@@ -216,7 +241,9 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
     <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
     <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
-    <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК. Результат импортируется через существующий Production Brief, без автоматического одобрения.</small>
+    <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК.</small>
+    <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
+    <small>Импорт не принимает никакого предыдущего утверждения. После редакторской проверки и вашего утверждения новая версия перейдёт в Production Brief без шаблонной перегенерации.</small>
     <div className="personaScenarioFeedback">
       <h5>Редакторская критика автора</h5>
       <label>Почему текущую версию нужно переделать<textarea aria-label="Причина отклонения сценария" value={rejectionFeedback} onChange={event=>setRejectionFeedback(event.target.value)} placeholder="Например: слабая эскалация, предсказуемый финал, реплики слишком искусственные"/></label>
