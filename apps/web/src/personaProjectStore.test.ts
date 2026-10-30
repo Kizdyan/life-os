@@ -43,9 +43,17 @@ describe('Persona project storage',()=>{
    contentType:'reel',sourceIdea:'Показать характер героя через необычное решение',
    now:'2026-10-30T12:00:00.000Z'});
   project.sourceReferenceUrl='https://www.instagram.com/reel/ABC123/';
+  project.scenarioOutline={
+   premise:'Герой просит дать ему ещё одну попытку',hook:'Он появляется уже после окончания кастинга',
+   protagonistGoal:'Убедить режиссёра посмотреть его пробу',obstacle:'Кастинг официально закончен',
+   escalation:'Пробует играть сцену прямо в коридоре',turn:'Режиссёр выходит на шум',
+   payoff:'Режиссёр неожиданно просит прислать самопробу',actingAction:'Добиться внимания',
+   visualMoment:'Закрытая дверь кабинета становится частью мизансцены'
+  };
   savePersonaProject(storage,project);
   const reloaded=loadPersonaProjects(storage,()=> 'unused');
   expect(reloaded.projects[0].sourceReferenceUrl).toBe(project.sourceReferenceUrl);
+  expect(reloaded.projects[0].scenarioOutline).toEqual(project.scenarioOutline);
   expect(reloaded.projects[0].shootingPlan).toBeNull();
  });
 
