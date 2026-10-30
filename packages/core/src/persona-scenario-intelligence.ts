@@ -1,4 +1,4 @@
-import type { PersonaProductionBriefInput } from "./persona-production-brief";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionIdea } from "./persona-production-brief";
 import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory";
 import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence";
 
@@ -384,6 +384,65 @@ export function scenarioScriptToProductionBriefInput(script: ScenarioScript): Pe
       format: "reel",
     },
     sourceFacts: [...current.sourceFacts],
+  };
+}
+
+/**
+ * Converts the EXACT approved words, actions and timings to the established
+ * Production Brief contract. Only technical camera/capture advice is synthesized;
+ * the author-script is never sent through the three-beat template builder.
+ * Production QA and its separate editorial gate still run on import.
+ */
+export function scenarioScriptToProductionBrief(
+  script: ScenarioScript,
+  selectedProject: PersonaProductionIdea,
+): PersonaProductionBrief {
+  const current = requireCurrentRevision(script);
+  if (!script.approval || script.approval.revisionId !== current.id) {
+    throw new Error("Current script needs explicit author approval before Production Brief");
+  }
+  if (reviewScenarioScript(current).status !== "ready_for_author") {
+    throw new Error("Script Doctor blocks Production Brief conversion");
+  }
+  if (!["reel", "short", "story"].includes(selectedProject.format)) {
+    throw new Error("A video Production Brief requires a video project");
+  }
+  // Use the original project's identity so edits and imports retain provenance.
+  const base = buildPersonaProductionBrief({
+    idea: selectedProject,
+    sourceFacts: current.sourceFacts,
+  });
+  const authored = current.beats.map((beat, index) => ({
+    order: index + 1,
+    line: beat.line,
+    action: beat.action,
+    durationSec: beat.durationSec,
+  }));
+  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => ({
+    order: beat.order,
+    durationSec: beat.durationSec,
+    framing: index === 0 || index === authored.length - 1 ? "close-up" : "medium",
+    angle: index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя",
+    cameraMovement: "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
+    lighting: base.capture.lighting,
+    // The authored physical action is copied exactly, never a generated summary.
+    action: beat.action,
+  }));
+  const durationSec = authored.reduce((sum, beat) => sum + beat.durationSec, 0);
+  return {
+    ...base,
+    hook: {
+      firstSeconds: authored[0].line,
+      visual: authored[0].action,
+      delivery: "Текст и действие утверждены автором; проверить исполнение и визуальный ритм на репетиции.",
+    },
+    script: authored,
+    shots,
+    adaptations: {
+      reels: { ...base.adaptations.reels, durationSec },
+      shorts: { ...base.adaptations.shorts, durationSec },
+      vkClips: { ...base.adaptations.vkClips, durationSec },
+    },
   };
 }
 
