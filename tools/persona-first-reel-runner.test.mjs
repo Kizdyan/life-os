@@ -166,3 +166,35 @@ test('Whisper failure automatically produces playable Recovery Review and manual
   for(let i=0;i<2;i++)assert.deepEqual(await readFile(sourcePaths[i]),originals[i]);
  }finally{await rm(d,{recursive:true,force:true})}
 });
+
+test('zero-choice Preview automatically opens Recovery instead of requiring a first MP4',
+ {skip:!mediaTools,timeout:120000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-recovery-empty-preview-'));
+ try{
+  const video=join(dir,'voice.mp4'),source=join(dir,'sources.json'),brief=join(dir,'brief.json');
+  const ff=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi',
+   '-i','color=c=green:s=240x320:r=30','-f','lavfi','-i','sine=frequency=450:sample_rate=48000',
+   '-t','2.5','-c:v','mpeg4','-c:a','aac','-shortest',video],{encoding:'utf8',timeout:30000});
+  assert.equal(ff.status,0,ff.stderr);
+  await mk(source,{version:1,sources:[{id:'take01',path:video}]});
+  await mk(brief,{version:1,sourceFormat:'reel',script:[
+   {order:1,line:'Я актёр.'},{order:2,line:'И у нас есть проблема.'}
+  ],shots:[{order:1,action:'Реплика'},{order:2,action:'Реплика'}]});
+  const model=join(dir,'model.bin'),draft=join(dir,'draft');
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  const result=await runFirstReel({sources:source,brief,outputDir:draft,mode:'preview',
+   whisperCli:process.execPath,whisperModel:model,transcribeStep:async analysisPath=>{
+    const analysis=JSON.parse(await readFile(analysisPath,'utf8'));
+    for(const source of analysis.sources)
+     await mk(join(draft,'evidence',source.id+'-whisper.json'),{transcription:[]});
+    return {status:'test-empty-asr'};
+   }});
+  assert.equal(result.status,'needs-manual-transcript-review');
+  assert.equal(result.distributionAllowed,false);
+  assert.ok((await stat(join(draft,'editorial-review-kit','previews','review.html'))).size>0);
+  await assert.rejects(()=>stat(join(draft,'draft-reel.mp4')),/ENOENT/);
+  const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
+  assert.equal(decisions.recoveryRequired,true);
+  assert.equal(decisions.choices.length,0);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
