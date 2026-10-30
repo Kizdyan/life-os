@@ -37,6 +37,8 @@ function candidate(script: ScenarioScript){
     kind:"persona-local-doctor-suggestion-v1",
     version:1,
     sourceRevisionId:script.currentRevisionId,
+    sourceIdeaId:script.idea.id,
+    sourceBeats:script.currentRevision.beats.map(beat=>({...beat})),
     status:"SUGGESTION_NOT_APPROVED",
     model:"qwen2.5-coder:7b",
     diagnosis:{editorialSummary:"Финал нуждается в переработке.",
@@ -72,6 +74,13 @@ describe("Persona local Script Doctor proposal import",()=>{
     expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,diff:[{
       ...suggestion.diff[0],before:{...suggestion.diff[0].before,line:"Придуманная прежняя реплика"}
     }]},"2026-10-30T15:05:00Z")).toThrow("diff does not match");
+  });
+  it("rejects cross-project AI suggestions with colliding revision IDs or changed untargeted scenes",()=>{
+    const source=original(),suggestion=candidate(source);
+    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,sourceIdeaId:"other-project"},"2026-10-30T15:05:00Z")).toThrow("snapshot");
+    expect(()=>applyPersonaLocalDoctorSuggestion(source,{...suggestion,
+      sourceBeats:suggestion.sourceBeats.map((beat,index)=>index===1?{...beat,line:"Чужое содержание другого проекта"}:beat)
+    },"2026-10-30T15:05:00Z")).toThrow("snapshot");
   });
   it("blocks untrusted editorial metadata before preview or import",()=>{
     const source=original(),suggestion=candidate(source);
