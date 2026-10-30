@@ -58,7 +58,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>script?.currentRevision.beats??[]);
- useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
+ useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[project.id,workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
@@ -247,7 +247,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
     <small>Импорт не принимает никакого предыдущего утверждения. После редакторской проверки и вашего утверждения новая версия перейдёт в Production Brief без шаблонной перегенерации.</small>
     <PersonaScenarioVersionHistory
-      key={script.currentRevisionId}
+      key={`${project.id}:${script.currentRevisionId}`}
       script={script}
       unsavedChanges={hasUnsavedChanges}
       onRestore={next=>{
@@ -257,7 +257,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       }}
     />
     <PersonaLocalScriptDoctorPanel
-      key={script.currentRevisionId}
+      key={`${project.id}:${script.currentRevisionId}`}
       script={script}
       creativeProfile={effectiveProfile}
       latestAuthorFeedback={workspace.editorialFeedback?.at(-1)?.comment}
