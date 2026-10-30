@@ -79,6 +79,16 @@ doctor-suggestion.json.artifacts/
 
 Each `*.started.json` records a stage start and the bounded model options. Each `*.metrics.json` records actual elapsed milliseconds and whether the model returned a parseable JSON payload; this does not establish artistic quality. Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
 
+### Resume a failed second pass without repeating critique
+
+If a previous attempt saved `diagnosis.validated.json` but did not produce an accepted `suggestion.json`, create a **different output filename** and pass the failed artifacts directory:
+
+```powershell
+node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\path\\doctor-suggestion-retry.json" --model qwen3:4b-instruct --timeout-ms 180000 --resume-from "C:\\path\\doctor-suggestion.json.artifacts"
+```
+
+The old artifact set must contain `task.json`, `run.json`, `failure.json` and `diagnosis.validated.json`. The saved task must match the new input exactly, and the previously used model must match. The recovered critique is **independently revalidated** against the saved source task before the second call; changes to the task, invalid comments or cross-project reuse fail closed. Only the **rewrite** call is made (after the normal local model availability check). The retry directory records `diagnosis.reused.json`, the revalidated diagnosis and new patch-stage evidence. No new `diagnosis.raw.txt` is fabricated. This is not a guarantee of creative improvement.
+
 Old unsuccessful runs whose folders contain only `task.json` cannot reconstruct missing Ollama responses retrospectively. A new local run is required to generate stage artifacts; do not claim that historic reasons have been recovered.
 
 ## Learning from an explicit rejection
