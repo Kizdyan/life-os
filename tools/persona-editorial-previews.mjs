@@ -46,7 +46,7 @@ export function verifyPreviewPack(pack,evidence){
   }
   if(beat.candidates.length===0){
    const recovery=beat.recovery;
-   if(recovery?.status!=='needs-transcript-review'||!Array.isArray(recovery.availableSources)||!recovery.availableSources.length)
+   if(recovery?.status!=='needs-transcript-review'||!Array.isArray(recovery.availableSources))
     fail('Missing recovery information for unmatched scene');
    for(const item of recovery.availableSources){
     const src=byId.get(item?.sourceId);
@@ -80,7 +80,7 @@ export function buildReviewHtml(pack,template,files){
     '<small>Whisper: '+esc(source.asrStatus==='empty'?'речь не распознана':'нет пригодного совпадения')+'. Этот прокси только для просмотра; исходник не изменяется.</small>'+
     '<label><input type="radio" name="recovery'+beat.beat+'" value="'+esc(source.sourceId)+'"> Выбрать этот исходник для ручной разметки</label></article>';
   }).join('')??'';
-  const recoveryForm=recovery?'<div class="recovery-form"><p><strong>Recovery Review.</strong> Укажи только после просмотра: начало, длительность и услышанный текст. Это не подменяет исходный Whisper и будет помечено как ручная разметка.</p>'+recoveryOptions+
+  const recoveryForm=recovery?'<div class="recovery-form">'+(recovery.availableSources.length?'':'<p>Нет исходников с пригодной аудиодорожкой — требуется пересъёмка этой сцены.</p>')+'<p><strong>Recovery Review.</strong> Укажи только после просмотра: начало, длительность и услышанный текст. Это не подменяет исходный Whisper и будет помечено как ручная разметка.</p>'+recoveryOptions+
    '<label>Начало фразы, с <input id="recoveryStart'+beat.beat+'" type="number" min="0" step="0.01"></label><label>Длительность, с <input id="recoveryDuration'+beat.beat+'" type="number" min="0.25" step="0.01"></label>'+
    '<label>Текст услышанной фразы <textarea id="recoveryText'+beat.beat+'" rows="2"></textarea></label></div>':'';
   return '<section class="scene"><h2>Сцена '+beat.beat+' — '+esc(beat.scriptLine)+'</h2><div class="clips">'+options+
