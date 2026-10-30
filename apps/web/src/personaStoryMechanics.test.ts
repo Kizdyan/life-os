@@ -23,7 +23,7 @@ describe('Persona offline three-role story structure audit',()=>{
   expect(result.roleStatus).toEqual({
    dramaturg:'needs-work',director:'needs-work',producer:'needs-work'
   });
-  expect(result.notice).toMatch(/не оценивает юмор/);
+  expect(result.notice).toMatch(/Не оценивает юмор/);
  });
  it('returns human-review status only after all mechanical fields exist',()=>{
   const result=assessPersonaStory(complete);
