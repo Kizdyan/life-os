@@ -65,15 +65,19 @@ For `doctor-suggestion.json`, the CLI automatically creates a **separate new loc
 doctor-suggestion.json.artifacts/
   task.json
   run.json
+  diagnosis.started.json
   diagnosis.raw.txt
+  diagnosis.metrics.json
   diagnosis.validated.json
+  revision.started.json
   revision.raw.txt
+  revision.metrics.json
   revision.validated.json
   success.json             # only after successful output
   failure.json             # only on failure
 ```
 
-Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
+Each `*.started.json` records a stage start and the bounded model options. Each `*.metrics.json` records actual elapsed milliseconds and whether the model returned a parseable JSON payload; this does not establish artistic quality. Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
 
 Old unsuccessful runs whose folders contain only `task.json` cannot reconstruct missing Ollama responses retrospectively. A new local run is required to generate stage artifacts; do not claim that historic reasons have been recovered.
 
