@@ -110,7 +110,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    const updated=updatedResearch.find(item=>item.id===reference.id)!;
    const next=analyseScenarioReference(updated,{
     observationStatus:updated.observationStatus,reviewedAt:updated.reviewedAt,
-    hook:analysisNote.trim(),...Object.fromEntries(Object.entries(analysisDetails).map(([key,value])=>[key,value.trim()])) as typeof analysisDetails,
+    hook:analysisNote.trim(),...analysisDetails,
     productionComplexity:'low'
    });
    update({research:updatedResearch,analyses:[...workspace.analyses.filter(x=>x.researchId!==reference.id),next]});
