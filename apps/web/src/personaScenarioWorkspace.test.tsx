@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import PersonaScenarioWorkspace from "./PersonaScenarioWorkspace";
 import { createPersonaProject, type PersonaScenarioWorkspace as Workspace } from "./personaProjectStore";
-import { approveScenarioScript, createScenarioScript, suggestScenarioIdeas, validateScenarioResearch } from "../../../packages/core/src/persona-scenario-intelligence";
+import { approveScenarioScript, createScenarioScript, reviseScenarioScript, suggestScenarioIdeas, validateScenarioResearch } from "../../../packages/core/src/persona-scenario-intelligence";
 
 const research = validateScenarioResearch([{
   id: "reference-1",
@@ -43,6 +43,29 @@ describe("Persona Scenario workspace", () => {
     expect(markup).toContain("Perplexity отключён");
     expect(markup).toContain("Абсурдная «проба на роль»");
     expect(markup).toContain("2026-10-07");
+    expect(markup).not.toContain("Создать съёмочный бриф");
+  });
+
+  it("shows the optional local Script Doctor controls without calling external AI or approving a draft", () => {
+    const markup=render({version:1,research,analyses:[],ideas:[idea],selectedIdeaId:idea.id,script:draft});
+    expect(markup).toContain("Локальный Script Doctor");
+    expect(markup).toContain("Скачать локальное задание");
+    expect(markup).toContain("Импорт предложений Script Doctor");
+    expect(markup).toContain("Скачать локальное задание");
+    expect(markup).toContain("Закрепить");
+    expect(markup).not.toContain("Принять как новую версию");
+  });
+
+  it("reveals saved version history and restore, without manufacturing author approval", () => {
+    const revised=reviseScenarioScript(draft,{
+      createdAt:"2026-10-30T11:00:00.000Z",
+      reason:"Автор изменил финальную реплику",
+      beats:draft.currentRevision.beats.map((beat,index)=>index===2?{...beat,line:"Теперь у меня другая концовка."}:beat)
+    });
+    const markup=render({version:1,research,analyses:[],ideas:[idea],selectedIdeaId:idea.id,script:revised});
+    expect(markup).toContain("История сценария");
+    expect(markup).toContain("Восстановить эту версию как новый черновик");
+    expect(markup).toContain("Теперь у меня другая концовка.");
     expect(markup).not.toContain("Создать съёмочный бриф");
   });
 
