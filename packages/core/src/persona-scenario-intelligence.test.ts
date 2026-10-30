@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   analyseScenarioReference,
+  approveScenarioScript,
+  createScenarioScript,
+  reviewScenarioScript,
+  reviseScenarioScript,
+  scenarioScriptToProductionBriefInput,
   suggestScenarioIdeas,
   validateScenarioResearch,
 } from "./persona-scenario-intelligence";
@@ -68,5 +73,60 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(ideas.every((idea) => idea.referenceIds.includes("ref-piano-pov"))).toBe(true);
     expect(ideas.every((idea) => idea.originalConflict.length > 10)).toBe(true);
     expect(ideas.every((idea) => !("visibleMetrics" in idea))).toBe(true);
+  });
+
+  it("keeps dramaturg, director and producer criticism separate and blocks an unshootable draft", () => {
+    const [idea] = suggestScenarioIdeas({
+      research: validateScenarioResearch([source]),
+      creativeProfile: { priorities: [], constraints: [] },
+      count: 5,
+    });
+    const script = createScenarioScript(idea, {
+      createdAt: "2026-10-30T10:00:00.000Z",
+      beats: [{ purpose: "development", line: "Ну вот", action: "", durationSec: 2 }],
+    });
+    const review = reviewScenarioScript(script.currentRevision);
+
+    expect(review.status).toBe("needs_revision");
+    expect(new Set(review.findings.map((finding) => finding.role))).toEqual(
+      new Set(["dramaturg", "director", "producer"]),
+    );
+    expect(review.findings.some((finding) => finding.severity === "blocking")).toBe(true);
+  });
+
+  it("preserves the rejected revision, clears approval after an edit, and only converts an approved script", () => {
+    const [idea] = suggestScenarioIdeas({
+      research: validateScenarioResearch([source]),
+      creativeProfile: { priorities: ["смысловые склейки"], constraints: [] },
+      count: 5,
+    });
+    const draft = createScenarioScript(idea, {
+      createdAt: "2026-10-30T10:00:00.000Z",
+      beats: [
+        { purpose: "hook", line: "Я пришёл сыграть один дубль — и получил три противоречивые задачи.", action: "Взгляд в объектив, затем пауза.", durationSec: 5 },
+        { purpose: "development", line: "Я меняю интонацию, пока пианино честнее меня комментирует каждую правку.", action: "Переход к клавишам и рукам.", durationSec: 8 },
+        { purpose: "ending", line: "В итоге лучший дубль начинается после того, как я перестал играть задачу.", action: "Вернуться в крупный план и оставить реакцию.", durationSec: 6 },
+      ],
+    });
+    const approved = approveScenarioScript(draft, {
+      author: "Kostya",
+      comment: "Можно переводить в съёмочный бриф.",
+      approvedAt: "2026-10-30T10:05:00.000Z",
+    });
+    const input = scenarioScriptToProductionBriefInput(approved);
+    const revised = reviseScenarioScript(approved, {
+      createdAt: "2026-10-30T10:10:00.000Z",
+      beats: approved.currentRevision.beats.map((beat) => ({
+        ...beat,
+        line: beat.purpose === "hook" ? "Я пришёл сыграть один дубль — и получил четыре задачи." : beat.line,
+      })),
+      reason: "Автор уточнил хук.",
+    });
+
+    expect(input.idea.id).toBe(idea.id);
+    expect(approved.approval?.author).toBe("Kostya");
+    expect(revised.revisions).toHaveLength(2);
+    expect(revised.approval).toBeUndefined();
+    expect(() => scenarioScriptToProductionBriefInput(revised)).toThrow("author approval");
   });
 });

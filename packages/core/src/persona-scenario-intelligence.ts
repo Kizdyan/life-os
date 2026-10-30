@@ -1,3 +1,5 @@
+import type { PersonaProductionBriefInput } from "./persona-production-brief";
+
 export type ScenarioPlatform = "instagram" | "youtube" | "vk" | "other";
 export type ScenarioObservationStatus = "metadata_only" | "user_reviewed" | "unavailable";
 
@@ -51,6 +53,54 @@ export interface ScenarioIdea {
 export interface ScenarioCreativeProfile {
   priorities: string[];
   constraints: string[];
+}
+
+export type ScenarioScriptPurpose = "hook" | "development" | "ending";
+export type ScenarioReviewRole = "dramaturg" | "director" | "producer";
+
+export interface ScenarioScriptBeat {
+  purpose: ScenarioScriptPurpose;
+  line: string;
+  action: string;
+  durationSec: number;
+}
+
+export interface ScenarioScriptFinding {
+  role: ScenarioReviewRole;
+  severity: "blocking" | "note";
+  code: string;
+  message: string;
+}
+
+export interface ScenarioScriptReview {
+  revisionId: string;
+  status: "needs_revision" | "ready_for_author";
+  findings: ScenarioScriptFinding[];
+}
+
+export interface ScenarioScriptRevision {
+  id: string;
+  number: number;
+  createdAt: string;
+  reason?: string;
+  beats: ScenarioScriptBeat[];
+  sourceFacts: string[];
+  review?: ScenarioScriptReview;
+}
+
+export interface ScenarioScriptApproval {
+  revisionId: string;
+  author: string;
+  comment: string;
+  approvedAt: string;
+}
+
+export interface ScenarioScript {
+  idea: ScenarioIdea;
+  revisions: ScenarioScriptRevision[];
+  currentRevisionId: string;
+  currentRevision: ScenarioScriptRevision;
+  approval?: ScenarioScriptApproval;
 }
 
 const fields = new Set<ScenarioResearchEvidence["observedFields"][number]>([
@@ -154,6 +204,104 @@ export function suggestScenarioIdeas(input: {
   }));
 }
 
+/** Starts a versioned scenario script; content remains an author draft until approval. */
+export function createScenarioScript(
+  idea: ScenarioIdea,
+  input: { createdAt: string; beats: ScenarioScriptBeat[]; sourceFacts?: readonly string[] },
+): ScenarioScript {
+  const revision = createRevision({
+    id: `${requireIdeaId(idea)}-script-r1`,
+    number: 1,
+    createdAt: input.createdAt,
+    beats: input.beats,
+    sourceFacts: [...(input.sourceFacts ?? [])],
+  });
+  return { idea: { ...idea, referenceIds: [...idea.referenceIds] }, revisions: [revision], currentRevisionId: revision.id, currentRevision: revision };
+}
+
+/** Adds an immutable revision and deliberately removes approval of the prior wording. */
+export function reviseScenarioScript(
+  script: ScenarioScript,
+  input: { createdAt: string; beats: ScenarioScriptBeat[]; reason: string },
+): ScenarioScript {
+  const current = requireCurrentRevision(script);
+  const revision = createRevision({
+    id: `${current.id.replace(/-r\d+$/u, "")}-r${current.number + 1}`,
+    number: current.number + 1,
+    createdAt: input.createdAt,
+    reason: input.reason,
+    beats: input.beats,
+    sourceFacts: current.sourceFacts,
+  });
+  return {
+    ...script,
+    idea: { ...script.idea, referenceIds: [...script.idea.referenceIds] },
+    revisions: [...script.revisions, revision],
+    currentRevisionId: revision.id,
+    currentRevision: revision,
+    approval: undefined,
+  };
+}
+
+/** Separates structural criticism by role; it never claims to measure artistic talent. */
+export function reviewScenarioScript(revision: ScenarioScriptRevision): ScenarioScriptReview {
+  const findings: ScenarioScriptFinding[] = [];
+  const purposes = new Set(revision.beats.map((beat) => beat.purpose));
+  if (!purposes.has("hook") || !purposes.has("development") || !purposes.has("ending")) {
+    findings.push({ role: "dramaturg", severity: "blocking", code: "missing_story_beat", message: "Нужны отдельные хук, развитие и завершение мысли." });
+  }
+  if (revision.beats.some((beat) => !nonEmpty(beat.action))) {
+    findings.push({ role: "director", severity: "blocking", code: "missing_playable_action", message: "У каждой реплики должно быть конкретное снимаемое действие." });
+  }
+  const duration = revision.beats.reduce((sum, beat) => sum + beat.durationSec, 0);
+  if (duration < 12 || duration > 90) {
+    findings.push({ role: "producer", severity: "blocking", code: "duration_out_of_range", message: "Черновик Reels должен иметь проверяемую длительность от 12 до 90 секунд." });
+  }
+  if (findings.length === 0) {
+    findings.push({ role: "dramaturg", severity: "note", code: "author_review_required", message: "Структура проверена; художественный выбор и фактическая достоверность требуют авторского просмотра." });
+    findings.push({ role: "director", severity: "note", code: "shootability_review_required", message: "Перед съёмкой визуально проверьте действия, композицию и доступный реквизит." });
+    findings.push({ role: "producer", severity: "note", code: "production_review_required", message: "До публикации отдельно подтвердите права на музыку, изображение и финальный монтаж." });
+  }
+  return { revisionId: revision.id, status: findings.some((finding) => finding.severity === "blocking") ? "needs_revision" : "ready_for_author", findings };
+}
+
+/** Records an explicit named author decision only after the structural review is clear. */
+export function approveScenarioScript(
+  script: ScenarioScript,
+  input: { author: string; comment: string; approvedAt: string },
+): ScenarioScript {
+  const current = requireCurrentRevision(script);
+  const review = reviewScenarioScript(current);
+  if (review.status !== "ready_for_author") throw new Error("Script Doctor requires revision before author approval");
+  if (!nonEmpty(input.author) || !nonEmpty(input.comment) || !validDate(input.approvedAt)) {
+    throw new Error("Author approval is incomplete");
+  }
+  const reviewed = { ...current, review };
+  return {
+    ...script,
+    revisions: script.revisions.map((revision) => revision.id === current.id ? reviewed : revision),
+    currentRevision: reviewed,
+    approval: { revisionId: current.id, author: input.author.trim(), comment: input.comment.trim(), approvedAt: input.approvedAt },
+  };
+}
+
+/** The existing Production Pipeline remains the only route from an approved script to a brief. */
+export function scenarioScriptToProductionBriefInput(script: ScenarioScript): PersonaProductionBriefInput {
+  const current = requireCurrentRevision(script);
+  if (script.approval?.revisionId !== current.id) throw new Error("Current script needs explicit author approval before Production Brief");
+  const review = reviewScenarioScript(current);
+  if (review.status !== "ready_for_author") throw new Error("Script Doctor blocks Production Brief conversion");
+  return {
+    idea: {
+      id: requireIdeaId(script.idea),
+      title: requireText(script.idea.title, "idea.title"),
+      angle: current.beats.map((beat) => beat.line.trim()).join(" "),
+      format: "reel",
+    },
+    sourceFacts: [...current.sourceFacts],
+  };
+}
+
 function canonicalUrl(value: string): string {
   if (!nonEmpty(value)) throw new Error("Research URL is required");
   let url: URL;
@@ -162,6 +310,32 @@ function canonicalUrl(value: string): string {
   url.hash = "";
   for (const key of [...url.searchParams.keys()]) if (key.toLowerCase().startsWith("utm_")) url.searchParams.delete(key);
   return url.toString();
+}
+
+function createRevision(input: Omit<ScenarioScriptRevision, "review">): ScenarioScriptRevision {
+  if (!nonEmpty(input.id) || !Number.isInteger(input.number) || input.number < 1 || !validDate(input.createdAt)) {
+    throw new Error("Script revision metadata is invalid");
+  }
+  if (input.reason !== undefined && !nonEmpty(input.reason)) throw new Error("Script revision reason is invalid");
+  if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error("Script revision needs at least one beat");
+  const beats = input.beats.map((beat, index) => {
+    if (!beat || !["hook", "development", "ending"].includes(beat.purpose) || !nonEmpty(beat.line) || !Number.isFinite(beat.durationSec) || beat.durationSec <= 0) {
+      throw new Error(`Script beat ${index + 1} is invalid`);
+    }
+    return { ...beat, line: beat.line.trim(), action: typeof beat.action === "string" ? beat.action.trim() : "" };
+  });
+  const sourceFacts = input.sourceFacts.map((fact, index) => requireText(fact, `sourceFacts[${index}]`));
+  return { ...input, id: input.id.trim(), reason: input.reason?.trim(), beats, sourceFacts };
+}
+
+function requireCurrentRevision(script: ScenarioScript): ScenarioScriptRevision {
+  const current = script.revisions.find((revision) => revision.id === script.currentRevisionId);
+  if (!current || current.id !== script.currentRevision.id) throw new Error("Current script revision is invalid");
+  return current;
+}
+
+function requireIdeaId(idea: ScenarioIdea): string {
+  return requireText(idea.id, "idea.id");
 }
 
 function normalizeMetrics(metrics: NonNullable<ScenarioResearchItem["metrics"]>): NonNullable<ScenarioResearchItem["metrics"]> {
@@ -188,6 +362,11 @@ function validDate(value: unknown): value is string {
 
 function optionalText(value: unknown): string | undefined {
   return nonEmpty(value) ? value.trim() : undefined;
+}
+
+function requireText(value: unknown, name: string): string {
+  if (!nonEmpty(value)) throw new Error(`${name} must be a non-empty string`);
+  return value.trim();
 }
 
 function nonEmpty(value: unknown): value is string {

@@ -54,11 +54,11 @@
 - Consumes `ScenarioIdea` and `ScenarioScriptRevision`.
 - Produces `createScenarioScript`, `reviseScenarioScript`, `reviewScenarioScript`, `approveScenarioScript`, and `scenarioScriptToProductionBriefInput`.
 
-- [ ] Write tests for separate dramaturg/director/producer findings, blocking weak scripts, revision history and approval invalidation.
-- [ ] Run the new test and confirm it fails.
-- [ ] Implement structural editorial checks and a guarded converter to the existing brief input.
-- [ ] Run core tests and existing production-pipeline tests.
-- [ ] Commit the editor cycle.
+- [x] Write tests for separate dramaturg/director/producer findings, blocking weak scripts, revision history and approval invalidation.
+- [x] Run the new test and confirm it fails.
+- [x] Implement structural editorial checks and a guarded converter to the existing brief input.
+- [x] Run core tests and existing production-pipeline tests.
+- [x] Commit the editor cycle.
 
 ### Task 3: Disabled-by-default research provider boundary
 
