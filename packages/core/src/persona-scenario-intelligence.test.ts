@@ -200,6 +200,31 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(brief.adaptations.reels.durationSec).toBe(18);
   });
 
+  it("treats an imported local-model edit as a new unapproved author-script version", () => {
+    const [idea]=suggestScenarioIdeas({research:[],creativeProfile:{priorities:[],constraints:[]},count:5});
+    const beats=[
+      {purpose:"hook" as const,line:"Мы встретились у закрытой двери.",action:"Герой останавливается у порога.",durationSec:4},
+      {purpose:"development" as const,line:"Но никто не открыл.",action:"Герой трижды стучит и отступает.",durationSec:6},
+      {purpose:"ending" as const,line:"Я, оказывается, стоял не там.",action:"Герой поворачивается к зрителю.",durationSec:4}
+    ];
+    const script=createScenarioScript(idea,{createdAt:"2026-10-30T10:00:00Z",beats});
+    const approved=approveScenarioScript(script,{author:"Тест",comment:"Тестовое одобрение",approvedAt:"2026-10-30T10:01:00Z"});
+    const project={id:"project-1",title:"Тестовая сцена",angle:"Сыграть конфликт в коридоре",format:"reel" as const};
+    const original=scenarioScriptToProductionBrief(approved,project);
+    const modelFile={...original,script:original.script.map((line,i)=>i===1
+      ?{...line,line:"Я услышал шаги из соседнего зала."}:line)};
+    const imported=importPersonaProductionBrief({brief:modelFile,selectedIdea:project});
+    const text=imported.materials.productionBrief!.script;
+    const next=reviseScenarioScript(approved,{createdAt:"2026-10-30T10:02:00Z",
+      reason:"Локальная модель предложила конкретную правку, автор ещё не утверждал её.",
+      beats:text.map((beat,i)=>({purpose:i===0?"hook":i===text.length-1?"ending":"development",line:beat.line,action:beat.action,durationSec:beat.durationSec}))
+    });
+    expect(next.revisions).toHaveLength(2);
+    expect(next.approval).toBeUndefined();
+    expect(next.currentRevision.beats[1].line).toBe("Я услышал шаги из соседнего зала.");
+    expect(()=>scenarioScriptToProductionBrief(next,project)).toThrow(/approval/);
+  });
+
   it("preserves every approved word, action and timing through canonical Production Brief import, QA and revisions", () => {
     const [idea] = suggestScenarioIdeas({ research: [source], creativeProfile: {priorities:["актёр"],constraints:[]}, count:5 });
     const beats = [
