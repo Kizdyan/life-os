@@ -1,3 +1,4 @@
+import type {PersonaStoryOutline} from './personaStoryMechanics';
 /**
  * Zero-credit Persona research. A bookmarked URL is NOT evidence of a watched
  * video, measured reach, audience retention, or a validated trend.
@@ -15,6 +16,7 @@ export interface PersonaFreeReference {
  category:PersonaReferenceCategory;
  status:PersonaReferenceStatus;
  observation:string;
+ storyOutline?:PersonaStoryOutline;
  createdAt:string;
 }
 
@@ -74,6 +76,10 @@ export function readPersonaFreeReferences(storage:Pick<Storage,'getItem'>):Perso
    try{return typeof v.id==='string'&&typeof v.url==='string'&&
     normalizePersonaReferenceUrl(v.url)===v.url&&typeof v.title==='string'&&
     typeof v.observation==='string'&&typeof v.createdAt==='string'&&
+    (v.storyOutline===undefined||(!!v.storyOutline&&typeof v.storyOutline==='object'&&
+     ['premise','hook','protagonistGoal','obstacle','escalation','turn','payoff','actingAction','visualMoment'].every(key=>
+       typeof (v.storyOutline as Record<string,unknown>)[key]==='string'&&
+       ((v.storyOutline as Record<string,string>)[key]).length<=1200)))&&
     ['link-only','human-reviewed'].includes(String(v.status))&&
     ['acting','comedy','music','visual','other'].includes(String(v.category))}
    catch{return false}
@@ -87,4 +93,11 @@ export function exportPersonaFreeReferences(items:readonly PersonaFreeReference[
  return JSON.stringify({version:1,kind:'persona-free-reference-export-v1',
   evidenceNotice:'Bookmarks and user observations only; not automatically watched videos or verified trend metrics.',
   references:items},null,2);
+}
+
+/** Attaches a human-authored outline to the existing reference, no new store. */
+export function withPersonaReferenceStory(items:readonly PersonaFreeReference[],id:string,storyOutline:PersonaStoryOutline):PersonaFreeReference[]{
+ if(!items.some(item=>item.id===id))throw new Error('Референс не найден.');
+ if(Object.values(storyOutline).some(value=>typeof value!=='string'||value.length>1200))throw new Error('Некорректный сценарный текст.');
+ return items.map(item=>item.id===id?{...item,storyOutline:{...storyOutline}}:item);
 }
