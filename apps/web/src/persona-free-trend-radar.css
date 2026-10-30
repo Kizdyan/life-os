@@ -1,0 +1,48 @@
+.personaFreeRadar{margin:18px 0;border:1px solid #40474f;border-radius:16px;background:#192027;color:#f3f6fa;padding:18px;display:grid;gap:15px}
+.personaFreeRadar h3{margin:4px 0 8px;font-size:20px}
+.personaFreeRadar p{line-height:1.5;margin:5px 0}
+.personaFreeRadar small,.personaFreeRadar .radarCaution{color:#aebac6;font-size:12px}
+.personaFreeRadar a{color:#b2d7ff;overflow-wrap:anywhere}
+.personaFreeRadar button{border:1px solid #617083;background:#283645;color:white;border-radius:9px;padding:9px 12px;font:inherit;cursor:pointer}
+.personaFreeRadar button:hover{background:#395063}
+.personaFreeRadar button:disabled{opacity:.55;cursor:not-allowed}
+.personaFreeRadar .freeSources{border:1px solid #435063;border-radius:10px;padding:12px}
+.personaFreeRadar summary{cursor:pointer;font-weight:650}
+.personaFreeRadar .freeRadarSources{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0}
+.personaFreeRadar .freeRadarSources article{border:1px solid #354656;border-radius:10px;padding:11px}
+.personaFreeRadar .freeRadarSources p{font-size:13px}
+.personaFreeRadar .freeRadarForm{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.personaFreeRadar label{display:grid;gap:5px;font-size:13px}
+.personaFreeRadar input:not([type=checkbox]),.personaFreeRadar select,.personaFreeRadar textarea{background:#101920;color:#f3f6fa;border:1px solid #536578;border-radius:8px;padding:10px;font:inherit;min-width:0;width:100%;box-sizing:border-box}
+.personaFreeRadar textarea{min-height:66px;resize:vertical}
+.personaFreeRadar .radarCheck{display:flex;align-items:center;gap:9px;grid-column:1/-1}
+.personaFreeRadar .freeRadarForm>button{justify-self:start}
+.personaFreeRadar .radarSavedHead{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center}
+.personaFreeRadar .radarSaved{display:grid;gap:9px}
+.personaFreeRadar .radarSaved>article{padding:13px;border-radius:10px;background:#232d36}
+.personaFreeRadar .radarSavedTitle{display:grid;gap:5px}
+.personaFreeRadar .radarSavedTitle a{font-weight:600}
+.personaFreeRadar .radarActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.personaFreeRadar .radarAdapt{border-top:1px solid #536578;margin-top:12px;padding-top:10px;display:grid;gap:10px}
+.personaFreeRadar .radarMessage{color:#e0cc9a}
+.personaFreeRadar .radarEmpty{opacity:.8}
+@media(max-width:520px){.personaFreeRadar{padding:13px;margin:12px 0}.personaFreeRadar .freeRadarForm{grid-template-columns:1fr}}
+
+.personaFreeRadar .radarSearch{display:grid;gap:9px;padding:12px;border:1px solid #405364;border-radius:10px}
+.personaFreeRadar .radarSearchLinks{display:flex;flex-wrap:wrap;gap:12px}
+.personaFreeRadar .radarSearchLinks a{display:inline-block;border:1px solid #617083;padding:9px 12px;border-radius:8px;text-decoration:none}
+.personaFreeRadar .radarSearchLinks a:hover{background:#2b3f51}
+
+.personaFreeRadar .personaStoryReview{display:grid;gap:12px;padding:12px;background:#1c2731;border:1px solid #4a6173;border-radius:10px}
+.personaFreeRadar .personaStoryReview h4{margin:0;font-size:17px}
+.personaFreeRadar .personaStoryFields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.personaFreeRadar .personaStoryFields label{display:grid;gap:5px}
+.personaFreeRadar .personaStoryFields label small{font-size:11px}
+.personaFreeRadar .personaStoryAudit{display:grid;gap:8px;border-top:1px solid #42576b;padding-top:12px}
+.personaFreeRadar .personaStoryAudit>div{display:grid;gap:4px;padding:8px;border:1px solid #405264;border-radius:8px}
+.personaFreeRadar .personaStoryAudit p{font-size:12px;margin:0}
+.personaFreeRadar .personaStoryReview>button{justify-self:start}
+
+.personaReferenceProvenance{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;border:1px solid #576978;border-radius:10px;margin:8px 0;padding:10px 12px}
+.personaReferenceProvenance a{color:#8bc0ee;overflow-wrap:anywhere}
+.personaReferenceProvenance small{flex-basis:100%;opacity:.78}
