@@ -77,7 +77,7 @@ doctor-suggestion.json.artifacts/
   failure.json             # only on failure
 ```
 
-Each `*.started.json` records a stage start and the bounded model options. Each `*.metrics.json` records actual elapsed milliseconds and whether the model returned a parseable JSON payload; this does not establish artistic quality. Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
+Each `*.started.json` records a stage start and the bounded model options. Each `*.metrics.json` records actual elapsed milliseconds and whether the model returned a parseable JSON payload; this does not establish artistic quality. The `failure.json` records the last recorded stage and distinguishes `FAILED`, `TIMEOUT` and `CANCELLED`, making interruption visible without implying that the script is bad. All three states can be resumed when a validated critique exists. Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
 
 ### Resume a failed second pass without repeating critique
 
