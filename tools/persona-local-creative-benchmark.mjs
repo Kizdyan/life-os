@@ -98,6 +98,7 @@ export async function benchmarkPersonaLocalModel({model='qwen2.5-coder:7b',outpu
    const failure=classifyFailure(error);
    reports.push({key:item.key,label:item.label,state:failure.state.toLowerCase(),elapsedMs:Date.now()-started,
     error:failure.message,model});
+   if(typeof error?.rawResponse==='string')await writeFile(resolve(dir,item.key+'.raw-response.txt'),error.rawResponse,{flag:'wx'});
    await writeState({state:failure.state,caseKey:item.key,completedCases:reports.length,error:failure.message});
   }
  }

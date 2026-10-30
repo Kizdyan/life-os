@@ -47,6 +47,15 @@ test('model failure is recorded as failed and never faked as success',async(t)=>
  assert.match(result.cases[0].error,/Ollama/);
  assert.equal(JSON.parse(await readFile(join(dir,'benchmark-state.json'),'utf8')).state,'FAILED');
 });
+test('invalid model output is preserved locally for diagnosis but never accepted as a draft',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-invalid-output-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const error=Error('Некорректный кадр 4');
+ error.rawResponse='{"beats":[{"durationSec":0}]}';
+ const result=await benchmarkPersonaLocalModel({outputDirectory:dir,cases:[CREATIVE_CASES[0]],generator:async()=>{throw error}});
+ assert.equal(result.cases[0].state,'failed');
+ assert.equal(await readFile(join(dir,'acting-comedy.raw-response.txt'),'utf8'),error.rawResponse);
+});
 test('benchmark preserves the raw local answer and generation settings for later creative review',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-benchmark-evidence-'));
  t.after(()=>rm(dir,{recursive:true,force:true}));
