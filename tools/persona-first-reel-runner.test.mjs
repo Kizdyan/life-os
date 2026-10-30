@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises'
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runFirstReel, validateDraftQa, validateFirstReelMode } from './persona-first-reel-runner.mjs';
+import {renderReviewedReel} from './persona-reviewed-render.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
 test('two-shot live speech brief matches only the first two beats of the full Reel',async()=>{
@@ -101,4 +102,67 @@ test('unsafe or mismatched Whisper model / brief fail before creating output',as
   await assert.rejects(()=>runFirstReel(args),/Invalid Persona Reel brief/);
   await assert.rejects(()=>stat(out),/ENOENT/);
  }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('Whisper failure automatically produces playable Recovery Review and manual speech resumes real FFmpeg render',
+ {skip:!mediaTools,timeout:240000},async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-recovery-handoff-'));
+ try{
+  const sourcePaths=[join(d,'actor.mp4'),join(d,'composer.mp4')],originals=[];
+  for(let i=0;i<2;i++){
+   const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
+    '-f','lavfi','-i','color=c='+(i?'yellow':'cyan')+':s=240x320:r=30',
+    '-f','lavfi','-i','sine=frequency='+(i?550:440)+':sample_rate=48000',
+    '-t','2.8','-c:v','mpeg4','-c:a','aac','-shortest',sourcePaths[i]],
+    {encoding:'utf8',timeout:30000});
+   assert.equal(result.status,0,result.stderr);
+   originals.push(await readFile(sourcePaths[i]));
+  }
+  const sources=join(d,'sources.json'),brief=join(d,'brief.json'),draft=join(d,'draft'),out=join(d,'reviewed');
+  const script=['Я актёр. И ещё пишу музыку.','И у нас есть проблема.'];
+  await mk(sources,{version:1,sources:sourcePaths.map((path,i)=>({id:'take'+i,path}))});
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:script.map((line,i)=>({order:i+1,line})),
+   shots:script.map((_,i)=>({order:i+1,action:'Реплика'}))});
+  const model=join(d,'ggml-small.bin');await writeFile(model,Buffer.alloc(1024*1024+1));
+  const status=await runFirstReel({sources,brief,outputDir:draft,whisperCli:process.execPath,
+   whisperModel:model,transcribeStep:async()=>{throw Error('Whisper did not return usable speech')}});
+  assert.equal(status.status,'needs-manual-transcript-review');
+  assert.equal(status.publicationApproved,false);
+  assert.equal(status.distributionAllowed,false);
+  assert.match(status.reason,/Whisper/);
+  const kit=join(draft,'editorial-review-kit'),pack=JSON.parse(await readFile(join(kit,'candidate-pack.json'),'utf8'));
+  assert.equal(pack.beats.length,2);
+  assert.ok(pack.beats.every(x=>x.candidates.length===0&&x.recovery.availableSources.length===2));
+  const page=await readFile(join(kit,'previews','review.html'),'utf8');
+  assert.match(page,/Recovery Review/);
+  assert.match(page,/source-take0-inspection.mp4/);
+  assert.equal((await stat(join(kit,'previews','source-take0-inspection.mp4'))).size>1000,true);
+  await assert.rejects(()=>stat(join(draft,'draft-reel.mp4')),/ENOENT/);
+  const selectionPath=join(d,'selection.reviewed.json');
+  await mk(selectionPath,{version:1,kind:'persona-editorial-selection-v1',status:'human-reviewed-not-published',
+   selections:script.map((line,i)=>({
+    beat:i+1,reviewed:true,candidateId:null,reason:'Посмотрел и прослушал этот дубль',
+    recovery:{kind:'persona-manual-segment-v1',transcriptSource:'manual-review',
+     sourceId:'take'+i,sourceSha256:pack.beats[i].recovery.availableSources[i].sourceSha256,
+     startSec:0.2,durationSec:1.9,transcript:line,confirmed:true,
+     reason:'Я лично слышу точную реплику'},rejected:[]
+   }))});
+  const reviewed=await renderReviewedReel({draftDir:draft,selectionPath,outputDir:out});
+  assert.equal(reviewed.status,'awaiting-author-review');
+  assert.equal(reviewed.recoveredFromAsr,true);
+  assert.equal(reviewed.originalDraft,null);
+  assert.equal(reviewed.publicationApproved,false);
+  assert.equal(reviewed.distributionAllowed,false);
+  assert.ok((await stat(reviewed.output)).size>1000);
+  const recovered=JSON.parse(await readFile(reviewed.decisionsPath,'utf8'));
+  assert.equal(recovered.mode,'strict');
+  assert.equal(recovered.choices.length,2);
+  assert.ok(recovered.choices.every(x=>x.transcriptSource==='manual-review'&&x.manualTranscriptReview===true));
+  const review=JSON.parse(await readFile(reviewed.creativeReviewTemplate,'utf8'));
+  assert.equal(review.status,'unreviewed');
+  assert.ok(review.scenes.every(x=>x.selectedCandidateId.startsWith('manual:')));
+  assert.equal(JSON.parse(await readFile(reviewed.qaPath,'utf8')).handoff.passed,false);
+  for(let i=0;i<2;i++)assert.deepEqual(await readFile(sourcePaths[i]),originals[i]);
+ }finally{await rm(d,{recursive:true,force:true})}
 });
