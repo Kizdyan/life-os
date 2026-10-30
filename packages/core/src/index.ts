@@ -67,6 +67,7 @@ export * from './behavior-experiment';
 
 export * from './media-brain';
 export * from './reference-evidence';
+export * from './persona-scenario-intelligence';
 export * from './format-memory';
 export * from './personal-format-seed';
 export * from './yandex-disk';
