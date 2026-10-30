@@ -9,10 +9,12 @@ import {
   reviseScenarioScript,
   scenarioScriptToFormatMemoryObservation,
   scenarioScriptToProductionBriefInput,
+  scenarioScriptToProductionBrief,
   suggestScenarioIdeas,
   validateScenarioResearch,
 } from "./persona-scenario-intelligence";
 import type { ScenarioResearchItem } from "./persona-scenario-intelligence";
+import { importPersonaProductionBrief, revisePersonaProductionBrief, recordPersonaEditorialDecision } from "./persona-production-pipeline";
 
 const source: ScenarioResearchItem = {
   id: "ref-piano-pov",
@@ -141,6 +143,39 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(revised.revisions).toHaveLength(2);
     expect(revised.approval).toBeUndefined();
     expect(() => scenarioScriptToProductionBriefInput(revised)).toThrow("author approval");
+  });
+
+  it("preserves every approved word, action and timing through canonical Production Brief import, QA and revisions", () => {
+    const [idea] = suggestScenarioIdeas({ research: [source], creativeProfile: {priorities:["актёр"],constraints:[]}, count:5 });
+    const beats = [
+      { purpose:"hook" as const, line:"Не трогайте эту клавишу — у меня проба.", action:"Перехватить руку партнёра до прикосновения.", durationSec:4 },
+      { purpose:"development" as const, line:"Но партнёр нажимает её, и свет меняется.", action:"Отстраниться от пианино, взглянуть на дверь.", durationSec:7 },
+      { purpose:"ending" as const, line:"Теперь роль играет сам звук.", action:"Замереть, закрыть крышку и остаться в тишине.", durationSec:6 },
+    ];
+    const draft=createScenarioScript(idea,{createdAt:"2026-10-30T14:00:00Z",beats});
+    expect(()=>scenarioScriptToProductionBrief(draft,{id:"project-real",title:"Моя сцена",angle:"Мой исходный замысел",format:"reel"})).toThrow("approval");
+    const approved=approveScenarioScript(draft,{author:"Тестовый автор",comment:"Тестовое утверждение",approvedAt:"2026-10-30T14:10:00Z"});
+    const selected={id:"project-real",title:"Моя сцена",angle:"Мой исходный замысел",format:"reel" as const};
+    const brief=scenarioScriptToProductionBrief(approved,selected);
+    expect(brief.ideaId).toBe(selected.id);
+    expect(brief.sourceTitle).toBe(selected.title);
+    expect(brief.sourceAngle).toBe(selected.angle);
+    expect(brief.script).toEqual(beats.map((b,i)=>({order:i+1,line:b.line,action:b.action,durationSec:b.durationSec})));
+    expect(brief.shots.map(x=>x.action)).toEqual(beats.map(x=>x.action));
+    expect(brief.shots.map(x=>x.durationSec)).toEqual([4,7,6]);
+    expect(brief.hook.firstSeconds).toBe(beats[0].line);
+    expect(brief.adaptations.reels.durationSec).toBe(17);
+    const pipeline=importPersonaProductionBrief({brief,selectedIdea:selected});
+    expect(pipeline.stage).toBe("QA");
+    expect(pipeline.materials.script).toEqual(brief.script);
+    expect(pipeline.materials.productionBrief?.script).toEqual(brief.script);
+    expect(pipeline.materials.editorialDecision).toBeUndefined();
+    expect(pipeline.statuses.READY_FOR_SHOOT).toBe("pending");
+    const shotChanged={...brief,script:brief.script.map((line,i)=>i===1?{...line,line:"Переписано после одобрения"}:line)};
+    const revised=revisePersonaProductionBrief(pipeline,shotChanged);
+    expect(revised.materials.editorialDecision).toBeUndefined();
+    expect(revised.materials.qa?.status).toBe("needs_revision");
+    expect(()=>recordPersonaEditorialDecision(revised,{decision:"approved",editor:"Тест",comment:"Тест",factReviewCompleted:true,decidedAt:"2026-10-30T14:12:00Z"})).toThrow();
   });
 
   it("keeps a reference as a format-only evidence record and records only an explicit approval in Format Memory", () => {
