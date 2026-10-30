@@ -70,6 +70,7 @@ export * from './reference-evidence';
 export * from './persona-scenario-intelligence';
 export * from './persona-local-script-doctor-handoff';
 export * from './persona-local-script-doctor-workflow';
+export * from './persona-scenario-version-history';
 export * from './format-memory';
 export * from './personal-format-seed';
 export * from './yandex-disk';
