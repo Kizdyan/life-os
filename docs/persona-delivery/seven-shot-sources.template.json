@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "sources": [
+    { "id": "A01_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_A01_actor_hook_take01.mp4" },
+    { "id": "B01_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_B01_composer_problem_take01.mp4" },
+    { "id": "A02_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_A02_actor_audition_take01.mp4" },
+    { "id": "B02_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_B02_composer_deadline_take01.mp4" },
+    { "id": "A03_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_A03_actor_sleep_take01.mp4" },
+    { "id": "B03_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_B03_composer_lullaby_take01.mp4" },
+    { "id": "A04_take01", "path": "REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_TO_A04_actor_payoff_take01.mp4" }
+  ]
+}
