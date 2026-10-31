@@ -63,6 +63,9 @@ describe('Life OS and Persona JSX runtime rendering', () => {
     stubBrowser('#persona/project/project-1');
     const project = { id: 'project-1', title: 'Мой Reels', contentType: 'reel', sourceIdea: 'Идея', script: null, shootingPlan: null, editPlan: null, timeline: null, mediaAssets: [], cloudAssetRefs: [], processing: null, captions: null, socialCaptions: null, stage: 'strategy', qa: null, createdAt: '2026-10-28T10:00:00.000Z', updatedAt: '2026-10-28T10:00:00.000Z', schemaVersion: 1, revision: 1 };
     vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'lifeos:persona:projects:v1' ? JSON.stringify({ schemaVersion: 1, activeProjectId: 'project-1', projects: [project] }) : null, setItem: () => undefined, removeItem: () => undefined });
+    // This is a mocked BROWSER route, not the separate no-window SSR test.
+    // The draft storage adapter intentionally refuses Node globals without window.
+    vi.stubGlobal('window', { get localStorage() { return globalThis.localStorage; } });
     const markup = renderToString(React.createElement(PersonaFactory));
     expect(markup).toContain('Назад');
     expect(markup).toContain('Продолжить');
