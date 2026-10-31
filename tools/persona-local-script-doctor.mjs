@@ -15,7 +15,7 @@ const FINDING_CLASSES=new Set(['FACTUAL_CONSTRAINT_VIOLATION','INTERPRETIVE_WEAK
 // Schemas constrain the two model stages independently.  The validator below
 // remains authoritative: a schema-compliant response can still be rejected.
 const DIAGNOSIS_SCHEMA=Object.freeze({type:'object',additionalProperties:false,required:['summary','findings'],properties:{
- storyMap:{type:'array',minItems:3,maxItems:12,items:{type:'object',additionalProperties:false,required:['beatIndex','sceneFunction','causedByBeatIndex','changedCondition','goalObstacleRelation','turnPreparation'],properties:{
+ storyMap:{type:'array',minItems:0,maxItems:12,items:{type:'object',additionalProperties:false,required:['beatIndex','sceneFunction','causedByBeatIndex','changedCondition','goalObstacleRelation','turnPreparation'],properties:{
   beatIndex:{type:'integer',minimum:0,maximum:11},sceneFunction:{type:'string',enum:['hook','setup','escalation','turn','payoff']},causedByBeatIndex:{anyOf:[{type:'integer',minimum:0,maximum:10},{type:'null'}]},changedCondition:{type:'string',minLength:3,maxLength:600},goalObstacleRelation:{type:'string',minLength:3,maxLength:600},turnPreparation:{type:'string',minLength:3,maxLength:600}
  }}},
  summary:{type:'string',minLength:3,maxLength:1200},findings:{type:'array',minItems:1,maxItems:12,items:{type:'object',additionalProperties:false,required:['role','classification','beatIndex','issue','evidence','proposal'],properties:{
@@ -194,7 +194,9 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  catch(error){if(error.code!=='ENOENT')throw error}
  const bytes=await readFile(input);
  if(bytes.length>MAX_FILE_BYTES)throw Error('Сценарный файл превышает 100 КБ');
- let resumeDiagnosis,originalDiagnosisRaw;
+ let resumeDiagnosis,originalDiagnosisRaw,recoveryKind;
+ if(options.recoverInterrupted===true&&options.resumeFrom===undefined)
+  throw Error('Recovery: --recover-interrupted requires --resume-from');
  if(options.resumeFrom!==undefined){
   if(typeof options.resumeFrom!=='string'||!options.resumeFrom.trim())
    throw Error('Resume: invalid previous artifacts directory');
@@ -205,13 +207,29 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
   const previousRun=JSON.parse(await readFile(resolve(prev,'run.json'),'utf8'));
   if(previousRun.model!==(options.model??DEFAULT_MODEL))
    throw Error('Resume: model differs from original local Doctor run');
-  const failure=JSON.parse(await readFile(resolve(prev,'failure.json'),'utf8'));
-  if(!['FAILED','TIMEOUT','CANCELLED'].includes(failure.state))
-   throw Error('Resume: previous run was not a recorded failed or interrupted run');
-  if(typeof failure.stage!=='string'||!failure.stage.startsWith('revision.'))
-   throw Error('Resume: previous run did not fail during second-pass editing');
-  // Ensure this is an interrupted edit, not a completed proposal with a
-  // missing success marker. Never regenerate after output already exists.
+  // A hard process termination (power loss, SIGKILL, force-close) cannot
+  // write failure.json. Such a run needs an explicit human opt-in to recover;
+  // never mistake a second concurrently-running process for a failed one.
+  let failure;
+  try{failure=JSON.parse(await readFile(resolve(prev,'failure.json'),'utf8'))}
+  catch(error){
+   if(error.code!=='ENOENT')throw error;
+   if(options.recoverInterrupted!==true)
+    throw Error('Resume: no failure marker; use --recover-interrupted only after the prior process has stopped');
+   if(previousRun.state!=='STARTED')
+    throw Error('Resume: unrecorded interruption must originate from a started run');
+   recoveryKind='UNRECORDED_INTERRUPTION';
+  }
+  if(failure!==undefined){
+   if(!['FAILED','TIMEOUT','CANCELLED'].includes(failure.state))
+    throw Error('Resume: previous run was not a recorded failed or interrupted run');
+   if(typeof failure.stage!=='string'||!failure.stage.startsWith('revision.'))
+    throw Error('Resume: previous run did not fail during second-pass editing');
+   recoveryKind='RECORDED_FAILURE';
+  }
+  // Never regenerate after completion, even if an output file was deleted.
+  try{await access(resolve(prev,'success.json'));throw Error('Resume: previous run already succeeded')}
+  catch(error){if(error.code!=='ENOENT')throw error}
   if(typeof previousRun.outputFile!=='string'||!previousRun.outputFile.trim())
    throw Error('Resume: previous output path is missing');
   try{await access(previousRun.outputFile);throw Error('Resume: previous suggestion already exists')}
@@ -240,7 +258,8 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  await save('task.json',bytes.toString('utf8').trim());
  let lastStage='model-availability';
  await save('run.json',{kind:'persona-local-doctor-run-v2',model:options.model??DEFAULT_MODEL,
-  state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output});
+  state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output,
+  ...(resumeDiagnosis===undefined?{}:{recovery:{kind:recoveryKind,from:resolve(options.resumeFrom)}})});
  try{
   // This is a verified COPY from the earlier run, not a new Ollama response.
   // Keeping it permits another safe recovery if this patch pass also fails.
@@ -271,20 +290,24 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const args=process.argv.slice(2),flags={},positionals=[];
  let invalid=false;
  for(let i=0;i<args.length;i++){
-  if(args[i]==='--model'||args[i]==='--timeout-ms'||args[i]==='--resume-from'){
+  if(args[i]==='--recover-interrupted'){
+   if(flags['--recover-interrupted']){invalid=true;break}
+   flags['--recover-interrupted']=true;
+  }else if(args[i]==='--model'||args[i]==='--timeout-ms'||args[i]==='--resume-from'){
    if(!args[i+1]||args[i+1].startsWith('--')){invalid=true;break}
    if(flags[args[i]]){invalid=true;break}
    flags[args[i]]=args[++i];
   }else if(args[i].startsWith('--')){if(args[i]!=='--help')invalid=true;}
   else positionals.push(args[i]);
  }
- if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen3:4b-instruct] [--timeout-ms 180000] [--resume-from previous-suggestion.json.artifacts]');
+ if(args.includes('--help'))console.log('node tools/persona-local-script-doctor.mjs <task.json> <suggestion.json> [--model qwen3:4b-instruct] [--timeout-ms 180000] [--resume-from previous-suggestion.json.artifacts] [--recover-interrupted]');
  else if(invalid||positionals.length!==2){
   console.error('Ожидаются task.json suggestion.json [--model NAME] [--timeout-ms 180000]');process.exitCode=2;
  }else runLocalScriptDoctorFiles(positionals[0],positionals[1],{
   model:flags['--model']??DEFAULT_MODEL,
   timeoutMs:flags['--timeout-ms']===undefined?240000:Number(flags['--timeout-ms']),
-  ...(flags['--resume-from']?{resumeFrom:flags['--resume-from']}:{})
+  ...(flags['--resume-from']?{resumeFrom:flags['--resume-from']}:{}) ,
+  ...(flags['--recover-interrupted']?{recoverInterrupted:true}:{})
  }).then(file=>console.log('Редакторские замечания и предложение (НЕ утверждено): '+file),
   error=>{console.error('Редактура не создана: '+error.message);process.exitCode=1});
 }
