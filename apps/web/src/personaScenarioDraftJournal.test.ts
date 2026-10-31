@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {
- readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,resolvePersonaScenarioDraftStorage,
+ readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,resolvePersonaScenarioDraftStorage,assertNoPersonaScenarioDraft,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 const storage=()=>{
@@ -76,6 +76,15 @@ describe('unsaved Persona scenario journal',()=>{
   expect(readPersonaScenarioDraft(s,'project-a')?.beats[1].durationSec).toBe(0);
   const raw=s.getItem(personaDraftKey('project-a'))!;
   expect(()=>savePersonaScenarioDraft(s,{...editing,beats:[...editing.beats.slice(0,1),{...editing.beats[1],durationSec:-1},...editing.beats.slice(2)]},raw)).toThrow('invalid_persona_scenario_draft');
+ });
+ it('blocks approval/export while any draft is present or has changed out of band',()=>{
+  const s=storage();
+  expect(()=>assertNoPersonaScenarioDraft(s,'project-a',null)).not.toThrow();
+  savePersonaScenarioDraft(s,original,null);
+  const raw=s.getItem(personaDraftKey('project-a'))!;
+  expect(()=>assertNoPersonaScenarioDraft(s,'project-a',raw)).toThrow('persona_scenario_draft_pending');
+  s.setItem(personaDraftKey('project-a'),JSON.stringify({...original,reason:'changed elsewhere'}));
+  expect(()=>assertNoPersonaScenarioDraft(s,'project-a',raw)).toThrow('persona_scenario_draft_changed_in_another_instance');
  });
  it('refuses to overwrite a newer draft from another editor instance',()=>{
   const s=storage();savePersonaScenarioDraft(s,original,null);

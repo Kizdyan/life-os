@@ -4,7 +4,7 @@ import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
  readPersonaScenarioDraft,readPersonaScenarioDraftRaw,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
- personaScenarioDraftExists,personaDraftKey,resolvePersonaScenarioDraftStorage,
+ personaScenarioDraftExists,personaDraftKey,resolvePersonaScenarioDraftStorage,assertNoPersonaScenarioDraft,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
@@ -121,6 +121,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasPendingChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
+ const assertNoPendingDraftRecord=()=>assertNoPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
  const recoverStaleDraft=()=>{
   if(!script||!staleDraft)return;
   try{
@@ -261,7 +262,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const approveScript=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('Сначала сохраните или разрешите несохранённый черновик, включая причину редакции.');return}
-  try{const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
+  try{assertNoPendingDraftRecord();const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
  };
  const rejectWithFeedback=()=>{
@@ -274,6 +275,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const exportLocalAiTask=()=>{
   if(!script){setError('Сначала сохраните сценарий.');return}
   if(hasPendingChanges){setError('Сначала сохраните или разрешите черновик, чтобы локальная модель получила актуальную версию.');return}
+  try{assertNoPendingDraftRecord()}catch(cause){setError(cause instanceof Error?cause.message:'Есть несохранённый черновик.');return}
   const current=script.currentRevision;
   const idea=script.idea;
   const first=current.beats[0],last=current.beats[current.beats.length-1];
@@ -341,7 +343,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const createBrief=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('В бриф нельзя переносить несохранённый черновик: сначала сохраните новую версию и утвердите её.');return}
-  try{onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
+  try{assertNoPendingDraftRecord();onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{

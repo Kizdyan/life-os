@@ -52,7 +52,7 @@ export function matchingPersonaScenarioDraft(
 export function personaScenarioDraftExists(storage:DraftStorage,projectId:string):boolean{
  try{return storage.getItem(personaDraftKey(projectId))!==null}catch{return true}
 }
-/** Compare-and-swap write: never overwrite a draft that changed in another editor instance. */
+/** Optimistic snapshot check: refuse to overwrite a draft changed since this editor last read it. */
 export function savePersonaScenarioDraft(
  storage:DraftStorage,draft:PersonaScenarioDraftJournal,expectedPreviousRaw:string|null,
 ):string{
@@ -66,7 +66,7 @@ export function savePersonaScenarioDraft(
  storage.setItem(key,serialized);
  return serialized;
 }
-/** Compare-and-delete: a newer draft is never removed by an older editor instance. */
+/** Snapshot-checked delete: refuse to remove a draft changed since this editor last read it. */
 export function clearPersonaScenarioDraft(
  storage:DraftStorage,projectId:string,expectedRaw:string|null,
 ){
@@ -77,4 +77,12 @@ export function clearPersonaScenarioDraft(
 }
 export function readPersonaScenarioDraftRaw(storage:DraftStorage,projectId:string):string|null{
  try{return storage.getItem(personaDraftKey(projectId))}catch{return null}
+}
+/** Finalization must not proceed while any local draft exists or changed out of band. */
+export function assertNoPersonaScenarioDraft(
+ storage:DraftStorage,projectId:string,expectedRaw:string|null,
+){
+ const current=storage.getItem(personaDraftKey(projectId));
+ if(current!==expectedRaw)throw Error('persona_scenario_draft_changed_in_another_instance');
+ if(current!==null)throw Error('persona_scenario_draft_pending');
 }
