@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {
- readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,
+ readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,resolvePersonaScenarioDraftStorage,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 const storage=()=>{
@@ -17,6 +17,14 @@ const original:PersonaScenarioDraftJournal={
  reason:'Несохранённая авторская правка',savedAt:'2026-10-31T19:55:00.000Z',
 };
 describe('unsaved Persona scenario journal',()=>{
+ it('does not crash on SSR when browser localStorage is absent',()=>{
+  const browser=(globalThis as {window?:unknown}).window;
+  if(browser!==undefined)return; // SSR-specific contract is tested in Node.
+  const selected=resolvePersonaScenarioDraftStorage();
+  expect(selected.getItem(personaDraftKey('absent'))).toBeNull();
+  expect(()=>selected.setItem('key','value')).toThrow('persona_draft_storage_unavailable');
+ });
+
  it('opens a new project with no script or saved journal without a crash',()=>{
   const s=storage();
   expect(matchingPersonaScenarioDraft(s,'new-project',undefined)).toBeNull();
