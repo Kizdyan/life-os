@@ -134,6 +134,20 @@ export function validatePersonaProjectSnapshot(value:unknown):PersonaProject{
  * Call before constructing an autosave snapshot; never base a save on stale React state.
  * The latest stored scenario is authoritative unless the caller explicitly supplies a new one.
  */
+/** Reject async file reads that completed after project navigation or a new save.
+ * The caller captures the revision before awaiting file.text() and validates
+ * the active project and revision after the await, before applying imported data.
+ */
+export function assertPersonaAsyncImportTarget(
+ collection:PersonaProjectCollection,projectId:string,expectedRevision:number,
+):void{
+ if(collection.activeProjectId!==projectId)
+  throw new Error('Во время чтения файла был открыт другой проект. Импорт отменён.');
+ const current=collection.projects.find(project=>project.id===projectId);
+ if(!current||current.revision!==expectedRevision)
+  throw new Error('Проект изменился во время чтения файла. Импорт отменён, текущая версия сохранена.');
+}
+
 export function resolvePersonaProjectSaveBase(
  storage:PersonaProjectStorage, rendered:PersonaProject,
 ):PersonaProject{

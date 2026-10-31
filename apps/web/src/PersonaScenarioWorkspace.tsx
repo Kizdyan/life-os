@@ -26,7 +26,7 @@ import {
  type ScenarioPlatform,
  type ScenarioScriptBeat,
 } from '../../../packages/core/src/persona-scenario-intelligence';
-import { loadPersonaProjects, type PersonaProject, type PersonaScenarioWorkspace as Workspace } from './personaProjectStore';
+import { assertPersonaAsyncImportTarget, loadPersonaProjects, type PersonaProject, type PersonaScenarioWorkspace as Workspace } from './personaProjectStore';
 
 type Props={
  project:PersonaProject;
@@ -288,10 +288,16 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    // Revalidate against durable state AFTER awaiting disk IO; never use stale script props.
    const originalRevisionId=script.currentRevisionId;
    const originalIdeaId=script.idea.id;
+   const initialCollection=loadPersonaProjects(draftStorage,()=> 'unused');
+   const originalProject=initialCollection.projects.find(item=>item.id===project.id);
+   if(!originalProject)throw new Error('Исходный проект не найден. Импорт отменён.');
+   assertPersonaAsyncImportTarget(initialCollection,project.id,originalProject.revision);
    const decoded=JSON.parse(await file.text()) as unknown;
    if(personaScenarioDraftExists(draftStorage,project.id))
     throw new Error('Во время чтения файла появились несохранённые правки. Импорт отменён.');
-   const activeSnapshot=loadPersonaProjects(draftStorage,()=> 'unused').projects.find(item=>item.id===project.id);
+   const latestCollection=loadPersonaProjects(draftStorage,()=> 'unused');
+   assertPersonaAsyncImportTarget(latestCollection,project.id,originalProject.revision);
+   const activeSnapshot=latestCollection.projects.find(item=>item.id===project.id);
    if(!activeSnapshot||activeSnapshot.scenarioWorkspace?.script?.currentRevisionId!==originalRevisionId||
       activeSnapshot.scenarioWorkspace?.script?.idea.id!==originalIdeaId)
     throw new Error('Сценарий изменился во время чтения файла. Импорт отменён: откройте актуальную редакцию.');

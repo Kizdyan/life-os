@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -8,6 +8,36 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
 }
 
 describe('Persona project storage',()=>{
+ it('rejects async import after the author switches to another project',()=>{
+  const storage=memoryStorage();
+  const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  const b=createPersonaProject({id:'b',title:'B',contentType:'reel',sourceIdea:'Second',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,a);
+  savePersonaProject(storage,b);
+  const initial=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(initial,'b',b.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(initial,'a',a.revision)).toThrow('другой проект');
+ });
+ it('rejects async import after the current project changes during file read',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'a',title:'Before',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,first);
+  const revisionBefore=loadPersonaProjects(storage,()=> 'unused').projects[0].revision;
+  savePersonaProject(storage,{...first,revision:2,title:'Updated by other tab'});
+  const latest=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(latest,first.id,revisionBefore)).toThrow('Проект изменился');
+  expect(latest.projects[0].title).toBe('Updated by other tab');
+ });
+ it('permits an unchanged project at both sides of an async file read',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'a',title:'Stable',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,project);
+  const before=loadPersonaProjects(storage,()=> 'unused');
+  const after=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(before,'a',project.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(after,'a',project.revision)).not.toThrow();
+ });
+
  it('autosave uses the latest persisted scenario, not the older React script object',()=>{
   const storage=memoryStorage();
   const old=createPersonaProject({id:'p-reel',title:'Actor and Composer',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});

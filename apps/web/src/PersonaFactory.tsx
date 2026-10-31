@@ -9,7 +9,7 @@ import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
-import{createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
+import{createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
 import type { PersonaTimelineSettings } from './personaTimelineSettings';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -194,10 +194,17 @@ export default function PersonaFactory(){
  async function importProductionBrief(file:File|undefined){
   if(!file||!chosen)return;
   try{
-   if(activeProjectId&&personaScenarioDraftExists(localStorage,activeProjectId))
+   if(!activeProjectId)throw new Error('Сначала откройте проект для импорта съёмочного брифа.');
+   const importingProjectId=activeProjectId;
+   const initial=loadPersonaProjects(localStorage,newProjectId);
+   const initialProject=initial.projects.find(project=>project.id===importingProjectId);
+   if(!initialProject)throw new Error('Исходный проект не найден. Импорт отменён.');
+   assertPersonaAsyncImportTarget(initial,importingProjectId,initialProject.revision);
+   if(personaScenarioDraftExists(localStorage,importingProjectId))
     throw new Error('В этом проекте есть несохранённый черновик. Сначала сохраните или разрешите его на этапе «Сценарий».');
    const decoded=JSON.parse(await file.text());
-   if(activeProjectId&&personaScenarioDraftExists(localStorage,activeProjectId))
+   assertPersonaAsyncImportTarget(loadPersonaProjects(localStorage,newProjectId),importingProjectId,initialProject.revision);
+   if(personaScenarioDraftExists(localStorage,importingProjectId))
     throw new Error('Во время чтения файла появился несохранённый черновик. Импорт отменён.');
    const importedIdea=ideaForImportedBrief(chosen,decoded,!scenarioWorkspace&&!production&&!draft&&!mediaProbe&&chosen.source==='quick-start');
    const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:importedIdea.id,title:importedIdea.title,angle:importedIdea.angle,format:importedIdea.format}});
