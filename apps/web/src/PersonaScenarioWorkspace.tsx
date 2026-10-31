@@ -26,7 +26,7 @@ import {
  type ScenarioPlatform,
  type ScenarioScriptBeat,
 } from '../../../packages/core/src/persona-scenario-intelligence';
-import type { PersonaProject, PersonaScenarioWorkspace as Workspace } from './personaProjectStore';
+import { loadPersonaProjects, type PersonaProject, type PersonaScenarioWorkspace as Workspace } from './personaProjectStore';
 
 type Props={
  project:PersonaProject;
@@ -283,7 +283,17 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   try{
    if(hasPendingChanges)throw new Error('Сначала сохраните или разрешите несохранённый черновик. Импорт не должен стирать ручную работу.');
    if(file.size>200_000)throw new Error('Файл сценария слишком большой (максимум 200 КБ).');
+   // The file chooser may remain open while the author edits or switches project.
+   // Revalidate against durable state AFTER awaiting disk IO; never use stale script props.
+   const originalRevisionId=script.currentRevisionId;
+   const originalIdeaId=script.idea.id;
    const decoded=JSON.parse(await file.text()) as unknown;
+   if(personaScenarioDraftExists(draftStorage,project.id))
+    throw new Error('Во время чтения файла появились несохранённые правки. Импорт отменён.');
+   const activeSnapshot=loadPersonaProjects(draftStorage,()=> 'unused').projects.find(item=>item.id===project.id);
+   if(!activeSnapshot||activeSnapshot.scenarioWorkspace?.script?.currentRevisionId!==originalRevisionId||
+      activeSnapshot.scenarioWorkspace?.script?.idea.id!==originalIdeaId)
+    throw new Error('Сценарий изменился во время чтения файла. Импорт отменён: откройте актуальную редакцию.');
    const imported=importPersonaProductionBrief({
     brief:decoded,
     selectedIdea:{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}
