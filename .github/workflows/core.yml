@@ -50,6 +50,10 @@ jobs:
         run: |
           set -o pipefail
           npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+      - name: Persona scenario and delivery regression gate
+        run: |
+          set -o pipefail
+          npm run persona:scenario:delivery:test 2>&1 | tee /tmp/persona-ci-scenario-delivery.log
       - name: Run tests with captured diagnostics
         run: |
           set -o pipefail
@@ -67,6 +71,7 @@ jobs:
           path: |
             /tmp/persona-ci-core.log
             /tmp/persona-ci-media.log
+            /tmp/persona-ci-scenario-delivery.log
             /tmp/persona-ci-test.log
             /tmp/persona-ci-typecheck.log
           if-no-files-found: warn

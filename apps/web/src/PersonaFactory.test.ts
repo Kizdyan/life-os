@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot } from './PersonaFactory';
+import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey } from './PersonaFactory';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
@@ -14,6 +14,17 @@ describe('brief import identity',()=>{
  it('does not relabel a project that already contains work or malformed imported data',()=>{
   expect(ideaForImportedBrief(quick,candidate,false)).toBe(quick);
   expect(ideaForImportedBrief(quick,{sourceTitle:'Другой'},true)).toBe(quick);
+ });
+});
+
+describe('scenario editor instance identity',()=>{
+ it('resets editor-local state across project, idea and source-revision changes',()=>{
+  const base={script:{idea:{id:'idea-a'},currentRevisionId:'revision-1'}} as any;
+  const key=personaScenarioWorkspaceMountKey('project-a',base);
+  expect(personaScenarioWorkspaceMountKey('project-b',base)).not.toBe(key);
+  expect(personaScenarioWorkspaceMountKey('project-a',{script:{idea:{id:'idea-b'},currentRevisionId:'revision-1'}} as any)).not.toBe(key);
+  expect(personaScenarioWorkspaceMountKey('project-a',{script:{idea:{id:'idea-a'},currentRevisionId:'revision-2'}} as any)).not.toBe(key);
+  expect(personaScenarioWorkspaceMountKey('project-a',base)).toBe(key);
  });
 });
 
