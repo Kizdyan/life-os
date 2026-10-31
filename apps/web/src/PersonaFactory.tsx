@@ -77,14 +77,15 @@ export function personaScenarioWorkspaceMountKey(projectId:string,workspace:Scen
 export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,factsChecked,onEditorChange,onCommentChange,onFactsCheckedChange,onDecision,onRebuild,onAngleChange,onBriefChange}:{projectId:string;pipeline:PersonaProductionPipeline;editor:string;comment:string;factsChecked:boolean;onEditorChange:(value:string)=>void;onCommentChange:(value:string)=>void;onFactsCheckedChange:(value:boolean)=>void;onDecision:(decision:'approved'|'rejected')=>void;onRebuild:()=>void;onAngleChange:(value:string)=>void;onBriefChange:(brief:PersonaProductionBrief)=>boolean}){
  const brief=pipeline.materials.productionBrief;
  const qa=pipeline.materials.qa;
- if(!brief||!qa)return null;
- const requiresFactReview=qa.factReview.status==='requires_fact_review';
- const dirty=(pipeline.input.idea.angle.trim()!==brief.sourceAngle||pipeline.input.idea.title.trim()!==brief.sourceTitle||pipeline.input.idea.format!==brief.sourceFormat);
+ // Hooks must execute on every render, even before a QA brief is available.
  const storage=resolvePersonaScenarioDraftStorage();
  const [raw,setRaw]=useState<string|null>(()=>{try{return readProductionInputRaw(storage,projectId)}catch{return null}});
  const rawRef=useRef(raw);
  const [inputError,setInputError]=useState('');
  const [discardChecked,setDiscardChecked]=useState(false);
+ if(!brief||!qa)return null;
+ const requiresFactReview=qa.factReview.status==='requires_fact_review';
+ const dirty=(pipeline.input.idea.angle.trim()!==brief.sourceAngle||pipeline.input.idea.title.trim()!==brief.sourceTitle||pipeline.input.idea.format!==brief.sourceFormat);
  const pending=parseProductionInputDraft(raw,projectId);
  const matching=Boolean(pending&&pending.ideaId===brief.ideaId&&pending.base===productionBriefSnapshot(brief));
  const unresolved=raw!==null&&!matching;
