@@ -54,6 +54,24 @@ export function validateDraftQa(qa,expectedPath){
    fail('Unexpected publication handoff or QA errors: delivery blocked');
  return true;
 }
+/** Technical evidence for actual runtime, not proof of creative approval. */
+export function assessFirstReelTiming(brief,qa){
+ const durations=brief?.script?.map(beat=>beat?.durationSec);
+ if(!Array.isArray(durations)||!durations.length||
+    durations.some(value=>typeof value!=='number'||!Number.isFinite(value)||value<=0))
+  return {status:'brief-duration-unavailable',targetDurationSec:null,
+   renderedDurationSec:qa?.evidence?.durationSec??null,differenceSec:null,
+   reviewRequired:true,notice:'No validated brief duration: inspect the video before approval.'};
+ const targetDurationSec=Number(durations.reduce((sum,value)=>sum+value,0).toFixed(3));
+ const renderedDurationSec=qa?.evidence?.durationSec;
+ if(typeof renderedDurationSec!=='number'||!Number.isFinite(renderedDurationSec)||renderedDurationSec<=0)
+  fail('Verified MP4 duration missing for timing acceptance');
+ const differenceSec=Number((renderedDurationSec-targetDurationSec).toFixed(3));
+ const mismatch=Math.abs(differenceSec)>0.25;
+ return {status:mismatch?'needs-human-timing-review':'within-brief-tolerance',
+  targetDurationSec,renderedDurationSec,differenceSec,reviewRequired:true,
+  notice:mismatch?'The ASR edit differs from scripted runtime. Review pauses, B03 music and A04 payoff; do not time-stretch speech or claim a 31-second approved Reel.':'Runtime is close to script; music, acting and pacing still require author review.'};
+}
 export function validateFirstReelMode(mode='strict'){
  if(!['strict','preview'].includes(mode))fail('Invalid editorial decision mode');
  return mode;
@@ -166,9 +184,11 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const qa=JSON.parse(await readFile(qaPath,'utf8'));
   validateDraftQa(qa,output);
   events.push('technical_qa_passed');
+  const timing=assessFirstReelTiming(requestedBrief,qa);
+  if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
   const summary={version:1,status:'awaiting-author-review',mode,events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
-    subtitleDraft,
-    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. SRT/VTT are draft sidecars NOT burned into MP4 or word-level aligned. Human timing review and publication approval required.',
+    subtitleDraft,timing,
+    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;

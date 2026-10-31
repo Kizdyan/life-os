@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runFirstReel, validateDraftQa, validateFirstReelMode } from './persona-first-reel-runner.mjs';
+import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming } from './persona-first-reel-runner.mjs';
 import {renderReviewedReel} from './persona-reviewed-render.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
@@ -18,6 +18,19 @@ test('two-shot live speech brief matches only the first two beats of the full Re
  assert.deepEqual(two.shots.map(x=>x.order),[1,2]);
  assert.equal(two.sourceFormat,'reel');
 });
+test('distinguishes actual ASR montage duration from the authored 31 seconds',()=>{
+ const brief={script:[3,4,5,5,4,6,4].map(durationSec=>({durationSec}))};
+ const exact=assessFirstReelTiming(brief,{evidence:{durationSec:31.05}});
+ assert.equal(exact.status,'within-brief-tolerance');
+ assert.equal(exact.targetDurationSec,31);
+ const shortened=assessFirstReelTiming(brief,{evidence:{durationSec:18}});
+ assert.equal(shortened.status,'needs-human-timing-review');
+ assert.equal(shortened.differenceSec,-13);
+ assert.equal(shortened.reviewRequired,true);
+ assert.match(shortened.notice,/do not time-stretch speech/);
+ assert.equal(assessFirstReelTiming({script:[{line:'unknown'}]},{evidence:{durationSec:5}}).status,'brief-duration-unavailable');
+});
+
 test('missing inputs fail preflight without creating output directory',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-runner-preflight-'));
  try{await assert.rejects(()=>runFirstReel({sources:join(dir,'missing.json'),brief:join(dir,'no.json'),outputDir:join(dir,'output'),whisperCli:'no',whisperModel:'no'}),/Missing required local file/);
@@ -61,6 +74,10 @@ writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,sta
  assert.equal(result.events.length,7);
  assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
  assert.equal(result.subtitleDraft.status,'needs-human-review');
+ assert.equal(result.timing.status,'needs-human-timing-review');
+ assert.equal(result.timing.targetDurationSec,4);
+ assert.equal(result.timing.renderedDurationSec,.5);
+ assert.ok(result.events.includes('duration_mismatch_requires_human_review'));
  assert.match(await readFile(result.subtitleDraft.srtPath,'utf8'),/Я актёр/);
  assert.equal(result.distributionAllowed,false);
  assert.ok((await stat(result.output)).size>1000);

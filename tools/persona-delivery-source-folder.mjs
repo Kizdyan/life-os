@@ -4,7 +4,7 @@
  * node tools/persona-delivery-source-folder.mjs <selected-video-folder> <new-output-folder>
  */
 import {mkdir,readdir,realpath,writeFile} from 'node:fs/promises';
-import {dirname,resolve,join} from 'node:path';
+import {dirname,resolve,join,relative,isAbsolute,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const ids=['A01','B01','A02','B02','A03','B03','A04'];
@@ -51,7 +51,9 @@ export async function makeManifest({sourceFolder,outputFolder,listing=readdir}={
  if(typeof sourceFolder!=='string'||!sourceFolder.trim()||typeof outputFolder!=='string'||!outputFolder.trim())
   fail('usage: node tools/persona-delivery-source-folder.mjs <selected-video-folder> <new-output-folder>');
  const source=await realpath(resolve(sourceFolder)),output=resolve(outputFolder);
- if(source===output)fail('output directory must be separate from selected source folder');
+ const childPath=relative(source,output);
+ if(childPath===''||(childPath!=='..'&&!childPath.startsWith('..'+sep)&&!isAbsolute(childPath)))
+  fail('output directory must be outside the selected source folder');
  const entries=await listing(source,{withFileTypes:true});
  if(!Array.isArray(entries)||entries.length>500)fail('unexpected or oversized selected folder');
  const names=entries.filter(item=>item.isFile()&&ext.test(item.name)).map(item=>item.name);

@@ -73,6 +73,16 @@ test('selected folder is scanned once, never recursively or uploaded; manifest i
  assert.ok(data.sources.every(s=>s.path.startsWith(src)));
  await assert.rejects(makeManifest({sourceFolder:src,outputFolder:out}),/EEXIST/);
 });
+test('intake cannot write an output directory inside the source folder',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'persona-no-in-place-output-'));
+ t.after(()=>rm(base,{recursive:true,force:true}));
+ const source=join(base,'captures');await mkdir(source);
+ for(const name of scenes)await writeFile(join(source,name),'not-a-video');
+ const nested=join(source,'capture-reports');
+ await assert.rejects(makeManifest({sourceFolder:source,outputFolder:nested}),/outside the selected source folder/);
+ await assert.rejects(readFile(join(nested,'sources.json')),/ENOENT/);
+});
+
 test('unrelated nested videos and symlinks are not silently imported',async t=>{
  const base=await mkdtemp(join(tmpdir(),'persona-no-recursive-'));
  t.after(()=>rm(base,{recursive:true,force:true}));
