@@ -159,6 +159,9 @@ test('resume after a failed second pass reuses validated critique and calls only
  const files=await readdir(resumedOut+'.artifacts');
  assert.ok(files.includes('diagnosis.validated.json'));
  assert.ok(!files.includes('diagnosis.raw.txt'),'A resumed critique must not be falsely attributed to a new generation');
+ assert.equal(await readFile(join(resumedOut+'.artifacts','diagnosis.source-raw.txt'),'utf8'),
+  await readFile(join(previous,'diagnosis.raw.txt'),'utf8'),
+  'The exact original raw critique is kept for later retries');
  assert.equal(await readFile(input,'utf8'),JSON.stringify(task));
 });
 test('resume refuses stale task, wrong model and edited diagnosis without producing an output',async(t)=>{
@@ -177,9 +180,59 @@ test('resume refuses stale task, wrong model and edited diagnosis without produc
  await writeFile(input,JSON.stringify(changed));
  await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/task differs/);
  await writeFile(input,JSON.stringify(task));
+ const canonical=JSON.parse(await readFile(join(folder,'diagnosis.validated.json'),'utf8'));
  await writeFile(join(folder,'diagnosis.validated.json'),JSON.stringify({...diagnosis,findings:[]}));
  await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/не содержит конкретных замечаний/);
+ const validButEdited={...canonical,findings:canonical.findings.map((finding,index)=>
+  index===0?{...finding,proposal:'Изменённое вручную, но формально корректное предложение.'}:finding)};
+ await writeFile(join(folder,'diagnosis.validated.json'),JSON.stringify(validButEdited));
+ await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{resumeFrom:folder}),/differs from original Ollama critique/);
  await assert.rejects(readFile(newOut),/ENOENT/);
+});
+test('canonical export without optional feedback runs both local passes',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-optional-feedback-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),output=join(dir,'suggestion.json');
+ const canonical=validateDoctorTask({...task,authorFeedback:undefined});
+ assert.equal(canonical.authorFeedback,null);
+ await writeFile(input,JSON.stringify(canonical));
+ const {fetchImpl,calls}=fakeLocal();
+ await runLocalScriptDoctorFiles(input,output,{fetchImpl});
+ assert.equal(calls.filter(call=>call.url.endsWith('/api/chat')).length,2);
+ assert.equal(JSON.parse(await readFile(output,'utf8')).status,'SUGGESTION_NOT_APPROVED');
+});
+test('a failed rewrite can be resumed again using the original critique',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-repeat-resume-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),first=join(dir,'first.json'),second=join(dir,'second.json'),third=join(dir,'third.json');
+ await writeFile(input,JSON.stringify(task));
+ let requests=0;
+ const firstFail=async url=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  requests++;
+  return {ok:true,json:async()=>({message:{content:requests===1?JSON.stringify(diagnosis):'not-json'}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,first,{fetchImpl:firstFail}),/невалидный JSON/);
+ const invalidPatch=async url=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  return {ok:true,json:async()=>({message:{content:'still-not-json'}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,second,{
+  fetchImpl:invalidPatch,resumeFrom:first+'.artifacts'
+ }),/невалидный JSON/);
+ assert.equal(await readFile(second+'.artifacts/diagnosis.source-raw.txt','utf8'),
+  await readFile(first+'.artifacts/diagnosis.raw.txt','utf8'));
+ let patchCalls=0;
+ const successfulPatch=async url=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  patchCalls++;
+  return {ok:true,json:async()=>({message:{content:JSON.stringify(candidate)}})};
+ };
+ await runLocalScriptDoctorFiles(input,third,{fetchImpl:successfulPatch,resumeFrom:second+'.artifacts'});
+ assert.equal(patchCalls,1);
+ assert.equal(JSON.parse(await readFile(third,'utf8')).status,'SUGGESTION_NOT_APPROVED');
+ assert.equal(await readFile(third+'.artifacts/diagnosis.source-raw.txt','utf8'),
+  await readFile(first+'.artifacts/diagnosis.raw.txt','utf8'));
 });
 test('a second-pass timeout records an interruptible stage, preserves critique and permits later resume',async(t)=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-doctor-timeout-'));
