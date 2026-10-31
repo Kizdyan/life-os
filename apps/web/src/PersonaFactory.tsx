@@ -9,7 +9,7 @@ import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
-import{createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
+import{applyPersonaImportedProductionBrief,createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
 import type { PersonaTimelineSettings } from './personaTimelineSettings';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -132,7 +132,7 @@ export default function PersonaFactory(){
 
  useEffect(()=>{save(PRODUCTION_DRAFT,production)},[production]);
  useEffect(()=>{const sync=()=>setScreen(screenFromHash());window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[]);
- function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen){
+ function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline){
   if(!activeProjectId||!ideaForSave)return;
   try{
    const rendered=projects.find(project=>project.id===activeProjectId);
@@ -143,7 +143,9 @@ export default function PersonaFactory(){
     ?lastOwnSavedRevision.current.revision:rendered.revision;
    const previous=resolvePersonaProjectSaveBase(localStorage,{...rendered,revision:expectedRevision});
    const now=new Date().toISOString();
-   const next:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+   const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+   const next=importedProduction&&nextScenarioWorkspace
+    ?applyPersonaImportedProductionBrief(candidate,importedProduction,nextScenarioWorkspace):candidate;
    const collection=savePersonaProject(localStorage,next,activeProjectId);
    lastOwnSavedRevision.current={id:activeProjectId,revision:next.revision};
    setProjects(collection.projects);
@@ -155,8 +157,8 @@ export default function PersonaFactory(){
   }
  }
  /** Persist the scenario version before telling the editor that its change succeeded. */
- function persistScenarioWorkspace(next:ScenarioWorkspace,ideaForSave:Idea|null=chosen){
-  if(!activeProjectId||!ideaForSave||!saveActiveProject(next,ideaForSave))
+ function persistScenarioWorkspace(next:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline){
+  if(!activeProjectId||!ideaForSave||!saveActiveProject(next,ideaForSave,importedProduction))
    throw new Error('Не удалось записать версию сценария в хранилище проекта. Черновик сохранён отдельно.');
   setScenarioWorkspace(next);
  }
@@ -218,9 +220,9 @@ export default function PersonaFactory(){
    const importedBrief=next.materials.productionBrief;
    if(!importedBrief)throw new Error('Съёмочный бриф отсутствует после проверки.');
    const updatedWorkspace=addImportedBriefScenario(scenarioWorkspace,importedBrief,new Date().toISOString());
-   persistScenarioWorkspace(updatedWorkspace,importedIdea);
+   persistScenarioWorkspace(updatedWorkspace,importedIdea,next);
    if(importedIdea!==chosen)setChosen(importedIdea);
-   setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('script');setStage('final_qa');
+   setQa(null);setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('script');setStage('final_qa');
    setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Кандидат сохранён в истории сценария без авторского утверждения.`);
   }catch(error){setStatus(`Импорт не выполнен: ${String((error as Error).message||'некорректный JSON')}`)}
  }

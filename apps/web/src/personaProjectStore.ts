@@ -113,6 +113,15 @@ export function createPersonaProject(input:{id:string;title:string;contentType:P
  return {id:input.id,title:input.title,contentType:input.contentType,sourceIdea:input.sourceIdea,script:null,shootingPlan:null,editPlan:null,timeline:null,mediaAssets:[],cloudAssetRefs:[],processing:null,captions:null,socialCaptions:null,stage:'strategy',qa:null,createdAt:input.now,updatedAt:input.now,schemaVersion:1,revision:1};
 }
 
+/** Imported Production Briefs persist scenario, shoot/edit plans and navigation
+ * in one project snapshot, without waiting for a React autosave timer. */
+export function applyPersonaImportedProductionBrief(
+ project:PersonaProject,production:unknown,workspace:PersonaScenarioWorkspace,
+):PersonaProject{
+ return {...project,shootingPlan:production,editPlan:production,scenarioWorkspace:workspace,
+  stage:'final_qa',lastOpenStep:'script',qa:null};
+}
+
 function migrateLegacy(storage:PersonaProjectStorage,id:string,now:string):PersonaProjectCollection{
  const idea=parseLegacy<{id?:unknown;title?:unknown;angle?:unknown;format?:unknown}>(storage,'persona:active-idea:v1');
  if(!idea||typeof idea.title!=='string'||typeof idea.angle!=='string'||!isContentType(idea.format))return emptyCollection();

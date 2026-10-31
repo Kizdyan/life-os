@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {applyPersonaImportedProductionBrief,assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -8,6 +8,25 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
 }
 
 describe('Persona project storage',()=>{
+ it('persists imported scenario and full production plan before the next React effect',()=>{
+  const storage=memoryStorage();
+  const project={...createPersonaProject({id:'atomic-import',title:'First Reels',contentType:'reel',sourceIdea:'Acting',now:'2026-11-01T00:00:00.000Z'}),qa:{pass:true},lastOpenStep:'idea',revision:2};
+  savePersonaProject(storage,project);
+  const workspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-import'};
+  const production={stage:'QA',materials:{shotList:[{order:1,line:'A01'},{order:2,line:'B01'}]}};
+  const imported=applyPersonaImportedProductionBrief({...project,revision:3},production,workspace);
+  savePersonaProject(storage,imported);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.revision).toBe(3);
+  expect(restored.scenarioWorkspace).toEqual(workspace);
+  expect(restored.shootingPlan).toEqual(production);
+  expect(restored.editPlan).toEqual(production);
+  expect(restored.stage).toBe('final_qa');
+  expect(restored.lastOpenStep).toBe('script');
+  expect(restored.qa).toBeNull();
+  expect(project.lastOpenStep).toBe('idea');
+ });
+
  it('rejects async import after the author switches to another project',()=>{
   const storage=memoryStorage();
   const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
