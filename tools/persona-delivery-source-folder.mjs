@@ -12,9 +12,9 @@ const ext=/\.(mp4|mov|mkv|webm|m4v)$/i;
 const fail=message=>{throw Error('Persona folder intake: '+message)};
 
 export function classifyFiles(filenames){
- if(!Array.isArray(filenames)||!filenames.length||filenames.length>12||
+ if(!Array.isArray(filenames)||!filenames.length||filenames.length>42||
     filenames.some(x=>typeof x!=='string'||x.includes('/')||x.includes('\\')||!ext.test(x)))
-  fail('expected 1–12 plainly named video files in a selected folder');
+  fail('expected 1–42 plainly named video files in a selected folder');
  const mapped=filenames.map(name=>{
   const match=/^(A01|B01|A02|B02|A03|B03|A04)(?:_[A-Za-z0-9_-]+)?_take([0-9]{2})\.(?:mp4|mov|mkv|webm|m4v)$/i.exec(name);
   return match?{id:match[1].toUpperCase()+'_take'+match[2],beat:match[1].toUpperCase(),file:name}:null;
@@ -25,8 +25,14 @@ export function classifyFiles(filenames){
   if(ids.some(id=>!mapped.some(item=>item.beat===id)))
    fail('missing required scene: provide seven labelled files or exactly two role recordings');
   mapped.sort((a,b)=>ids.indexOf(a.beat)-ids.indexOf(b.beat)||a.id.localeCompare(b.id));
-  return {layout:'scene-takes',files:mapped.map(({id,file})=>({id,file})),
-    note:'Names identify requested scenes, not verified spoken content. ASR/QA must verify before editing.'};
+  // Underlying Media Engine accepts at most 12 source clips. Always prepare
+  // exactly 7 explicit defaults, never silently infer which take is best.
+  // Other takes remain untouched, visible as alternatives in intake-report.json.
+  const selected=ids.map(beat=>mapped.find(item=>item.beat===beat));
+  const chosen=new Set(selected.map(item=>item.id));
+  const alternatives=mapped.filter(item=>!chosen.has(item.id)).map(({id,file})=>({id,file}));
+  return {layout:'scene-takes',files:selected.map(({id,file})=>({id,file})),alternatives,
+    note:'The lowest-numbered take per scene is an UNREVIEWED default, not an acting-quality ranking. Alternates are listed for optional review.'};
  }
  if(filenames.length===2){
   const roles=filenames.map(name=>{
@@ -55,6 +61,7 @@ export async function makeManifest({sourceFolder,outputFolder,listing=readdir}={
  await writeFile(join(output,'sources.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
  const report={kind:'persona-selected-folder-intake-v1',status:'filenames-only-unverified',
   layout:mapping.layout,sourceCount:manifest.sources.length,
+  alternateTakes:mapping.alternatives??[],
   origin:'explicitly-selected-one-folder',recursiveScan:false,
   autoApproval:false,sourceOriginalsModified:false,notes:[
    mapping.note,
