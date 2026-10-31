@@ -194,7 +194,7 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  catch(error){if(error.code!=='ENOENT')throw error}
  const bytes=await readFile(input);
  if(bytes.length>MAX_FILE_BYTES)throw Error('Сценарный файл превышает 100 КБ');
- let resumeDiagnosis;
+ let resumeDiagnosis,originalDiagnosisRaw;
  if(options.resumeFrom!==undefined){
   if(typeof options.resumeFrom!=='string'||!options.resumeFrom.trim())
    throw Error('Resume: invalid previous artifacts directory');
@@ -208,8 +208,30 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
   const failure=JSON.parse(await readFile(resolve(prev,'failure.json'),'utf8'));
   if(!['FAILED','TIMEOUT','CANCELLED'].includes(failure.state))
    throw Error('Resume: previous run was not a recorded failed or interrupted run');
+  if(typeof failure.stage!=='string'||!failure.stage.startsWith('revision.'))
+   throw Error('Resume: previous run did not fail during second-pass editing');
+  // Ensure this is an interrupted edit, not a completed proposal with a
+  // missing success marker. Never regenerate after output already exists.
+  if(typeof previousRun.outputFile!=='string'||!previousRun.outputFile.trim())
+   throw Error('Resume: previous output path is missing');
+  try{await access(previousRun.outputFile);throw Error('Resume: previous suggestion already exists')}
+  catch(error){if(error.code!=='ENOENT')throw error}
   resumeDiagnosis=JSON.parse(await readFile(resolve(prev,'diagnosis.validated.json'),'utf8'));
-  verifyDiagnosis(resumeDiagnosis,validateDoctorTask(JSON.parse(bytes.toString('utf8'))));
+  const savedTask=validateDoctorTask(JSON.parse(bytes.toString('utf8')));
+  verifyDiagnosis(resumeDiagnosis,savedTask);
+  // Schema validation is not an integrity check: valid-looking edits to the
+  // critique must also be rejected. Recover the exact original model text,
+  // including across a second or later failed resume.
+  try{originalDiagnosisRaw=await readFile(resolve(prev,'diagnosis.raw.txt'),'utf8')}
+  catch(error){
+   if(error.code!=='ENOENT')throw error;
+   originalDiagnosisRaw=await readFile(resolve(prev,'diagnosis.source-raw.txt'),'utf8');
+  }
+  let canonicalDiagnosis;
+  try{canonicalDiagnosis=verifyDiagnosis(JSON.parse(originalDiagnosisRaw),savedTask)}
+  catch{throw Error('Resume: original raw diagnosis is invalid or damaged')}
+  if(JSON.stringify(canonicalDiagnosis)!==JSON.stringify(resumeDiagnosis))
+   throw Error('Resume: saved diagnosis differs from original Ollama critique');
  }
  const artifacts=resolve(output+'.artifacts');
  await mkdir(artifacts); // fail if a previous experiment exists; never overwrite
@@ -220,6 +242,10 @@ export async function runLocalScriptDoctorFiles(inputPath,outputPath,options={})
  await save('run.json',{kind:'persona-local-doctor-run-v2',model:options.model??DEFAULT_MODEL,
   state:'STARTED',startedAt:new Date().toISOString(),sourceFile:input,outputFile:output});
  try{
+  // This is a verified COPY from the earlier run, not a new Ollama response.
+  // Keeping it permits another safe recovery if this patch pass also fails.
+  if(originalDiagnosisRaw!==undefined)
+   await save('diagnosis.source-raw.txt',originalDiagnosisRaw);
   const result=await runLocalScriptDoctor(JSON.parse(bytes.toString('utf8')),{...options,
    ...(resumeDiagnosis===undefined?{}:{resumeDiagnosis}),
    onStage:async(stage,value)=>{
