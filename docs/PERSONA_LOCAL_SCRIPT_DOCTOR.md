@@ -92,6 +92,18 @@ node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\pat
 
 The old artifact set must contain `task.json`, `run.json`, `failure.json`, `diagnosis.validated.json` and the original raw critique (`diagnosis.raw.txt`, or `diagnosis.source-raw.txt` for repeated recoveries). The saved task must match the new input exactly, and the previously used model must match. The recovered critique is **independently revalidated** against the saved source task before the second call; changes to the task, invalid comments or cross-project reuse fail closed. Only the **rewrite** call is made (after the normal local model availability check). The retry directory records `diagnosis.reused.json`, the revalidated diagnosis and new patch-stage evidence. No new `diagnosis.raw.txt` is fabricated. Instead, the retry preserves a distinctly named verified copy in `diagnosis.source-raw.txt`. The saved canonical critique is checked against that original Ollama response, so even a structurally valid but manually altered finding is refused. Resume is allowed only for a recorded failure during the **rewrite** stage and when the earlier proposal file does not already exist. The same critique can be reused after multiple failed rewrite attempts without re-running diagnosis. This is not a guarantee of creative improvement.
 
+### Recovery after a hard process interruption
+
+A Windows shutdown, forced termination or power loss may leave a fully saved critique but **no `failure.json`**. For safety, ordinary `--resume-from` refuses these ambiguous folders: the original process may still be running.
+
+**First verify in Task Manager that the previous Script Doctor Node process is no longer running** (and any previous Qwen3 generation has stopped). Then explicitly opt in with a fresh output name:
+
+```powershell
+node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\path\\doctor-suggestion-hard-stop-retry.json" --model qwen3:4b-instruct --timeout-ms 180000 --resume-from "C:\\path\\doctor-suggestion.json.artifacts" --recover-interrupted
+```
+
+The run must have a completed `diagnosis.validated.json` and its original `diagnosis.raw.txt` (or `diagnosis.source-raw.txt` from an earlier retry); the task and model must match, original response must revalidate against the saved critique, and neither `success.json` nor the original proposal file may exist. The new `run.json` records `recovery.kind: UNRECORDED_INTERRUPTION`. No completed output is overwritten, and the critique is not recomputed. Do not use this flag while another Script Doctor process is active. `--recover-interrupted` without `--resume-from` fails closed.
+
 Old unsuccessful runs whose folders contain only `task.json` cannot reconstruct missing Ollama responses retrospectively. A new local run is required to generate stage artifacts; do not claim that historic reasons have been recovered.
 
 ## Learning from an explicit rejection
