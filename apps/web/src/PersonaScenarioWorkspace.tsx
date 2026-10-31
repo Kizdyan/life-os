@@ -124,9 +124,9 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     beats:staleDraft.beats,createdAt:new Date().toISOString(),
     reason:staleDraft.reason.trim()||'Явное восстановление несохранённой редакции после импорта.',
    });
+   update({script:restored}); // Throws if project storage rejects the new version.
    clearPersonaScenarioDraft(draftStorage,project.id);
    setStaleDraft(null);
-   update({script:restored});
    setError('');
   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось восстановить черновик.');}
  };
@@ -207,8 +207,9 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    if(staleDraft||corruptDraft)throw new Error('Сначала восстановите или разрешите сохранённый черновик.');
    assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});
+   update({script:next}); // Sync project persistence happens before journal removal.
    clearPersonaScenarioDraft(draftStorage,project.id);
-   update({script:next});setRevisionReason('');setError('');
+   setRevisionReason('');setError('');
   }
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
  };

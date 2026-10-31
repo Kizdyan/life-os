@@ -105,13 +105,19 @@ export default function PersonaFactory(){
 
  useEffect(()=>{save(PRODUCTION_DRAFT,production)},[production]);
  useEffect(()=>{const sync=()=>setScreen(screenFromHash());window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[]);
- function saveActiveProject(){
+ function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace){
   if(!activeProjectId||!chosen)return;
   const previous=projects.find(project=>project.id===activeProjectId);
   if(!previous)return;
   const now=new Date().toISOString();
-  const next:PersonaProject={...previous,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+  const next:PersonaProject={...previous,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
   try{const collection=savePersonaProject(localStorage,next,activeProjectId);setProjects(collection.projects);return true}catch{setSaveState('error');setStatus('Не удалось сохранить проект в этом браузере. Сразу сохраните резервную копию.');return false}
+ }
+ /** Persist the scenario version before telling the editor that its change succeeded. */
+ function persistScenarioWorkspace(next:ScenarioWorkspace){
+  if(!activeProjectId||!chosen||!saveActiveProject(next))
+   throw new Error('Не удалось записать версию сценария в хранилище проекта. Черновик сохранён отдельно.');
+  setScenarioWorkspace(next);
  }
  useEffect(()=>{if(!activeProjectId||!chosen)return;setSaveState('saving');const timer=window.setTimeout(()=>{if(saveActiveProject())setSaveState('saved')},350);return()=>window.clearTimeout(timer)},[activeProjectId,chosen,draft,qa,stage,production,timeline,mediaProbe,workspaceStep,scenarioWorkspace]);
  const visibleIdeas=useMemo(()=>ideas.filter(x=>x.status!=='used'&&x.status!=='rejected'),[ideas]);
@@ -145,7 +151,7 @@ export default function PersonaFactory(){
    const importedBrief=next.materials.productionBrief;
    if(!importedBrief)throw new Error('Съёмочный бриф отсутствует после проверки.');
    const updatedWorkspace=addImportedBriefScenario(scenarioWorkspace,importedBrief,new Date().toISOString());
-   setScenarioWorkspace(updatedWorkspace);
+   persistScenarioWorkspace(updatedWorkspace);
    setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('script');setStage('final_qa');
    setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Кандидат сохранён в истории сценария без авторского утверждения.`);
   }catch(error){setStatus(`Импорт не выполнен: ${String((error as Error).message||'некорректный JSON')}`)}
@@ -196,7 +202,7 @@ export default function PersonaFactory(){
    {showBank&&<div className="ideaBank"><div className="bankTop"><b>Банк идей</b><span>Использованные и отклонённые темы сюда не возвращаются.</span></div>{visibleIdeas.map((idea,i)=><article className="ideaRow" key={idea.id}><button className="ideaSelect" onClick={()=>select(idea)}><small>{String(i+1).padStart(2,'0')} · {idea.format.toUpperCase()} · {idea.score}/100</small><strong>{idea.title}</strong><span>{idea.angle}</span></button><button className="later" onClick={()=>remember(idea,'later')}>На потом</button><button className="reject" onClick={()=>remember(idea,'rejected')}>Неинтересно</button></article>)}</div>}
   </>}
   {chosen&&!draft&&(workspaceStep==='idea'||workspaceStep==='assets')&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
-  {chosen&&activeProjectId&&workspaceStep==='script'&&<PersonaScenarioWorkspace project={projects.find(project=>project.id===activeProjectId)??createPersonaProject({id:activeProjectId,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,now:new Date().toISOString()})} workspace={scenarioWorkspace} creativeProfile={{priorities:['смысловые склейки','естественный голос','актёрские паузы'],constraints:['не менять внешность','не выдавать метаданные за просмотр','не копировать чужой сценарий']}} onChange={setScenarioWorkspace} onCreateBrief={input=>createScenarioProductionBrief(input)}/>}
+  {chosen&&activeProjectId&&workspaceStep==='script'&&<PersonaScenarioWorkspace project={projects.find(project=>project.id===activeProjectId)??createPersonaProject({id:activeProjectId,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,now:new Date().toISOString()})} workspace={scenarioWorkspace} creativeProfile={{priorities:['смысловые склейки','естественный голос','актёрские паузы'],constraints:['не менять внешность','не выдавать метаданные за просмотр','не копировать чужой сценарий']}} onChange={persistScenarioWorkspace} onCreateBrief={input=>createScenarioProductionBrief(input)}/>}
   {chosen?.format==='photo'&&workspaceStep==='edit'&&<PersonaPhotoEditor/>}
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}
   {chosen&&workspaceStep==='edit'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaVideoTimeline key={activeProjectId??chosen.id} projectId={activeProjectId??chosen.id} initialTimeline={timeline} onTimelineChange={setTimeline}/>}
