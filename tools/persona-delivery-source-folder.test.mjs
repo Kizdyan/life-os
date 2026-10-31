@@ -30,6 +30,30 @@ test('fails closed on missing scenes, unclear names, duplicated take IDs',()=>{
  assert.throws(()=>classifyFiles(['actor_long.mp4','ambiguous.mp4']),/ambiguous names/);
  assert.throws(()=>classifyFiles([...scenes,'A01_take01.mov']),/duplicate take number/);
 });
+test('21 recorded takes yield only seven unreviewed first-take defaults and 14 alternatives',()=>{
+ const names=scenes.flatMap(name=>[name,name.replace('take01','take02'),name.replace('take01','take03')]);
+ const mapping=classifyFiles(names);
+ assert.equal(mapping.files.length,7);
+ assert.equal(mapping.alternatives.length,14);
+ assert.equal(mapping.layout,'scene-takes');
+ assert.ok(mapping.files.every(item=>item.id.endsWith('_take01')));
+ assert.match(mapping.note,/UNREVIEWED/);
+});
+test('multi-take folder does not silently exceed the underlying 12-video input limit',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'persona-many-takes-'));
+ t.after(()=>rm(base,{recursive:true,force:true}));
+ const src=join(base,'selected-takes'),dst=join(base,'output');
+ await mkdir(src);
+ for(const name of scenes)
+  for(const suffix of ['take01','take02','take03'])
+   await writeFile(join(src,name.replace('take01',suffix)),'test fixture');
+ const created=await makeManifest({sourceFolder:src,outputFolder:dst});
+ const manifest=JSON.parse(await readFile(created.manifest,'utf8'));
+ const report=JSON.parse(await readFile(created.report,'utf8'));
+ assert.equal(manifest.sources.length,7);
+ assert.equal(report.alternateTakes.length,14);
+ assert.equal(report.status,'filenames-only-unverified');
+});
 test('selected folder is scanned once, never recursively or uploaded; manifest is local',async t=>{
  const base=await mkdtemp(join(tmpdir(),'persona-selected-folder-'));
  t.after(()=>rm(base,{recursive:true,force:true}));
