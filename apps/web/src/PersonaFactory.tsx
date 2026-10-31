@@ -6,7 +6,7 @@ import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
-import { readPersonaScenarioDraft } from './personaScenarioDraftJournal';
+import { personaScenarioDraftExists } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
 import{createPersonaProject,loadPersonaProjects,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
@@ -136,9 +136,11 @@ export default function PersonaFactory(){
  async function importProductionBrief(file:File|undefined){
   if(!file||!chosen)return;
   try{
-   if(activeProjectId&&readPersonaScenarioDraft(localStorage,activeProjectId))
-    throw new Error('В этом проекте есть несохранённые правки сценария. Откройте этап «Сценарий»: сохраните, восстановите или отбросьте черновик перед импортом.');
+   if(activeProjectId&&personaScenarioDraftExists(localStorage,activeProjectId))
+    throw new Error('В этом проекте есть несохранённый черновик. Сначала сохраните или разрешите его на этапе «Сценарий».');
    const decoded=JSON.parse(await file.text());
+   if(activeProjectId&&personaScenarioDraftExists(localStorage,activeProjectId))
+    throw new Error('Во время чтения файла появился несохранённый черновик. Импорт отменён.');
    const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
    const importedBrief=next.materials.productionBrief;
    if(!importedBrief)throw new Error('Съёмочный бриф отсутствует после проверки.');
