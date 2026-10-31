@@ -52,13 +52,29 @@ export function matchingPersonaScenarioDraft(
 export function personaScenarioDraftExists(storage:DraftStorage,projectId:string):boolean{
  try{return storage.getItem(personaDraftKey(projectId))!==null}catch{return true}
 }
-export function savePersonaScenarioDraft(storage:DraftStorage,draft:PersonaScenarioDraftJournal){
+/** Compare-and-swap write: never overwrite a draft that changed in another editor instance. */
+export function savePersonaScenarioDraft(
+ storage:DraftStorage,draft:PersonaScenarioDraftJournal,expectedPreviousRaw:string|null,
+):string{
  if(!validDraft(draft,draft.projectId))throw Error('invalid_persona_scenario_draft');
- const previous=storage.getItem(personaDraftKey(draft.projectId));
+ const key=personaDraftKey(draft.projectId);
+ const previous=storage.getItem(key);
+ if(previous!==expectedPreviousRaw)throw Error('persona_scenario_draft_changed_before_write');
  if(previous!==null&&!readPersonaScenarioDraft(storage,draft.projectId))
   throw Error('corrupt_persona_scenario_draft_preserved');
- storage.setItem(personaDraftKey(draft.projectId),JSON.stringify(draft));
+ const serialized=JSON.stringify(draft);
+ storage.setItem(key,serialized);
+ return serialized;
 }
-export function clearPersonaScenarioDraft(storage:DraftStorage,projectId:string){
- storage.removeItem(personaDraftKey(projectId));
+/** Compare-and-delete: a newer draft is never removed by an older editor instance. */
+export function clearPersonaScenarioDraft(
+ storage:DraftStorage,projectId:string,expectedRaw:string|null,
+){
+ const key=personaDraftKey(projectId);
+ const current=storage.getItem(key);
+ if(current!==expectedRaw)throw Error('persona_scenario_draft_changed_before_clear');
+ if(current!==null)storage.removeItem(key);
+}
+export function readPersonaScenarioDraftRaw(storage:DraftStorage,projectId:string):string|null{
+ try{return storage.getItem(personaDraftKey(projectId))}catch{return null}
 }

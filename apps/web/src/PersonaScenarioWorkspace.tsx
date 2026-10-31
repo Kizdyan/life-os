@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
- readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
+ readPersonaScenarioDraft,readPersonaScenarioDraftRaw,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
  personaScenarioDraftExists,personaDraftKey,resolvePersonaScenarioDraftStorage,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
@@ -54,6 +54,7 @@ function draftBeats(idea:ScenarioIdea):ScenarioScriptBeat[]{
 export default function PersonaScenarioWorkspace({project,workspace:received,creativeProfile,onChange,onCreateBrief}:Props){
  const workspace=received??emptyWorkspace();
  const draftStorage=resolvePersonaScenarioDraftStorage();
+ const draftRawRef=useRef<string|null>(readPersonaScenarioDraftRaw(draftStorage,project.id));
  const[selectedIdeaId,setSelectedIdeaId]=useState(workspace.selectedIdeaId??'');
  const[link,setLink]=useState('');const[title,setTitle]=useState('');const[platform,setPlatform]=useState<ScenarioPlatform>('youtube');
  const[analysisNote,setAnalysisNote]=useState('');
@@ -73,6 +74,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   personaScenarioDraftExists(draftStorage,project.id)&&!readPersonaScenarioDraft(draftStorage,project.id));
  const[corruptBackupExported,setCorruptBackupExported]=useState(false);
  const[corruptBackupConfirmed,setCorruptBackupConfirmed]=useState(false);
+ const[corruptBackupRaw,setCorruptBackupRaw]=useState<string|null>(null);
  const[staleDraft,setStaleDraft]=useState<PersonaScenarioDraftJournal|null>(()=>{
   const saved=readPersonaScenarioDraft(draftStorage,project.id);
   return saved&&(saved.sourceRevisionId!==script?.currentRevisionId||saved.ideaId!==script?.idea.id)?saved:null;
@@ -98,13 +100,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   const dirty=JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats)||Boolean(revisionReason.trim());
   try{
    if(dirty){
-    savePersonaScenarioDraft(draftStorage,{
+    draftRawRef.current=savePersonaScenarioDraft(draftStorage,{
      version:1,projectId:project.id,ideaId:script.idea.id,
      sourceRevisionId:script.currentRevisionId,beats,reason:revisionReason,
      savedAt:new Date().toISOString(),
-    });
+    },draftRawRef.current);
    }else if(stored&&stored.sourceRevisionId===script.currentRevisionId){
-    clearPersonaScenarioDraft(draftStorage,project.id);
+    clearPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
+    draftRawRef.current=null;
    }
   }catch{
    setError('Не удалось сохранить страховочную копию черновика. Перед уходом сохраните версию сценария.');
@@ -128,14 +131,22 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     beats:staleDraft.beats,createdAt:new Date().toISOString(),
     reason:staleDraft.reason.trim()||'Явное восстановление несохранённой редакции после импорта.',
    });
+   if(readPersonaScenarioDraftRaw(draftStorage,project.id)!==draftRawRef.current)
+    throw new Error('Черновик изменился в другой вкладке. Обновите проект и сравните версии.');
    update({script:restored}); // Throws if project storage rejects the new version.
-   clearPersonaScenarioDraft(draftStorage,project.id);
+   clearPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
+   draftRawRef.current=null;
    setStaleDraft(null);
    setError('');
   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось восстановить черновик.');}
  };
  const discardStaleDraft=()=>{
-  try{clearPersonaScenarioDraft(draftStorage,project.id);setStaleDraft(null);setError('');}
+  try{
+   if(readPersonaScenarioDraftRaw(draftStorage,project.id)!==draftRawRef.current)
+    throw new Error('Черновик изменился в другой вкладке. Он не удалён.');
+   clearPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
+   draftRawRef.current=null;setStaleDraft(null);setError('');
+  }
   catch{setError('Не удалось сбросить страховочную копию.');}
  };
  const exportCorruptDraft=()=>{
@@ -148,25 +159,27 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    document.body.appendChild(link);link.click();link.remove();
    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
    // A click can be blocked by the browser; only the author can confirm a real file exists.
+   setCorruptBackupRaw(raw);
    setCorruptBackupExported(true);setCorruptBackupConfirmed(false);setError('');
   }catch{setError('Не удалось скачать резервную копию. Данные сохранены в браузере.');}
  };
  const discardCorruptDraft=()=>{
   if(!corruptBackupExported||!corruptBackupConfirmed){setError('Сначала скачайте резервную копию и подтвердите наличие файла на устройстве.');return}
   try{
-   clearPersonaScenarioDraft(draftStorage,project.id);
-   setCorruptDraft(false);setCorruptBackupExported(false);setCorruptBackupConfirmed(false);setError('');
+   clearPersonaScenarioDraft(draftStorage,project.id,corruptBackupRaw);
+   draftRawRef.current=null;
+   setCorruptDraft(false);setCorruptBackupRaw(null);setCorruptBackupExported(false);setCorruptBackupConfirmed(false);setError('');
   }catch{setError('Не удалось удалить повреждённую копию после экспорта.');}
  };
  /** Journal every edit synchronously, before React can navigate/unmount the form. */
  const journalEdit=(nextBeats:ScenarioScriptBeat[],nextReason:string):boolean=>{
   if(!script||staleDraft||corruptDraft)return false;
   try{
-   savePersonaScenarioDraft(draftStorage,{
+   draftRawRef.current=savePersonaScenarioDraft(draftStorage,{
     version:1,projectId:project.id,ideaId:script.idea.id,
     sourceRevisionId:script.currentRevisionId,beats:nextBeats,
     reason:nextReason,savedAt:new Date().toISOString(),
-   });
+   },draftRawRef.current);
    setError('');
    return true;
   }catch{
@@ -235,8 +248,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    if(staleDraft||corruptDraft)throw new Error('Сначала восстановите или разрешите сохранённый черновик.');
    assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});
+   const expectedDraftRaw=draftRawRef.current;
+   if(readPersonaScenarioDraftRaw(draftStorage,project.id)!==expectedDraftRaw)
+    throw new Error('Черновик изменился в другой вкладке. Версия не сохранена; обновите проект и сравните правки.');
    update({script:next}); // Sync project persistence happens before journal removal.
-   clearPersonaScenarioDraft(draftStorage,project.id);
+   clearPersonaScenarioDraft(draftStorage,project.id,expectedDraftRaw);
+   draftRawRef.current=null;
    setRevisionReason('');setError('');
   }
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
