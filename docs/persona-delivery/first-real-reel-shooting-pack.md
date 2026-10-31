@@ -11,10 +11,10 @@
 ```powershell
 npm run persona:delivery:check
 npm run persona:delivery:test
-npm run persona:delivery:animatic -- "C:\Users\Kostya\AppData\Local\Temp\persona-actor-composer-music-sketches-20261031\sketch-b-false-lullaby-sting.wav" "D:\Persona\actor-composer-01\animatic-01"
+npm run persona:delivery:animatic -- "C:\Users\Kostya\Documents\LifeOS\Persona\private-media\actor-composer-20261031\sketch-b-false-lullaby-sting.wav" "D:\Persona\actor-composer-01\animatic-01"
 ```
 
-Откройте `D:\Persona\actor-composer-01\animatic-01\animatic.html` в браузере. Там есть **исходный V1 и редакторский кандидат**, синхронизированные карточки семи сцен и оригинальный музыкальный WAV-эскиз примерно в конце B03. Звук встроен непосредственно в HTML, поэтому сам аниматик сохраняется после очистки временной папки. Соседний `evidence.json` содержит длительность и SHA-256 аудио, без абсолютного пути и личных данных. Для нового запуска выбирайте **новую** папку вывода; существующие файлы не перезаписываются.
+Уже созданный аниматик можно открыть напрямую: `C:\Users\Kostya\Documents\LifeOS\Persona\private-media\actor-composer-20261031\planning-animatic-html-20261031\animatic.html`. Если нужна новая генерация, откройте `D:\Persona\actor-composer-01\animatic-01\animatic.html` в браузере после команды выше. Там есть **исходный V1 и редакторский кандидат**, синхронизированные карточки семи сцен и оригинальный музыкальный WAV-эскиз примерно в конце B03. Звук встроен непосредственно в HTML, поэтому сам аниматик сохраняется после очистки временной папки. Соседний `evidence.json` содержит длительность и SHA-256 аудио, без абсолютного пути и личных данных. Для нового запуска выбирайте **новую** папку вывода; существующие файлы не перезаписываются.
 
 Аниматик не доказывает, что произнесённые вслух реплики поместятся в 31 секунду, и не даёт художественного PASS. Если файл WAV уже исчез из Temp, сначала восстановите оригинальный эскиз: программа не подменяет пропавшую музыку тишиной.
 
