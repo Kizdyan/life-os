@@ -16,7 +16,6 @@ export default function PersonaScenarioVersionHistory({script,unsavedChanges,onR
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
   useEffect(()=>{setSelectedId(choosePrevious());setError("");setMessage("");},[script.currentRevisionId]);
-  if(script.revisions.length<2)return null;
   const selected=script.revisions.find(item=>item.id===selectedId);
   const differences=selected?comparePersonaScenarioRevisions(selected,script.currentRevision):[];
   const restore=()=>{

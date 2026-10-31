@@ -5,6 +5,7 @@ import PersonaVideoTimeline from './PersonaVideoTimeline';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
+import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
 import{createPersonaProject,loadPersonaProjects,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
@@ -136,8 +137,12 @@ export default function PersonaFactory(){
   try{
    const decoded=JSON.parse(await file.text());
    const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
+   const importedBrief=next.materials.productionBrief;
+   if(!importedBrief)throw new Error('Съёмочный бриф отсутствует после проверки.');
+   const updatedWorkspace=addImportedBriefScenario(scenarioWorkspace,importedBrief,new Date().toISOString());
+   setScenarioWorkspace(updatedWorkspace);
    setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('script');setStage('final_qa');
-   setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Нужна редакторская проверка; утверждение из файла не принимается.`);
+   setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Кандидат сохранён в истории сценария без авторского утверждения.`);
   }catch(error){setStatus(`Импорт не выполнен: ${String((error as Error).message||'некорректный JSON')}`)}
  }
  function reviseProductionBrief(brief:PersonaProductionBrief){
