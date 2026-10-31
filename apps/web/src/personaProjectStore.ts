@@ -115,11 +115,22 @@ export function createPersonaProject(input:{id:string;title:string;contentType:P
 
 /** Imported Production Briefs persist scenario, shoot/edit plans and navigation
  * in one project snapshot, without waiting for a React autosave timer. */
+/** Persist an editorial milestone as one coherent production snapshot. */
+export function applyPersonaProductionMilestone(
+ project:PersonaProject,production:unknown,
+ options:{stage?:PersonaProjectStage;lastOpenStep?:string;resetQa?:boolean}={},
+):PersonaProject{
+ return {...project,shootingPlan:production,editPlan:production,
+  stage:options.stage??project.stage,
+  lastOpenStep:options.lastOpenStep??project.lastOpenStep,
+  qa:options.resetQa?null:project.qa};
+}
+
 export function applyPersonaImportedProductionBrief(
  project:PersonaProject,production:unknown,workspace:PersonaScenarioWorkspace,
 ):PersonaProject{
- return {...project,shootingPlan:production,editPlan:production,scenarioWorkspace:workspace,
-  stage:'final_qa',lastOpenStep:'script',qa:null};
+ return applyPersonaProductionMilestone({...project,scenarioWorkspace:workspace},production,
+  {stage:'final_qa',lastOpenStep:'script',resetQa:true});
 }
 
 function migrateLegacy(storage:PersonaProjectStorage,id:string,now:string):PersonaProjectCollection{

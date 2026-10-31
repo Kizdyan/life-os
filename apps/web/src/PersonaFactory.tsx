@@ -9,7 +9,7 @@ import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
-import{applyPersonaImportedProductionBrief,createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
+import{applyPersonaImportedProductionBrief,applyPersonaProductionMilestone,createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
 import type { PersonaTimelineSettings } from './personaTimelineSettings';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -94,6 +94,7 @@ type MediaProbe={name:string;bytes:number;mime:string;kind:'video'|'image';width
 type Stage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
 type PersonaScreen='home'|'projects'|'project';
 type WorkspaceStep='idea'|'script'|'assets'|'edit'|'review'|'export';
+type ProductionMilestone={pipeline:PersonaProductionPipeline;stage?:Stage;step?:WorkspaceStep;resetQa?:boolean};
 const HISTORY='lifeos:persona:idea-history:v2';
 const PRODUCTION_DRAFT='lifeos:persona:production-draft:v1';
 const stages:[Stage,string][]=[['strategy','Стратегия'],['needs_assets','Исходник'],['production','Производство'],['marketing_qa','Маркетолог'],['media_qa','Медиа QA'],['final_qa','Самопроверка'],['approval','Твоё решение']];
@@ -132,7 +133,7 @@ export default function PersonaFactory(){
 
  useEffect(()=>{save(PRODUCTION_DRAFT,production)},[production]);
  useEffect(()=>{const sync=()=>setScreen(screenFromHash());window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[]);
- function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline){
+ function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone){
   if(!activeProjectId||!ideaForSave)return;
   try{
    const rendered=projects.find(project=>project.id===activeProjectId);
@@ -145,7 +146,9 @@ export default function PersonaFactory(){
    const now=new Date().toISOString();
    const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
    const next=importedProduction&&nextScenarioWorkspace
-    ?applyPersonaImportedProductionBrief(candidate,importedProduction,nextScenarioWorkspace):candidate;
+    ?applyPersonaImportedProductionBrief(candidate,importedProduction,nextScenarioWorkspace)
+    :milestone?applyPersonaProductionMilestone(candidate,milestone.pipeline,
+     {stage:milestone.stage,lastOpenStep:milestone.step,resetQa:milestone.resetQa}):candidate;
    const collection=savePersonaProject(localStorage,next,activeProjectId);
    lastOwnSavedRevision.current={id:activeProjectId,revision:next.revision};
    setProjects(collection.projects);
@@ -161,6 +164,15 @@ export default function PersonaFactory(){
   if(!activeProjectId||!ideaForSave||!saveActiveProject(next,ideaForSave,importedProduction))
    throw new Error('Не удалось записать версию сценария в хранилище проекта. Черновик сохранён отдельно.');
   setScenarioWorkspace(next);
+ }
+ /** Never present a production decision as saved before browser storage confirms it. */
+ function persistProductionMilestone(next:PersonaProductionPipeline,options:Omit<ProductionMilestone,'pipeline'>={}){
+  if(!activeProjectId||!chosen||!saveActiveProject(undefined,chosen,undefined,{pipeline:next,...options}))
+   throw new Error('Хранилище не подтвердило сохранение съёмочного брифа. Предыдущее решение сохранено.');
+  setProduction(next);
+  if(options.stage)setStage(options.stage);
+  if(options.step)setWorkspaceStep(options.step);
+  if(options.resetQa)setQa(null);
  }
  useEffect(()=>{if(!activeProjectId||!chosen)return;setSaveState('saving');const timer=window.setTimeout(()=>{if(saveActiveProject())setSaveState('saved')},350);return()=>window.clearTimeout(timer)},[activeProjectId,chosen,draft,qa,stage,production,timeline,mediaProbe,workspaceStep,scenarioWorkspace]);
  const visibleIdeas=useMemo(()=>ideas.filter(x=>x.status!=='used'&&x.status!=='rejected'),[ideas]);
@@ -198,8 +210,24 @@ export default function PersonaFactory(){
  function navigate(next:PersonaScreen){const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
  function createQuickProject(format:PersonaContentType){const labels:Record<PersonaContentType,string>={reel:'Новый Reels',short:'Новый Shorts',story:'Новая история',photo:'Новое фото',carousel:'Новая карусель'};if(select({id:newProjectId(),title:labels[format],angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'}))window.setTimeout(()=>navigate('project'),0)}
  function continueProject(project:PersonaProject){if(openProject(project))window.setTimeout(()=>navigate('project'),0)}
- function createProductionBrief(idea=chosen,angle?:string){if(!idea)return;const next=buildPersonaProductionWorkflow({...idea,angle:angle??idea.angle});setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStatus('Съёмочный бриф создан детерминированно из выбранной идеи. Проверь свободные утверждения перед одобрением.');}
- function createScenarioProductionBrief(brief:PersonaProductionBrief){if(!chosen)return;try{const next=importPersonaProductionBrief({brief,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('final_qa');setWorkspaceStep('review');setStatus('Реплики, действия и длительности утверждённого сценария перенесены без шаблонной перегенерации. Съёмочный бриф ожидает отдельной редакторской проверки.');}catch(error){setStatus('Передача сценария отклонена: '+String((error as Error).message||error))}}
+ function createProductionBrief(idea=chosen,angle?:string){
+  if(!idea)return;
+  try{
+   const next=buildPersonaProductionWorkflow({...idea,angle:angle??idea.angle});
+   persistProductionMilestone(next);
+   setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
+   setStatus('Съёмочный бриф создан и сохранён. Проверь свободные утверждения перед одобрением.');
+  }catch(error){setStatus('Бриф не сохранён: '+String((error as Error).message||error))}
+ }
+ function createScenarioProductionBrief(brief:PersonaProductionBrief){
+  if(!chosen)return;
+  try{
+   const next=importPersonaProductionBrief({brief,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
+   persistProductionMilestone(next,{stage:'final_qa',step:'review',resetQa:true});
+   setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
+   setStatus('Утверждённый сценарий перенесён в сохранённый съёмочный бриф. Редакторская проверка брифа остаётся отдельной.');
+  }catch(error){setStatus('Передача сценария отклонена: '+String((error as Error).message||error))}
+ }
  async function importProductionBrief(file:File|undefined){
   if(!file||!chosen)return;
   try{
@@ -228,11 +256,32 @@ export default function PersonaFactory(){
  }
  function reviseProductionBrief(brief:PersonaProductionBrief){
   if(!production)return;
-  try{const next=revisePersonaProductionBrief(production,brief);setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('final_qa');setStatus('Правка сохранена. Предыдущее утверждение сброшено, структурная проверка выполнена повторно.');}
-  catch(error){setStatus(`Правка не сохранена: ${String((error as Error).message||'некорректный бриф')}`)}
+  try{
+   const next=revisePersonaProductionBrief(production,brief);
+   persistProductionMilestone(next,{stage:'final_qa'});
+   setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
+   setStatus('Правка сохранена. Предыдущее утверждение сброшено, структурная проверка выполнена повторно.');
+  }catch(error){setStatus(`Правка не сохранена: ${String((error as Error).message||'некорректный бриф')}`)}
  }
- function decideProduction(decision:'approved'|'rejected'){if(!production)return;try{if(decision==='approved'&&production.materials.qa?.status==='needs_revision')throw new Error('Нельзя утвердить бриф с ошибками QA.');if(decision==='approved'&&(production.input.idea.angle.trim()!==production.materials.productionBrief?.sourceAngle||production.input.idea.title.trim()!==production.materials.productionBrief?.sourceTitle||production.input.idea.format!==production.materials.productionBrief?.sourceFormat))throw new Error('Сценарий устарел: сначала обновите бриф после правки.');const next=recordPersonaEditorialDecision(production,{decision,editor:productionEditor,comment:productionComment,factReviewCompleted:productionFactsChecked,decidedAt:new Date().toISOString()});setProduction(next);setStatus(decision==='approved'?'Бриф одобрен для съёмки. Публикация и монтаж не выполнялись.':'Бриф возвращён на доработку; сценарий, кадры и инструкции сохранены.');}catch(error){setStatus(String((error as Error).message||'Не удалось записать редакторское решение.'));}}
- function updateProductionAngle(angle:string){if(!production)return;setProduction({...production,stage:'QA',input:{...production.input,idea:{...production.input.idea,angle}},statuses:{...production.statuses,QA:'needs_revision',READY_FOR_SHOOT:'pending'}});setProductionFactsChecked(false);setStatus('Идея изменена. Обновите бриф, прежде чем утверждать съёмку.');}
+ function decideProduction(decision:'approved'|'rejected'){
+  if(!production)return;
+  try{
+   if(decision==='approved'&&production.materials.qa?.status==='needs_revision')throw new Error('Нельзя утвердить бриф с ошибками QA.');
+   if(decision==='approved'&&(production.input.idea.angle.trim()!==production.materials.productionBrief?.sourceAngle||production.input.idea.title.trim()!==production.materials.productionBrief?.sourceTitle||production.input.idea.format!==production.materials.productionBrief?.sourceFormat))throw new Error('Сценарий устарел: сначала обновите бриф после правки.');
+   const next=recordPersonaEditorialDecision(production,{decision,editor:productionEditor,comment:productionComment,factReviewCompleted:productionFactsChecked,decidedAt:new Date().toISOString()});
+   persistProductionMilestone(next);
+   setStatus(decision==='approved'?'Бриф сохранён и одобрен для съёмки. Публикация и монтаж не выполнялись.':'Бриф сохранён и возвращён на доработку; сценарий, кадры и инструкции сохранены.');
+  }catch(error){setStatus(String((error as Error).message||'Не удалось записать редакторское решение.'))}
+ }
+ function updateProductionAngle(angle:string){
+  if(!production)return;
+  try{
+   const next={...production,stage:'QA' as const,input:{...production.input,idea:{...production.input.idea,angle}},statuses:{...production.statuses,QA:'needs_revision' as const,READY_FOR_SHOOT:'pending' as const}};
+   persistProductionMilestone(next);
+   setProductionFactsChecked(false);
+   setStatus('Идея изменена и сохранена. Обновите бриф, прежде чем утверждать съёмку.');
+  }catch(error){setStatus('Изменение идеи не сохранено: '+String((error as Error).message||error))}
+ }
  async function generate(idea=chosen){if(!idea||working)return;setChosen(idea);setWorking(true);setStatus('Стратег → редактор → маркетолог → медиа QA → финальная самопроверка…');setStage('production');try{const data=await api({action:'generate',engine:useFreeAI?'free-ai':'template',idea,history:h,assetName});setDraft(data.draft);setQa(data.qa||null);setEngineMode(data.mode==='ai'?'ai':'template');setStage('final_qa');setStatus(data.mode==='ai'?`Настоящий ИИ (${data.model||'free'}) подготовил сценарий. Проверь факты, текст и съёмочный план.`:'Подготовлен демонстрационный шаблон без вызова ИИ. Видеомонтаж и обработка фото не выполнялись.')}catch(e){const code=String((e as Error)?.message||'недоступен');
     setStatus(code==='free_ai_gateway_access_denied'
       ? 'AI Gateway отказал в доступе этому проекту (403 access_denied). Это ограничение Vercel: новый ввод идеи не поможет. Проверь права AI Gateway у команды Vercel; платная модель не подключалась.'

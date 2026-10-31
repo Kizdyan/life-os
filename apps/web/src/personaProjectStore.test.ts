@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyPersonaImportedProductionBrief,assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {applyPersonaImportedProductionBrief,applyPersonaProductionMilestone,assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -8,6 +8,34 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
 }
 
 describe('Persona project storage',()=>{
+ it('persists an editorial approval before the browser can reload',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'milestone',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const decision={stage:'READY_FOR_SHOOT',materials:{editorialDecision:{decision:'approved',editor:'Author'}}};
+  const saved=applyPersonaProductionMilestone({...original,revision:2},decision);
+  savePersonaProject(storage,saved);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.shootingPlan).toEqual(decision);
+  expect(restored.editPlan).toEqual(decision);
+  expect(restored.revision).toBe(2);
+  expect(restored.stage).toBe('strategy');
+  expect(restored.scenarioWorkspace).toBeUndefined();
+ });
+ it('does not replace the previous approval when production persistence fails',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'quota-case',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const broken:PersonaProjectStorage={
+   getItem:key=>storage.getItem(key),
+   setItem:()=>{throw Error('quota exceeded')},
+   removeItem:key=>storage.removeItem(key),
+  };
+  const proposal=applyPersonaProductionMilestone({...original,revision:2},{editorialDecision:{decision:'approved'}});
+  expect(()=>savePersonaProject(broken,proposal)).toThrow('quota exceeded');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].shootingPlan).toBeNull();
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].revision).toBe(1);
+ });
  it('persists imported scenario and full production plan before the next React effect',()=>{
   const storage=memoryStorage();
   const project={...createPersonaProject({id:'atomic-import',title:'First Reels',contentType:'reel',sourceIdea:'Acting',now:'2026-11-01T00:00:00.000Z'}),qa:{pass:true},lastOpenStep:'idea',revision:2};
