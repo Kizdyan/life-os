@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createPersonaProject,loadPersonaProjects,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -8,6 +8,36 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
 }
 
 describe('Persona project storage',()=>{
+ it('autosave uses the latest persisted scenario, not the older React script object',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'p-reel',title:'Actor and Composer',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const savedWorkspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-editorial-version'};
+  const updated={...old,scenarioWorkspace:savedWorkspace,revision:2,updatedAt:'2026-10-31T09:01:00Z'};
+  savePersonaProject(storage,updated);
+  const base=resolvePersonaProjectSaveBase(storage,updated);
+  expect(base.scenarioWorkspace).toBe(savedWorkspace);
+  const autosave={...base,lastOpenStep:'review',revision:base.revision+1};
+  savePersonaProject(storage,autosave);
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace).toEqual(savedWorkspace);
+ });
+ it('rejects stale React saves from another tab without rewriting the latest version',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,first);
+  const oldTab={...first};
+  const latest={...first,revision:2,title:'Second tab saved new text',updatedAt:'2026-10-31T09:02:00Z'};
+  savePersonaProject(storage,latest);
+  expect(()=>resolvePersonaProjectSaveBase(storage,oldTab)).toThrow('persona_project_changed_since_open');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe(latest.title);
+  expect(resolvePersonaProjectSaveBase(storage,latest).revision).toBe(2);
+ });
+ it('refuses saves for a project deleted from storage rather than resurrecting it',()=>{
+  const storage=memoryStorage();
+  const removed=createPersonaProject({id:'deleted',title:'Old',contentType:'reel',sourceIdea:'Old',now:'2026-10-31T09:00:00Z'});
+  expect(()=>resolvePersonaProjectSaveBase(storage,removed)).toThrow('persona_project_missing_at_save');
+ });
+
  it('migrates the previous single active draft without deleting its source keys',()=>{
   const storage=memoryStorage({
    'persona:active-idea:v1':JSON.stringify({id:'legacy-1',title:'Сцена',angle:'Одна репетиция',format:'reel',score:0}),

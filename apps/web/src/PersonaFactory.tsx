@@ -9,7 +9,7 @@ import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
-import{createPersonaProject,loadPersonaProjects,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
+import{createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
 import type { PersonaTimelineSettings } from './personaTimelineSettings';
 import'./persona-factory-v2.css';
 import'./persona-production-brief.css';
@@ -126,11 +126,21 @@ export default function PersonaFactory(){
  useEffect(()=>{const sync=()=>setScreen(screenFromHash());window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[]);
  function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen){
   if(!activeProjectId||!ideaForSave)return;
-  const previous=projects.find(project=>project.id===activeProjectId);
-  if(!previous)return;
-  const now=new Date().toISOString();
-  const next:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
-  try{const collection=savePersonaProject(localStorage,next,activeProjectId);setProjects(collection.projects);return true}catch{setSaveState('error');setStatus('Не удалось сохранить проект в этом браузере. Сразу сохраните резервную копию.');return false}
+  try{
+   const rendered=projects.find(project=>project.id===activeProjectId);
+   if(!rendered)throw new Error('persona_project_missing_in_view');
+   // Detect newer versions from other tabs and do not overwrite them.
+   const previous=resolvePersonaProjectSaveBase(localStorage,rendered);
+   const now=new Date().toISOString();
+   const next:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+   const collection=savePersonaProject(localStorage,next,activeProjectId);
+   setProjects(collection.projects);
+   return true;
+  }catch{
+   setSaveState('error');
+   setStatus('Не удалось сохранить: проект изменился в другой вкладке или хранилище недоступно. Не закрывайте текущий черновик; откройте актуальную версию после проверки.');
+   return false;
+  }
  }
  /** Persist the scenario version before telling the editor that its change succeeded. */
  function persistScenarioWorkspace(next:ScenarioWorkspace,ideaForSave:Idea|null=chosen){

@@ -130,6 +130,19 @@ export function validatePersonaProjectSnapshot(value:unknown):PersonaProject{
  return value;
 }
 
+/** Fail closed when a project was updated elsewhere (including another browser tab).
+ * Call before constructing an autosave snapshot; never base a save on stale React state.
+ * The latest stored scenario is authoritative unless the caller explicitly supplies a new one.
+ */
+export function resolvePersonaProjectSaveBase(
+ storage:PersonaProjectStorage, rendered:PersonaProject,
+):PersonaProject{
+ const saved=loadPersonaProjects(storage,()=> 'unused-persona-migration-id').projects.find(item=>item.id===rendered.id);
+ if(!saved)throw new Error('persona_project_missing_at_save');
+ if(saved.revision!==rendered.revision)throw new Error('persona_project_changed_since_open');
+ return saved;
+}
+
 export function savePersonaProject(storage:PersonaProjectStorage,project:PersonaProject,activeProjectId=project.id):PersonaProjectCollection{
  if(!isProject(project))throw new Error('invalid_persona_project');
  const current=readCollection(storage)??emptyCollection();
