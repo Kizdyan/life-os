@@ -74,7 +74,8 @@ describe('unsaved Persona scenario journal',()=>{
   const editing={...original,beats:original.beats.map((b,i)=>i===1?{...b,durationSec:0}:b)};
   savePersonaScenarioDraft(s,editing,null);
   expect(readPersonaScenarioDraft(s,'project-a')?.beats[1].durationSec).toBe(0);
-  expect(()=>savePersonaScenarioDraft(s,{...editing,beats:[...editing.beats.slice(0,1),{...editing.beats[1],durationSec:-1},...editing.beats.slice(2)]})).toThrow('invalid_persona_scenario_draft');
+  const raw=s.getItem(personaDraftKey('project-a'))!;
+  expect(()=>savePersonaScenarioDraft(s,{...editing,beats:[...editing.beats.slice(0,1),{...editing.beats[1],durationSec:-1},...editing.beats.slice(2)]},raw)).toThrow('invalid_persona_scenario_draft');
  });
  it('refuses to overwrite a newer draft from another editor instance',()=>{
   const s=storage();savePersonaScenarioDraft(s,original,null);
