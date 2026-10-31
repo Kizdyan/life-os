@@ -61,13 +61,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[rejectionFeedback,setRejectionFeedback]=useState('');
  const[revisionReason,setRevisionReason]=useState(()=> {
   const saved=readPersonaScenarioDraft(localStorage,project.id);
-  return saved?.sourceRevisionId===received?.script?.currentRevisionId?saved.reason:'';
+  return saved&&received?.script&&saved.ideaId===received.script.idea.id&&saved.sourceRevisionId===received.script.currentRevisionId?saved.reason:'';
  });
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>{
   const saved=readPersonaScenarioDraft(localStorage,project.id);
-  return saved?.sourceRevisionId===script?.currentRevisionId&&saved.ideaId===script.idea.id
+  return saved&&script&&saved.sourceRevisionId===script.currentRevisionId&&saved.ideaId===script.idea.id
    ?saved.beats:script?.currentRevision.beats??[];
  });
  const[editingRevisionId,setEditingRevisionId]=useState(script?.currentRevisionId??'');
