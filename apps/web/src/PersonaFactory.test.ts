@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { ideaForImportedBrief, selectedPersonaProjectSnapshot } from './PersonaFactory';
+import { describe, expect, it, vi } from 'vitest';
+import React from 'react';
+import { renderToString } from 'react-dom/server';
+import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot } from './PersonaFactory';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
@@ -28,5 +30,24 @@ describe('persisted Persona project selection',()=>{
  it('rejects an id missing from the actual store instead of opening a stale card',()=>{
   const collection:PersonaProjectCollection={schemaVersion:1,activeProjectId:null,projects:[]};
   expect(()=>selectedPersonaProjectSnapshot(collection,'deleted-project')).toThrow('unknown_persona_project');
+ });
+});
+
+describe('Persona empty workspace server rendering',()=>{
+ it('renders without window, location or localStorage (no browser globals)',()=>{
+  const oldWindow=globalThis.window;
+  const oldLocation=globalThis.location;
+  const oldLocalStorage=globalThis.localStorage;
+  try{
+   vi.stubGlobal('window',undefined);
+   vi.stubGlobal('location',undefined);
+   vi.stubGlobal('localStorage',undefined);
+   expect(()=>renderToString(React.createElement(PersonaFactory))).not.toThrow();
+  }finally{
+   vi.stubGlobal('window',oldWindow);
+   vi.stubGlobal('location',oldLocation);
+   vi.stubGlobal('localStorage',oldLocalStorage);
+   vi.unstubAllGlobals();
+  }
  });
 });

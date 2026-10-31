@@ -21,6 +21,17 @@ describe('Persona project storage',()=>{
   savePersonaProject(storage,autosave);
   expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace).toEqual(savedWorkspace);
  });
+ it('accepts a newer revision already written by this tab while React is behind',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'same-tab',title:'First',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const ownLatest={...old,revision:2,title:'Own synchronous edit'};
+  savePersonaProject(storage,ownLatest);
+  const rendered={...old};
+  const knownOwnRevision=ownLatest.revision;
+  expect(resolvePersonaProjectSaveBase(storage,{...rendered,revision:knownOwnRevision}).title).toBe('Own synchronous edit');
+  expect(()=>resolvePersonaProjectSaveBase(storage,rendered)).toThrow('persona_project_changed_since_open');
+ });
  it('rejects stale React saves from another tab without rewriting the latest version',()=>{
   const storage=memoryStorage();
   const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});

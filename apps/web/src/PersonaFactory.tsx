@@ -6,7 +6,7 @@ import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
-import { personaScenarioDraftExists } from './personaScenarioDraftJournal';
+import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
 import{createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
@@ -102,7 +102,7 @@ function projectIdea(project:PersonaProject):Idea{return{id:project.id,title:pro
 function projectStage(value:unknown):Stage{return value==='strategy'||value==='needs_assets'||value==='production'||value==='marketing_qa'||value==='media_qa'||value==='final_qa'||value==='approval'?value:'strategy'}
 function contentTypeLabel(value:PersonaContentType|undefined){return value==='photo'?'Фото':value==='carousel'?'Карусель':value==='short'?'Shorts':value==='story'?'Stories':'Reels'}
 function stageLabel(value:Stage){return ({strategy:'Идея',needs_assets:'Исходники',production:'В работе',marketing_qa:'Проверка',media_qa:'Проверка медиа',final_qa:'Проверка',approval:'Готово к съёмке'} as Record<Stage,string>)[value]}
-function screenFromHash():PersonaScreen{const hash=location.hash;return hash.startsWith('#persona/projects')?'projects':hash.startsWith('#persona/project')?'project':'home'}
+function screenFromHash():PersonaScreen{const hash=typeof location==='undefined'?'':location.hash;return hash.startsWith('#persona/projects')?'projects':hash.startsWith('#persona/project')?'project':'home'}
 function workspaceStepsFor(format:PersonaContentType|undefined):[WorkspaceStep,string][]{
  if(format==='photo')return [['assets','Исходник'],['edit','Обработка'],['review','Проверка'],['export','Экспорт']];
  if(format==='carousel')return [['assets','Изображения'],['edit','Оформление'],['review','Проверка'],['export','Экспорт']];
@@ -110,7 +110,8 @@ function workspaceStepsFor(format:PersonaContentType|undefined):[WorkspaceStep,s
 }
 function workspaceStepFrom(value:unknown,format:PersonaContentType|undefined):WorkspaceStep{const steps=workspaceStepsFor(format);return steps.some(([id])=>id===value)?value as WorkspaceStep:steps[0][0]}
 export default function PersonaFactory(){
- const projectBootstrap=useRef<PersonaProjectCollection|null>(null);if(projectBootstrap.current===null)projectBootstrap.current=loadPersonaProjects(localStorage,newProjectId);const initialProject=projectBootstrap.current.projects.find(project=>project.id===projectBootstrap.current?.activeProjectId)??null;
+ const projectBootstrap=useRef<PersonaProjectCollection|null>(null);if(projectBootstrap.current===null)projectBootstrap.current=loadPersonaProjects(resolvePersonaScenarioDraftStorage(),newProjectId);const initialProject=projectBootstrap.current.projects.find(project=>project.id===projectBootstrap.current?.activeProjectId)??null;
+ const lastOwnSavedRevision=useRef<{id:string;revision:number}|null>(initialProject?{id:initialProject.id,revision:initialProject.revision}:null);
  const[projects,setProjects]=useState<PersonaProject[]>(()=>projectBootstrap.current?.projects??[]);const[activeProjectId,setActiveProjectId]=useState<string|null>(()=>projectBootstrap.current?.activeProjectId??null);const[timeline,setTimeline]=useState<PersonaTimelineSettings|null>(()=>initialProject?.timeline as PersonaTimelineSettings|null??null);
  const[screen,setScreen]=useState<PersonaScreen>(screenFromHash);
  const[workspaceStep,setWorkspaceStep]=useState<WorkspaceStep>(()=>workspaceStepFrom(initialProject?.lastOpenStep,initialProject?.contentType));
@@ -129,11 +130,15 @@ export default function PersonaFactory(){
   try{
    const rendered=projects.find(project=>project.id===activeProjectId);
    if(!rendered)throw new Error('persona_project_missing_in_view');
-   // Detect newer versions from other tabs and do not overwrite them.
-   const previous=resolvePersonaProjectSaveBase(localStorage,rendered);
+   // React's project list can lag our own synchronous writes. Track this tab's
+   // successful write revision while rejecting updates from other tabs.
+   const expectedRevision=lastOwnSavedRevision.current?.id===activeProjectId
+    ?lastOwnSavedRevision.current.revision:rendered.revision;
+   const previous=resolvePersonaProjectSaveBase(localStorage,{...rendered,revision:expectedRevision});
    const now=new Date().toISOString();
    const next:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
    const collection=savePersonaProject(localStorage,next,activeProjectId);
+   lastOwnSavedRevision.current={id:activeProjectId,revision:next.revision};
    setProjects(collection.projects);
    return true;
   }catch{
@@ -159,6 +164,7 @@ export default function PersonaFactory(){
   if(activeProjectId&&chosen&&!saveActiveProject())return false;
   try{
   const now=new Date().toISOString();const project=createPersonaProject({id:newProjectId(),title:idea.title,contentType:idea.format,sourceIdea:idea.angle,now});const collection=savePersonaProject(localStorage,project,project.id);
+  lastOwnSavedRevision.current={id:project.id,revision:project.revision};
   setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(null);setChosen({...idea,id:project.id});setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('idea');setStage(idea.format==='photo'?'needs_assets':'strategy');setStatus('Новый проект создан и сохранён локально.');setShowBank(false);resetLocalAsset();setMediaProbe(null);
   return true;
   }catch{setSaveState('error');setStatus('Создание проекта не удалось: браузер не подтвердил сохранение. Текущий проект сохранён.');return false}
@@ -168,6 +174,7 @@ export default function PersonaFactory(){
   try{
   const collection=selectPersonaProject(localStorage,project.id);
   const saved=selectedPersonaProjectSnapshot(collection,project.id);
+  lastOwnSavedRevision.current={id:saved.id,revision:saved.revision};
   setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(saved.shootingPlan as PersonaProductionPipeline|null);setScenarioWorkspace(saved.scenarioWorkspace);setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(projectStage(saved.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(saved.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен из актуального локального снимка. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
   return true;
   }catch{setSaveState('error');setStatus('Переключение проекта остановлено: браузер не подтвердил сохранение.');return false}
@@ -175,7 +182,7 @@ export default function PersonaFactory(){
  function startNewProject(){
   if(activeProjectId&&chosen&&!saveActiveProject())return false;
   try{
-  const collection=selectPersonaProject(localStorage,null);setProjects(collection.projects);setActiveProjectId(null);setTimeline(null);setChosen(null);setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('strategy');resetLocalAsset();setMediaProbe(null);setStatus('Выберите формат или идею для нового проекта. Существующие проекты сохранены.');
+  const collection=selectPersonaProject(localStorage,null);lastOwnSavedRevision.current=null;setProjects(collection.projects);setActiveProjectId(null);setTimeline(null);setChosen(null);setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('strategy');resetLocalAsset();setMediaProbe(null);setStatus('Выберите формат или идею для нового проекта. Существующие проекты сохранены.');
   return true;
   }catch{setSaveState('error');setStatus('Новый проект не открыт: браузер не подтвердил сохранение.');return false}
  }
