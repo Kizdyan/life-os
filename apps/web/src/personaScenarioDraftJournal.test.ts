@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {
- readPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,
+ readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 const storage=()=>{
@@ -17,6 +17,18 @@ const original:PersonaScenarioDraftJournal={
  reason:'Несохранённая авторская правка',savedAt:'2026-10-31T19:55:00.000Z',
 };
 describe('unsaved Persona scenario journal',()=>{
+ it('opens a new project with no script or saved journal without a crash',()=>{
+  const s=storage();
+  expect(matchingPersonaScenarioDraft(s,'new-project',undefined)).toBeNull();
+  expect(matchingPersonaScenarioDraft(s,'new-project',{idea:{id:'i'},currentRevisionId:'r1'})).toBeNull();
+ });
+ it('never restores a draft for another idea even when revision identifiers collide',()=>{
+  const s=storage();savePersonaScenarioDraft(s,original);
+  expect(matchingPersonaScenarioDraft(s,'project-a',{idea:{id:'other-idea'},currentRevisionId:original.sourceRevisionId})).toBeNull();
+  expect(matchingPersonaScenarioDraft(s,'project-a',{idea:{id:original.ideaId},currentRevisionId:'r3'})).toBeNull();
+  expect(matchingPersonaScenarioDraft(s,'project-a',{idea:{id:original.ideaId},currentRevisionId:original.sourceRevisionId})).toEqual(original);
+ });
+
  it('recovers exact unsaved text after remount without approving or changing script',()=>{
   const s=storage();savePersonaScenarioDraft(s,original);
   expect(readPersonaScenarioDraft(s,'project-a')).toEqual(original);
