@@ -16,7 +16,7 @@ describe('Persona project storage',()=>{
   const updated={...old,scenarioWorkspace:savedWorkspace,revision:2,updatedAt:'2026-10-31T09:01:00Z'};
   savePersonaProject(storage,updated);
   const base=resolvePersonaProjectSaveBase(storage,updated);
-  expect(base.scenarioWorkspace).toBe(savedWorkspace);
+  expect(base.scenarioWorkspace).toEqual(savedWorkspace);
   const autosave={...base,lastOpenStep:'review',revision:base.revision+1};
   savePersonaProject(storage,autosave);
   expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace).toEqual(savedWorkspace);
