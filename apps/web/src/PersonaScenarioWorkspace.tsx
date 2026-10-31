@@ -274,12 +274,11 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       script={script}
       unsavedChanges={hasUnsavedChanges}
       onRestore={next=>{
-        try{
-         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
-         update({script:next});
-         setBeats(next.currentRevision.beats);
-         setError('');
-        }catch(cause){setError(cause instanceof Error?cause.message:'Восстановление изменит закреплённую реплику.');}
+        // Propagate a rejected lock check to the history component so it cannot display false success.
+        assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
+        update({script:next});
+        setBeats(next.currentRevision.beats);
+        setError('');
       }}
     />
     <PersonaLocalScriptDoctorPanel
@@ -289,12 +288,11 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       latestAuthorFeedback={workspace.editorialFeedback?.at(-1)?.comment}
       unsavedChanges={hasUnsavedChanges}
       onAcceptRevision={next=>{
-        try{
-         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
-         update({script:next});
-         setBeats(next.currentRevision.beats);
-         setError('');
-        }catch(cause){setError(cause instanceof Error?cause.message:'Редакция изменит закреплённую реплику.');}
+        // Child Script Doctor handles thrown errors; never report acceptance when a pinned line changed.
+        assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
+        update({script:next});
+        setBeats(next.currentRevision.beats);
+        setError('');
       }}
       onRejectSuggestion={(reason,sourceRevisionId)=>{
         update({editorialFeedback:[
