@@ -165,6 +165,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const importLocalAiRevision=async(file:File|undefined)=>{
   if(!file||!script)return;
   try{
+   if(hasUnsavedChanges)throw new Error('Сначала сохраните или отмените несохранённые правки сценария. Импорт не должен стирать ручную работу.');
    if(file.size>200_000)throw new Error('Файл сценария слишком большой (максимум 200 КБ).');
    const decoded=JSON.parse(await file.text()) as unknown;
    const imported=importPersonaProductionBrief({

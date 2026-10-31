@@ -65,4 +65,7 @@ if (!shootingPack.includes('editorial-candidate-production-brief.json'))
   fail('shooting command uses a stale or different Production Brief');
 if (!shootingPack.includes('Публикация заблокирована'))
   fail('publication approval gate is missing from shooting instructions');
+if (!brief.script[6].action.includes('без обязательного титра') ||
+    !shootingPack.includes('Без обязательного титра'))
+  fail('A04 timing must prioritize reaction and full spoken payoff over a mandatory end title');
 console.log('PASS: selected editorial-candidate JSON (not archived V1), 7 ordered scenes + shots, locked A01/B01/payoff, 31 s, matching shooting pack and explicit source IDs');
