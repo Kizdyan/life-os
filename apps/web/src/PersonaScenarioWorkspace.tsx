@@ -73,7 +73,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[editingRevisionId,setEditingRevisionId]=useState(script?.currentRevisionId??'');
  const[staleDraft,setStaleDraft]=useState<PersonaScenarioDraftJournal|null>(()=>{
   const saved=readPersonaScenarioDraft(localStorage,project.id);
-  return saved&&saved.sourceRevisionId!==script?.currentRevisionId?saved:null;
+  return saved&&(saved.sourceRevisionId!==script?.currentRevisionId||saved.ideaId!==script?.idea.id)?saved:null;
  });
  useEffect(()=>{
   const current=workspace.script;
@@ -89,7 +89,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   if(!script||editingRevisionId!==script.currentRevisionId)return;
   const stored=readPersonaScenarioDraft(localStorage,project.id);
   // Never overwrite an older, unreconciled draft after an external revision import.
-  if(stored&&stored.sourceRevisionId!==script.currentRevisionId)return;
+  if(stored&&(stored.sourceRevisionId!==script.currentRevisionId||stored.ideaId!==script.idea.id))return;
   const dirty=JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats)||Boolean(revisionReason.trim());
   try{
    if(dirty){
