@@ -31,7 +31,7 @@ function validDraft(value:unknown,projectId:string):value is PersonaScenarioDraf
   typeof d.reason==='string'&&d.reason.length<=2000&&typeof d.savedAt==='string'&&
   Array.isArray(d.beats)&&d.beats.length>=3&&d.beats.length<=12&&d.beats.every(b=>
    b&&['hook','development','ending'].includes(b.purpose)&&typeof b.line==='string'&&b.line.length<=10000&&
-   typeof b.action==='string'&&b.action.length<=10000&&Number.isFinite(b.durationSec)&&b.durationSec>0);
+   typeof b.action==='string'&&b.action.length<=10000&&Number.isFinite(b.durationSec)&&b.durationSec>=0);
 }
 /** Never delete a corrupt journal here; the user may still need its original bytes. */
 export function readPersonaScenarioDraft(storage:DraftStorage,projectId:string):PersonaScenarioDraftJournal|null{

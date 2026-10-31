@@ -153,6 +153,29 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    setCorruptDraft(false);setCorruptBackupExported(false);setError('');
   }catch{setError('Не удалось удалить повреждённую копию после экспорта.');}
  };
+ /** Journal every edit synchronously, before React can navigate/unmount the form. */
+ const journalEdit=(nextBeats:ScenarioScriptBeat[],nextReason:string):boolean=>{
+  if(!script||staleDraft||corruptDraft)return false;
+  try{
+   savePersonaScenarioDraft(draftStorage,{
+    version:1,projectId:project.id,ideaId:script.idea.id,
+    sourceRevisionId:script.currentRevisionId,beats:nextBeats,
+    reason:nextReason,savedAt:new Date().toISOString(),
+   });
+   setError('');
+   return true;
+  }catch{
+   setError('Правки не применены: локальный черновик не удалось сохранить. Проверьте хранилище браузера.');
+   return false;
+  }
+ };
+ const editBeats=(change:(current:ScenarioScriptBeat[])=>ScenarioScriptBeat[])=>{
+  const next=change(beats);
+  if(journalEdit(next,revisionReason))setBeats(next);
+ };
+ const editRevisionReason=(nextReason:string)=>{
+  if(journalEdit(beats,nextReason))setRevisionReason(nextReason);
+ };
  const toggleAuthorLockedLine=(index:number)=>{
   if(!script||hasUnsavedChanges||staleDraft||corruptDraft){setError('Сначала сохраните или разрешите несохранённый черновик.');return}
   const remaining=(workspace.authorLockedLines??[]).filter(lock=>!(lock.ideaId===script.idea.id&&lock.index===index));
@@ -187,19 +210,19 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   if(beats.length>=12){setError('Максимум 12 смысловых блоков. Уберите лишние или сократите сцену.');return}
   const point=Math.max(1,beats.findIndex(beat=>beat.purpose==='ending'));
   const next={purpose:'development' as const,line:'Опишите следующую реплику или немую сцену',action:'Укажите конкретное физическое действие героя',durationSec:4};
-  setBeats(current=>[...current.slice(0,point),next,...current.slice(point)]);
+  editBeats(current=>[...current.slice(0,point),next,...current.slice(point)]);
   setError('');
  };
  const removeDevelopmentBeat=(index:number)=>{
   if(beats[index]?.purpose!=='development'||beats.filter(beat=>beat.purpose==='development').length<=1){
    setError('Хук, финал и хотя бы одно развитие должны оставаться в сценарии.');return
   }
-  setBeats(current=>current.filter((_,i)=>i!==index));setError('');
+  editBeats(current=>current.filter((_,i)=>i!==index));
  };
  const moveDevelopmentBeat=(index:number,direction:-1|1)=>{
   const other=index+direction;
   if(beats[index]?.purpose!=='development'||beats[other]?.purpose!=='development')return;
-  setBeats(current=>{const next=[...current];[next[index],next[other]]=[next[other],next[index]];return next});
+  editBeats(current=>{const next=[...current];[next[index],next[other]]=[next[other],next[index]];return next});
  };
  const saveScript=()=>{
   if(!script)return;
@@ -350,13 +373,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     <button type="button" onClick={recoverStaleDraft}>Восстановить как новую неутверждённую версию</button>
     <button type="button" className="ghost" onClick={discardStaleDraft}>Отбросить этот черновик</button>
    </div>}
-   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`} disabled={Boolean(staleDraft||corruptDraft)}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} readOnly={lockedForScript.some(lock=>lock.index===index)} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label>
+   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`} disabled={Boolean(staleDraft||corruptDraft)}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} readOnly={lockedForScript.some(lock=>lock.index===index)} value={beat.line} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label>
      <button type="button" className="ghost" disabled={hasUnsavedChanges}
       aria-label={`${lockedForScript.some(lock=>lock.index===index)?'Снять закрепление':'Закрепить'} реплику кадра ${index+1}`}
       onClick={()=>toggleAuthorLockedLine(index)}>
       {lockedForScript.some(lock=>lock.index===index)?'🔒 Закреплена автором · снять закрепление':'Закрепить реплику'}
      </button>
-     <label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
+     <label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
      {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
        <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
        <button type="button" className="ghost" disabled={beats[index+1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,1)}>Ниже</button>
@@ -364,7 +387,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      </div>}
     </fieldset>)}
     <button type="button" className="ghost" onClick={addDevelopmentBeat} disabled={Boolean(staleDraft||corruptDraft)||beats.length>=12}>+ Добавить действие / сцену</button>
-   {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
+   {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>editRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
     <button type="button" className="ghost" disabled={Boolean(staleDraft||corruptDraft)} onClick={saveScript}>Сохранить новую версию</button>
     <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges||Boolean(staleDraft||corruptDraft)}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
     <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК.</small>

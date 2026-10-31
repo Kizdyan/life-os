@@ -68,6 +68,13 @@ describe('unsaved Persona scenario journal',()=>{
   expect(readPersonaScenarioDraft(s,'project-a')).toBeNull();
   expect(personaScenarioDraftExists(s,'project-a')).toBe(true);
  });
+ it('preserves an in-progress empty duration while the author types a valid number',()=>{
+  const s=storage();
+  const editing={...original,beats:original.beats.map((b,i)=>i===1?{...b,durationSec:0}:b)};
+  savePersonaScenarioDraft(s,editing);
+  expect(readPersonaScenarioDraft(s,'project-a')?.beats[1].durationSec).toBe(0);
+  expect(()=>savePersonaScenarioDraft(s,{...editing,beats:[...editing.beats.slice(0,1),{...editing.beats[1],durationSec:-1},...editing.beats.slice(2)]})).toThrow('invalid_persona_scenario_draft');
+ });
  it('rejects malformed writes and does not overwrite previously valid journal',()=>{
   const s=storage();savePersonaScenarioDraft(s,original);
   expect(()=>savePersonaScenarioDraft(s,{...original,beats:[]})).toThrow('invalid_persona_scenario_draft');
