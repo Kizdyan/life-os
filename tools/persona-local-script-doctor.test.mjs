@@ -254,6 +254,55 @@ test('a second-pass timeout records an interruptible stage, preserves critique a
  assert.equal(JSON.parse(await readFile(join(folder,'diagnosis.validated.json'),'utf8')).editorialSummary,diagnosis.summary);
  await assert.rejects(readFile(output),/ENOENT/);
 });
+test('hard interruption without a failure marker requires explicit recovery and does not rerun critique',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-hard-stop-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),old=join(dir,'hard-stop.json'),newOut=join(dir,'recovered.json');
+ await writeFile(input,JSON.stringify(task));
+ let requests=0;
+ const fail=async url=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  requests++;
+  return {ok:true,json:async()=>({message:{content:requests===1?JSON.stringify(diagnosis):'broken-json'}})};
+ };
+ await assert.rejects(runLocalScriptDoctorFiles(input,old,{fetchImpl:fail}),/невалидный JSON/);
+ const artifacts=old+'.artifacts';
+ await rm(join(artifacts,'failure.json')); // simulate forced process termination, not graceful exception
+ await assert.rejects(runLocalScriptDoctorFiles(input,newOut,{fetchImpl:fakeLocal().fetchImpl,resumeFrom:artifacts}),/no failure marker/);
+ let patchCalls=0;
+ const patchOnly=async url=>{
+  if(String(url).endsWith('/api/tags'))return {ok:true,json:async()=>({models:[{name:'qwen2.5-coder:7b'}]})};
+  patchCalls++;
+  return {ok:true,json:async()=>({message:{content:JSON.stringify(candidate)}})};
+ };
+ await runLocalScriptDoctorFiles(input,newOut,{fetchImpl:patchOnly,resumeFrom:artifacts,recoverInterrupted:true});
+ assert.equal(patchCalls,1);
+ assert.equal(JSON.parse(await readFile(newOut,'utf8')).status,'SUGGESTION_NOT_APPROVED');
+ assert.equal(JSON.parse(await readFile(join(newOut+'.artifacts','run.json'),'utf8')).recovery.kind,'UNRECORDED_INTERRUPTION');
+ assert.equal(await readFile(join(newOut+'.artifacts','diagnosis.source-raw.txt'),'utf8'),
+  await readFile(join(artifacts,'diagnosis.raw.txt'),'utf8'));
+});
+test('recovery refuses successful or still-present output even with an explicit override',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-completed-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),old=join(dir,'completed.json'),attempt=join(dir,'attempt.json');
+ await writeFile(input,JSON.stringify(task));
+ const original=fakeLocal();
+ await runLocalScriptDoctorFiles(input,old,{fetchImpl:original.fetchImpl});
+ let futureCalls=0;
+ const blocked=async()=>{futureCalls++;throw Error('should not request the model')};
+ await assert.rejects(runLocalScriptDoctorFiles(input,attempt,{
+  fetchImpl:blocked,resumeFrom:old+'.artifacts',recoverInterrupted:true
+ }),/no failure marker|already succeeded/);
+ assert.equal(futureCalls,0);
+});
+test('recovery rejects absence of resume-from when hard-interruption option is set',async(t)=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-doctor-no-from-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const input=join(dir,'task.json'),output=join(dir,'out.json');
+ await writeFile(input,JSON.stringify(task));
+ await assert.rejects(runLocalScriptDoctorFiles(input,output,{recoverInterrupted:true}),/requires --resume-from/);
+});
 test('bad JSON from local creative model fails rather than approving or writing anything',async()=>{
  const {fetchImpl}=fakeLocal();let seen=0;
  const corrupted=async(url,opts)=>{seen++;if(seen===3)return {ok:true,json:async()=>({message:{content:'not-json'}})};return fetchImpl(url,opts)};
