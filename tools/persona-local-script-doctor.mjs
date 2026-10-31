@@ -48,7 +48,7 @@ function validateCanonicalTask(raw){
  if(!Array.isArray(beats)||beats.length<3||beats.length>12||beats[0].purpose!=='hook'||beats.at(-1).purpose!=='ending'||beats.slice(1,-1).some(beat=>beat.purpose!=='development'))throw Error('Сценарий должен содержать хук, развитие и финал в правильном порядке');
  const targetIndices=indices(raw.targetIndices,'targetIndices',beats.length),lockedIndices=raw.lockedIndices===undefined?[]:Array.isArray(raw.lockedIndices)&&raw.lockedIndices.length===0?[]:indices(raw.lockedIndices,'lockedIndices',beats.length);
  if(targetIndices.some(index=>lockedIndices.includes(index)))throw Error('Автор закрепил кадр; его нельзя одновременно редактировать');
- return {kind:raw.kind,version:1,sourceRevisionId:text(raw.sourceRevisionId,'sourceRevisionId',180),idea:{id:text(raw.idea?.id,'idea.id',180),title:text(raw.idea?.title,'idea.title',200),originalConflict:text(raw.idea?.originalConflict,'idea.originalConflict',2000)},beats,targetIndices,lockedIndices,instruction:text(raw.instruction,'instruction',2000),authorFeedback:raw.authorFeedback===undefined?null:text(raw.authorFeedback,'authorFeedback',2000),creativeProfile:raw.creativeProfile===undefined?null:{priorities:Array.isArray(raw.creativeProfile?.priorities)?raw.creativeProfile.priorities.filter(v=>typeof v==='string').slice(0,12):[],constraints:Array.isArray(raw.creativeProfile?.constraints)?raw.creativeProfile.constraints.filter(v=>typeof v==='string').slice(0,12):[]}};
+ return {kind:raw.kind,version:1,sourceRevisionId:text(raw.sourceRevisionId,'sourceRevisionId',180),idea:{id:text(raw.idea?.id,'idea.id',180),title:text(raw.idea?.title,'idea.title',200),originalConflict:text(raw.idea?.originalConflict,'idea.originalConflict',2000)},beats,targetIndices,lockedIndices,instruction:text(raw.instruction,'instruction',2000),authorFeedback:raw.authorFeedback==null?null:text(raw.authorFeedback,'authorFeedback',2000),creativeProfile:raw.creativeProfile===undefined?null:{priorities:Array.isArray(raw.creativeProfile?.priorities)?raw.creativeProfile.priorities.filter(v=>typeof v==='string').slice(0,12):[],constraints:Array.isArray(raw.creativeProfile?.constraints)?raw.creativeProfile.constraints.filter(v=>typeof v==='string').slice(0,12):[]}};
 }
 export function validateDoctorTask(raw){
  if(!raw||raw.kind!=='persona-local-doctor-input-v1'||raw.version!==1)throw Error('Ожидается persona-local-doctor-input-v1');
@@ -74,7 +74,7 @@ export function validateDoctorTask(raw){
   originalConflict:text(script.idea?.originalConflict??'','idea.originalConflict',2000)},
   beats,targetIndices,lockedIndices,
   instruction:text(raw.instruction,'instruction',2000),
-  authorFeedback:raw.authorFeedback===undefined?null:text(raw.authorFeedback,'authorFeedback',2000),
+  authorFeedback:raw.authorFeedback==null?null:text(raw.authorFeedback,'authorFeedback',2000),
   creativeProfile:raw.creativeProfile===undefined?null:{
    priorities:Array.isArray(raw.creativeProfile?.priorities)?raw.creativeProfile.priorities.filter(v=>typeof v==='string').slice(0,12):[],
    constraints:Array.isArray(raw.creativeProfile?.constraints)?raw.creativeProfile.constraints.filter(v=>typeof v==='string').slice(0,12):[]},
