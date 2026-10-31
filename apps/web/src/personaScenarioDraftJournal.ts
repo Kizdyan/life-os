@@ -29,6 +29,15 @@ export function readPersonaScenarioDraft(storage:DraftStorage,projectId:string):
   const decoded:unknown=JSON.parse(raw);return validDraft(decoded,projectId)?decoded:null;
  }catch{return null}
 }
+/** Only resurrect a draft for exactly its originating idea and revision. */
+export function matchingPersonaScenarioDraft(
+ storage:DraftStorage,projectId:string,
+ script:{idea:{id:string};currentRevisionId:string}|undefined,
+):PersonaScenarioDraftJournal|null{
+ if(!script)return null;
+ const saved=readPersonaScenarioDraft(storage,projectId);
+ return saved&&saved.ideaId===script.idea.id&&saved.sourceRevisionId===script.currentRevisionId?saved:null;
+}
 /** A pending journal may not be overwritten or ignored, even when malformed. */
 export function personaScenarioDraftExists(storage:DraftStorage,projectId:string):boolean{
  try{return storage.getItem(personaDraftKey(projectId))!==null}catch{return true}
