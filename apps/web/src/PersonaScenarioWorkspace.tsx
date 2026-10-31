@@ -71,6 +71,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[corruptDraft,setCorruptDraft]=useState(()=>
   personaScenarioDraftExists(draftStorage,project.id)&&!readPersonaScenarioDraft(draftStorage,project.id));
  const[corruptBackupExported,setCorruptBackupExported]=useState(false);
+ const[corruptBackupConfirmed,setCorruptBackupConfirmed]=useState(false);
  const[staleDraft,setStaleDraft]=useState<PersonaScenarioDraftJournal|null>(()=>{
   const saved=readPersonaScenarioDraft(draftStorage,project.id);
   return saved&&(saved.sourceRevisionId!==script?.currentRevisionId||saved.ideaId!==script?.idea.id)?saved:null;
@@ -86,6 +87,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   setStaleDraft(saved&&!matches?saved:null);
   setCorruptDraft(personaScenarioDraftExists(draftStorage,project.id)&&!saved);
   setCorruptBackupExported(false);
+  setCorruptBackupConfirmed(false);
  },[project.id,workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
  useEffect(()=>{
   if(!script||editingRevisionId!==script.currentRevisionId)return;
@@ -144,14 +146,15 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    link.download='persona-unsaved-script-backup.json';
    document.body.appendChild(link);link.click();link.remove();
    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-   setCorruptBackupExported(true);setError('');
+   // A click can be blocked by the browser; only the author can confirm a real file exists.
+   setCorruptBackupExported(true);setCorruptBackupConfirmed(false);setError('');
   }catch{setError('Не удалось скачать резервную копию. Данные сохранены в браузере.');}
  };
  const discardCorruptDraft=()=>{
-  if(!corruptBackupExported){setError('Сначала скачайте резервную копию.');return}
+  if(!corruptBackupExported||!corruptBackupConfirmed){setError('Сначала скачайте резервную копию и подтвердите наличие файла на устройстве.');return}
   try{
    clearPersonaScenarioDraft(draftStorage,project.id);
-   setCorruptDraft(false);setCorruptBackupExported(false);setError('');
+   setCorruptDraft(false);setCorruptBackupExported(false);setCorruptBackupConfirmed(false);setError('');
   }catch{setError('Не удалось удалить повреждённую копию после экспорта.');}
  };
  /** Journal every edit synchronously, before React can navigate/unmount the form. */
@@ -365,7 +368,11 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   {corruptDraft&&<div role="alert" className="personaScenarioWarning">
     <p>В браузере обнаружена повреждённая страховочная копия сценария. Она не удалена и не заменена новым текстом. Сначала сохраните её на компьютер, затем можно удалить запись из браузера и продолжить работу.</p>
     <button type="button" onClick={exportCorruptDraft}>Скачать исходные данные черновика</button>
-    <button type="button" className="ghost" disabled={!corruptBackupExported} onClick={discardCorruptDraft}>Удалить повреждённую копию после скачивания</button>
+    {corruptBackupExported&&<label><input type="checkbox" checked={corruptBackupConfirmed}
+      onChange={event=>setCorruptBackupConfirmed(event.target.checked)}/>
+      Я проверил, что резервный JSON действительно скачался и сохранён на устройстве.</label>}
+    <button type="button" className="ghost" disabled={!corruptBackupExported||!corruptBackupConfirmed}
+      onClick={discardCorruptDraft}>Удалить повреждённую копию после подтверждения</button>
    </div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
    {staleDraft&&<div role="alert" className="personaScenarioWarning">
