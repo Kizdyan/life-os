@@ -4,7 +4,7 @@
  * node tools/persona-delivery-source-folder.mjs <selected-video-folder> <new-output-folder>
  */
 import {mkdir,readdir,realpath,writeFile} from 'node:fs/promises';
-import {resolve,join} from 'node:path';
+import {dirname,resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const ids=['A01','B01','A02','B02','A03','B03','A04'];
@@ -57,6 +57,8 @@ export async function makeManifest({sourceFolder,outputFolder,listing=readdir}={
  const names=entries.filter(item=>item.isFile()&&ext.test(item.name)).map(item=>item.name);
  const mapping=classifyFiles(names);
  const manifest={version:1,sources:mapping.files.map(item=>({id:item.id,path:join(source,item.file)}))};
+ // Create the parent's missing directories, never overwrite the selected output.
+ await mkdir(dirname(output),{recursive:true});
  await mkdir(output,{recursive:false});
  await writeFile(join(output,'sources.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
  const report={kind:'persona-selected-folder-intake-v1',status:'filenames-only-unverified',

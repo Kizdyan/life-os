@@ -12,7 +12,7 @@ const scenes=[
  'A04_actor_payoff_take01.mp4'
 ];
 test('maps seven clearly named takes in screenplay order',()=>{
- const result=classifyFiles(scenes.reverse().slice().reverse());
+ const result=classifyFiles([...scenes].reverse());
  assert.equal(result.layout,'scene-takes');
  assert.deepEqual(result.files.map(x=>x.id),[
   'A01_take01','B01_take01','A02_take01','B02_take01',
@@ -57,7 +57,7 @@ test('multi-take folder does not silently exceed the underlying 12-video input l
 test('selected folder is scanned once, never recursively or uploaded; manifest is local',async t=>{
  const base=await mkdtemp(join(tmpdir(),'persona-selected-folder-'));
  t.after(()=>rm(base,{recursive:true,force:true}));
- const src=join(base,'user-selected'),out=join(base,'manifest');
+ const src=join(base,'user-selected'),out=join(base,'nested','manifest');
  await mkdir(src);
  for(const name of scenes)await writeFile(join(src,name),'sample fixture, NOT a video');
  await writeFile(join(src,'notes.txt'),'Not media');

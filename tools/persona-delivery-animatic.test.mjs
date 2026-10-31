@@ -51,7 +51,7 @@ test('single HTML contains both candidate variants and embedded audio; no real f
 test('generates local preview and sha evidence without overwriting existing output',async t=>{
  const base=await mkdtemp(join(tmpdir(),'persona-animatic-test-'));
  t.after(()=>rm(base,{recursive:true,force:true}));
- const wav=join(base,'explicit.wav'),output=join(base,'preview');
+ const wav=join(base,'explicit.wav'),output=join(base,'nested','preview');
  await writeFile(wav,pcm(1));
  const result=await createAnimatic(wav,output);
  const html=await readFile(result.html,'utf8'),proof=JSON.parse(await readFile(result.evidence,'utf8'));

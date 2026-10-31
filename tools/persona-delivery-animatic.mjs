@@ -4,7 +4,7 @@
  */
 import {createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {join,resolve} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root=resolve('docs/persona-delivery');
@@ -119,6 +119,9 @@ export async function createAnimatic(audioPath,outDir){
  validateAnimaticVariants(old,next);
  const meta=checkWav(wav),html=makeHtml(old,next,wav,meta.durationSec);
  const dir=resolve(outDir);
+ // Create only missing ancestors; keep the requested output directory exclusive.
+ // This works for a first-time project path without overwriting an existing preview.
+ await mkdir(dirname(dir),{recursive:true});
  await mkdir(dir,{recursive:false});
  await writeFile(join(dir,'animatic.html'),html,{flag:'wx'});
  const evidence={kind:'persona-audio-card-animatic-v1',status:'preview-only',durationSec:31,
