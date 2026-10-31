@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {
- readPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,
+ readPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,personaDraftKey,personaScenarioDraftExists,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 const storage=()=>{
@@ -41,8 +41,12 @@ describe('unsaved Persona scenario journal',()=>{
   const s=storage();s.setItem(personaDraftKey('project-a'),'{bad json');
   expect(readPersonaScenarioDraft(s,'project-a')).toBeNull();
   expect(s.getItem(personaDraftKey('project-a'))).toBe('{bad json');
+  expect(personaScenarioDraftExists(s,'project-a')).toBe(true);
+  expect(()=>savePersonaScenarioDraft(s,original)).toThrow('corrupt_persona_scenario_draft_preserved');
+  expect(s.getItem(personaDraftKey('project-a'))).toBe('{bad json');
   s.setItem(personaDraftKey('project-a'),JSON.stringify({...original,beats:[{purpose:'hook'}]}));
   expect(readPersonaScenarioDraft(s,'project-a')).toBeNull();
+  expect(personaScenarioDraftExists(s,'project-a')).toBe(true);
  });
  it('rejects malformed writes and does not overwrite previously valid journal',()=>{
   const s=storage();savePersonaScenarioDraft(s,original);
