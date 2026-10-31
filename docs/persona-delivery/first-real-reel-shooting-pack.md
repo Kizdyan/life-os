@@ -1,6 +1,6 @@
 # Актёр и композитор · пакет первой съёмки
 
-Статус: готов к **съёмке и авторскому просмотру**, но не к публикации. Сценарий для первой репетиции — [выбранный редакторский кандидат](editorial-candidate-options.md), не утверждённый автором. Оригиналы не редактируются, публикация не включается.
+Статус: готов к **съёмке и авторскому просмотру**, но не к публикации. Сценарий для первой репетиции — [выбранный редакторский кандидат V2](editorial-candidate-production-brief.json), не утверждённый автором. Оригиналы не редактируются, публикация не включается.
 
 ## Перед съёмкой: короткий звуковой аниматик
 
@@ -65,7 +65,7 @@ npm run persona:delivery:sources -- "D:\Persona\actor-composer-01\captures" "D:\
 
 Получится `intake-01\sources.json` и `intake-01\intake-report.json`. Если для каждой сцены записано до шести дублей, инструмент выбирает **только самый ранний по номеру дубль каждого кадра как непроверенный исходный вариант**, а остальные явно перечисляет в `alternateTakes` отчёта. Это не означает, что первый дубль лучший: перед монтажом его качество должен проверить Media Engine и автор. В рабочий manifest попадают не более семи кадров; исходные видео не изменяются. Это **только проверка имён** — фактические речь, изображение и звук проверяет существующий Media Engine. Для двух длинных исходников программа не выдумывает соответствие семи сцен: его пытается установить локальный ASR, при сомнении требуется подтверждение.
 
-4. В PowerShell из корня Life OS выполнить. Целевую папку чернового монтажа заранее не создавать:
+4. В PowerShell из корня Life OS выполнить монтаж, используя готовый `intake-01\sources.json` из шага 3. Целевую папку чернового монтажа заранее не создавать; **отдельную повторную команду intake здесь не запускать**:
 
 ```powershell
 $env:PATH = "C:\Users\Kostya\Tools\FFmpeg\ffmpeg-9.0.2-essentials_build\bin;$env:PATH"
@@ -73,12 +73,8 @@ $sources = "D:\Persona\actor-composer-01\intake-01\sources.json"
 $brief = "docs\persona-delivery\editorial-candidate-production-brief.json"
 $out = "D:\Persona\actor-composer-draft-01"
 
-npm run media:shoot:intake -- folder `
-  "$out\intake" `
-  $selected
-
 npm run media:first-reel:draft -- `
-  "$out\intake\sources.json" `
+  $sources `
   $brief `
   $out `
   "C:\Users\Kostya\Tools\whisper.cpp\bin\whisper-cli.exe" `

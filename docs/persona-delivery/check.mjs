@@ -67,6 +67,11 @@ if (!shootingPack.includes('editorial-candidate-production-brief.json'))
 if (!shootingPack.includes('Публикация заблокирована'))
   fail('publication approval gate is missing from shooting instructions');
 if (!brief.script[6].action.includes('без обязательного титра') ||
+    !brief.shots[6].action.includes('без обязательного титра') ||
     !shootingPack.includes('Без обязательного титра'))
-  fail('A04 timing must prioritize reaction and full spoken payoff over a mandatory end title');
+  fail('A04 script, shot and shooting pack must not force a title into the four-second payoff');
+if (shootingPack.includes('$selected') || shootingPack.includes('$out\\intake\\sources.json'))
+  fail('Shooting instructions contain a stale or undefined source-manifest command');
+if (!shootingPack.includes('$sources') || !shootingPack.includes('npm run persona:delivery:sources --'))
+  fail('Shooting instructions do not use one consistent explicit-folder manifest workflow');
 console.log('PASS: selected editorial-candidate JSON (not archived V1), 7 ordered scenes + shots, locked A01/B01/payoff, 31 s, matching shooting pack and explicit source IDs');
