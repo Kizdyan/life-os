@@ -2,6 +2,21 @@ import type { PersonaProductionBrief } from '../../../packages/core/src/persona-
 import { createScenarioScript, reviseScenarioScript, type ScenarioIdea, type ScenarioScriptBeat } from '../../../packages/core/src/persona-scenario-intelligence';
 import type { PersonaScenarioWorkspace } from './personaProjectStore';
 
+/** Rejects edits to exact spoken lines the author explicitly pinned in THIS idea. */
+export function assertPersonaAuthorLockedLines(
+ workspace: PersonaScenarioWorkspace,
+ beats: readonly ScenarioScriptBeat[],
+ ideaId: string,
+): void {
+ const locks=workspace.authorLockedLines??[];
+ for(const lock of locks){
+  if(lock.ideaId!==ideaId)continue;
+  if(!Number.isInteger(lock.index)||lock.index<0||lock.index>=beats.length||
+      beats[lock.index]?.line!==lock.line)
+   throw new Error('Закреплённая автором реплика кадра '+(lock.index+1)+' изменена. Сначала явно снимите закрепление в редакторе сценария.');
+ }
+}
+
 /** Receives a brief only after the canonical Production Brief import has validated it. */
 export function addImportedBriefScenario(workspace: PersonaScenarioWorkspace | undefined, brief: PersonaProductionBrief, createdAt: string): PersonaScenarioWorkspace {
   const current = workspace ?? { version: 1 as const, research: [], analyses: [], ideas: [] };
@@ -11,6 +26,7 @@ export function addImportedBriefScenario(workspace: PersonaScenarioWorkspace | u
   }));
   if (current.script) {
     if (current.script.idea.id !== `imported-brief-${brief.ideaId}`) throw new Error('В проекте сохранён сценарий другой идеи. Импорт отклонён, история сохранена.');
+    assertPersonaAuthorLockedLines(current,beats,current.script.idea.id);
     if (JSON.stringify(current.script.currentRevision.beats) === JSON.stringify(beats)) return current;
     if (current.script.revisions.some(revision => JSON.stringify(revision.beats) === JSON.stringify(beats))) {
       throw new Error('Файл содержит старую версию сценария. Импорт отклонён, текущие правки сохранены.');
