@@ -40,6 +40,16 @@ export function ideaForImportedBrief(current:Idea, brief:unknown, isBlankQuickSt
  return {...current,title:candidate.sourceTitle,angle:candidate.sourceAngle,format:candidate.sourceFormat!,source:'imported-brief'};
 }
 
+
+/** Always reopen the snapshot returned by storage, never a stale project card prop. */
+export function selectedPersonaProjectSnapshot(
+ collection:PersonaProjectCollection,projectId:string,
+):PersonaProject{
+ const selected=collection.projects.find(item=>item.id===projectId);
+ if(!selected)throw new Error('unknown_persona_project');
+ return selected;
+}
+
 export function PersonaProductionBriefPanel({pipeline,editor,comment,factsChecked,onEditorChange,onCommentChange,onFactsCheckedChange,onDecision,onRebuild,onAngleChange,onBriefChange}:{pipeline:PersonaProductionPipeline;editor:string;comment:string;factsChecked:boolean;onEditorChange:(value:string)=>void;onCommentChange:(value:string)=>void;onFactsCheckedChange:(value:boolean)=>void;onDecision:(decision:'approved'|'rejected')=>void;onRebuild:()=>void;onAngleChange:(value:string)=>void;onBriefChange:(brief:PersonaProductionBrief)=>void}){
  const brief=pipeline.materials.productionBrief;
  const qa=pipeline.materials.qa;
@@ -146,7 +156,9 @@ export default function PersonaFactory(){
  function openProject(project:PersonaProject){
   if(activeProjectId&&chosen&&!saveActiveProject())return false;
   try{
-  const collection=selectPersonaProject(localStorage,project.id);setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(project.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(project));setDraft(project.script as Draft|null);setQa(project.qa as QA|null);setProduction(project.shootingPlan as PersonaProductionPipeline|null);setScenarioWorkspace(project.scenarioWorkspace);setWorkspaceStep(workspaceStepFrom(project.lastOpenStep,project.contentType));setStage(projectStage(project.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(project.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен локально. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
+  const collection=selectPersonaProject(localStorage,project.id);
+  const saved=selectedPersonaProjectSnapshot(collection,project.id);
+  setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(saved.shootingPlan as PersonaProductionPipeline|null);setScenarioWorkspace(saved.scenarioWorkspace);setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(projectStage(saved.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(saved.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен из актуального локального снимка. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
   return true;
   }catch{setSaveState('error');setStatus('Переключение проекта остановлено: браузер не подтвердил сохранение.');return false}
  }
