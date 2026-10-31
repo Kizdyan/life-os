@@ -159,6 +159,31 @@ describe('Persona project storage',()=>{
   expect((reloaded.projects[0] as any).scenarioWorkspace).toBeUndefined();
  });
 
+ it('preserves multiple distinct corrupt collection backups rather than overwriting history',()=>{
+  const main='lifeos:persona:projects:v1';
+  const backup=main+':corrupt';
+  const storage=memoryStorage({[backup]:'{first-snapshot',[main]:'{second-snapshot'});
+  expect(loadPersonaProjects(storage,()=> 'unused').projects).toEqual([]);
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+  expect(storage.getItem(backup+':2')).toBe('{second-snapshot');
+  storage.setItem(main,'{third-snapshot');
+  loadPersonaProjects(storage,()=> 'unused');
+  expect(storage.getItem(backup+':3')).toBe('{third-snapshot');
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+ });
+ it('keeps the malformed original when the recovery backup cannot be written',()=>{
+  const main='lifeos:persona:projects:v1';
+  const original=memoryStorage({[main]:'{valuable-corrupt-data'});
+  const denied:PersonaProjectStorage={
+   getItem:key=>original.getItem(key),
+   setItem:(key,value)=>{if(key.includes(':corrupt'))throw new Error('storage quota');original.setItem(key,value)},
+   removeItem:key=>original.removeItem(key),
+  };
+  expect(()=>loadPersonaProjects(denied,()=> 'unused')).toThrow('storage quota');
+  expect(original.getItem(main)).toBe('{valuable-corrupt-data');
+  expect(original.getItem(main+':corrupt')).toBeNull();
+ });
+
  it('quarantines corrupt project data instead of throwing or overwriting it',()=>{
   const storage=memoryStorage({'lifeos:persona:projects:v1':'{not-json'});
 

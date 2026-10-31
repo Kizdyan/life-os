@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import PersonaScenarioWorkspace from "./PersonaScenarioWorkspace";
+import PersonaScenarioWorkspace, { personaScenarioDraftIsDirty } from "./PersonaScenarioWorkspace";
 import { createPersonaProject, type PersonaScenarioWorkspace as Workspace } from "./personaProjectStore";
 import { approveScenarioScript, createScenarioScript, reviseScenarioScript, suggestScenarioIdeas, validateScenarioResearch } from "../../../packages/core/src/persona-scenario-intelligence";
 
@@ -36,6 +36,13 @@ function render(workspace: Workspace) {
 }
 
 describe("Persona Scenario workspace", () => {
+  it("preserves whitespace-only unsaved revision reasons consistently with the pending-state guard",()=>{
+    const beats=draft.currentRevision.beats;
+    expect(personaScenarioDraftIsDirty(beats,beats,'   ')).toBe(true);
+    expect(personaScenarioDraftIsDirty(beats,beats,'')).toBe(false);
+    expect(personaScenarioDraftIsDirty([...beats.slice(0,-1),{...beats.at(-1)!,line:'New ending'}],beats,'')).toBe(true);
+  });
+
   it("labels an unviewed source honestly and blocks the Production Brief before author approval", () => {
     const markup = render({ version: 1, research, analyses: [], ideas: [idea], selectedIdeaId: idea.id, script: draft });
 

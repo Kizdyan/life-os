@@ -92,7 +92,17 @@ function readCollection(storage:PersonaProjectStorage):PersonaProjectCollection|
  try{
   return validatePersonaProjectCollection(JSON.parse(raw));
  }catch{
-  storage.setItem(CORRUPT_KEY,raw);
+  // Preserve every distinct corrupt snapshot. Never overwrite an earlier backup.
+  // If storage refuses the backup, keep the original collection key untouched.
+  let backupKey:string|null=null;
+  for(let slot=1;slot<=1000;slot++){
+   const candidate=slot===1?CORRUPT_KEY:`${CORRUPT_KEY}:${slot}`;
+   const existing=storage.getItem(candidate);
+   if(existing===raw)break;
+   if(existing===null){backupKey=candidate;break;}
+   if(slot===1000)throw new Error('persona_project_corrupt_backup_limit');
+  }
+  if(backupKey)storage.setItem(backupKey,raw);
   storage.removeItem(PERSONA_PROJECTS_KEY);
   return null;
  }

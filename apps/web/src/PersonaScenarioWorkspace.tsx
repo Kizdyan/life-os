@@ -43,6 +43,13 @@ function sourceLabel(status:ScenarioObservationStatus){
  return status==='user_reviewed'?'Просмотрено автором':status==='unavailable'?'Источник недоступен':'Метаданные ссылки — видео не просмотрено';
 }
 
+/** Whitespace-only reason input is still an unsaved edit until explicitly cleared. */
+export function personaScenarioDraftIsDirty(
+ beats:ScenarioScriptBeat[],savedBeats:ScenarioScriptBeat[],reason:string,
+):boolean{
+ return JSON.stringify(beats)!==JSON.stringify(savedBeats)||reason.length>0;
+}
+
 function draftBeats(idea:ScenarioIdea):ScenarioScriptBeat[]{
  return [
   {purpose:'hook',line:`${idea.title}: одна ситуация, которую нельзя решить красивой позой.`,action:'Крупный план, начать действие в первом кадре.',durationSec:5},
@@ -97,7 +104,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   const stored=readPersonaScenarioDraft(draftStorage,project.id);
   // Never overwrite an older, unreconciled draft after an external revision import.
   if(stored&&(stored.sourceRevisionId!==script.currentRevisionId||stored.ideaId!==script.idea.id))return;
-  const dirty=JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats)||Boolean(revisionReason.trim());
+  const dirty=personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason);
   try{
    if(dirty){
     draftRawRef.current=savePersonaScenarioDraft(draftStorage,{
@@ -116,7 +123,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
- const hasPendingChanges=hasUnsavedChanges||revisionReason.length>0||Boolean(staleDraft||corruptDraft);
+ const hasPendingChanges=Boolean(script&&personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason))||Boolean(staleDraft||corruptDraft);
  const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasPendingChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
