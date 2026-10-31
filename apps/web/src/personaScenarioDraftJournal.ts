@@ -29,8 +29,15 @@ export function readPersonaScenarioDraft(storage:DraftStorage,projectId:string):
   const decoded:unknown=JSON.parse(raw);return validDraft(decoded,projectId)?decoded:null;
  }catch{return null}
 }
+/** A pending journal may not be overwritten or ignored, even when malformed. */
+export function personaScenarioDraftExists(storage:DraftStorage,projectId:string):boolean{
+ try{return storage.getItem(personaDraftKey(projectId))!==null}catch{return true}
+}
 export function savePersonaScenarioDraft(storage:DraftStorage,draft:PersonaScenarioDraftJournal){
  if(!validDraft(draft,draft.projectId))throw Error('invalid_persona_scenario_draft');
+ const previous=storage.getItem(personaDraftKey(draft.projectId));
+ if(previous!==null&&!readPersonaScenarioDraft(storage,draft.projectId))
+  throw Error('corrupt_persona_scenario_draft_preserved');
  storage.setItem(personaDraftKey(draft.projectId),JSON.stringify(draft));
 }
 export function clearPersonaScenarioDraft(storage:DraftStorage,projectId:string){
