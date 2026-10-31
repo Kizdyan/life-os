@@ -67,8 +67,9 @@ doctor-suggestion.json.artifacts/
   run.json
   diagnosis.request.json
   diagnosis.started.json
-  diagnosis.raw.txt
-  diagnosis.metrics.json
+  diagnosis.raw.txt      # only when critique was newly generated
+  diagnosis.source-raw.txt  # only on resume: verified copy of earlier raw critique
+  diagnosis.metrics.json  # only for a new critique
   diagnosis.validated.json
   revision.request.json
   revision.started.json
@@ -89,7 +90,7 @@ If a previous attempt saved `diagnosis.validated.json` but did not produce an ac
 node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\path\\doctor-suggestion-retry.json" --model qwen3:4b-instruct --timeout-ms 180000 --resume-from "C:\\path\\doctor-suggestion.json.artifacts"
 ```
 
-The old artifact set must contain `task.json`, `run.json`, `failure.json` and `diagnosis.validated.json`. The saved task must match the new input exactly, and the previously used model must match. The recovered critique is **independently revalidated** against the saved source task before the second call; changes to the task, invalid comments or cross-project reuse fail closed. Only the **rewrite** call is made (after the normal local model availability check). The retry directory records `diagnosis.reused.json`, the revalidated diagnosis and new patch-stage evidence. No new `diagnosis.raw.txt` is fabricated. This is not a guarantee of creative improvement.
+The old artifact set must contain `task.json`, `run.json`, `failure.json`, `diagnosis.validated.json` and the original raw critique (`diagnosis.raw.txt`, or `diagnosis.source-raw.txt` for repeated recoveries). The saved task must match the new input exactly, and the previously used model must match. The recovered critique is **independently revalidated** against the saved source task before the second call; changes to the task, invalid comments or cross-project reuse fail closed. Only the **rewrite** call is made (after the normal local model availability check). The retry directory records `diagnosis.reused.json`, the revalidated diagnosis and new patch-stage evidence. No new `diagnosis.raw.txt` is fabricated. Instead, the retry preserves a distinctly named verified copy in `diagnosis.source-raw.txt`. The saved canonical critique is checked against that original Ollama response, so even a structurally valid but manually altered finding is refused. Resume is allowed only for a recorded failure during the **rewrite** stage and when the earlier proposal file does not already exist. The same critique can be reused after multiple failed rewrite attempts without re-running diagnosis. This is not a guarantee of creative improvement.
 
 Old unsuccessful runs whose folders contain only `task.json` cannot reconstruct missing Ollama responses retrospectively. A new local run is required to generate stage artifacts; do not claim that historic reasons have been recovered.
 
@@ -128,7 +129,7 @@ npm test
 npm run web:build
 ```
 
-This increment includes new patch-only and failure-preservation regression tests. The patch assembler has been exercised on the GitHub source in isolated V8 checks; a full Node/npm suite, Windows Ollama, real creative acceptance and browser QA **must still run in the repository** before merging. No live creative V1→V2 success is claimed.
+This increment includes new patch-only, failure-preservation, raw-evidence integrity and repeat-resume regression tests. Canonical tasks without an optional `authorFeedback` are valid and tested. The patch assembler has been exercised on the GitHub source in isolated V8 checks; a full Node/npm suite, Windows Ollama, real creative acceptance and browser QA **must still run in the repository** before merging. No live creative V1→V2 success is claimed.
 
 ## Cooperation with parallel Codex work
 
