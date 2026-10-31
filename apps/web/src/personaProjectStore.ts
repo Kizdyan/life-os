@@ -42,6 +42,8 @@ export type PersonaScenarioWorkspace={
  creativeProfile?:ScenarioCreativeProfile;
  /** Rejection feedback remains separate from positive Format Memory. */
  editorialFeedback?:Array<{revisionId:string;comment:string;createdAt:string}>;
+ /** Explicit author action only. Locks the exact written LINE in one idea, not global beat numbers. */
+ authorLockedLines?:Array<{ideaId:string;index:number;line:string}>;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -59,7 +61,13 @@ function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  workspace.creativeProfile.priorities.some(value=>typeof value!=='string')||
  workspace.creativeProfile.constraints.some(value=>typeof value!=='string')))||
  (workspace.editorialFeedback!==undefined&&(!Array.isArray(workspace.editorialFeedback)||
- workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string'))))return false;
+ workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string')))||
+ (workspace.authorLockedLines!==undefined&&(!Array.isArray(workspace.authorLockedLines)||
+ workspace.authorLockedLines.length>12||
+ workspace.authorLockedLines.some(item=>!item||typeof item.ideaId!=='string'||!item.ideaId.trim()||item.ideaId.length>150||
+ !Number.isInteger(item.index)||item.index<0||item.index>=12||
+ typeof item.line!=='string'||!item.line.trim()||item.line.length>2000)||
+ new Set(workspace.authorLockedLines.map(item=>item.ideaId+':'+item.index)).size!==workspace.authorLockedLines.length)))return false;
  if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
  if(workspace.script===undefined)return true;
  const script=workspace.script as Partial<ScenarioScript>;
