@@ -7,6 +7,7 @@ import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
+import {applyProductionInputField,productionBriefSnapshot,readProductionInputRaw,parseProductionInputDraft,saveProductionInputDraft,clearProductionInputDraft,productionInputDraftExists} from './personaProductionInputJournal';
 import DataPortability from './DataPortability';
 import{useEffect,useMemo,useRef,useState}from'react';
 import{applyPersonaImportedProductionBrief,applyPersonaProductionMilestone,createPersonaProject,assertPersonaAsyncImportTarget,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,selectPersonaProject,type PersonaContentType,type PersonaProject,type PersonaProjectCollection,type PersonaScenarioWorkspace as ScenarioWorkspace}from'./personaProjectStore';
@@ -73,22 +74,70 @@ export function personaScenarioWorkspaceMountKey(projectId:string,workspace:Scen
   .map(value=>encodeURIComponent(value)).join(':');
 }
 
-export function PersonaProductionBriefPanel({pipeline,editor,comment,factsChecked,onEditorChange,onCommentChange,onFactsCheckedChange,onDecision,onRebuild,onAngleChange,onBriefChange}:{pipeline:PersonaProductionPipeline;editor:string;comment:string;factsChecked:boolean;onEditorChange:(value:string)=>void;onCommentChange:(value:string)=>void;onFactsCheckedChange:(value:boolean)=>void;onDecision:(decision:'approved'|'rejected')=>void;onRebuild:()=>void;onAngleChange:(value:string)=>void;onBriefChange:(brief:PersonaProductionBrief)=>void}){
+export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,factsChecked,onEditorChange,onCommentChange,onFactsCheckedChange,onDecision,onRebuild,onAngleChange,onBriefChange}:{projectId:string;pipeline:PersonaProductionPipeline;editor:string;comment:string;factsChecked:boolean;onEditorChange:(value:string)=>void;onCommentChange:(value:string)=>void;onFactsCheckedChange:(value:boolean)=>void;onDecision:(decision:'approved'|'rejected')=>void;onRebuild:()=>void;onAngleChange:(value:string)=>void;onBriefChange:(brief:PersonaProductionBrief)=>boolean}){
  const brief=pipeline.materials.productionBrief;
  const qa=pipeline.materials.qa;
  if(!brief||!qa)return null;
  const requiresFactReview=qa.factReview.status==='requires_fact_review';
  const dirty=(pipeline.input.idea.angle.trim()!==brief.sourceAngle||pipeline.input.idea.title.trim()!==brief.sourceTitle||pipeline.input.idea.format!==brief.sourceFormat);
- const canApprove=editor.trim().length>0&&comment.trim().length>0&&(!requiresFactReview||factsChecked)&&qa.status!=='needs_revision'&&!dirty&&pipeline.stage==='QA';
- const editBrief=(change:(current:PersonaProductionBrief)=>PersonaProductionBrief)=>onBriefChange(change(brief));
- const editDuration=(index:number,value:string)=>{const durationSec=Number(value);if(!Number.isFinite(durationSec)||durationSec<=0)return;editBrief(current=>{const script=current.script.map((beat,i)=>i===index?{...beat,durationSec}:beat);const shots=current.shots.map((shot,i)=>i===index?{...shot,durationSec}:shot);const total=shots.reduce((sum,shot)=>sum+shot.durationSec,0);return {...current,script,shots,adaptations:{reels:{...current.adaptations.reels,durationSec:total},shorts:{...current.adaptations.shorts,durationSec:total},vkClips:{...current.adaptations.vkClips,durationSec:total}}}})};
+ const storage=resolvePersonaScenarioDraftStorage();
+ const [raw,setRaw]=useState<string|null>(()=>{try{return readProductionInputRaw(storage,projectId)}catch{return null}});
+ const rawRef=useRef(raw);
+ const [inputError,setInputError]=useState('');
+ const [discardChecked,setDiscardChecked]=useState(false);
+ const pending=parseProductionInputDraft(raw,projectId);
+ const matching=Boolean(pending&&pending.ideaId===brief.ideaId&&pending.base===productionBriefSnapshot(brief));
+ const unresolved=raw!==null&&!matching;
+ const canApprove=editor.trim().length>0&&comment.trim().length>0&&(!requiresFactReview||factsChecked)&&qa.status!=='needs_revision'&&!dirty&&pipeline.stage==='QA'&&raw===null;
+ const valueFor=(field:string,canonical:string)=>matching&&pending?.field===field?pending.value:canonical;
+ const typeField=(field:string,value:string,element:HTMLTextAreaElement|HTMLInputElement,canonical:string)=>{
+  try{
+   if(unresolved)throw Error('Сначала разрешите черновик другой версии.');
+   const next=saveProductionInputDraft(storage,{version:1,projectId,ideaId:brief.ideaId,base:productionBriefSnapshot(brief),field,value},rawRef.current);
+   rawRef.current=next;setRaw(next);setInputError('');
+  }catch(error){
+   element.value=valueFor(field,canonical);
+   setInputError('Ввод не защищён от закрытия страницы: '+String((error as Error).message||error));
+  }
+ };
+ const commitField=(field:string,value:string)=>{
+  const current=rawRef.current;
+  if(current===null)return;
+  const d=parseProductionInputDraft(current,projectId);
+  if(!d||d.field!==field||d.value!==value||d.ideaId!==brief.ideaId||d.base!==productionBriefSnapshot(brief)){
+   setInputError('Черновик относится к другой версии. Скопируйте его перед очисткой.');return;
+  }
+  try{
+   if(readProductionInputRaw(storage,projectId)!==current)throw Error('Правка изменена в другой вкладке.');
+   if(!onBriefChange(applyProductionInputField(brief,field,value))){
+    setInputError('Бриф не удалось записать. Страховочная копия сохранена.');return;
+   }
+   clearProductionInputDraft(storage,projectId,current);
+   rawRef.current=null;setRaw(null);setInputError('');setDiscardChecked(false);
+  }catch(error){setInputError(String((error as Error).message||error))}
+ };
+ const discardDraft=()=>{
+  if(!discardChecked||rawRef.current===null)return;
+  try{
+   clearProductionInputDraft(storage,projectId,rawRef.current);
+   rawRef.current=null;setRaw(null);setInputError('');setDiscardChecked(false);
+  }catch(error){setInputError('Не удалось удалить страховочную копию: '+String((error as Error).message||error))}
+ };
  return <section className="productionBrief" aria-label="Съёмочный бриф">
   <div className="productionBriefHead"><div><small>ДЕТЕРМИНИРОВАННЫЙ ШАБЛОН · БЕЗ ВЫЗОВА AI</small><h3>Съёмочный бриф</h3><p>Создан из выбранной идеи. Это не результат реального ИИ и не готовый видеомонтаж.</p></div><span className={pipeline.stage==='READY_FOR_SHOOT'?'briefReady':'briefQa'}>{pipeline.stage==='READY_FOR_SHOOT'?'Можно снимать':'На редакторской проверке'}</span></div>
   <label className="briefEdit"><span>Смысл идеи</span><textarea aria-label="Смысл идеи для съёмочного брифа" value={pipeline.input.idea.angle} onChange={e=>onAngleChange(e.target.value)}/></label>
   {dirty&&<p role="alert" className="factReview">Идея изменена. Пересоберите бриф: прежние сценарий и QA устарели, одобрение заблокировано.</p>}
   {(pipeline.stage==='QA'||dirty)&&<div className="actions"><button className="ghost" onClick={onRebuild}>Обновить бриф после правки</button></div>}
   <p className="briefEditNotice">Правка сбросит предыдущее утверждение и повторно запустит структурную проверку.</p>
-  <div className="briefGrid"><article><small>СЦЕНАРИЙ</small>{brief.script.map((beat,index)=><fieldset className="briefBeat" key={beat.order}><legend>Кадр {beat.order}</legend><label>Реплика<textarea aria-label={`Редактировать реплику ${beat.order}`} defaultValue={beat.line} onBlur={e=>editBrief(current=>({...current,script:current.script.map((item,i)=>i===index?{...item,line:e.currentTarget.value}:item)}))}/></label><label>Длительность, сек.<input aria-label={`Длительность кадра ${beat.order}`} type="number" min="0.1" step="0.1" defaultValue={beat.durationSec} onBlur={e=>editDuration(index,e.currentTarget.value)}/></label><label>Действие<textarea aria-label={`Сценарное действие ${beat.order}`} defaultValue={beat.action} onBlur={e=>editBrief(current=>({...current,script:current.script.map((item,i)=>i===index?{...item,action:e.currentTarget.value}:item)}))}/></label></fieldset>)}</article><article><small>КАДРЫ</small>{brief.shots.map((shot,index)=><fieldset className="briefBeat" key={shot.order}><legend>Кадр {shot.order} · {shot.framing}</legend><label>Ракурс<textarea aria-label={`Ракурс кадра ${shot.order}`} defaultValue={shot.angle} onBlur={e=>editBrief(current=>({...current,shots:current.shots.map((item,i)=>i===index?{...item,angle:e.currentTarget.value}:item)}))}/></label><label>Движение камеры<textarea aria-label={`Движение камеры ${shot.order}`} defaultValue={shot.cameraMovement} onBlur={e=>editBrief(current=>({...current,shots:current.shots.map((item,i)=>i===index?{...item,cameraMovement:e.currentTarget.value}:item)}))}/></label><label>Свет<textarea aria-label={`Свет кадра ${shot.order}`} defaultValue={shot.lighting} onBlur={e=>editBrief(current=>({...current,shots:current.shots.map((item,i)=>i===index?{...item,lighting:e.currentTarget.value}:item)}))}/></label><label>Съёмочное указание<textarea aria-label={`Съёмочное указание ${shot.order}`} defaultValue={shot.action} onBlur={e=>editBrief(current=>({...current,shots:current.shots.map((item,i)=>i===index?{...item,action:e.currentTarget.value}:item)}))}/></label></fieldset>)}</article></div>
+  {raw!==null&&<div className="briefIssues" role="status">
+   <p><b>{unresolved?'Несохранённый текст из другой версии':'Незавершённая правка съёмочного брифа'}</b>. Эта копия не является утверждённой.</p>
+   <textarea aria-label="Страховочная копия незавершённой правки" readOnly value={pending?.value??raw}/>
+   {matching&&<button type="button" className="ghost" onClick={()=>commitField(pending!.field,pending!.value)}>Проверить и сохранить восстановленную правку</button>}
+   <label><input type="checkbox" checked={discardChecked} onChange={e=>setDiscardChecked(e.target.checked)}/> Я скопировал нужный текст и разрешаю удалить копию</label>
+   <button type="button" className="dangerGhost" disabled={!discardChecked} onClick={discardDraft}>Удалить страховочную копию</button>
+  </div>}
+  {inputError&&<p role="alert" className="briefIssues">{inputError}</p>}
+  <div className="briefGrid"><article><small>СЦЕНАРИЙ</small>{brief.script.map((beat,index)=><fieldset className="briefBeat" key={beat.order}><legend>Кадр {beat.order}</legend><label>Реплика<textarea aria-label={`Редактировать реплику ${beat.order}`} defaultValue={valueFor(`script:${index}:line`,beat.line)} onChange={e=>typeField(`script:${index}:line`,e.currentTarget.value,e.currentTarget,beat.line)} onBlur={e=>commitField(`script:${index}:line`,e.currentTarget.value)}/></label><label>Длительность, сек.<input aria-label={`Длительность кадра ${beat.order}`} type="number" min="0.1" step="0.1" defaultValue={valueFor(`script:${index}:durationSec`,String(beat.durationSec))} onChange={e=>typeField(`script:${index}:durationSec`,e.currentTarget.value,e.currentTarget,String(beat.durationSec))} onBlur={e=>commitField(`script:${index}:durationSec`,e.currentTarget.value)}/></label><label>Действие<textarea aria-label={`Сценарное действие ${beat.order}`} defaultValue={valueFor(`script:${index}:action`,beat.action)} onChange={e=>typeField(`script:${index}:action`,e.currentTarget.value,e.currentTarget,beat.action)} onBlur={e=>commitField(`script:${index}:action`,e.currentTarget.value)}/></label></fieldset>)}</article><article><small>КАДРЫ</small>{brief.shots.map((shot,index)=><fieldset className="briefBeat" key={shot.order}><legend>Кадр {shot.order} · {shot.framing}</legend><label>Ракурс<textarea aria-label={`Ракурс кадра ${shot.order}`} defaultValue={valueFor(`shot:${index}:angle`,shot.angle)} onChange={e=>typeField(`shot:${index}:angle`,e.currentTarget.value,e.currentTarget,shot.angle)} onBlur={e=>commitField(`shot:${index}:angle`,e.currentTarget.value)}/></label><label>Движение камеры<textarea aria-label={`Движение камеры ${shot.order}`} defaultValue={valueFor(`shot:${index}:cameraMovement`,shot.cameraMovement)} onChange={e=>typeField(`shot:${index}:cameraMovement`,e.currentTarget.value,e.currentTarget,shot.cameraMovement)} onBlur={e=>commitField(`shot:${index}:cameraMovement`,e.currentTarget.value)}/></label><label>Свет<textarea aria-label={`Свет кадра ${shot.order}`} defaultValue={valueFor(`shot:${index}:lighting`,shot.lighting)} onChange={e=>typeField(`shot:${index}:lighting`,e.currentTarget.value,e.currentTarget,shot.lighting)} onBlur={e=>commitField(`shot:${index}:lighting`,e.currentTarget.value)}/></label><label>Съёмочное указание<textarea aria-label={`Съёмочное указание ${shot.order}`} defaultValue={valueFor(`shot:${index}:action`,shot.action)} onChange={e=>typeField(`shot:${index}:action`,e.currentTarget.value,e.currentTarget,shot.action)} onBlur={e=>commitField(`shot:${index}:action`,e.currentTarget.value)}/></label></fieldset>)}</article></div>
   <div className="briefNotes"><p><b>Звук:</b> {brief.capture.audio.recording}</p><p><b>Монтаж:</b> {brief.postProduction.transitions}</p><p><b>Титры:</b> до {brief.postProduction.subtitles.maxCharactersPerLine} символов в строке.</p></div>
   <div className={qa.status==='needs_revision'?'briefIssues':'briefChecks'}><b>{qa.status==='needs_revision'?'Нужны правки структуры':'Проверка брифа'}</b><ul>{qa.structuralChecks.map(check=><li key={check.id} className={check.passed?'ok':'bad'}>{check.passed?'✓':'!'} {check.message}</li>)}</ul>{requiresFactReview&&<p className="factReview"><b>Нужна ручная проверка фактов.</b> {qa.factReview.message}</p>}</div>
   {pipeline.stage==='QA'&&<div className="editorialGate"><h4>Редакторское решение</h4><p>Сценарий, кадры и бриф сохранятся при отклонении.</p><input aria-label="Имя редактора" value={editor} onChange={e=>onEditorChange(e.target.value)} placeholder="Имя редактора"/><textarea aria-label="Комментарий редактора" value={comment} onChange={e=>onCommentChange(e.target.value)} placeholder="Комментарий: что подтверждено или что исправить"/>{requiresFactReview&&<label><input type="checkbox" checked={factsChecked} onChange={e=>onFactsCheckedChange(e.target.checked)}/> Факты в свободных репликах сверены с автором или источником.</label>}<div className="actions"><button className="dangerGhost" disabled={!editor.trim()||!comment.trim()} onClick={()=>onDecision('rejected')}>Вернуть на доработку</button><button className="primary" disabled={!canApprove} onClick={()=>onDecision('approved')}>Одобрить для съёмки</button></div></div>}
@@ -246,6 +295,8 @@ export default function PersonaFactory(){
  function createProductionBrief(idea=chosen,angle?:string){
   if(!idea)return;
   try{
+   if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
+    throw Error('Сначала сохраните или разрешите незавершённую правку брифа.');
    const next=buildPersonaProductionWorkflow({...idea,angle:angle??idea.angle});
    persistProductionMilestone(next);
    setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
@@ -270,11 +321,11 @@ export default function PersonaFactory(){
    const initialProject=initial.projects.find(project=>project.id===importingProjectId);
    if(!initialProject)throw new Error('Исходный проект не найден. Импорт отменён.');
    assertPersonaAsyncImportTarget(initial,importingProjectId,initialProject.revision);
-   if(personaScenarioDraftExists(localStorage,importingProjectId))
+   if(personaScenarioDraftExists(localStorage,importingProjectId)||productionInputDraftExists(localStorage,importingProjectId))
     throw new Error('В этом проекте есть несохранённый черновик. Сначала сохраните или разрешите его на этапе «Сценарий».');
    const decoded=JSON.parse(await file.text());
    assertPersonaAsyncImportTarget(loadPersonaProjects(localStorage,newProjectId),importingProjectId,initialProject.revision);
-   if(personaScenarioDraftExists(localStorage,importingProjectId))
+   if(personaScenarioDraftExists(localStorage,importingProjectId)||productionInputDraftExists(localStorage,importingProjectId))
     throw new Error('Во время чтения файла появился несохранённый черновик. Импорт отменён.');
    const importedIdea=ideaForImportedBrief(chosen,decoded,!scenarioWorkspace&&!production&&!draft&&!mediaProbe&&chosen.source==='quick-start');
    const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:importedIdea.id,title:importedIdea.title,angle:importedIdea.angle,format:importedIdea.format}});
@@ -287,18 +338,21 @@ export default function PersonaFactory(){
    setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Кандидат сохранён в истории сценария без авторского утверждения.`);
   }catch(error){setStatus(`Импорт не выполнен: ${String((error as Error).message||'некорректный JSON')}`)}
  }
- function reviseProductionBrief(brief:PersonaProductionBrief){
-  if(!production)return;
+ function reviseProductionBrief(brief:PersonaProductionBrief):boolean{
+  if(!production)return false;
   try{
    const next=revisePersonaProductionBrief(production,brief);
    persistProductionMilestone(next,{stage:'final_qa'});
    setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
    setStatus('Правка сохранена. Предыдущее утверждение сброшено, структурная проверка выполнена повторно.');
-  }catch(error){setStatus(`Правка не сохранена: ${String((error as Error).message||'некорректный бриф')}`)}
+   return true;
+  }catch(error){setStatus(`Правка не сохранена: ${String((error as Error).message||'некорректный бриф')}`);return false}
  }
  function decideProduction(decision:'approved'|'rejected'){
   if(!production)return;
   try{
+   if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
+    throw Error('Есть незавершённая правка съёмочного брифа. Сначала сохраните или разрешите её.');
    if(decision==='approved'&&production.materials.qa?.status==='needs_revision')throw new Error('Нельзя утвердить бриф с ошибками QA.');
    if(decision==='approved'&&(production.input.idea.angle.trim()!==production.materials.productionBrief?.sourceAngle||production.input.idea.title.trim()!==production.materials.productionBrief?.sourceTitle||production.input.idea.format!==production.materials.productionBrief?.sourceFormat))throw new Error('Сценарий устарел: сначала обновите бриф после правки.');
    const next=recordPersonaEditorialDecision(production,{decision,editor:productionEditor,comment:productionComment,factReviewCompleted:productionFactsChecked,decidedAt:new Date().toISOString()});
@@ -358,7 +412,7 @@ export default function PersonaFactory(){
   {chosen?.format==='photo'&&workspaceStep==='edit'&&<PersonaPhotoEditor/>}
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}
   {chosen&&workspaceStep==='edit'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaVideoTimeline key={activeProjectId??chosen.id} projectId={activeProjectId??chosen.id} initialTimeline={timeline} onTimelineChange={setTimeline}/>}
-  {production&&(workspaceStep==='script'||workspaceStep==='review')&&<PersonaProductionBriefPanel pipeline={production} editor={productionEditor} comment={productionComment} factsChecked={productionFactsChecked} onEditorChange={setProductionEditor} onCommentChange={setProductionComment} onFactsCheckedChange={setProductionFactsChecked} onDecision={decideProduction} onRebuild={()=>createProductionBrief(chosen,production.input.idea.angle)} onAngleChange={updateProductionAngle} onBriefChange={reviseProductionBrief}/>}
+  {production&&(workspaceStep==='script'||workspaceStep==='review')&&<PersonaProductionBriefPanel key={activeProjectId??'legacy'} projectId={activeProjectId??'legacy'} pipeline={production} editor={productionEditor} comment={productionComment} factsChecked={productionFactsChecked} onEditorChange={setProductionEditor} onCommentChange={setProductionComment} onFactsCheckedChange={setProductionFactsChecked} onDecision={decideProduction} onRebuild={()=>createProductionBrief(chosen,production.input.idea.angle)} onAngleChange={updateProductionAngle} onBriefChange={reviseProductionBrief}/>}
   {chosen&&draft&&workspaceStep==='review'&&<div className={`draft ${styleClass(draft.style)}`}><div className="draftTop"><div><small>{engineMode==='ai'?'Сценарий реального ИИ':'Шаблонный черновик'} · Формальная проверка {qa?.score||0}/100</small><h3>{draft.title}</h3></div><span className={qa?.pass?'qaPass':'qaFail'}>{qa?.pass?'Форма проверена':'Есть замечания'}</span></div>{asset&&(assetIsVideo?<video className="assetPreview" src={asset} controls preload="metadata"/>:<img className="assetPreview" src={asset} alt="Исходник"/>)}<div className="slides">{draft.slides.map((s,i)=><article key={i} className="slide"><small>{s.eyebrow}</small><strong>{s.title}</strong><p>{s.body}</p><span>{i+1}/{draft.slides.length}</span></article>)}</div><div className="caption"><small>ТЕКСТ</small><p>{draft.caption}</p></div>{draft.assetInstruction&&<div className="caption"><small>ПЛАН СЪЁМКИ И МОНТАЖА (ИНСТРУКЦИЯ, НЕ ВЫПОЛНЕННЫЙ МОНТАЖ)</small><p>{draft.assetInstruction}</p></div>}<div className="feedback"><textarea value={feedback} onChange={e=>setFeedback(e.target.value)} placeholder="Говори или пиши обычным языком. Можно дать длинную команду из нескольких требований."/><button className={recording?'mic listening':'mic'} disabled={transcribing} onClick={recording?stopRecording:startRecording}>{transcribing?'…':recording?'■':'🎙️'}</button></div><div className="voiceHint">{recording?'Запись идёт до твоего нажатия. Паузы не останавливают её.':transcribing?'Распознаю весь файл целиком…':'🎙️ → говори сколько нужно → ■. Только после ■ начинается распознавание.'}</div>{status&&<div className="status">{status}</div>}<div className="actions"><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="ghost" disabled={!feedback.trim()||working||recording||transcribing} onClick={()=>void revise()}>{working?'Редактирую + проверяю…':'Исправить и проверить'}</button><button className="dangerGhost" onClick={rejectIdea}>Не публиковать</button><button className="primary" disabled={!qa?.pass||working} onClick={approve}>Утверждаю</button></div></div>}
   {chosen&&workspaceStep==='export'&&<section className="personaEmptyStage"><h3>Экспорт</h3><p>Проект и монтажный план сохранены на этом устройстве. Экспорт MP4 из браузера iPhone пока не реализован; активной кнопки экспорта нет.</p></section>}
   {chosen&&<nav className="personaWorkspaceFooter" aria-label="Переход между этапами"><button type="button" className="ghost" disabled={workspaceIndex===0} onClick={()=>moveWorkspace(-1)}>Назад</button><span>{projectSteps[workspaceIndex][1]}</span><button type="button" className="primary" disabled={workspaceIndex===projectSteps.length-1} onClick={()=>moveWorkspace(1)}>Продолжить</button></nav>}
