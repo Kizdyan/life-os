@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, registerPersonaExitFlush } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, registerPersonaExitFlush } from './PersonaFactory';
+import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
@@ -41,6 +42,48 @@ describe('persisted Persona project selection',()=>{
  it('rejects an id missing from the actual store instead of opening a stale card',()=>{
   const collection:PersonaProjectCollection={schemaVersion:1,activeProjectId:null,projects:[]};
   expect(()=>selectedPersonaProjectSnapshot(collection,'deleted-project')).toThrow('unknown_persona_project');
+ });
+});
+
+describe('Production Brief recovery UI',()=>{
+ const pipeline=buildPersonaProductionWorkflow({id:'idea-1',title:'Первый Reel',angle:'Сценка актёра',format:'reel',score:0});
+ const brief=pipeline.materials.productionBrief!;
+ const storage=()=>{
+  const entries=new Map<string,string>();
+  return {getItem:(key:string)=>entries.get(key)??null,
+   setItem:(key:string,value:string)=>{entries.set(key,value)},
+   removeItem:(key:string)=>{entries.delete(key)}};
+ };
+ const renderPanel=(store:ReturnType<typeof storage>)=>{
+  vi.stubGlobal('window',{localStorage:store});
+  try{
+   return renderToString(React.createElement(PersonaProductionBriefPanel,{
+    projectId:'project-1',pipeline,editor:'Автор',comment:'Можно снимать',factsChecked:true,
+    onEditorChange:()=>undefined,onCommentChange:()=>undefined,onFactsCheckedChange:()=>undefined,
+    onDecision:()=>undefined,onRebuild:()=>undefined,onAngleChange:()=>undefined,onBriefChange:()=>true,
+   }));
+  }finally{vi.unstubAllGlobals()}
+ };
+ it('does not show recovery controls on an untouched production brief',()=>{
+  const markup=renderPanel(storage());
+  expect(markup).not.toContain('Проверить и сохранить восстановленную правку');
+  expect(markup).toContain('Редактировать реплику 1');
+ });
+ it('renders the exact unblurred text after reload without applying it automatically',()=>{
+  const s=storage(),value='Автор ещё набирает новую реплику';
+  saveProductionInputDraft(s,{version:1,projectId:'project-1',ideaId:brief.ideaId,base:productionBriefSnapshot(brief),field:'script:0:line',value},null);
+  const markup=renderPanel(s);
+  expect(markup).toContain(value);
+  expect(markup).toContain('Проверить и сохранить восстановленную правку');
+  expect(markup).toContain('Страховочная копия незавершённой правки');
+ });
+ it('keeps an earlier-revision draft visible, but not automatically recoverable',()=>{
+  const s=storage();
+  saveProductionInputDraft(s,{version:1,projectId:'project-1',ideaId:brief.ideaId,base:'previous-version',field:'script:0:line',value:'Старая реплика'},null);
+  const markup=renderPanel(s);
+  expect(markup).toContain('Старая реплика');
+  expect(markup).toContain('Несохранённый текст из другой версии');
+  expect(markup).not.toContain('Проверить и сохранить восстановленную правку');
  });
 });
 
