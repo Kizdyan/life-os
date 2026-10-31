@@ -167,8 +167,8 @@ export default function PersonaLocalScriptDoctorPanel({
       Скачать локальное задание · 0 кредитов
     </button>
     <p className="personaDoctorHint">После загрузки задания на Windows, из папки Life OS выполните:</p>
-    <code className="personaDoctorCommand">node tools/persona-local-script-doctor.mjs persona-doctor-task.json persona-doctor-suggestion.json --model qwen2.5-coder:7b</code>
-    <p className="personaDoctorHint">Ollama должна быть запущена на этом компьютере. iPhone и Vercel не обращаются к Windows автоматически.</p>
+    <code className="personaDoctorCommand">node tools/persona-local-script-doctor.mjs persona-doctor-task.json persona-doctor-suggestion.json --model qwen3:4b-instruct</code>
+    <p className="personaDoctorHint">Перед запуском проверьте <code>ollama list</code> и при необходимости замените qwen3:4b-instruct на точное имя уже установленной локальной модели. Ничего не скачивается автоматически. iPhone и Vercel не обращаются к Windows напрямую.</p>
     <label className="personaDoctorField">Загрузить результат локального редактора
       <input aria-label="Импорт предложений Script Doctor" type="file" accept=".json,application/json"
         disabled={unsavedChanges} onChange={event=>{
