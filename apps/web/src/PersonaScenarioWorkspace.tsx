@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
+import { unlockImportedBriefBeats } from './personaBriefScenarioBridge';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
 import { importPersonaProductionBrief } from '../../../packages/core/src/persona-production-pipeline';
 import {
@@ -56,6 +57,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[rejectionFeedback,setRejectionFeedback]=useState('');
  const[revisionReason,setRevisionReason]=useState('');
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
+ const[unlockAuthor,setUnlockAuthor]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>script?.currentRevision.beats??[]);
  useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[project.id,workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
@@ -65,6 +67,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasUnsavedChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
+ const protectedBeats=(workspace.protectedBeats??[]).filter(beat=>!beat.unlockedAt);
+ const unlockProtectedBeats=()=>{
+  try{
+   const next=unlockImportedBriefBeats(workspace,{indices:protectedBeats.map(beat=>beat.index),author:unlockAuthor,unlockedAt:new Date().toISOString()});
+   update({protectedBeats:next.protectedBeats});setUnlockAuthor('');setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось разблокировать закреплённые сцены.');}
+ };
  const addReference=()=>{
   try{
    const next=validateScenarioResearch([...workspace.research,{id:`reference-${Date.now()}`,url:link,platform,observedAt:new Date().toISOString(),observationStatus:'metadata_only',title:title.trim()||undefined,evidence:{kind:'manual_link',observedFields:title.trim()?['url','title']:['url']}}]);
@@ -163,7 +172,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    }));
    const candidate=reviseScenarioScript(script,{
     createdAt:new Date().toISOString(),beats,
-    reason:'Импортирована локальная Ollama-редакция. Требует новой авторской проверки.'
+    reason:'Импортирована внешняя редакция JSON. Происхождение файла не подтверждено автоматически; требуется новая авторская проверка.'
    });
    update({script:candidate});setBeats(candidate.currentRevision.beats);setError('');
   }catch(cause){
@@ -232,6 +241,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
+   {protectedBeats.length>0&&<details className="personaScenarioCard"><summary>Закреплённые автором сцены · {protectedBeats.map(beat=>beat.index+1).join(', ')}</summary><p>Импорт съёмочного брифа не может изменить эти сцены. Разблокирование — отдельное авторское решение; после него импорт всё равно создаёт неутверждённую версию.</p><label>Автор разблокирования<input aria-label="Автор разблокирования закреплённых сцен" value={unlockAuthor} onChange={event=>setUnlockAuthor(event.target.value)} placeholder="Ваше имя"/></label><button type="button" className="ghost" disabled={!unlockAuthor.trim()} onClick={unlockProtectedBeats}>Явно разблокировать сцены {protectedBeats.map(beat=>beat.index+1).join(', ')}</button></details>}
    {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
      {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
        <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
@@ -244,7 +254,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
     <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
     <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК.</small>
-    <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
+    <label>Импортировать редакцию JSON в новую версию сценария<input aria-label="Импортировать редакцию JSON" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
     <small>Импорт не принимает никакого предыдущего утверждения. После редакторской проверки и вашего утверждения новая версия перейдёт в Production Brief без шаблонной перегенерации.</small>
     <PersonaScenarioVersionHistory
       key={`history:${project.id}:${script.currentRevisionId}`}

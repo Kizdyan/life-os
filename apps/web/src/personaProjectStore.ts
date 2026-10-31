@@ -42,6 +42,8 @@ export type PersonaScenarioWorkspace={
  creativeProfile?:ScenarioCreativeProfile;
  /** Rejection feedback remains separate from positive Format Memory. */
  editorialFeedback?:Array<{revisionId:string;comment:string;createdAt:string}>;
+  /** Project-scoped snapshots of author-protected beats; imports may not change them silently. */
+  protectedBeats?:Array<{index:number;line:string;action:string;durationSec:number;lockedAt:string;unlockedAt?:string;unlockedBy?:string}>;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -59,7 +61,8 @@ function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  workspace.creativeProfile.priorities.some(value=>typeof value!=='string')||
  workspace.creativeProfile.constraints.some(value=>typeof value!=='string')))||
  (workspace.editorialFeedback!==undefined&&(!Array.isArray(workspace.editorialFeedback)||
- workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string'))))return false;
+ workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string')))||
+ (workspace.protectedBeats!==undefined&&(!Array.isArray(workspace.protectedBeats)||workspace.protectedBeats.some(item=>!item||!Number.isInteger(item.index)||item.index<0||typeof item.line!=='string'||typeof item.action!=='string'||!Number.isFinite(item.durationSec)||typeof item.lockedAt!=='string'||(item.unlockedAt!==undefined&&typeof item.unlockedAt!=='string')||(item.unlockedBy!==undefined&&typeof item.unlockedBy!=='string')))))return false;
  if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
  if(workspace.script===undefined)return true;
  const script=workspace.script as Partial<ScenarioScript>;

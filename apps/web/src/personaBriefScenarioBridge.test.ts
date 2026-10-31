@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { importPersonaProductionBrief } from '../../../packages/core/src/persona-production-pipeline';
 import { approveScenarioScript } from '../../../packages/core/src/persona-scenario-intelligence';
 import { createPersonaProject, loadPersonaProjects, savePersonaProject } from './personaProjectStore';
-import { addImportedBriefScenario } from './personaBriefScenarioBridge';
+import { addImportedBriefScenario, unlockImportedBriefBeats } from './personaBriefScenarioBridge';
 
 const brief = JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/candidate-production-brief.json', import.meta.url), 'utf8'));
 const project = createPersonaProject({ id: 'actor-composer', title: brief.sourceTitle, contentType: 'reel', sourceIdea: brief.sourceAngle, now: '2026-10-31T10:00:00.000Z' });
@@ -24,14 +24,24 @@ describe('Production Brief to Scenario Workspace', () => {
   it('appends to an existing script and keeps older revisions while removing approval', () => {
     const first = addImportedBriefScenario(undefined, checked, '2026-10-31T10:01:00.000Z');
     const approved = approveScenarioScript(first.script!, { author: 'Author', comment: 'Approved earlier wording', approvedAt: '2026-10-31T10:02:00.000Z' });
-    const changed = { ...checked, script: checked.script.map((beat, index) => index === 0 ? { ...beat, line: 'Новая первая реплика.' } : beat) };
+    const changed = { ...checked, script: checked.script.map((beat, index) => index === 2 ? { ...beat, line: 'Новая третья реплика.' } : beat) };
     const next = addImportedBriefScenario({ ...first, script: approved }, changed, '2026-10-31T10:03:00.000Z');
     expect(next.script?.revisions).toHaveLength(2);
     expect(next.script?.revisions[0].beats[0].line).toBe(brief.script[0].line);
-    expect(next.script?.currentRevision.beats[0].line).toBe('Новая первая реплика.');
+    expect(next.script?.currentRevision.beats[2].line).toBe('Новая третья реплика.');
     expect(next.script?.approval).toBeUndefined();
     expect(addImportedBriefScenario(next, changed, '2026-10-31T10:04:00.000Z').script?.revisions).toHaveLength(2);
     expect(() => addImportedBriefScenario(next, checked, '2026-10-31T10:05:00.000Z')).toThrow(/старую версию/i);
+  });
+
+  it('rejects a changed protected beat until an author explicitly unlocks that project beat', () => {
+    const first = addImportedBriefScenario(undefined, checked, '2026-10-31T10:01:00.000Z');
+    const changed = { ...checked, script: checked.script.map((beat, index) => index === 0 ? { ...beat, line: 'Новая первая реплика.' } : beat) };
+    expect(() => addImportedBriefScenario(first, changed, '2026-10-31T10:02:00.000Z')).toThrow(/закрепл/i);
+    const unlocked = unlockImportedBriefBeats(first, { indices: [0], author: 'Автор', unlockedAt: '2026-10-31T10:03:00.000Z' });
+    const next = addImportedBriefScenario(unlocked, changed, '2026-10-31T10:04:00.000Z');
+    expect(next.script?.currentRevision.beats[0].line).toBe('Новая первая реплика.');
+    expect(next.script?.approval).toBeUndefined();
   });
 
   it('rejects an unrelated saved script without replacing its history', () => {

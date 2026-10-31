@@ -30,6 +30,15 @@ export function buildPersonaProductionWorkflow(idea:Idea):PersonaProductionPipel
  return pipeline;
 }
 
+/** A blank quick-start project may adopt a validated imported brief's identity once.
+ * Existing work is never silently relabelled to make a foreign brief fit. */
+export function ideaForImportedBrief(current:Idea, brief:unknown, isBlankQuickStart:boolean):Idea{
+ if(!isBlankQuickStart||!brief||typeof brief!=='object')return current;
+ const candidate=brief as Partial<{sourceTitle:string;sourceAngle:string;sourceFormat:Idea['format']}>;
+ if(typeof candidate.sourceTitle!=='string'||!candidate.sourceTitle.trim()||typeof candidate.sourceAngle!=='string'||!candidate.sourceAngle.trim()||!['reel','short','story','photo','carousel'].includes(candidate.sourceFormat as string))return current;
+ return {...current,title:candidate.sourceTitle,angle:candidate.sourceAngle,format:candidate.sourceFormat!,source:'imported-brief'};
+}
+
 export function PersonaProductionBriefPanel({pipeline,editor,comment,factsChecked,onEditorChange,onCommentChange,onFactsCheckedChange,onDecision,onRebuild,onAngleChange,onBriefChange}:{pipeline:PersonaProductionPipeline;editor:string;comment:string;factsChecked:boolean;onEditorChange:(value:string)=>void;onCommentChange:(value:string)=>void;onFactsCheckedChange:(value:boolean)=>void;onDecision:(decision:'approved'|'rejected')=>void;onRebuild:()=>void;onAngleChange:(value:string)=>void;onBriefChange:(brief:PersonaProductionBrief)=>void}){
  const brief=pipeline.materials.productionBrief;
  const qa=pipeline.materials.qa;
@@ -136,10 +145,12 @@ export default function PersonaFactory(){
   if(!file||!chosen)return;
   try{
    const decoded=JSON.parse(await file.text());
-   const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
+   const importedIdea=ideaForImportedBrief(chosen,decoded,!scenarioWorkspace&&!production&&!draft&&!mediaProbe&&chosen.source==='quick-start');
+   const next=importPersonaProductionBrief({brief:decoded,selectedIdea:{id:importedIdea.id,title:importedIdea.title,angle:importedIdea.angle,format:importedIdea.format}});
    const importedBrief=next.materials.productionBrief;
    if(!importedBrief)throw new Error('Съёмочный бриф отсутствует после проверки.');
    const updatedWorkspace=addImportedBriefScenario(scenarioWorkspace,importedBrief,new Date().toISOString());
+   if(importedIdea!==chosen)setChosen(importedIdea);
    setScenarioWorkspace(updatedWorkspace);
    setProduction(next);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep('script');setStage('final_qa');
    setStatus(`Импортирован съёмочный бриф: ${next.materials.shotList?.length||0} кадров. Кандидат сохранён в истории сценария без авторского утверждения.`);
