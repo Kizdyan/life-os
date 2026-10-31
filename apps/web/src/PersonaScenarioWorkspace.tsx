@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
+import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
 import { importPersonaProductionBrief } from '../../../packages/core/src/persona-production-pipeline';
 import {
@@ -62,9 +63,20 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
+ const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasUnsavedChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
+ const toggleAuthorLockedLine=(index:number)=>{
+  if(!script||hasUnsavedChanges){setError('Для закрепления реплики сначала сохраните текущую редакцию.');return}
+  const remaining=(workspace.authorLockedLines??[]).filter(lock=>!(lock.ideaId===script.idea.id&&lock.index===index));
+  const alreadyLocked=lockedForScript.some(lock=>lock.index===index);
+  const next=alreadyLocked?remaining:[...remaining,{
+   ideaId:script.idea.id,index,line:script.currentRevision.beats[index].line
+  }];
+  update({authorLockedLines:next});
+  setError('');
+ };
  const addReference=()=>{
   try{
    const next=validateScenarioResearch([...workspace.research,{id:`reference-${Date.now()}`,url:link,platform,observedAt:new Date().toISOString(),observationStatus:'metadata_only',title:title.trim()||undefined,evidence:{kind:'manual_link',observedFields:title.trim()?['url','title']:['url']}}]);
@@ -105,7 +117,11 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  };
  const saveScript=()=>{
   if(!script)return;
-  try{const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});update({script:next});setRevisionReason('');setError('');}
+  try{
+   assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
+   const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});
+   update({script:next});setRevisionReason('');setError('');
+  }
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
  };
  const approveScript=()=>{
@@ -161,9 +177,10 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
     purpose:index===0?'hook':index===brief.script.length-1?'ending':'development',
     line:beat.line,action:beat.action,durationSec:beat.durationSec
    }));
+   assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const candidate=reviseScenarioScript(script,{
     createdAt:new Date().toISOString(),beats,
-    reason:'Импортирована локальная Ollama-редакция. Требует новой авторской проверки.'
+    reason:'Импортирован локальный сценарный бриф. Происхождение редакции и её качество требуют проверки автора.'
    });
    update({script:candidate});setBeats(candidate.currentRevision.beats);setError('');
   }catch(cause){
@@ -232,7 +249,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
-   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label><label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
+   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label>
+     <button type="button" className="ghost" disabled={hasUnsavedChanges}
+      aria-label={`${lockedForScript.some(lock=>lock.index===index)?'Снять закрепление':'Закрепить'} реплику кадра ${index+1}`}
+      onClick={()=>toggleAuthorLockedLine(index)}>
+      {lockedForScript.some(lock=>lock.index===index)?'🔒 Закреплена автором · снять закрепление':'Закрепить реплику'}
+     </button>
+     <label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
      {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
        <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
        <button type="button" className="ghost" disabled={beats[index+1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,1)}>Ниже</button>
@@ -251,9 +274,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       script={script}
       unsavedChanges={hasUnsavedChanges}
       onRestore={next=>{
-        update({script:next});
-        setBeats(next.currentRevision.beats);
-        setError('');
+        try{
+         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
+         update({script:next});
+         setBeats(next.currentRevision.beats);
+         setError('');
+        }catch(cause){setError(cause instanceof Error?cause.message:'Восстановление изменит закреплённую реплику.');}
       }}
     />
     <PersonaLocalScriptDoctorPanel
@@ -263,9 +289,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       latestAuthorFeedback={workspace.editorialFeedback?.at(-1)?.comment}
       unsavedChanges={hasUnsavedChanges}
       onAcceptRevision={next=>{
-        update({script:next});
-        setBeats(next.currentRevision.beats);
-        setError('');
+        try{
+         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
+         update({script:next});
+         setBeats(next.currentRevision.beats);
+         setError('');
+        }catch(cause){setError(cause instanceof Error?cause.message:'Редакция изменит закреплённую реплику.');}
       }}
       onRejectSuggestion={(reason,sourceRevisionId)=>{
         update({editorialFeedback:[
