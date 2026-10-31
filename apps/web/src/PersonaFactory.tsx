@@ -309,6 +309,8 @@ export default function PersonaFactory(){
  function createScenarioProductionBrief(brief:PersonaProductionBrief){
   if(!chosen)return;
   try{
+   if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
+    throw Error('Есть несохранённый ввод в прежнем съёмочном брифе. Сначала сохраните или разрешите черновик.');
    const next=importPersonaProductionBrief({brief,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
    persistProductionMilestone(next,{stage:'final_qa',step:'review',resetQa:true});
    setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
