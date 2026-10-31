@@ -12,6 +12,16 @@ export type PersonaScenarioDraftJournal={
 };
 type DraftStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 const PREFIX='lifeos:persona:unsaved-script:v1:';
+const unavailableDraftStorage:DraftStorage={
+ getItem:()=>null,
+ setItem:()=>{throw Error('persona_draft_storage_unavailable')},
+ removeItem:()=>{throw Error('persona_draft_storage_unavailable')},
+};
+/** SSR-safe: tests and server rendering have no browser localStorage. */
+export function resolvePersonaScenarioDraftStorage():DraftStorage{
+ try{return typeof window!=='undefined'&&window.localStorage?window.localStorage:unavailableDraftStorage}
+ catch{return unavailableDraftStorage}
+}
 export function personaDraftKey(projectId:string){return PREFIX+encodeURIComponent(projectId)}
 function validDraft(value:unknown,projectId:string):value is PersonaScenarioDraftJournal{
  if(!value||typeof value!=='object')return false;
