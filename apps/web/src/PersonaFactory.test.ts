@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey } from './PersonaFactory';
+import PersonaFactory, { ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, registerPersonaExitFlush } from './PersonaFactory';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
@@ -41,6 +41,27 @@ describe('persisted Persona project selection',()=>{
  it('rejects an id missing from the actual store instead of opening a stale card',()=>{
   const collection:PersonaProjectCollection={schemaVersion:1,activeProjectId:null,projects:[]};
   expect(()=>selectedPersonaProjectSnapshot(collection,'deleted-project')).toThrow('unknown_persona_project');
+ });
+});
+
+describe('Persona save-on-exit wiring',()=>{
+ it('flushes on pagehide and hidden-tab transitions but not while visible',()=>{
+  const targetWindow=new EventTarget();
+  const targetDocument=new EventTarget() as EventTarget & {visibilityState:DocumentVisibilityState};
+  targetDocument.visibilityState='visible';
+  const flush=vi.fn();
+  const unregister=registerPersonaExitFlush(targetWindow as unknown as Window,targetDocument as unknown as Document,flush);
+  targetDocument.dispatchEvent(new Event('visibilitychange'));
+  expect(flush).toHaveBeenCalledTimes(0);
+  targetDocument.visibilityState='hidden';
+  targetDocument.dispatchEvent(new Event('visibilitychange'));
+  expect(flush).toHaveBeenCalledTimes(1);
+  targetWindow.dispatchEvent(new Event('pagehide'));
+  expect(flush).toHaveBeenCalledTimes(2);
+  unregister();
+  targetWindow.dispatchEvent(new Event('pagehide'));
+  targetDocument.dispatchEvent(new Event('visibilitychange'));
+  expect(flush).toHaveBeenCalledTimes(2);
  });
 });
 

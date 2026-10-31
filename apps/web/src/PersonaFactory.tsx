@@ -50,6 +50,22 @@ export function selectedPersonaProjectSnapshot(
  return selected;
 }
 
+/** Best-effort final flush for a debounced project snapshot when a tab is hidden or closed. */
+export function registerPersonaExitFlush(
+ targetWindow:Pick<Window,'addEventListener'|'removeEventListener'>,
+ targetDocument:Pick<Document,'addEventListener'|'removeEventListener'|'visibilityState'>,
+ flush:()=>void,
+):()=>void{
+ const onPageHide=()=>flush();
+ const onVisibilityChange=()=>{if(targetDocument.visibilityState==='hidden')flush()};
+ targetWindow.addEventListener('pagehide',onPageHide);
+ targetDocument.addEventListener('visibilitychange',onVisibilityChange);
+ return ()=>{
+  targetWindow.removeEventListener('pagehide',onPageHide);
+  targetDocument.removeEventListener('visibilitychange',onVisibilityChange);
+ };
+}
+
 /** Force the editor's local React state to reset when its project or source revision changes. */
 export function personaScenarioWorkspaceMountKey(projectId:string,workspace:ScenarioWorkspace|undefined):string{
  const script=workspace?.script;
@@ -120,6 +136,7 @@ function workspaceStepFrom(value:unknown,format:PersonaContentType|undefined):Wo
 export default function PersonaFactory(){
  const projectBootstrap=useRef<PersonaProjectCollection|null>(null);if(projectBootstrap.current===null)projectBootstrap.current=loadPersonaProjects(resolvePersonaScenarioDraftStorage(),newProjectId);const initialProject=projectBootstrap.current.projects.find(project=>project.id===projectBootstrap.current?.activeProjectId)??null;
  const lastOwnSavedRevision=useRef<{id:string;revision:number}|null>(initialProject?{id:initialProject.id,revision:initialProject.revision}:null);
+ const pendingAutosave=useRef(false);
  const[projects,setProjects]=useState<PersonaProject[]>(()=>projectBootstrap.current?.projects??[]);const[activeProjectId,setActiveProjectId]=useState<string|null>(()=>projectBootstrap.current?.activeProjectId??null);const[timeline,setTimeline]=useState<PersonaTimelineSettings|null>(()=>initialProject?.timeline as PersonaTimelineSettings|null??null);
  const[screen,setScreen]=useState<PersonaScreen>(screenFromHash);
  const[workspaceStep,setWorkspaceStep]=useState<WorkspaceStep>(()=>workspaceStepFrom(initialProject?.lastOpenStep,initialProject?.contentType));
@@ -151,6 +168,7 @@ export default function PersonaFactory(){
      {stage:milestone.stage,lastOpenStep:milestone.step,resetQa:milestone.resetQa}):candidate;
    const collection=savePersonaProject(localStorage,next,activeProjectId);
    lastOwnSavedRevision.current={id:activeProjectId,revision:next.revision};
+   pendingAutosave.current=false;
    setProjects(collection.projects);
    return true;
   }catch{
@@ -174,7 +192,22 @@ export default function PersonaFactory(){
   if(options.step)setWorkspaceStep(options.step);
   if(options.resetQa)setQa(null);
  }
- useEffect(()=>{if(!activeProjectId||!chosen)return;setSaveState('saving');const timer=window.setTimeout(()=>{if(saveActiveProject())setSaveState('saved')},350);return()=>window.clearTimeout(timer)},[activeProjectId,chosen,draft,qa,stage,production,timeline,mediaProbe,workspaceStep,scenarioWorkspace]);
+ useEffect(()=>{
+  if(!activeProjectId||!chosen)return;
+  pendingAutosave.current=true;
+  setSaveState('saving');
+  const timer=window.setTimeout(()=>{
+   if(pendingAutosave.current&&saveActiveProject())setSaveState('saved');
+  },350);
+  return()=>window.clearTimeout(timer);
+ },[activeProjectId,chosen,draft,qa,stage,production,timeline,mediaProbe,workspaceStep,scenarioWorkspace]);
+ useEffect(()=>{
+  if(!activeProjectId||!chosen)return;
+  const flush=()=>{
+   if(pendingAutosave.current)saveActiveProject();
+  };
+  return registerPersonaExitFlush(window,document,flush);
+ },[activeProjectId,chosen,draft,qa,stage,production,timeline,mediaProbe,workspaceStep,scenarioWorkspace]);
  const visibleIdeas=useMemo(()=>ideas.filter(x=>x.status!=='used'&&x.status!=='rejected'),[ideas]);
  useEffect(()=>{save(HISTORY,h)},[h]);
  useEffect(()=>{if(!shouldRequestPersonaPlan(autoPlan)){setIdeas(localIdeas(h));return}let cancelled=false;(async()=>{try{const data=await api({action:'plan',history:h,seed:localIdeas(h).slice(0,24),auto:true});if(!cancelled&&Array.isArray(data.ideas)&&data.ideas.length>=10)setIdeas(data.ideas)}catch{if(!cancelled)setIdeas(localIdeas(h))}})();return()=>{cancelled=true}},[h,autoPlan]);
