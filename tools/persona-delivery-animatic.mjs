@@ -1,131 +1,136 @@
 #!/usr/bin/env node
-/**
- * Local planning animatic for Persona's first Reel. It renders labelled cards
- * and the selected original sketch; it is deliberately not a substitute for
- * filmed material or an artistic approval.
+/** Offline, self-contained audio-card preview. NOT filmed footage or spoken dialogue.
+ * node tools/persona-delivery-animatic.mjs <explicit-local-wav> <new-output-dir>
  */
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {createHash} from 'node:crypto';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {dirname,join,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
-const fail = message => { throw new Error(message); };
-const sceneIds = ['A01','B01','A02','B02','A03','B03','A04'];
-const palette = ['1d3557','264653','3d405b','2a9d8f','6d597a','7f5539','3a506b'];
+const root=resolve('docs/persona-delivery');
+const ids=['A01','B01','A02','B02','A03','B03','A04'];
+const locked=new Map([[0,'Я актёр. И ещё пишу музыку.'],[1,'И у нас есть проблема.'],
+ [6,'Это колыбельная? Это финал триллера.']]);
+const fail=msg=>{throw Error('Persona animatic: '+msg)};
 
-function run(command, args) {
-  return new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
-    let stdout = '', stderr = '';
-    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-    child.stdout.on('data', data => { stdout += data; });
-    child.stderr.on('data', data => { stderr = (stderr + data).slice(-10000); });
-    child.on('error', reject);
-    child.on('close', code => code === 0 ? resolveRun(stdout) : reject(new Error(`${basename(command)} failed (${code}): ${stderr.slice(-1800)}`)));
-  });
-}
-
-function q(value) {
-  return String(value).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,').replace(/\n/g, '\\n');
-}
-
-export function wrapAnimaticText(value, maxCharacters = 48) {
-  const words=String(value).trim().split(/\s+/u);
-  const lines=[]; let line='';
-  for (const word of words) {
-    const next=line ? `${line} ${word}` : word;
-    if (line && next.length > maxCharacters) { lines.push(line); line=word; }
-    else line=next;
+export function validateAnimaticVariants(original,candidate){
+ for(const [label,brief] of [['V1',original],['candidate',candidate]]){
+  if(brief?.version!==1||brief.sourceFormat!=='reel'||!Array.isArray(brief.script)||
+      !Array.isArray(brief.shots)||brief.script.length!==7||brief.shots.length!==7)
+   fail(label+': invalid seven-scene brief');
+  let seconds=0;
+  for(let i=0;i<7;i++){
+   const s=brief.script[i],shot=brief.shots[i];
+   if(s?.order!==i+1||shot?.order!==i+1||!s.line?.trim()||!s.action?.trim()||
+      !Number.isFinite(s.durationSec)||s.durationSec<=0||shot.durationSec!==s.durationSec)
+    fail(label+': invalid beat/shot '+ids[i]);
+   if(locked.has(i)&&s.line!==locked.get(i))fail(label+': protected '+ids[i]+' changed');
+   seconds+=s.durationSec;
   }
-  if (line) lines.push(line);
-  return lines.join('\n');
+  if(seconds!==31)fail(label+': expected 31 seconds');
+ }
+ if(original.ideaId!==candidate.ideaId||
+    original.script.some((s,i)=>s.durationSec!==candidate.script[i].durationSec))
+  fail('V1 and candidate do not describe matching scene timing and idea');
+ return true;
 }
-
-async function sha256(path) {
-  const digest = createHash('sha256');
-  for await (const chunk of createReadStream(path)) digest.update(chunk);
-  return digest.digest('hex');
+export function checkWav(wav){
+ if(!Buffer.isBuffer(wav)||wav.length<44||wav.length>20*1024*1024||
+    wav.toString('ascii',0,4)!=='RIFF'||wav.toString('ascii',8,12)!=='WAVE')
+  fail('explicit WAV must be RIFF/WAVE below 20 MiB');
+ let fmt=null,bytes=0;
+ for(let p=12;p+8<=wav.length;){
+  const name=wav.toString('ascii',p,p+4),size=wav.readUInt32LE(p+4);
+  if(size>wav.length-p-8)fail('corrupted WAV chunks');
+  if(name==='fmt '&&size>=16)
+   fmt={format:wav.readUInt16LE(p+8),channels:wav.readUInt16LE(p+10),
+    rate:wav.readUInt32LE(p+12),bytesPerSecond:wav.readUInt32LE(p+16)};
+  if(name==='data')bytes+=size;
+  p+=8+size+(size%2);
+ }
+ const seconds=bytes/(fmt?.bytesPerSecond||0);
+ if(!fmt||![1,3].includes(fmt.format)||!([1,2].includes(fmt.channels))||
+   !Number.isFinite(seconds)||seconds<0.25||seconds>3.5)
+  fail('expected PCM/float WAV with a 0.25–3.5 second original sting');
+ return {durationSec:Number(seconds.toFixed(3)),channels:fmt.channels,rate:fmt.rate};
 }
-
-async function probe(ffprobe, path) {
-  const raw = await run(ffprobe, ['-v','error','-show_entries','format=duration:stream=codec_name,codec_type,width,height,r_frame_rate','-of','json',path]);
-  const data = JSON.parse(raw), video = data.streams?.find(stream => stream.codec_type === 'video');
-  const audio = data.streams?.find(stream => stream.codec_type === 'audio');
-  return { durationSec:Number(data.format?.duration), video, audio };
+export function makeHtml(original,candidate,wav,seconds){
+ validateAnimaticVariants(original,candidate);
+ const payload={versions:[original.script,candidate.script],ids,seconds:31,musicDuration:seconds};
+ const safe=JSON.stringify(payload).replaceAll('<','\\u003c').replaceAll('&','\\u0026');
+ return [
+ '<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
+ '<title>Persona · Актёр и композитор · аниматик</title>',
+ '<style>body{font-family:system-ui;background:#101722;color:#f3f6fc;margin:20px}main{max-width:1000px;margin:auto}',
+ '.layout{display:flex;flex-wrap:wrap;gap:24px}.phone{width:min(86vw,320px);aspect-ratio:9/16;border:8px solid #354358;',
+ 'border-radius:24px;background:linear-gradient(140deg,#304d69,#131723);padding:25px;box-sizing:border-box;display:flex;',
+ 'flex-direction:column;justify-content:space-between}.phone.b{background:linear-gradient(140deg,#544566,#171321)}',
+ '.line{font-size:clamp(22px,3vw,30px);font-weight:700}.detail{color:#d1d6e5;font-size:13px}.panel{flex:1;min-width:250px;',
+ 'background:#1b2836;padding:20px;border-radius:16px}button,select{font:inherit;padding:10px;border-radius:8px;',
+ 'background:#395170;color:white;border:1px solid #718399;cursor:pointer;margin:4px}',
+ '.track{display:flex;height:22px;gap:3px;margin:18px 0}.seg{background:#698198;min-width:10px;padding:0;margin:0;border:0}',
+ '.seg.sel{background:#f1c67c}.warning{border-left:3px solid #f1c67c;padding-left:12px;color:#d4deec}',
+ '</style><main><h1>Актёр и композитор</h1>',
+ '<p class="warning">Предварительная раскадровка: только текстовые карточки и локальный WAV-эскиз. ',
+ '<b>НЕТ снятого видео, голосовых дублей или авторского утверждения.</b></p>',
+ '<div class="layout"><div class="phone" id="phone"><span id="role">АКТЁР</span><div class="line" id="line"></div>',
+ '<div class="detail" id="action"></div><span id="time"></span></div>',
+ '<div class="panel"><label>Версия: <select id="version"><option value="0">Исходный V1</option>',
+ '<option value="1" selected>Редакторский кандидат</option></select></label>',
+ '<p><button id="start">▶ Смотреть 31 секунду</button><button id="pause">Пауза</button>',
+ '<button id="reset">Сначала</button></p><div class="track" id="track"></div><p id="position"></p>',
+ '<p>Музыкальная вставка — в конце B03. Встроенный WAV можно прослушать отдельно:</p>',
+ '<audio id="audio" controls preload="auto" src="data:audio/wav;base64,'+wav.toString('base64')+'"></audio>',
+ '<p class="warning">Речь НЕ озвучена: реальную длительность реплик и комедийную игру необходимо проверить чтением вслух.</p>',
+ '</div></div><script id="payload" type="application/json">'+safe+'</script>',
+ '<script>',
+ '(function(){"use strict";const data=JSON.parse(document.getElementById("payload").textContent);',
+ 'const el=id=>document.getElementById(id),audio=el("audio");let version=1,time=0,playing=false,stamp=0,played=false;',
+ 'const starts=[0];for(const b of data.versions[0])starts.push(starts.at(-1)+b.durationSec);',
+ 'const cue=starts[5]+data.versions[0][5].durationSec-data.musicDuration-.35;',
+ 'const index=t=>Math.min(6,Math.max(0,starts.findIndex((s,i)=>i<7&&t>=s&&t<starts[i+1])));',
+ 'function paint(){const i=index(time),beat=data.versions[version][i];el("line").textContent=beat.line;',
+ 'el("action").textContent=beat.action;el("role").textContent=data.ids[i].startsWith("A")?"АКТЁР":"КОМПОЗИТОР";',
+ 'el("phone").classList.toggle("b",data.ids[i].startsWith("B"));el("time").textContent=time.toFixed(1)+" / 31.0 сек";',
+ 'el("position").textContent=data.ids[i]+" · "+starts[i]+"–"+starts[i+1]+" с · звуковой удар около "+cue.toFixed(2)+" с";',
+ 'document.querySelectorAll(".seg").forEach((x,j)=>x.classList.toggle("sel",i===j))}',
+ 'function stop(){playing=false;audio.pause()}',
+ 'function seek(t){stop();time=Math.min(30.999,Math.max(0,t));played=time>=cue+.05;paint()}',
+ 'function frame(now){if(!playing)return;time+=Math.min(.2,(now-stamp)/1000);stamp=now;',
+ 'if(time>=31){seek(30.999);return}if(time>=cue&&!played){played=true;audio.currentTime=0;',
+ 'audio.play().catch(()=>{el("position").textContent+=" · включите звук вручную"})}',
+ 'paint();requestAnimationFrame(frame)}',
+ 'el("start").onclick=()=>{if(playing)return;playing=true;stamp=performance.now();requestAnimationFrame(frame)};',
+ 'el("pause").onclick=stop;el("reset").onclick=()=>seek(0);el("version").onchange=e=>{version=Number(e.target.value);seek(0)};',
+ 'const track=el("track");data.ids.forEach((id,i)=>{const b=document.createElement("button");b.type="button";',
+ 'b.className="seg";b.style.flex=String(data.versions[0][i].durationSec);b.title=id;',
+ 'b.onclick=()=>seek(starts[i]);track.appendChild(b)});paint()})();',
+ '</script></main></html>'
+ ].join('\n');
 }
-
-/** Builds exact card timing; the B03 tail preserves 1.5 seconds for a reaction before A04. */
-export function buildAnimaticTimeline(brief, sketchDurationSec) {
-  if (!brief || !Array.isArray(brief.script) || brief.script.length !== 7) fail('Selected candidate needs exactly seven script beats');
-  if (!Number.isFinite(sketchDurationSec) || sketchDurationSec <= 0) fail('The selected music sketch needs a positive duration');
-  let cursor = 0;
-  const beats = brief.script.map((beat, index) => {
-    if (beat.order !== index + 1 || !Number.isFinite(beat.durationSec) || beat.durationSec <= 0 || typeof beat.line !== 'string' || typeof beat.action !== 'string') fail(`Invalid candidate beat ${index + 1}`);
-    const startSec = Number(cursor.toFixed(2)); cursor += beat.durationSec;
-    return { order:beat.order, sceneId:sceneIds[index], line:beat.line, action:beat.action, durationSec:beat.durationSec, startSec, endSec:Number(cursor.toFixed(2)) };
-  });
-  const b03 = beats[5];
-  const musicStart = Number((b03.endSec - sketchDurationSec - 1.5).toFixed(2));
-  if (musicStart <= b03.startSec + 0.25) fail('B03 is too short for spoken line, selected music and the reaction hold');
-  return {
-    kind:'persona-planning-animatic-v1', filmed:false, authorApproved:false,
-    notice:'Планировочный аниматик: не снятый ролик, не художественный PASS и не материал для публикации.',
-    durationSec:Number(cursor.toFixed(2)), beats,
-    music:{startSec:musicStart,endSec:Number((musicStart + sketchDurationSec).toFixed(2)),beatOrder:6},
-  };
+export async function createAnimatic(audioPath,outDir){
+ if(!audioPath||!outDir)fail('usage: node tools/persona-delivery-animatic.mjs <local-sting.wav> <new-output-dir>');
+ const [oldBytes,newBytes,wav]=await Promise.all([
+  readFile(join(root,'candidate-production-brief.json')),
+  readFile(join(root,'editorial-candidate-production-brief.json')),
+  readFile(resolve(audioPath))
+ ]);
+ const old=JSON.parse(oldBytes.toString('utf8')),next=JSON.parse(newBytes.toString('utf8'));
+ validateAnimaticVariants(old,next);
+ const meta=checkWav(wav),html=makeHtml(old,next,wav,meta.durationSec);
+ const dir=resolve(outDir);
+ // Create only missing ancestors; keep the requested output directory exclusive.
+ // This works for a first-time project path without overwriting an existing preview.
+ await mkdir(dirname(dir),{recursive:true});
+ await mkdir(dir,{recursive:false});
+ await writeFile(join(dir,'animatic.html'),html,{flag:'wx'});
+ const evidence={kind:'persona-audio-card-animatic-v1',status:'preview-only',durationSec:31,
+  audio:{...meta,sha256:createHash('sha256').update(wav).digest('hex')},
+  videoSources:0,recordedDialogue:false,publicationApproved:false,
+  note:'Offline timed cards with selected local WAV. Human read-aloud, visual acting and actual Reel are not verified.'};
+ await writeFile(join(dir,'evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
+ return {html:join(dir,'animatic.html'),evidence:join(dir,'evidence.json')};
 }
-
-function ffmpegDrawFilter(index, beat, fontPath) {
-  const header = `АНИМАТИК · НЕ СНЯТЫЙ РОЛИК · ${beat.sceneId} · ${beat.startSec}–${beat.endSec} с`;
-  const line = wrapAnimaticText(`«${beat.line}»`, 34).split('\n');
-  const action = wrapAnimaticText(`Действие: ${beat.action}`, 46).split('\n');
-  const font = q(fontPath);
-  const dialogueFilters=line.map((text,row)=>`drawtext=fontfile='${font}':text='${q(text)}':fontcolor=white:fontsize=42:x=70:y=${260+row*58}`);
-  const actionStart=260+line.length*58+70;
-  const actionFilters=action.map((text,row)=>`drawtext=fontfile='${font}':text='${q(text)}':fontcolor=white@0.88:fontsize=27:x=70:y=${actionStart+row*40}`);
-  return `[${index}:v]drawbox=x=70:y=120:w=940:h=2:color=white@0.65:t=fill,drawtext=fontfile='${font}':text='${q(header)}':fontcolor=white:fontsize=30:x=70:y=55,${dialogueFilters.concat(actionFilters).join(',')}[v${index}]`;
-}
-
-export async function renderDeliveryAnimatic({ briefPath, v1BriefPath, sketchPath, outputDir, ffmpeg='ffmpeg', ffprobe='ffprobe', fontPath='C:/Windows/Fonts/arial.ttf' } = {}) {
-  if (![briefPath, v1BriefPath, sketchPath, outputDir].every(value => typeof value === 'string' && value.trim())) fail('Provide selected brief, archived V1 brief, sketch WAV and a new output directory');
-  const selectedPath=resolve(briefPath), archivedPath=resolve(v1BriefPath), wavPath=resolve(sketchPath), root=resolve(outputDir);
-  await Promise.all([access(selectedPath),access(archivedPath),access(wavPath),access(fontPath)]);
-  const selected=JSON.parse(await readFile(selectedPath,'utf8'));
-  const archived=JSON.parse(await readFile(archivedPath,'utf8'));
-  const wav=await probe(ffprobe,wavPath);
-  if (!wav.audio || !Number.isFinite(wav.durationSec)) fail('Selected sketch is not a readable audio file');
-  const timeline=buildAnimaticTimeline(selected,wav.durationSec);
-  if (timeline.durationSec !== 31) fail(`Selected candidate must total 31 seconds, got ${timeline.durationSec}`);
-  await access(root).then(() => fail('Animatic output directory already exists'), () => {});
-  await mkdir(root,{recursive:false});
-  const output=join(root,'actor-composer-planning-animatic.mp4');
-  try {
-    const args=['-hide_banner','-nostdin','-loglevel','error','-y'];
-    for (const [index,beat] of timeline.beats.entries()) args.push('-f','lavfi','-i',`color=c=0x${palette[index]}:s=1080x1920:r=30:d=${beat.durationSec}`);
-    args.push('-f','lavfi','-i',`anullsrc=channel_layout=stereo:sample_rate=48000:d=${timeline.durationSec}`,'-i',wavPath);
-    const video=timeline.beats.map((beat,index)=>ffmpegDrawFilter(index,beat,fontPath)).join(';') + ';' + timeline.beats.map((_,index)=>`[v${index}]`).join('') + `concat=n=${timeline.beats.length}:v=1:a=0[v]`;
-    const delay=Math.round(timeline.music.startSec * 1000);
-    const audio=`[7:a]volume=0[silence];[8:a]adelay=${delay}|${delay},atrim=duration=${wav.durationSec},volume=0.72[music];[silence][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0[a]`;
-    args.push('-filter_complex',`${video};${audio}`,'-map','[v]','-map','[a]','-t',String(timeline.durationSec),'-c:v','libx264','-preset','veryfast','-crf','22','-pix_fmt','yuv420p','-r','30','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-movflags','+faststart',output);
-    await run(ffmpeg,args);
-    const result=await probe(ffprobe,output);
-    if (result.video?.codec_name !== 'h264' || result.audio?.codec_name !== 'aac' || result.video?.width !== 1080 || result.video?.height !== 1920 || Math.abs(result.durationSec-timeline.durationSec)>0.25) fail('Animatic output did not meet H.264/AAC 1080x1920 30 fps timing requirements');
-    const comparison=['# A03/B03 — V1 и выбранный редакторский кандидат','','Это сравнение текста и планирования. Оно не является результатом Ollama и не утверждено автором.','', '| Сцена | V1 (архив) | Выбранный кандидат |', '|---|---|---|', ...[4,5].map(index=>`| ${sceneIds[index]} | «${archived.script[index].line}» — ${archived.script[index].action} | «${selected.script[index].line}» — ${selected.script[index].action} |`), '', `Музыкальный эскиз начинается на ${timeline.music.startSec} с и завершается на ${timeline.music.endSec} с: после реплики B03, до A04.`, 'Аниматик — только для репетиции пауз, структуры и темпа; он не использует пользовательские видеоматериалы.'].join('\n');
-    const manifest={...timeline,selectedBrief:selectedPath,archivedV1Brief:archivedPath,selectedSketch:{path:wavPath,sha256:await sha256(wavPath),durationSec:wav.durationSec},output:{path:output,sha256:await sha256(output),durationSec:result.durationSec,videoCodec:result.video.codec_name,audioCodec:result.audio.codec_name,width:result.video.width,height:result.video.height,fps:result.video.r_frame_rate},verification:{technical:true,artisticApproval:false,filmedMaterial:false}};
-    await writeFile(join(root,'ANIMATIC.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
-    await writeFile(join(root,'A03-B03-comparison.md'),comparison+'\n',{flag:'wx'});
-    return {output,manifestPath:join(root,'ANIMATIC.json'),comparisonPath:join(root,'A03-B03-comparison.md'),timeline};
-  } catch (error) {
-    await writeFile(join(root,'FAILED.json'),JSON.stringify({status:'failed',error:String(error.message||error),notice:'Input briefs and WAV were not modified.'},null,2)+'\n',{flag:'wx'}).catch(()=>{});
-    throw error;
-  }
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  const [briefPath,v1BriefPath,sketchPath,outputDir,ffmpeg,ffprobe] = process.argv.slice(2);
-  renderDeliveryAnimatic({briefPath,v1BriefPath,sketchPath,outputDir,ffmpeg:ffmpeg||'ffmpeg',ffprobe:ffprobe||'ffprobe'})
-    .then(result=>process.stdout.write(JSON.stringify({output:result.output,manifest:result.manifestPath,comparison:result.comparisonPath,notice:result.timeline.notice},null,2)+'\n'))
-    .catch(error=>{console.error(`Persona planning animatic: ${error.message}`);process.exitCode=1;});
-}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))
+ createAnimatic(process.argv[2],process.argv[3]).then(x=>console.log(JSON.stringify(x,null,2)))
+  .catch(error=>{console.error(error.message);process.exitCode=1});
