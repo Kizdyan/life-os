@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
+import {
+ readPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
+ type PersonaScenarioDraftJournal,
+} from './personaScenarioDraftJournal';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
 import { importPersonaProductionBrief } from '../../../packages/core/src/persona-production-pipeline';
 import {
@@ -55,11 +59,52 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[selectedResearchId,setSelectedResearchId]=useState(workspace.research[0]?.id??'');
  const[watchedByAuthor,setWatchedByAuthor]=useState(workspace.research[0]?.observationStatus==='user_reviewed');
  const[rejectionFeedback,setRejectionFeedback]=useState('');
- const[revisionReason,setRevisionReason]=useState('');
+ const[revisionReason,setRevisionReason]=useState(()=> {
+  const saved=readPersonaScenarioDraft(localStorage,project.id);
+  return saved?.sourceRevisionId===received?.script?.currentRevisionId?saved.reason:'';
+ });
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
- const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>script?.currentRevision.beats??[]);
- useEffect(()=>{setSelectedIdeaId(workspace.selectedIdeaId??'');setBeats(workspace.script?.currentRevision.beats??[])},[project.id,workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
+ const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>{
+  const saved=readPersonaScenarioDraft(localStorage,project.id);
+  return saved?.sourceRevisionId===script?.currentRevisionId&&saved.ideaId===script.idea.id
+   ?saved.beats:script?.currentRevision.beats??[];
+ });
+ const[editingRevisionId,setEditingRevisionId]=useState(script?.currentRevisionId??'');
+ const[staleDraft,setStaleDraft]=useState<PersonaScenarioDraftJournal|null>(()=>{
+  const saved=readPersonaScenarioDraft(localStorage,project.id);
+  return saved&&saved.sourceRevisionId!==script?.currentRevisionId?saved:null;
+ });
+ useEffect(()=>{
+  const current=workspace.script;
+  const saved=readPersonaScenarioDraft(localStorage,project.id);
+  const matches=Boolean(current&&saved?.ideaId===current.idea.id&&saved.sourceRevisionId===current.currentRevisionId);
+  setSelectedIdeaId(workspace.selectedIdeaId??'');
+  setBeats(matches?saved!.beats:current?.currentRevision.beats??[]);
+  setRevisionReason(matches?saved!.reason:'');
+  setEditingRevisionId(current?.currentRevisionId??'');
+  setStaleDraft(saved&&!matches?saved:null);
+ },[project.id,workspace.selectedIdeaId,workspace.script?.currentRevisionId]);
+ useEffect(()=>{
+  if(!script||editingRevisionId!==script.currentRevisionId)return;
+  const stored=readPersonaScenarioDraft(localStorage,project.id);
+  // Never overwrite an older, unreconciled draft after an external revision import.
+  if(stored&&stored.sourceRevisionId!==script.currentRevisionId)return;
+  const dirty=JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats)||Boolean(revisionReason.trim());
+  try{
+   if(dirty){
+    savePersonaScenarioDraft(localStorage,{
+     version:1,projectId:project.id,ideaId:script.idea.id,
+     sourceRevisionId:script.currentRevisionId,beats,reason:revisionReason,
+     savedAt:new Date().toISOString(),
+    });
+   }else if(stored&&stored.sourceRevisionId===script.currentRevisionId){
+    clearPersonaScenarioDraft(localStorage,project.id);
+   }
+  }catch{
+   setError('Не удалось сохранить страховочную копию черновика. Перед уходом сохраните версию сценария.');
+  }
+ },[project.id,script?.currentRevisionId,editingRevisionId,beats,revisionReason]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
@@ -67,8 +112,28 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasUnsavedChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
+ const recoverStaleDraft=()=>{
+  if(!script||!staleDraft)return;
+  try{
+   if(staleDraft.ideaId!==script.idea.id)
+    throw new Error('Черновик относится к другой идее. Он не применён к текущему сценарию.');
+   assertPersonaAuthorLockedLines(workspace,staleDraft.beats,script.idea.id);
+   const restored=reviseScenarioScript(script,{
+    beats:staleDraft.beats,createdAt:new Date().toISOString(),
+    reason:staleDraft.reason.trim()||'Явное восстановление несохранённой редакции после импорта.',
+   });
+   clearPersonaScenarioDraft(localStorage,project.id);
+   setStaleDraft(null);
+   update({script:restored});
+   setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось восстановить черновик.');}
+ };
+ const discardStaleDraft=()=>{
+  try{clearPersonaScenarioDraft(localStorage,project.id);setStaleDraft(null);setError('');}
+  catch{setError('Не удалось сбросить страховочную копию.');}
+ };
  const toggleAuthorLockedLine=(index:number)=>{
-  if(!script||hasUnsavedChanges){setError('Для закрепления реплики сначала сохраните текущую редакцию.');return}
+  if(!script||hasUnsavedChanges||staleDraft){setError('Сначала сохраните или разрешите несохранённый черновик.');return}
   const remaining=(workspace.authorLockedLines??[]).filter(lock=>!(lock.ideaId===script.idea.id&&lock.index===index));
   const alreadyLocked=lockedForScript.some(lock=>lock.index===index);
   const next=alreadyLocked?remaining:[...remaining,{
@@ -118,14 +183,17 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const saveScript=()=>{
   if(!script)return;
   try{
+   if(staleDraft)throw new Error('Сначала восстановите или отбросьте сохранённый черновик.');
    assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const next=reviseScenarioScript(script,{createdAt:new Date().toISOString(),beats,reason:revisionReason.trim()||'Автор изменил содержание сценария в Persona.'});
+   clearPersonaScenarioDraft(localStorage,project.id);
    update({script:next});setRevisionReason('');setError('');
   }
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
  };
  const approveScript=()=>{
   if(!script)return;
+  if(staleDraft){setError('Сначала восстановите или отбросьте сохранённый черновик.');return}
   if(hasUnsavedChanges){setError('Сначала сохраните изменённые реплики и действия новой версией. Старое утверждение нельзя переносить на правки.');return}
   try{const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
@@ -165,7 +233,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const importLocalAiRevision=async(file:File|undefined)=>{
   if(!file||!script)return;
   try{
-   if(hasUnsavedChanges)throw new Error('Сначала сохраните или отмените несохранённые правки сценария. Импорт не должен стирать ручную работу.');
+   if(hasUnsavedChanges||staleDraft)throw new Error('Сначала сохраните или разрешите несохранённый черновик. Импорт не должен стирать ручную работу.');
    if(file.size>200_000)throw new Error('Файл сценария слишком большой (максимум 200 КБ).');
    const decoded=JSON.parse(await file.text()) as unknown;
    const imported=importPersonaProductionBrief({
@@ -250,7 +318,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {script&&<section className="personaScenarioScript"><div className="personaScenarioScriptHead"><div><h4>Сценарий · версия {script.currentRevision.number}</h4><p>{isApproved?'Версия 1 одобрена'.replace('1',String(script.currentRevision.number)):'Ещё не одобрен автором'}</p></div><span className={review?.status==='ready_for_author'?'scenarioReady':'scenarioBlocked'}>{review?.status==='ready_for_author'?'Структура проверена':'Нужны правки'}</span></div>
-   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} readOnly={lockedForScript.some(lock=>lock.index===index)} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label>
+   {staleDraft&&<div role="alert" className="personaScenarioWarning">
+    <p>Найден несохранённый черновик от предыдущей редакции ({staleDraft.sourceRevisionId}). Его текст не потерян и не применён автоматически. Выберите действие:</p>
+    <button type="button" onClick={recoverStaleDraft}>Восстановить как новую неутверждённую версию</button>
+    <button type="button" className="ghost" onClick={discardStaleDraft}>Отбросить этот черновик</button>
+   </div>}
+   {beats.map((beat,index)=><fieldset key={`${beat.purpose}-${index}`} disabled={Boolean(staleDraft)}><legend>{beat.purpose==='hook'?'Хук':beat.purpose==='development'?'Развитие':'Финал'}</legend><label>Реплика<textarea aria-label={`Реплика сценария ${index+1}`} readOnly={lockedForScript.some(lock=>lock.index===index)} value={beat.line} onChange={event=>setBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,line:event.target.value}:item))}/></label>
      <button type="button" className="ghost" disabled={hasUnsavedChanges}
       aria-label={`${lockedForScript.some(lock=>lock.index===index)?'Снять закрепление':'Закрепить'} реплику кадра ${index+1}`}
       onClick={()=>toggleAuthorLockedLine(index)}>
@@ -263,17 +336,17 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
        <button type="button" className="ghost" disabled={beats.filter(b=>b.purpose==='development').length<=1} onClick={()=>removeDevelopmentBeat(index)}>Удалить блок</button>
      </div>}
     </fieldset>)}
-    <button type="button" className="ghost" onClick={addDevelopmentBeat} disabled={beats.length>=12}>+ Добавить действие / сцену</button>
+    <button type="button" className="ghost" onClick={addDevelopmentBeat} disabled={Boolean(staleDraft)||beats.length>=12}>+ Добавить действие / сцену</button>
    {hasUnsavedChanges&&<p role="status" className="personaScenarioError">Есть несохранённые правки. Предыдущее утверждение не распространяется на изменённый текст.</p>}<label>Почему изменяется сценарий?<textarea aria-label="Причина новой редакции" value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Что конкретно исправили, почему стало лучше?"/></label>
-    <button type="button" className="ghost" onClick={saveScript}>Сохранить новую версию</button>
-    <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
+    <button type="button" className="ghost" disabled={Boolean(staleDraft)} onClick={saveScript}>Сохранить новую версию</button>
+    <button type="button" className="ghost" onClick={exportLocalAiTask} disabled={hasUnsavedChanges||Boolean(staleDraft)}>Экспорт для локального сценарного ИИ · 0 кредитов</button>
     <small>Windows: npm run persona:scenario:local -- persona-scenario-input.json persona-draft-brief.json. Исходник остаётся на вашем ПК.</small>
-    <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
+    <label>Импортировать редакцию локального ИИ в новую версию сценария<input aria-label="Импортировать редакцию локального ИИ" disabled={Boolean(staleDraft)} type="file" accept=".json,application/json" onChange={event=>{void importLocalAiRevision(event.target.files?.[0]);event.target.value=''}}/></label>
     <small>Импорт не принимает никакого предыдущего утверждения. После редакторской проверки и вашего утверждения новая версия перейдёт в Production Brief без шаблонной перегенерации.</small>
     <PersonaScenarioVersionHistory
       key={`history:${project.id}:${script.currentRevisionId}`}
       script={script}
-      unsavedChanges={hasUnsavedChanges}
+      unsavedChanges={hasUnsavedChanges||Boolean(staleDraft)}
       onRestore={next=>{
         // Propagate a rejected lock check to the history component so it cannot display false success.
         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
@@ -287,7 +360,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       script={script}
       creativeProfile={effectiveProfile}
       latestAuthorFeedback={workspace.editorialFeedback?.at(-1)?.comment}
-      unsavedChanges={hasUnsavedChanges}
+      unsavedChanges={hasUnsavedChanges||Boolean(staleDraft)}
       onAcceptRevision={next=>{
         // Child Script Doctor handles thrown errors; never report acceptance when a pinned line changed.
         assertPersonaAuthorLockedLines(workspace,next.currentRevision.beats,script.idea.id);
