@@ -3,7 +3,7 @@ import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
- readPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
+ readPersonaScenarioDraft,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
  type PersonaScenarioDraftJournal,
 } from './personaScenarioDraftJournal';
 import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
@@ -59,17 +59,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[selectedResearchId,setSelectedResearchId]=useState(workspace.research[0]?.id??'');
  const[watchedByAuthor,setWatchedByAuthor]=useState(workspace.research[0]?.observationStatus==='user_reviewed');
  const[rejectionFeedback,setRejectionFeedback]=useState('');
- const[revisionReason,setRevisionReason]=useState(()=> {
-  const saved=readPersonaScenarioDraft(localStorage,project.id);
-  return saved&&received?.script&&saved.ideaId===received.script.idea.id&&saved.sourceRevisionId===received.script.currentRevisionId?saved.reason:'';
- });
+ const[revisionReason,setRevisionReason]=useState(()=>
+  matchingPersonaScenarioDraft(localStorage,project.id,received?.script)?.reason??'');
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
  const script=workspace.script;
- const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>{
-  const saved=readPersonaScenarioDraft(localStorage,project.id);
-  return saved&&script&&saved.sourceRevisionId===script.currentRevisionId&&saved.ideaId===script.idea.id
-   ?saved.beats:script?.currentRevision.beats??[];
- });
+ const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>
+  matchingPersonaScenarioDraft(localStorage,project.id,script)?.beats??script?.currentRevision.beats??[]);
  const[editingRevisionId,setEditingRevisionId]=useState(script?.currentRevisionId??'');
  const[staleDraft,setStaleDraft]=useState<PersonaScenarioDraftJournal|null>(()=>{
   const saved=readPersonaScenarioDraft(localStorage,project.id);
