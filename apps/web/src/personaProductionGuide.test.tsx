@@ -172,5 +172,8 @@ describe('Persona full preproduction guide',()=>{
   expect(html).not.toContain('Создать редактируемый сценарий из этих 7 сцен');
   expect(html).toContain(generic.script[0].line);
   expect(productionGuideScenes(generic)).toHaveLength(generic.script.length);
+  expect(productionGuideScenes(generic)[0].angle).toBe(generic.shots[0].angle);
+  expect(html).toContain(generic.shots[0].angle);
+  expect(html).toContain(generic.shots[0].cameraMovement);
  });
 });
