@@ -160,6 +160,41 @@ export function inspectPersonaFinishedRenderImport(input:{
  };
  return finished;
 }
+/**
+ * Reimporting an identical finished MP4 may add measured QA; it must never
+ * silently discard the author's decision or verified older evidence.
+ * A different output SHA always starts a fresh, unapproved review.
+ */
+export function mergePersonaFinishedReimport(
+ previous:PersonaFinishedRenderRecord|undefined,
+ imported:PersonaFinishedRenderRecord
+):PersonaFinishedRenderRecord{
+ if(!readPersonaFinishedRenderRecord(imported))fail('Некорректная новая финальная версия.');
+ if(!previous||!readPersonaFinishedRenderRecord(previous)||
+  previous.finishedSha256!==imported.finishedSha256||
+  previous.sourceDraftSha256!==imported.sourceDraftSha256||
+  previous.briefFingerprintSha256!==imported.briefFingerprintSha256)
+  return imported;
+ if(previous.finishedBytes!==imported.finishedBytes||
+  Math.abs(previous.durationSec-imported.durationSec)>0.001||
+  previous.captionCount!==imported.captionCount||
+  previous.captionsBurnedIn!==imported.captionsBurnedIn||
+  previous.musicAdded!==imported.musicAdded||
+  JSON.stringify(previous.color)!==JSON.stringify(imported.color)||
+  (previous.musicCue&&imported.musicCue&&
+   JSON.stringify(previous.musicCue)!==JSON.stringify(imported.musicCue)))
+  fail('Отчёты одного MP4 противоречат сохранённым параметрам финализации.');
+ const merged:PersonaFinishedRenderRecord={
+  ...imported,importedAt:previous.importedAt,
+  ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
+  ...(imported.musicCue||previous.musicCue?{musicCue:imported.musicCue??previous.musicCue}:{}),
+  ...(previous.authorReview?{authorReview:previous.authorReview}:{})
+ };
+ if(!readPersonaFinishedRenderRecord(merged))
+  fail('Повторный импорт изменил сохранённую художественную приёмку.');
+ return merged;
+}
+
 export function makePersonaFinalAuthorReview(input:{
  finished:PersonaFinishedRenderRecord;decision:PersonaFinalAuthorReview['decision'];
  reviewer:string;notes:string;criteria:PersonaFinalReviewChecks;watchedEntireVideo:boolean;
