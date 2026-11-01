@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
+ createPersonaProductionGuide,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -50,6 +50,21 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const mark=(key:(typeof guideChecks)[number][0],checked:boolean)=>{
   savePlan({...plan,checks:{...plan.checks,[key]:checked},updatedAt:new Date().toISOString()});
  };
+ const downloadSheet=()=>{
+  try{
+   const text=exportPersonaShootingSheet({title:projectTitle,angle:projectAngle,guide:plan,
+    scenes,references:research.map(ref=>({
+     title:ref.title||ref.url,url:ref.url,observedAt:ref.observedAt,
+     status:ref.observationStatus==='user_reviewed'?'просмотрено автором':'не просмотрено автором',
+    })),sample:example});
+   const blob=new Blob([text],{type:'text/markdown;charset=utf-8'});
+   const url=URL.createObjectURL(blob),link=document.createElement('a');
+   link.href=url;link.download='persona-shooting-sheet.md';
+   document.body.appendChild(link);link.click();link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+   setNotice('Создан локальный съёмочный лист. Перед съёмкой проверьте версию и наличие файла на устройстве.');
+  }catch(error){setNotice('Не удалось скачать лист: '+String((error as Error).message||error));}
+ };
  const useExample=()=>{
   try{onUseExample(plan);setNotice('Семь сцен переданы в существующий сценарный редактор как НЕУТВЕРЖДЁННЫЙ кандидат.');}
   catch(error){setNotice(String((error as Error).message||error));}
@@ -60,7 +75,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    <h3>От идеи до первого монтажа</h3>
    <p>Один производственный маршрут для «{projectTitle}»: тема, хук, точные реплики, кадры, свет, звук и монтажный замысел. Все правки сохраняются в этом проекте, а утверждение сценария и видео остаётся отдельным.</p>
    <div className="personaGuideMeter"><span>Чек-лист: {guideProgress(plan)} из {guideChecks.length}</span><span>{stored?'План сохранён в проекте':'Предложение · ещё не сохранено'}</span></div>
-   {!stored&&<button type="button" className="primary" onClick={()=>savePlan(plan)}>Сохранить предложенный план</button>}
+   <div className="personaGuideActions">{!stored&&<button type="button" className="primary" onClick={()=>savePlan(plan)}>Сохранить предложенный план</button>}<button type="button" className="ghost" onClick={downloadSheet}>Скачать съёмочный лист</button></div>
   </header>
 
   <article className="personaGuideSection">
@@ -134,6 +149,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
     </svg>
     <figcaption>Схема постановки, не фотография твоей комнаты. Фактическое расположение окна, розеток, клавиш и штатива нужно уточнить на месте.</figcaption>
    </figure>
+   {brief&&brief.capture.location!==plan.fields.location&&<p className="personaGuideWarn">Внимание: предлагаемая локация отличается от текущего Production Brief. Плановые заметки не меняют утверждённый съёмочный бриф — согласуйте изменения на этапе «Проверка».</p>}
    {sections[1].fields.map(key=><label key={key}>{guideFieldLabels[key]}
     <textarea aria-label={guideFieldLabels[key]} value={plan.fields[key]} onChange={e=>edit(key,e.target.value)}/></label>)}
    <button type="button" className="ghost" onClick={()=>onNavigate('assets')}>Перейти к исходникам и дублям</button>
