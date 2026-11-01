@@ -56,3 +56,13 @@
 .personaGuideDirection b{color:#37342f}
 
 .personaGuideNavigationWarning{max-width:930px;box-sizing:border-box;margin:10px auto;padding:13px 16px;border:1px solid #d3ab69;background:#fff5df;color:#4b351a;border-radius:12px;font-size:14px;line-height:1.45}
+
+.personaGuideNext{display:grid;gap:9px;margin:16px 0 0;padding:15px;border:1px solid #dfd8cd;background:#fffdfa;border-radius:14px}
+.personaGuideNext>strong{font-size:14px;color:#2d2b27}
+.personaGuideNext>p{margin:0;font-size:14px;color:#565149}
+.personaGuideReadiness{display:grid;gap:4px}
+.personaGuideReadiness>div{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:9px;align-items:start;padding:7px 0;border-top:1px solid #efede8}
+.personaGuideReadiness>div>span:first-child{font-size:16px;color:#635d52;font-weight:bold}
+.personaGuideReadiness>div>span:nth-child(2){font-size:12px;line-height:1.5;color:#423f39}
+.personaGuideReadiness>div>small{font-size:10px;color:#777068;text-align:right}
+@media(max-width:550px){.personaGuideReadiness>div{grid-template-columns:20px minmax(0,1fr)}.personaGuideReadiness>div>small{grid-column:2;text-align:left}}
