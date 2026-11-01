@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 
 const media=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
+const ffmpegBin=(()=>{
+ const finder=process.platform==='win32'?'where.exe':'which';
+ const result=spawnSync(finder,['ffmpeg'],{encoding:'utf8'});
+ return result.status===0?dirname(result.stdout.split(/\r?\n/).find(Boolean).trim()):null;
+})();
 
 test('real local MP4 quality report binds measured issues to SHA-256 and never approves art',
  {skip:!media,timeout:120000},async()=>{
@@ -21,7 +26,11 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
     '-c:v','libx264','-preset','ultrafast','-c:a','aac','-shortest',movie],{encoding:'utf8',timeout:60000});
    assert.equal(made.status,0,made.stderr);
    await writeFile(srt,'1\n00:00:00,100 --> 00:00:00,900\nКороткая реплика.\n\n2\n00:00:00,850 --> 00:00:01,700\nПересекающийся титр.\n');
-   const quality=await analyzePersonaVideoQuality({videoPath:movie,subtitlePath:srt,expectedDurationSec:2,outputPath:reportPath});
+   const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH';
+   const originalPath=process.env[pathKey];process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
+   let quality;
+   try{quality=await analyzePersonaVideoQuality({videoPath:movie,subtitlePath:srt,expectedDurationSec:2,outputPath:reportPath,ffmpegDir:ffmpegBin});}
+   finally{if(originalPath===undefined)delete process.env[pathKey];else process.env[pathKey]=originalPath}
    assert.equal(quality.version,1);
    assert.match(quality.video.sha256,/^[a-f0-9]{64}$/);
    assert.equal(quality.authorApproval.publicationApproved,false);

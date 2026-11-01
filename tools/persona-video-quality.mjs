@@ -20,9 +20,17 @@ const rational=value=>{
  const [a,b='1']=String(value||'').split('/').map(Number);
  return Number.isFinite(a)&&Number.isFinite(b)&&b!==0?a/b:NaN;
 };
-function run(bin,args,{timeoutMs=120000}={}){
+function mediaEnv(ffmpegDir){
+ const env={...process.env},key=Object.keys(env).find(name=>name.toLowerCase()==='path')||'PATH';
+ if(ffmpegDir){
+  if(typeof ffmpegDir!=='string'||!ffmpegDir.trim())fail('ffmpegDir must be a non-empty path');
+  env[key]=resolve(ffmpegDir)+(process.platform==='win32'?';':':')+(env[key]||'');
+ }
+ return env;
+}
+function run(bin,args,{timeoutMs=120000,env}={}){
  return new Promise((ok,bad)=>{
-  const child=spawn(bin,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  const child=spawn(bin,args,{shell:false,windowsHide:true,env,stdio:['ignore','pipe','pipe']});
   let stdout='',stderr='',closed=false;
   const timer=setTimeout(()=>{if(!closed){closed=true;child.kill();bad(Error('Timed out: '+bin))}},timeoutMs);
   child.stdout.on('data',chunk=>{stdout=(stdout+chunk).slice(-500000)});
@@ -65,8 +73,8 @@ function parseSrt(text,durationSec){
  }
  return {cueCount:cue.length,cues:cue,problems};
 }
-async function scan(path,args){
- const result=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-']);
+async function scan(path,args,env){
+ const result=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
  return result.stderr+'\n'+result.stdout;
 }
 function latestNumber(log,pattern){
@@ -74,23 +82,24 @@ function latestNumber(log,pattern){
  return values.length?values.at(-1):null;
 }
 
-export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath}={}){
+export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir}={}){
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
+ const env=mediaEnv(ffmpegDir);
  const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
-  'format=duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate','-of','json',path])).stdout);
+  'format=duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate','-of','json',path],{env})).stdout);
  const details=await stat(path);if(!details.isFile()||details.size<1024)fail('MP4 is missing or too small');
  const video=info.streams?.find(stream=>stream.codec_type==='video'),audio=info.streams?.find(stream=>stream.codec_type==='audio');
  if(!video)fail('video stream missing');
  const durationSec=Number(info.format?.duration),fps=rational(video.avg_frame_rate);
  if(!Number.isFinite(durationSec)||durationSec<=0||!Number.isFinite(fps))fail('FFprobe did not return duration or FPS');
  const findings=[];
- const blackLog=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an']);
+ const blackLog=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an'],env);
  const blacks=parseIntervals(blackLog,'black');
  findings.push(cleanFinding(blacks.length?
   finding('black_frames','warning','Чёрные кадры',`Обнаружено ${blacks.length} интервал(а/ов) чёрного изображения.`,blacks.map(x=>timecode(x.startSec)),{intervals:blacks}):
   finding('black_frames','measured','Чёрные кадры','FFmpeg blackdetect не обнаружил интервалов от 0,2 с.',[],{intervals:[]})));
  try{
-  const freezeLog=await scan(path,['-vf','freezedetect=n=0.003:d=0.8','-an']);
+  const freezeLog=await scan(path,['-vf','freezedetect=n=0.003:d=0.8','-an'],env);
   const freezes=parseIntervals(freezeLog,'freeze');
   findings.push(cleanFinding(freezes.length?
    finding('frozen_frames','warning','Возможные зависания кадра',`Обнаружено ${freezes.length} длинных неподвижных интервалов.`,freezes.map(x=>timecode(x.startSec)),{intervals:freezes}):
@@ -98,7 +107,7 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  }catch(error){findings.push(finding('frozen_frames','not_measured','Зависания кадра','freezedetect недоступен в текущем FFmpeg; требуется просмотр человеком.'))}
  try{
   const sampleRate=4;
-  const signalLog=await scan(path,['-vf','fps='+sampleRate+',signalstats,metadata=mode=print','-an']);
+  const signalLog=await scan(path,['-vf','fps='+sampleRate+',signalstats,metadata=mode=print','-an'],env);
   const luma=[...signalLog.matchAll(/lavfi\.signalstats\.YAVG=([0-9.]+)/g)].map(m=>Number(m[1])).filter(Number.isFinite);
   const u=[...signalLog.matchAll(/lavfi\.signalstats\.UAVG=([0-9.]+)/g)].map(m=>Number(m[1])).filter(Number.isFinite);
   const v=[...signalLog.matchAll(/lavfi\.signalstats\.VAVG=([0-9.]+)/g)].map(m=>Number(m[1])).filter(Number.isFinite);
@@ -116,13 +125,13 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  }catch(error){findings.push(finding('luma_jumps','not_measured','Перепады яркости','signalstats недоступен; нужна визуальная проверка.'))}
  findings.push(finding('exposure_and_color','needs_human_review','Экспозиция, тени и цвет','Технические метрики не доказывают естественный цвет кожи или художественную цветокоррекцию. Проверьте переходы, пересветы и тени на экране.',[]));
  if(audio){
-  const silenceLog=await scan(path,['-af','silencedetect=noise=-50dB:d=1.5','-vn']);
+  const silenceLog=await scan(path,['-af','silencedetect=noise=-50dB:d=1.5','-vn'],env);
   const silences=parseIntervals(silenceLog,'silence');
   findings.push(cleanFinding(silences.length?
    finding('audio_silence','warning','Длительная тишина',`Обнаружено ${silences.length} фрагмент(а/ов) тишины от 1,5 с.`,silences.map(x=>timecode(x.startSec)),{intervals:silences}):
    finding('audio_silence','measured','Длительная тишина','FFmpeg silencedetect не обнаружил тишины от 1,5 с.',[],{intervals:[]})));
   try{
-   const loudnessLog=await scan(path,['-af','ebur128=peak=true','-vn']);
+   const loudnessLog=await scan(path,['-af','ebur128=peak=true','-vn'],env);
    const integratedLufs=latestNumber(loudnessLog,/\bI:\s*(-?[0-9.]+) LUFS/g);
    const truePeakDbTP=latestNumber(loudnessLog,/(?:True peak|Peak):\s*(-?[0-9.]+) dBFS/g);
    if(integratedLufs===null||truePeakDbTP===null)throw Error('missing EBU R128 summary');
@@ -159,6 +168,6 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  return report;
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
- const [videoPath,subtitlePath,expectedDuration,outputPath]=process.argv.slice(2);
- analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec:expectedDuration===undefined?undefined:Number(expectedDuration),outputPath}).then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1});
+ const [videoPath,subtitlePath,expectedDuration,outputPath,ffmpegDir]=process.argv.slice(2);
+ analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec:expectedDuration===undefined?undefined:Number(expectedDuration),outputPath,ffmpegDir}).then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1});
 }

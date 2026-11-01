@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdtemp,mkdir,readFile,rm,stat,writeFile,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
 import {preflightFinish,finishPersonaReel,validateReviewedSrt} from './persona-finish-reel.mjs';
 
@@ -42,6 +42,8 @@ test('reject symlinked output parents before writing anything',{skip:process.pla
 });
 const media=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'utf8'}).status===0);
 const libass=media&&/subtitles\s+V->V/.test(spawnSync('ffmpeg',['-filters'],{encoding:'utf8'}).stdout||'');
+const ffmpegBin=(()=>{const finder=process.platform==='win32'?'where.exe':'which',result=spawnSync(finder,['ffmpeg'],{encoding:'utf8'});
+ return result.status===0?dirname(result.stdout.split(/\r?\n/).find(Boolean).trim()):null})();
 test('real FFmpeg burned SRT + optional music + bounded grade -> new QA, original unchanged',
  {skip:!libass,timeout:240000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-finish-real-'));
@@ -74,7 +76,11 @@ test('real FFmpeg burned SRT + optional music + bounded grade -> new QA, origina
    color:{brightness:0.01,contrast:1.01,saturation:1.02},
    music:{path:music,volume:0.16,originalVolume:0.9,rightsConfirmed:true}};
   await writeJson(optionsPath,opts);
-  const res=await finishPersonaReel({draftDir:draft,optionsPath,outputDir:output});
+  const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH',originalPath=process.env[pathKey];
+  process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
+  let res;
+  try{res=await finishPersonaReel({draftDir:draft,optionsPath,outputDir:output,ffmpegDir:ffmpegBin});}
+  finally{if(originalPath===undefined)delete process.env[pathKey];else process.env[pathKey]=originalPath}
   assert.equal(res.publicationApproved,false);
   assert.equal(res.distributionAllowed,false);
   assert.equal(res.captions.burnedIn,true);

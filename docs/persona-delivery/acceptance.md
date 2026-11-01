@@ -136,3 +136,13 @@
 Фактические команды на изолированном Windows checkout от `b278d2d78f99eabe7bfe2f9cf2843257912c32e0`: `npm run typecheck`, `npm run api:typecheck`, `npm test` (**97 файлов / 423 теста**), `npm run media:test` (**120 passed / 0 failed / 3 skipped**), `npm run web:build`. Локальный Chrome smoke проверил рендер Persona и отсутствие горизонтальной прокрутки на 390×844 и 1440×900; скриншоты вне Git: `C:\Users\Kostya\.codex\.chatgpt-projects\g-p-6aa138b77ffc81919a6d3ab4c0758bc3\artifacts\persona-video-quality-browser`.
 
 Реализация сохранена в PR #135 commit `6dbbe26f5acd758a3a5399c1216a5aee0ff4560c`; после него исходное рабочее дерево чисто. Статус реальных съёмок: **WAITING_FOR_REAL_FOOTAGE**.
+
+---
+
+## First Real Reel Readiness — Windows portability (2026-11-01)
+
+- `persona-video-quality.mjs` теперь добавляет явно переданный `ffmpegDir` в окружение **каждого** дочернего `ffmpeg`/`ffprobe`; `persona-finish-reel.mjs` передаёт тот же каталог анализатору качества.
+- Регрессия искусственно убирает FFmpeg из исходного `PATH`, передаёт реальный Windows bin-dir и успешно завершает как прямой анализ качества, так и полный `media:finish:reel`. Это не подмена реального качества: тестовый MP4 синтетический и используется только для технической проверки.
+- На этой Windows-машине подтверждено существование `ffmpeg.exe`, `ffprobe.exe`, `whisper-cli.exe` и `ggml-small.bin` по документированным путям. Настоящий русскоязычный ASR на авторском материале ещё не запускался.
+- Реальный маршрут остаётся **WAITING_FOR_REAL_FOOTAGE**: не было явно предоставленной папки авторских дублей; личные каталоги не сканировались.
+- Проверки этого code state: `npm run typecheck`, `npm run api:typecheck`, `npm test` (**97/423 PASS**), `npm run media:test` (**120 passed, 0 failed, 3 expected skipped**), `npm run web:build`, `npm run persona:delivery:check`, `npm run persona:delivery:test` (**13/13 PASS**).
