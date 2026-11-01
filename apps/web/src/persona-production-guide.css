@@ -54,3 +54,5 @@
 .personaGuideDirection{margin:12px 0 0;padding-top:9px;border-top:1px solid #e8e2d8;display:grid;gap:5px}
 .personaGuideDirection p{margin:0;font-size:12px;line-height:1.55}
 .personaGuideDirection b{color:#37342f}
+
+.personaGuideNavigationWarning{max-width:930px;box-sizing:border-box;margin:10px auto;padding:13px 16px;border:1px solid #d3ab69;background:#fff5df;color:#4b351a;border-radius:12px;font-size:14px;line-height:1.45}
