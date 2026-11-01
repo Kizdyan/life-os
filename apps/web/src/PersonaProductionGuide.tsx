@@ -67,8 +67,8 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const showPilotDirections=allowExample&&scenes.length===exampleActorComposerBeats.length&&
   scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line);
  const readiness=getPersonaGuideReadiness({
-  hasScript:Boolean(scriptBeats?.length),
-  scriptApproved:approvedScript,
+  hasScript:Boolean(scriptBeats?.length||brief?.script.length),
+  scriptApproved:approvedScript||Boolean(!scriptBeats?.length&&brief&&pipeline?.materials.editorialDecision?.decision==='approved'),
   hasCurrentBrief:Boolean(brief&&!scriptDiffersFromBrief),
   briefApproved:Boolean(pipeline?.stage==='READY_FOR_SHOOT'&&pipeline.materials.editorialDecision?.decision==='approved'),
   guide:plan,
