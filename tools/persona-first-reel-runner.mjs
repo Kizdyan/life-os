@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
 import {initReview} from './persona-creative-review.mjs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
+import { makeManifest } from './persona-delivery-source-folder.mjs';
 
 const fail = m => {throw Error(m)};
 const exists = async p => stat(p).then(()=>true,()=>false);
@@ -142,22 +143,42 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   requestedBrief.script.some((line,i)=>line?.order!==i+1||typeof line.line!=='string'||!line.line.trim())||
   requestedBrief.shots.some((shot,i)=>shot?.order!==i+1))
   fail('Invalid Persona Reel brief: expected 2–30 ordered spoken beats with matching shots');
+ const root=resolve(outputDir);
+ const input=resolve(sources);
+ const inputStats=await stat(input);
+ if(!inputStats.isFile()&&!inputStats.isDirectory())
+  fail('Source must be a manifest, one supported video, or one selected recording folder');
+ let selectedFolder=null;
+ if(inputStats.isDirectory()){
+  selectedFolder=await realpath(input);
+  const child=relative(selectedFolder,root);
+  // Fail before mkdir: never create output files inside the author's selected sources.
+  if(child===''||(child!=='..'&&!child.startsWith('..'+sep)&&!isAbsolute(child)))
+   fail('Output directory must be outside the selected source folder');
+ }
  temporaryBinPath(ffmpegDir);
  await Promise.all([call('ffmpeg',['-version'],{timeout:8000}),call('ffprobe',['-version'],{timeout:8000})]);
- const root=resolve(outputDir);
  await mkdir(root,{recursive:false});
  const events=[];
  let recoveryAnalysisPath=null;
  try{
-  // One explicitly selected video may replace a hand-written sources.json.
-  // Never scan a directory or silently add unrelated private media.
-  const input=resolve(sources);
-  const singleFile=new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase());
+  // Delegate exact-filename selection to the existing safe, non-recursive intake.
+  // It selects the first take only as an UNREVIEWED candidate, never the best performance.
   let sourcesManifest=input;
-  if(singleFile){
+  let sourceSelection={kind:'manifest',path:input};
+  if(selectedFolder){
+   const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
+   sourcesManifest=intake.manifest;
+   sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+    report:intake.report,layout:intake.layout};
+   events.push('selected_folder_manifest_created');
+  }else if(new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase())){
    sourcesManifest=join(root,'sources.generated.json');
    await writeFile(sourcesManifest,JSON.stringify({version:1,sources:[{id:'single',path:input}]},null,2)+'\n',{flag:'wx'});
+   sourceSelection={kind:'single-video',path:input,manifest:sourcesManifest};
    events.push('single_video_manifest_created');
+  }else if(extname(input).toLowerCase()!=='.json'){
+   fail('Source input must be a selected folder, supported video file, or sources.json');
   }
   const evidence=await analyze(sourcesManifest,join(root,'evidence'));
   recoveryAnalysisPath=evidence.analysis;
@@ -186,7 +207,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('technical_qa_passed');
   const timing=assessFirstReelTiming(requestedBrief,qa);
   if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
-  const summary={version:1,status:'awaiting-author-review',mode,events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+  const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
     subtitleDraft,timing,
     warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};

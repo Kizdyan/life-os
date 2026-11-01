@@ -86,6 +86,56 @@ writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,sta
  }finally{await rm(d,{recursive:true,force:true})}
 });
 
+test('one-folder mode prevents writes into author's recorded source directory before mkdir',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-folder-guard-'));
+ try{
+  const selected=join(root,'captures'),output=join(selected,'output');
+  await mkdir(selected);
+  await writeFile(join(selected,'A01_actor_hook_take01.mp4'),'fixture');
+  const brief=join(root,'brief.json'),model=join(root,'ggml-small.bin');
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:[{order:1,line:'Первый',durationSec:2},{order:2,line:'Второй',durationSec:2}],
+   shots:[{order:1},{order:2}]});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel({sources:selected,brief,outputDir:output,
+    whisperCli:process.execPath,whisperModel:model}),/outside the selected source folder/);
+  await assert.rejects(()=>stat(output),/ENOENT/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+test('selected seven-scene folder creates the real manifest without touching originals, even if video is invalid',
+ {skip:!mediaTools,timeout:90000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-folder-draft-'));
+ try{
+  const selected=join(root,'captures'),output=join(root,'output');
+  await mkdir(selected);
+  const files=['A01_actor_hook_take01.mp4','B01_composer_problem_take01.mp4',
+   'A02_actor_audition_take01.mp4','B02_composer_deadline_take01.mp4',
+   'A03_actor_sleep_take01.mp4','B03_composer_lullaby_take01.mp4',
+   'A04_actor_payoff_take01.mp4'];
+  const originals=[];
+  for(const filename of files){
+   const bytes=Buffer.from('invalid video fixture for '+filename);
+   await writeFile(join(selected,filename),bytes);originals.push(bytes);
+  }
+  const brief=join(root,'brief.json'),model=join(root,'ggml-small.bin');
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:files.map((_,i)=>({order:i+1,line:'Сцена '+(i+1),durationSec:3})),
+   shots:files.map((_,i)=>({order:i+1,action:'Съёмочный план'}))});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel({sources:selected,brief,outputDir:output,
+   whisperCli:process.execPath,whisperModel:model}));
+  const manifest=JSON.parse(await readFile(join(output,'intake','sources.json'),'utf8'));
+  const report=JSON.parse(await readFile(join(output,'intake','intake-report.json'),'utf8'));
+  assert.deepEqual(manifest.sources.map(s=>s.id),
+   ['A01_take01','B01_take01','A02_take01','B02_take01','A03_take01','B03_take01','A04_take01']);
+  assert.equal(report.status,'filenames-only-unverified');
+  assert.equal(report.autoApproval,false);
+  assert.equal(report.sourceOriginalsModified,false);
+  await assert.rejects(()=>stat(join(output,'draft-reel.mp4')),/ENOENT/);
+  for(let i=0;i<files.length;i++)
+   assert.deepEqual(await readFile(join(selected,files[i])),originals[i]);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 test('draft QA rejects a fake success, technical failure, and a missing publication blocker',()=>{
  const output=join(tmpdir(),'persona-draft-contract.mp4');
  const evidence={path:output,fileExists:true,probeVerified:true,bytes:1024,sha256:'a'.repeat(64),durationSec:3.7,width:1080,height:1920,fps:30,videoCodec:'h264',audioCodec:'aac',blackFrameCheckPassed:true,audioCheckPassed:true};
