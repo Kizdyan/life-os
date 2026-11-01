@@ -215,6 +215,7 @@ async function main() {
     const toleranceSec = Math.max(0.25, totalSec * 0.06);
     if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
     let outputOffset=0;
+    const outputTimeline=[];
     const audioLeveling={version:1,strategy:'per-clip-integrated-loudness-gain-capped',targetLufs:TARGET_DIALOGUE_LUFS,maxBoostDb:MAX_DIALOGUE_BOOST_DB,maxReductionDb:MAX_DIALOGUE_REDUCTION_DB,
       caveat:'Measured clip loudness is a technical continuity aid, not a judgement of speech intelligibility, noise, acting, music balance or artistic sound quality.',clips:[]};
     for(const clip of clips){
@@ -224,6 +225,9 @@ async function main() {
        beforeLufs:clip.loudness?.integratedLufs??null,beforeTruePeakDb:clip.loudness?.truePeakDb??null,
        gainDb:clip.audioLeveling.gainDb,status:clip.audioLeveling.status,warning:clip.audioLeveling.warning,
        afterLufs:after.integratedLufs,afterTruePeakDb:after.truePeakDb};
+      outputTimeline.push({clipIndex:outputTimeline.length+1,beat:Number.isSafeInteger(clip.beat)?clip.beat:null,
+       outputStartSec:Number(outputOffset.toFixed(6)),outputEndSec:Number((outputOffset+clip.durationSec).toFixed(6)),
+       durationSec:clip.durationSec,sourceSha256:clip.sha256});
       if(clip.audioTreatment){
        const tailDuration=clip.durationSec-speechDuration,afterTail=await measureLoudness(staged,outputOffset+speechDuration,tailDuration);
        entry.speech={durationSec:speechDuration,boundarySource:clip.audioTreatment.boundarySource,beforeLufs:clip.loudness?.integratedLufs??null,afterLufs:after.integratedLufs,gainDb:clip.audioLeveling.gainDb};
@@ -232,7 +236,7 @@ async function main() {
       audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await rename(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }

@@ -205,7 +205,8 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
   stages.push('real-ffmpeg-technical-qa-passed-no-publication');
   const qualityPath=join(plan.output,'video-quality.json');
   const quality=await qualityAnalyzer({videoPath:movie,subtitlePath:localSrt,
-   expectedDurationSec:plan.qa.evidence.durationSec,outputPath:qualityPath,ffmpegDir});
+   expectedDurationSec:plan.qa.evidence.durationSec,outputPath:qualityPath,ffmpegDir,
+   timelinePath:join(plan.root,'draft-reel.mp4.persona.json'),timelineSourceVideoPath:plan.input});
   if(quality?.video?.sha256!==qa.evidence.sha256||quality?.publicationApproved!==false||
     quality?.distributionAllowed!==false)fail('Local video-quality report does not match the unpublished finished MP4');
   stages.push('local-video-quality-analysis-written');

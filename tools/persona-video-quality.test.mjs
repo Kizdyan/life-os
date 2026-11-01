@@ -17,7 +17,7 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
  {skip:!media,timeout:120000},async()=>{
   const root=await mkdtemp(join(tmpdir(),'persona-video-quality-'));
   try{
-   const movie=join(root,'candidate.mp4'),srt=join(root,'captions.reviewed.srt'),reportPath=join(root,'video-quality.json');
+   const movie=join(root,'candidate.mp4'),srt=join(root,'captions.reviewed.srt'),reportPath=join(root,'video-quality.json'),timelinePath=join(root,'candidate.mp4.persona.json');
    const made=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
     '-f','lavfi','-i','color=c=black:s=1080x1920:r=30:d=0.4',
     '-f','lavfi','-i','color=c=red:s=1080x1920:r=30:d=1.6',
@@ -26,10 +26,12 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
     '-c:v','libx264','-preset','ultrafast','-c:a','aac','-shortest',movie],{encoding:'utf8',timeout:60000});
    assert.equal(made.status,0,made.stderr);
    await writeFile(srt,'1\n00:00:00,100 --> 00:00:00,900\nКороткая реплика.\n\n2\n00:00:00,850 --> 00:00:01,700\nПересекающийся титр.\n');
+   await writeFile(timelinePath,JSON.stringify({operation:'timeline-render',output:{path:movie,durationSec:2},outputTimeline:[
+    {clipIndex:1,beat:1,outputStartSec:0,outputEndSec:.4,durationSec:.4},{clipIndex:2,beat:2,outputStartSec:.4,outputEndSec:2,durationSec:1.6}]}));
    const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH';
    const originalPath=process.env[pathKey];process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
    let quality;
-   try{quality=await analyzePersonaVideoQuality({videoPath:movie,subtitlePath:srt,expectedDurationSec:2,outputPath:reportPath,ffmpegDir:ffmpegBin});}
+   try{quality=await analyzePersonaVideoQuality({videoPath:movie,subtitlePath:srt,expectedDurationSec:2,outputPath:reportPath,ffmpegDir:ffmpegBin,timelinePath});}
    finally{if(originalPath===undefined)delete process.env[pathKey];else process.env[pathKey]=originalPath}
    assert.equal(quality.version,1);
    assert.match(quality.video.sha256,/^[a-f0-9]{64}$/);
@@ -47,8 +49,9 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.ok(visual?.measurement.luma.shadowSamplePercent>0);
    assert.ok(visual?.measurement.color.uMean>=0&&visual?.measurement.color.uMean<=255);
    assert.ok(visual?.measurement.color.vMean>=0&&visual?.measurement.color.vMean<=255);
+   assert.equal(quality.findings.find(x=>x.id==='scene_visual_metrics')?.measurement.scenes.length,2);
    assert.equal(quality.visualEvidence?.kind,'persona-visual-evidence-v1');
-   assert.equal(quality.visualEvidence?.frames.length,3);
+   assert.equal(quality.visualEvidence?.frames.length,2);
    assert.ok((await stat(quality.visualEvidence.contactSheetPath)).size>1000);
    assert.ok(quality.findings.some(x=>x.id==='subtitle_overlap'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='acting'&&x.status==='needs_human_review'));

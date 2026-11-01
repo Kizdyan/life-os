@@ -77,21 +77,35 @@ async function scan(path,args,env){
  const result=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
  return result.stderr+'\n'+result.stdout;
 }
-async function visualEvidence({videoPath,durationSec,outputPath,env}){
+async function visualEvidence({videoPath,durationSec,outputPath,env,scenes=[]}){
  if(!outputPath)return null;
  const root=join(dirname(resolve(outputPath)),'visual-evidence');
  await mkdir(root,{recursive:false});
- const moments=[0,Math.max(0,durationSec/2),Math.max(0,durationSec-.05)];
+ const moments=scenes.length?scenes.map(scene=>({atSec:(scene.outputStartSec+scene.outputEndSec)/2,scene})): 
+  [0,Math.max(0,durationSec/2),Math.max(0,durationSec-.05)].map(atSec=>({atSec,scene:null}));
  const frames=[];
- for(const [index,atSec] of moments.entries()){
+ for(const [index,item] of moments.entries()){
+  const atSec=item.atSec;
   const path=join(root,'frame-'+String(index+1).padStart(2,'0')+'.jpg');
   await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(atSec),'-i',videoPath,'-frames:v','1','-vf','scale=320:-2','-q:v','3',path],{env});
-  frames.push({atSec,timecode:timecode(atSec),path});
+  frames.push({atSec,timecode:timecode(atSec),path,...(item.scene?{scene:item.scene.beat??item.scene.clipIndex}: {})});
  }
  const contactSheetPath=join(root,'contact-sheet.jpg');
  await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-i',join(root,'frame-%02d.jpg'),'-vf','tile=3x1:padding=4:margin=4','-frames:v','1','-q:v','3',contactSheetPath],{env});
  return {kind:'persona-visual-evidence-v1',directory:root,frames,contactSheetPath,
   caveat:'Representative decoded frames for local author review; not a visual or artistic approval.'};
+}
+async function trustedTimeline(timelinePath,videoPath,durationSec,timelineSourceVideoPath){
+ if(typeof timelinePath!=='string'||!timelinePath.trim())return null;
+ let raw;try{raw=JSON.parse(await readFile(resolve(timelinePath),'utf8'));}catch(error){if(error?.code==='ENOENT')return null;throw error}
+ if(raw?.operation!=='timeline-render'||!Array.isArray(raw.outputTimeline)||raw.output?.path!==(timelineSourceVideoPath??videoPath)||
+  !Number.isFinite(raw.output?.durationSec)||Math.abs(raw.output.durationSec-durationSec)>.25)fail('timeline manifest does not bind to this MP4 duration');
+ let previous=0;const scenes=[];
+ for(const item of raw.outputTimeline){
+  if(!Number.isFinite(item?.outputStartSec)||!Number.isFinite(item?.outputEndSec)||item.outputStartSec<previous||item.outputEndSec<=item.outputStartSec||item.outputEndSec>durationSec+.25)fail('invalid trusted output timeline');
+  scenes.push({clipIndex:item.clipIndex,beat:item.beat,outputStartSec:item.outputStartSec,outputEndSec:item.outputEndSec,durationSec:item.durationSec});previous=item.outputEndSec;
+ }
+ return scenes;
 }
 function latestNumber(log,pattern){
  const values=[...log.matchAll(pattern)].map(match=>Number(match[1])).filter(Number.isFinite);
@@ -106,7 +120,7 @@ function distribution(values){
   highlightSamplePercent:values.filter(value=>value>223).length/values.length*100};
 }
 
-export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir}={}){
+export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir,timelinePath,timelineSourceVideoPath}={}){
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
  const env=mediaEnv(ffmpegDir);
  const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
@@ -117,6 +131,8 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  const durationSec=Number(info.format?.duration),fps=rational(video.avg_frame_rate);
  if(!Number.isFinite(durationSec)||durationSec<=0||!Number.isFinite(fps))fail('FFprobe did not return duration or FPS');
  const findings=[];
+ const scenes=await trustedTimeline(timelinePath,path,durationSec,timelineSourceVideoPath&&resolve(timelineSourceVideoPath));
+ findings.push(scenes?finding('scene_timeline','measured','Достоверные границы сцен','Границы взяты из manifest существующего рендера, а не из анализа имён или Whisper.',scenes.map(scene=>timecode(scene.outputStartSec)),{scenes}):finding('scene_timeline','not_measured','Границы сцен','Не передан проверяемый manifest рендера: анализ по сценам не выполнялся, чтобы не подменять границы предположениями.'));
  const blackLog=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an'],env);
  const blacks=parseIntervals(blackLog,'black');
  findings.push(cleanFinding(blacks.length?
@@ -143,6 +159,20 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
     findings.push(finding('visual_metrics','measured','Яркость, контраст и цветовая сводка',
      'Измерено по '+luma.length+' равномерным кадрам (4 кадра/с). Проценты относятся к выборке средних яркостей кадров, а не к пикселям; пересвет и цвет кожи требуют просмотра.',[],
      {sampleRate,sampleCount:luma.length,luma:lumaDistribution,color,pixelExposure:'not_measured'}));
+    if(scenes){
+     const sceneMetrics=scenes.map(scene=>{
+      const indexes=luma.map((_,index)=>index).filter(index=>index/sampleRate>=scene.outputStartSec&&index/sampleRate<scene.outputEndSec);
+      const sceneLuma=indexes.map(index=>luma[index]),sceneU=indexes.map(index=>u[index]),sceneV=indexes.map(index=>v[index]);
+      if(!sceneLuma.length)return {beat:scene.beat,clipIndex:scene.clipIndex,status:'not_measured'};
+      const sd=distribution(sceneLuma);return {beat:scene.beat,clipIndex:scene.clipIndex,status:'measured',luma:sd,
+       uMean:sceneU.reduce((sum,value)=>sum+value,0)/sceneU.length,vMean:sceneV.reduce((sum,value)=>sum+value,0)/sceneV.length,
+       saturationMean:sceneU.reduce((sum,value,index)=>sum+Math.hypot(value-128,sceneV[index]-128),0)/sceneU.length};
+     });
+     findings.push(finding('scene_visual_metrics','measured','Покадровая сводка сцен','Сцены привязаны к доверенному manifest рендера; метрики вычислены по пробам 4 кадра/с и требуют визуального авторского решения.',[],{sampleRate,scenes:sceneMetrics}));
+     const differences=sceneMetrics.slice(1).map((scene,index)=>({from:sceneMetrics[index].beat,to:scene.beat,
+      lumaDelta:scene.status==='measured'&&sceneMetrics[index].status==='measured'?Math.abs(scene.luma.mean-sceneMetrics[index].luma.mean):null})).filter(item=>item.lumaDelta!==null&&item.lumaDelta>=35);
+     findings.push(finding('scene_visual_consistency',differences.length?'warning':'measured','Согласованность сцен',differences.length?'Есть заметные различия средней яркости между соседними сценами; это может быть художественным замыслом, проверьте контактный лист.':'В доступных пробах не найдено заметных скачков средней яркости между соседними сценами.',[],{differences}));
+    }
    }else findings.push(finding('visual_metrics','not_measured','Яркость, контраст и цветовая сводка','FFmpeg не вернул достаточных UAVG/VAVG-проб для воспроизводимой цветовой сводки.'));
    const jumps=luma.slice(1).map((value,index)=>({atSec:(index+1)/sampleRate,delta:Math.abs(value-luma[index])})).filter(x=>x.delta>=55);
    findings.push(cleanFinding(jumps.length?
@@ -192,7 +222,7 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  }
  findings.push(finding('acting','needs_human_review','Актёрская игра и реакции','Автоматический анализ не оценивает игру, мимику, естественность пауз или выразительность монтажа. Просмотрите указанные проблемные таймкоды.',[]));
  findings.push(finding('identity_preservation','needs_human_review','Лицо, очки, руки и клавиши','FFprobe/FFmpeg не доказывают сохранность внешности и геометрии. Убедитесь визуально, что финализация не изменила лицо, очки, руки или инструмент.',[]));
- const evidence=await visualEvidence({videoPath:path,durationSec,outputPath,env});
+ const evidence=await visualEvidence({videoPath:path,durationSec,outputPath,env,scenes:scenes??[]});
  const report={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
   analyzedAt:new Date().toISOString(),video:{path,sha256:await hash(path),bytes:details.size,durationSec,width:video.width,height:video.height,fps,codec:video.codec_name,bitrate:Number(video.bit_rate||info.format?.bit_rate)||null,audioCodec:audio?.codec_name??null},
   findings,...(evidence?{visualEvidence:evidence}:{}),authorApproval:{approvedByAuthor:false,publicationApproved:false},

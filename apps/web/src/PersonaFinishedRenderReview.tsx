@@ -113,7 +113,7 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
     <h4>Анализ качества видео</h4>
     {finished.quality?<>
      <p>Привязан к SHA-256 MP4 · предупреждений: {finished.quality.warningCount} · пунктов для просмотра: {finished.quality.humanReviewCount}.</p>
-     {finished.quality.visualEvidence&&<p>Локальные кадры для ручного просмотра: {finished.quality.visualEvidence.frameCount}; контактный лист: <code>{finished.quality.visualEvidence.contactSheetPath}</code>. Браузер не загружает эти изображения и не делает выводов за автора.</p>}
+     {finished.quality.visualEvidence&&<p>Локально сформированы кадры для ручного просмотра: {finished.quality.visualEvidence.frameCount}, включая контактный лист. Браузер не имеет доступа к этим файлам и не делает выводов за автора.</p>}
      <ul>{finished.quality.findings.map((finding,index)=><li key={finding.id+'-'+index}>
       <b>{finding.status==='warning'?'Предупреждение':finding.status==='measured'?'Измерено':'Проверить вручную'}: {finding.title}</b><br/>
       {finding.detail}{finding.timecodes.length?' · '+finding.timecodes.join(', '):''}
