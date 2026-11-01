@@ -9,7 +9,7 @@ import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './per
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
  createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,actorComposerShotDirections,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,reviseGuideField,getPersonaGuideReadiness,
- productionGuideScenes,validatePersonaProductionGuide,
+ productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,
 } from './personaProductionGuide';
 
 const idea={id:'guide-1',title:'Актёр и композитор — колыбельная',angle:'Два срочных дела и комедийный музыкальный поворот',format:'reel' as const};
@@ -30,6 +30,54 @@ describe('Persona full preproduction guide',()=>{
   expect(html).toContain('Подтверждённых референсов пока нет');
   expect(html).toContain('НЕ ПУБЛИКАЦИЯ');
   expect(html).toContain('Создать редактируемый сценарий из этих 7 сцен');
+ });
+ it('persists per-scene directions and invalidates a changed script before reuse',()=>{
+  const guide=createPersonaProductionGuide(now,'actor_composer');
+  const scene=productionGuideScenes(null)[0];
+  const note={camera:'Смартфон на уровне глаз, 1,2 м',lighting:'Мягкий свет из окна',
+   performance:'Речь с паузой',edit:'Резкая склейка после слова'};
+  const updated=updateGuideShotNote(guide,scene,note,now);
+  expect(validatePersonaProductionGuide(updated)).toBe(true);
+  expect(guideShotNoteForScene(updated,scene)).toEqual({
+   note:{sceneFingerprint:guideSceneFingerprint(scene),...note},stale:false,
+  });
+  const revised={...scene,line:'Изменённый авторский хук'};
+  expect(guideShotNoteForScene(updated,revised).stale).toBe(true);
+  expect(guideShotNoteForScene(updated,{...scene,seconds:5}).stale).toBe(true);
+  const oldFlags={...guide,checks:{set:true,lighting:true,takes:true,editReview:true,script:true}};
+  const edited=updateGuideShotNote(oldFlags,scene,note,now);
+  expect(edited.checks.set).toBeUndefined();
+  expect(edited.checks.lighting).toBeUndefined();
+  expect(edited.checks.takes).toBeUndefined();
+  expect(edited.checks.editReview).toBeUndefined();
+  expect(edited.checks.script).toBe(true);
+  const storage=(()=>{const data=new Map<string,string>();return {
+   getItem:(key:string)=>data.get(key)??null,
+   setItem:(key:string,value:string)=>{data.set(key,value)},
+   removeItem:(key:string)=>data.delete(key),
+  }})();
+  const project=createPersonaProject({id:'shot-note',title:'Мой Reels',contentType:'reel',sourceIdea:'Сцены',now});
+  const nextProject={...project,scenarioWorkspace:{
+   version:1 as const,research:[],analyses:[],ideas:[],preProductionGuide:updated,
+  }};
+  savePersonaProject(storage,nextProject,project.id);
+  expect(loadPersonaProjects(storage,()=>project.id).projects[0].scenarioWorkspace?.preProductionGuide?.shotNotes?.[scene.id]?.camera).toBe(note.camera);
+ });
+ it('rejects hostile or malformed per-shot records and renders editors on non-pilot scripts',()=>{
+  const guide=createPersonaProductionGuide(now);
+  const scene=productionGuideScenes(null)[0];
+  const note={camera:'План',lighting:'Свет',performance:'Игра',edit:'Склейка'};
+  const updated=updateGuideShotNote(guide,scene,note,now);
+  expect(validatePersonaProductionGuide({...updated,shotNotes:{'../escape':updated.shotNotes![scene.id]}})).toBe(false);
+  expect(validatePersonaProductionGuide({...updated,shotNotes:{A01:{...updated.shotNotes![scene.id],camera:42}}})).toBe(false);
+  const brief=buildPersonaProductionBrief({idea});
+  const html=renderToString(<PersonaProductionGuide projectTitle="Другой Reels"
+   projectAngle="Свой сценарий" allowExample={false}
+   pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('Режиссёрский план этого кадра');
+  expect(html).toContain('Камера, крупность, расстояние и ракурс');
+  expect(html).toContain('Актёрская задача, движения и интонация');
  });
  it('does not inject unrelated actor/composer scenes or sources into an unrelated Reel',()=>{
   const other={title:'Как устроен мой спектакль',angle:'Показать реквизит и работу над образом'};
