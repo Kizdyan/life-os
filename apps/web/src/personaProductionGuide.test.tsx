@@ -7,7 +7,7 @@ import {importPersonaProductionBrief} from '../../../packages/core/src/persona-p
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
- createPersonaProductionGuide,createActorComposerWorkingBrief,guideProgress,
+ createPersonaProductionGuide,createActorComposerWorkingBrief,exportPersonaShootingSheet,guideProgress,
  productionGuideScenes,validatePersonaProductionGuide,
 } from './personaProductionGuide';
 
@@ -44,6 +44,18 @@ describe('Persona full preproduction guide',()=>{
   expect(pipeline.materials.editorialDecision).toBeUndefined();
   expect(pipeline.stage).toBe('QA');
   expect(pipeline.materials.qa?.editorialReview.state).toBe('pending');
+ });
+ it('exports every spoken line and setup decision without pretending the example was approved',()=>{
+  const guide=createPersonaProductionGuide(now);
+  guide.fields.location='Моя реально выбранная комната';
+  const scenes=productionGuideScenes(null);
+  const sheet=exportPersonaShootingSheet({title:idea.title,angle:idea.angle,guide,scenes,sample:true,references:[]});
+  expect(sheet).toContain('Моя реально выбранная комната');
+  expect(sheet).toContain('Это колыбельная? Это финал триллера.');
+  expect(sheet).toContain('демонстрационный пример');
+  expect(sheet).toContain('НЕ УТВЕРЖДЕНИЕ');
+  expect(sheet).toContain('- [ ]');
+  expect(sheet).not.toContain('РАЗРЕШЕНО ПУБЛИКОВАТЬ');
  });
  it('rejects unchecked, malformed guide records and keeps old projects valid',()=>{
   const guide=createPersonaProductionGuide(now);
