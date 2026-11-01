@@ -80,11 +80,11 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   }
  };
  const edit=(key:GuideField,value:string)=>{
-  const base=unsaved?draftRef.current:stored??draftRef.current;
+  const base=draftRef.current;
   savePlan(reviseGuideField(base,key,value,new Date().toISOString()));
  };
  const mark=(key:(typeof guideChecks)[number][0],checked:boolean)=>{
-  const base=unsaved?draftRef.current:stored??draftRef.current;
+  const base=draftRef.current;
   savePlan({...base,checks:{...base.checks,[key]:checked},updatedAt:new Date().toISOString()});
  };
  const navigate=(step:'script'|'assets'|'edit'|'review')=>{
