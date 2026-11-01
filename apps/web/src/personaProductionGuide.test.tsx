@@ -143,6 +143,25 @@ describe('Persona full preproduction guide',()=>{
   expect(guideProgress(loaded.scenarioWorkspace!.preProductionGuide!)).toBe(2);
   expect(loaded.scenarioWorkspace?.preProductionGuide?.fields.location).toBe(guide.fields.location);
  });
+ it('does not imply saved scenes in a generic empty shooting-sheet export',()=>{
+  const sheet=exportPersonaShootingSheet({
+   title:'Новая идея',angle:'Ищем конфликт',guide:createPersonaProductionGuide(now),
+   sample:false,scenes:[],references:[],
+  });
+  expect(sheet).toContain('пока нет сценария');
+  expect(sheet).not.toContain('из сохранённого сценария/Production Brief');
+ });
+ it('warns when camera-ready notes disagree with the canonical existing brief',()=>{
+  const guide=createPersonaProductionGuide(now);
+  const brief=buildPersonaProductionBrief({idea});
+  const html=renderToString(<PersonaProductionGuide
+   projectTitle={idea.title} projectAngle={idea.angle} allowExample={false}
+   workspace={{version:1,research:[],analyses:[],ideas:[],preProductionGuide:guide}}
+   pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('отличаются от Production Brief');
+  expect(html).toContain('НЕ обновляют съёмочный бриф автоматически');
+ });
  it('shows current approved brief instead of substituting the seven-shot sample',()=>{
   const guide=createPersonaProductionGuide(now);
   const generic=buildPersonaProductionBrief({idea});
