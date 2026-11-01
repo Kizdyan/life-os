@@ -8,7 +8,7 @@ import {createScenarioScript,reviseScenarioScript,type ScenarioIdea} from '../..
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
- createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,
+ createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,actorComposerShotDirections,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,reviseGuideField,
  productionGuideScenes,validatePersonaProductionGuide,
 } from './personaProductionGuide';
 
@@ -45,6 +45,37 @@ describe('Persona full preproduction guide',()=>{
   expect(html).toContain('Определите конкретную аудиторию');
   expect(createPersonaProductionGuide(now).fields.sound).not.toContain('B03');
   expect(createPersonaProductionGuide(now,'actor_composer').fields.sound).toContain('B03');
+ });
+ it('gives the opt-in pilot 7 concrete camera and montage cues, without mixing them into other topics',()=>{
+  const html=renderToString(<PersonaProductionGuide projectTitle={actorComposerPilot.title}
+   projectAngle={actorComposerPilot.angle} allowExample={true} pipeline={null}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('ориентир 0,9–1,3 м');
+  expect(html).toContain('Монтаж:');
+  expect(html).toContain('A01_actor_hook_take01.mp4');
+  const sheet=exportPersonaShootingSheet({
+   title:actorComposerPilot.title,angle:actorComposerPilot.angle,
+   guide:createPersonaProductionGuide(now,'actor_composer'),sample:true,references:[],
+   scenes:productionGuideScenes(null).map((scene,i)=>({...scene,...actorComposerShotDirections[scene.id]})),
+  });
+  expect(sheet).toContain('Камера:');
+  expect(sheet).toContain('Актёрское действие:');
+  expect(sheet).toContain('Музыка только ПОСЛЕ речи');
+  expect(sheet).toContain('Монтаж:');
+ });
+ it('unchecks dependent stage confirmations when production details change',()=>{
+  const guide={...createPersonaProductionGuide(now),checks:{
+   research:true,script:true,set:true,lighting:true,sound:true,takes:true,editReview:true,
+  }};
+  const light=reviseGuideField(guide,'keyLight','Новый свет',now);
+  expect(light.checks.lighting).toBeUndefined();
+  expect(light.checks.takes).toBeUndefined();
+  expect(light.checks.editReview).toBeUndefined();
+  expect(light.checks.script).toBe(true);
+  expect(light.checks.research).toBe(true);
+  const word=reviseGuideField(light,'topicEvidence','Новый источник',now);
+  expect(word.checks.research).toBeUndefined();
+  expect(reviseGuideField(guide,'keyLight',guide.fields.keyLight,now)).toBe(guide);
  });
  it('creates an unapproved 31-second candidate inside canonical production model, not a published reel',()=>{
   const guide=createPersonaProductionGuide(now);
