@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import {fileURLToPath} from 'node:url';
 import { parseShootInputs, buildFolderShootManifest, createIntakeReport, formatIntakeMarkdown, runShootIntake, runFolderShootIntake } from './persona-shoot-intake.mjs';
 
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>
@@ -79,6 +80,19 @@ test('21 takes: folder intake sends only 7 UNREVIEWED defaults, retains 14 alter
    'untouched original placeholder');
  }finally{await rm(d,{recursive:true,force:true})}
 });
+test('explicit invalid FFmpeg bin fails before creating an output directory',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-invalid-bin-'));
+ try{
+  const folder=join(d,'selected');
+  await mkdir(folder);
+  for(const role of ['actor','composer'])
+   await writeFile(join(folder,role+'_long.mp4'),'not a video');
+  const out=join(d,'not-created');
+  await assert.rejects(()=>runFolderShootIntake({outputDir:out,folderPath:folder,ffmpegDir:d}),
+   /Missing ffmpeg|Missing ffprobe/);
+  await assert.rejects(stat(out),/ENOENT/);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
 test('folder intake refuses output inside author source folder before writing any file',async()=>{
  const d=await mkdtemp(join(tmpdir(),'persona-intake-nested-'));
  try{
@@ -89,6 +103,41 @@ test('folder intake refuses output inside author source folder before writing an
   await assert.rejects(()=>runFolderShootIntake({outputDir:out,folderPath:d}),
    /outside the selected source folder/);
   await assert.rejects(stat(out),/ENOENT/);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
+test('Windows-style isolated FFmpeg bin: folder intake works when PATH contains no media tools',
+ {skip:!mediaTools||process.platform==='win32',timeout:180000},async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-intake-explicit-ffmpeg-'));
+ try{
+  const source=join(d,'selected'),bin=join(d,'isolated-bin'),out=join(d,'new-intake');
+  await mkdir(source);await mkdir(bin);
+  for(const [index,role]of ['actor','composer'].entries()){
+   const media=join(source,role+'_long.mp4');
+   const make=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi',
+    '-i',index?'color=c=white:s=240x320:r=30':'color=c=gray:s=240x320:r=30',
+    '-f','lavfi','-i','sine=frequency=430:sample_rate=16000',
+    '-t','1.5','-c:v','mpeg4','-c:a','aac','-shortest',media],
+    {encoding:'utf8',timeout:30000});
+   assert.equal(make.status,0,make.stderr);
+  }
+  const ffmpegBinary=spawnSync('which',['ffmpeg'],{encoding:'utf8'}).stdout.trim();
+  const ffprobeBinary=spawnSync('which',['ffprobe'],{encoding:'utf8'}).stdout.trim();
+  assert.ok(ffmpegBinary&&ffprobeBinary);
+  await symlink(ffmpegBinary,join(bin,'ffmpeg'));
+  await symlink(ffprobeBinary,join(bin,'ffprobe'));
+  const childEnv={...process.env,PATH:''};
+  delete childEnv.PERSONA_FFMPEG;delete childEnv.PERSONA_FFPROBE;
+  const cli=fileURLToPath(new URL('./persona-shoot-intake.mjs',import.meta.url));
+  const child=spawnSync(process.execPath,[cli,'folder',out,source,bin],
+   {env:childEnv,encoding:'utf8',timeout:90000,maxBuffer:1024*1024});
+  assert.equal(child.status,0,child.stderr+'\n'+child.stdout);
+  const report=JSON.parse(await readFile(join(out,'INTAKE.json'),'utf8'));
+  assert.equal(report.sourceCount,2);
+  assert.equal(report.status,'needs-human-review');
+  assert.equal(report.folderMode,'role_long_takes_needs_review');
+  assert.equal(report.briefPath,null,'intake must not claim an unapproved script');
+  assert.deepEqual(report.alternateTakes,[]);
+  assert.ok((await stat(join(out,'evidence','analysis.json'))).size>0);
  }finally{await rm(d,{recursive:true,force:true})}
 });
 test('two real FFmpeg takes -> local evidence, hash, previews, WAV and intake report; no source edits',{skip:!mediaTools,timeout:180000},async()=>{
