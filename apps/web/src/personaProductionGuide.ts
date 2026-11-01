@@ -144,7 +144,11 @@ export function validatePersonaProductionGuide(value:unknown):value is PersonaPr
  if(fieldKeys.some(key=>typeof x.fields?.[key]!=='string'||x.fields[key].length>6000))return false;
  return Object.entries(x.checks).every(([key,val])=>guideChecks.some(([check])=>check===key)&&typeof val==='boolean');
 }
-export function productionGuideScenes(brief:PersonaProductionBrief|null){
+export interface PersonaGuideScene{
+ id:string;seconds:number;line:string;action:string;framing:string;lighting:string;
+ angle?:string;cameraMovement?:string;source:'example'|'brief';
+}
+export function productionGuideScenes(brief:PersonaProductionBrief|null):PersonaGuideScene[]{
  if(!brief||!Array.isArray(brief.script)||!Array.isArray(brief.shots)||brief.script.length!==brief.shots.length)
   return exampleActorComposerBeats.map(beat=>({...beat,source:'example' as const}));
  return brief.script.map((beat,i)=>({
