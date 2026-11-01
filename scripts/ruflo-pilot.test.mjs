@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assessRufloPilotRequest, evaluateRufloAgainstBaseline } from '../packages/core/src/ruflo-pilot.ts';
 
-const req = { experimentId:'ruflo-smoke', domain:'engineering', dataClass:'public',
+const req = { experimentId:'ruflo-smoke', pinnedRuntimeVersion:'3.66.2', domain:'engineering', dataClass:'public',
   taskIds:['review-code','test-code'],taskDescription:'Synthetic code-quality fixture',
   fixtureOnly:true,containsSecrets:false,networkRequested:false,writesToUserWorkspace:false,
   changesProduction:false,risks:['read_only'],independentObserverAssigned:true,
@@ -55,4 +55,9 @@ test('permits expanding cheaper pilot without authorizing deployment',()=>{
 test('rejects no improvement and cost overruns',()=>{
   assert.equal(evaluateRufloAgainstBaseline(metrics,{...metrics,runId:'pilot'}).decision,'reject');
   assert.equal(evaluateRufloAgainstBaseline(metrics,{...metrics,runId:'pilot',costUsd:6,elapsedSeconds:70}).decision,'reject');
+});
+
+test('requires exact pinned Ruflo security-reviewed version',()=>{
+  for(const version of ['latest','3.16.2','3.65.1','3.66.1','v3.66.2',''])
+    assert.equal(assessRufloPilotRequest({...req,pinnedRuntimeVersion:version,ownerApprovedThirdPartyExecution:true}).status,'blocked');
 });
