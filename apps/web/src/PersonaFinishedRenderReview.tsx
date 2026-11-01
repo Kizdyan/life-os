@@ -53,16 +53,16 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
   try{
    if(!canImport)throw Error('Исходный съёмочный бриф больше не подтверждён.');
    const selected=Array.from(files),map=new Map(selected.map(f=>[f.name,f]));
-   if(selected.length!==3||map.size!==3)throw Error('Нужны ровно FINISH-RESULT.json, finish-qa.json и finished-candidate.mp4.');
+   if(![3,4].includes(selected.length)||map.size!==selected.length)throw Error('Нужны FINISH-RESULT.json, finish-qa.json, finished-candidate.mp4 и, если он создан, video-quality.json.');
    const resultFile=map.get('FINISH-RESULT.json'),qaFile=map.get('finish-qa.json'),
-    videoFile=map.get('finished-candidate.mp4');
+    qualityFile=map.get('video-quality.json'),videoFile=map.get('finished-candidate.mp4');
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов из одной папки финализации должны совпадать.');
    if(videoFile.size<1024||videoFile.size>160*1024*1024)
     throw Error('Видео для локального импорта должно быть от 1 КБ до 160 МБ.');
-   const [report,qa,fileSha,duration]=await Promise.all([
-    readJson(resultFile),readJson(qaFile),sha256(videoFile),durationOf(videoFile)]);
+   const [report,qa,quality,fileSha,duration]=await Promise.all([
+    readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),sha256(videoFile),durationOf(videoFile)]);
    if(run!==generation.current)return;
-   const result=inspectPersonaFinishedRenderImport({draft,report,qa,
+   const result=inspectPersonaFinishedRenderImport({draft,report,qa,quality,
     video:{name:videoFile.name,size:videoFile.size,sha256:fileSha,durationSec:duration},
     importedAt:new Date().toISOString()});
    const merged=result.finishedSha256===finished?.finishedSha256?
@@ -72,7 +72,7 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
    if(urlRef.current)URL.revokeObjectURL(urlRef.current);
    const url=URL.createObjectURL(videoFile);urlRef.current=url;fileHash.current=fileSha;setVideoUrl(url);
    setWatched(false);setChecks(initialChecks());setReviewer('');setNotes('');
-   setMessage('Финишный MP4 проверен по SHA-256 и двум локальным отчётам. Он ожидает личного художественного решения.');
+   setMessage(result.quality?'Финишный MP4 и отчёт качества проверены по SHA-256. Художественное решение остаётся за автором.':'Финишный MP4 проверен по SHA-256 и двум локальным отчётам. Для этого старого результата отдельный отчёт качества ещё не создан.');
   }catch(error){if(run===generation.current)setMessage('Импорт отклонён: '+String((error as Error).message||error))}
   finally{if(run===generation.current)setBusy(false)}
  }
@@ -92,10 +92,10 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
  }
  return <section className="personaFinishedReview" aria-label="Финишный MP4 и художественная приёмка">
   <h4>Финишный Reels · художественная приёмка</h4>
-  <p>После команды <code>media:finish:reel</code> выбери три файла из новой папки результата. Они останутся на этом устройстве.</p>
-  <label>Загрузить итоговый MP4 и два отчёта
+  <p>После команды <code>media:finish:reel</code> выбери MP4, два отчёта и <code>video-quality.json</code>, если он создан. Они останутся на этом устройстве.</p>
+  <label>Загрузить итоговый MP4 и локальные отчёты
    <input type="file" accept=".json,.mp4,application/json,video/mp4" multiple
-    aria-label="Выбрать FINISH-RESULT.json, finish-qa.json, finished-candidate.mp4"
+    aria-label="Выбрать FINISH-RESULT.json, finish-qa.json, video-quality.json и finished-candidate.mp4"
     disabled={busy||!canImport} onChange={event=>{void importFinished(event.currentTarget.files);event.currentTarget.value=''}}/>
   </label>
   {busy&&<p role="status">Проверка SHA-256 и локальных QA-отчётов…</p>}
@@ -105,6 +105,16 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
     finished.authorReview?.decision==='needs-revision'?'Нужна доработка':'Готов для личного просмотра'}</b>
    <p>{finished.durationSec.toFixed(2)} сек. · 1080×1920 / 30 fps · субтитров: {finished.captionCount} · музыка: {finished.musicAdded?'добавлена':'без нового трека'}</p>
    <p>Проверен SHA-256 загруженного MP4 и соответствие отчётов FFmpeg. Качество изображения и звука оценивается только после личного просмотра.</p>
+   <div className="personaRenderReturnDetails" aria-label="Анализ качества видео">
+    <h4>Анализ качества видео</h4>
+    {finished.quality?<>
+     <p>Привязан к SHA-256 MP4 · предупреждений: {finished.quality.warningCount} · пунктов для просмотра: {finished.quality.humanReviewCount}.</p>
+     <ul>{finished.quality.findings.map((finding,index)=><li key={finding.id+'-'+index}>
+      <b>{finding.status==='warning'?'Предупреждение':finding.status==='measured'?'Измерено':'Проверить вручную'}: {finding.title}</b><br/>
+      {finding.detail}{finding.timecodes.length?' · '+finding.timecodes.join(', '):''}
+     </li>)}</ul>
+    </>:<p>Для этого ранее собранного результата нет <code>video-quality.json</code>. Запусти новую локальную финализацию для измеримого отчёта; это не означает дефект или одобрение.</p>}
+   </div>
    {finished.authorReview&&<p>Последнее решение: {finished.authorReview.reviewer} · {finished.authorReview.notes||'без замечаний'}</p>}
    {!sameFile&&<p>После обновления страницы выбери те же файлы повторно, чтобы посмотреть видео. MP4 не сохраняется внутри браузерного проекта.</p>}
   </div>}

@@ -8,12 +8,15 @@ export type PersonaFinalAuthorReview={
  watchedEntireVideo:true;criteria:PersonaFinalReviewChecks;videoSha256:string;
  publicationApproved:false;
 };
+export type PersonaVideoQualityFinding={id:string;status:'measured'|'warning'|'needs_human_review'|'not_measured';title:string;detail:string;timecodes:string[]};
+export type PersonaVideoQualitySummary={version:1;videoSha256:string;analyzedAt:string;warningCount:number;humanReviewCount:number;findings:PersonaVideoQualityFinding[]};
 export type PersonaFinishedRenderRecord={
  version:1;kind:'persona-finished-render-review-v1';sourceDraftSha256:string;briefFingerprintSha256:string;
  finishedSha256:string;finishedBytes:number;durationSec:number;width:1080;height:1920;fps:30;
  captionsBurnedIn:true;captionCount:number;color:{brightness:number;contrast:number;saturation:number};
  musicAdded:boolean;importedAt:string;status:'awaiting-author-review';publicationApproved:false;
  qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
+ quality?:PersonaVideoQualitySummary;
 };
 type VideoFile={name:string;size:number;sha256:string;durationSec:number};
 const hash=/^[a-f0-9]{64}$/i;
@@ -21,6 +24,25 @@ const record=(x:unknown):Record<string,unknown>=>x&&typeof x==='object'&&!Array.
 const fail=(message:string):never=>{throw Error(message)};
 const fileName=(path:unknown)=>typeof path==='string'?path.split(/[\\/]/).at(-1):null;
 const within=(x:unknown,min:number,max:number)=>typeof x==='number'&&Number.isFinite(x)&&x>=min&&x<=max;
+const qualityStatuses=new Set(['measured','warning','needs_human_review','not_measured']);
+function parseQuality(value:unknown,expectedSha:string):PersonaVideoQualitySummary|null{
+ const quality=record(value),video=record(quality.video),approval=record(quality.authorApproval);
+ const raw=Array.isArray(quality.findings)?quality.findings:[];
+ if(quality.version!==1||quality.kind!=='persona-video-quality-v1'||quality.status!=='awaiting-author-review'||
+   quality.publicationApproved!==false||quality.distributionAllowed!==false||
+   video.sha256!==expectedSha||typeof quality.analyzedAt!=='string'||!quality.analyzedAt.trim()||
+   approval.approvedByAuthor!==false||approval.publicationApproved!==false||!raw.length||raw.length>80)return null;
+ const findings:PersonaVideoQualityFinding[]=[];
+ for(const item of raw){const finding=record(item),timecodes=Array.isArray(finding.timecodes)?finding.timecodes:[];
+  if(typeof finding.id!=='string'||!finding.id||finding.id.length>100||!qualityStatuses.has(String(finding.status))||
+    typeof finding.title!=='string'||!finding.title||finding.title.length>200||typeof finding.detail!=='string'||finding.detail.length>2000||
+    timecodes.some(time=>typeof time!=='string'||time.length>30))return null;
+  findings.push({id:finding.id,status:finding.status as PersonaVideoQualityFinding['status'],title:finding.title,detail:finding.detail,timecodes:timecodes as string[]});
+ }
+ return {version:1,videoSha256:expectedSha,analyzedAt:quality.analyzedAt as string,
+  warningCount:findings.filter(finding=>finding.status==='warning').length,
+  humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings};
+}
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);
  const checks=record(record(r.authorReview).criteria),review=record(r.authorReview);
@@ -44,6 +66,8 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&
   typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
+  (r.quality===undefined||Boolean(parseQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
+   analyzedAt:record(r.quality).analyzedAt,video:{sha256:record(r.quality).videoSha256},authorApproval:{approvedByAuthor:false,publicationApproved:false},findings:record(r.quality).findings},r.finishedSha256)))&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
 }
 function isSha(value:unknown):value is string{return typeof value==='string'&&hash.test(value)}
@@ -52,7 +76,7 @@ function isSha(value:unknown):value is string{return typeof value==='string'&&ha
  * FFmpeg QA and does not prove subtitle aesthetics, playback or authorship.
  */
 export function inspectPersonaFinishedRenderImport(input:{
- draft:PersonaLocalRenderRecord;report:unknown;qa:unknown;video:VideoFile;importedAt:string;
+ draft:PersonaLocalRenderRecord;report:unknown;qa:unknown;quality?:unknown;video:VideoFile;importedAt:string;
 }):PersonaFinishedRenderRecord{
  const {draft,video,importedAt}=input,report=record(input.report),qa=record(input.qa);
  const evidence=record(qa.evidence),handoff=record(qa.handoff),caption=record(report.captions);
@@ -78,6 +102,10 @@ export function inspectPersonaFinishedRenderImport(input:{
   !isSha(caption.sourceSha256)||!Number.isSafeInteger(caption.cueCount)||
   !within(caption.cueCount,1,80))
   fail('Нет подтверждения этапа проверки и встраивания субтитров.');
+ const qualityRequired=report.stages.includes('local-video-quality-analysis-written');
+ const quality=qualityRequired?parseQuality(input.quality,video.sha256.toLowerCase()):null;
+ if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality))
+  fail('Отчёт качества видео отсутствует, повреждён или относится к другому MP4.');
  if(!within(color.brightness,-0.05,0.05)||!within(color.contrast,0.92,1.08)||
    !within(color.saturation,0.88,1.12))
   fail('Параметры цвета за пределами допустимого диапазона.');
@@ -110,7 +138,7 @@ export function inspectPersonaFinishedRenderImport(input:{
   color:{brightness:color.brightness as number,contrast:color.contrast as number,
    saturation:color.saturation as number},musicAdded:music!==null,importedAt,
   status:'awaiting-author-review',publicationApproved:false,
-  qaProvenance:'browser-sha256-matched-local-ffmpeg-report'
+  qaProvenance:'browser-sha256-matched-local-ffmpeg-report',...(quality?{quality}:{})
  };
  return finished;
 }

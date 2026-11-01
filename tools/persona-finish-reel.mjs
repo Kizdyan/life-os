@@ -11,6 +11,7 @@ import {access,copyFile,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/pr
 import {basename,dirname,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {validateDraftQa} from './persona-first-reel-runner.mjs';
+import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 
 const toolHome=dirname(fileURLToPath(import.meta.url));
 const fail=message=>{throw Error('Persona finish: '+message)};
@@ -141,7 +142,7 @@ export async function preflightFinish({draftDir,optionsPath,outputDir,ffmpegDir}
   captionSha256:await sha256(captionFile)};
 }
 export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDir,
- verifierPath=join(toolHome,'persona-verify-render.mjs')}={}){
+ verifierPath=join(toolHome,'persona-verify-render.mjs'),qualityAnalyzer=analyzePersonaVideoQuality}={}){
  const plan=await preflightFinish({draftDir,optionsPath,outputDir,ffmpegDir});
  const env=envWithMediaTools(ffmpegDir);
  const filters=await run('ffmpeg',['-hide_banner','-filters'],{env});
@@ -180,12 +181,18 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
   if(Math.abs(qa.evidence.durationSec-plan.qa.evidence.durationSec)>0.25)
    fail('Post-processing changed the Reel duration unexpectedly');
   stages.push('real-ffmpeg-technical-qa-passed-no-publication');
+  const qualityPath=join(plan.output,'video-quality.json');
+  const quality=await qualityAnalyzer({videoPath:movie,subtitlePath:localSrt,
+   expectedDurationSec:plan.qa.evidence.durationSec,outputPath:qualityPath});
+  if(quality?.video?.sha256!==qa.evidence.sha256||quality?.publicationApproved!==false||
+    quality?.distributionAllowed!==false)fail('Local video-quality report does not match the unpublished finished MP4');
+  stages.push('local-video-quality-analysis-written');
   const report={version:1,kind:'persona-finished-candidate-v1',
    status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
    briefIdeaId:plan.result.briefIdeaId,
    briefFingerprintSha256:plan.result.briefFingerprintSha256,
    originalDraft:plan.input,originalSha256:plan.sourceSha256,
-   output:movie,qaPath,outputSha256:qa.evidence.sha256,
+   output:movie,qaPath,qualityPath,outputSha256:qa.evidence.sha256,
    captions:{path:localSrt,sourceSha256:plan.captionSha256,cueCount:plan.captionQa.cueCount,
     burnedIn:true,source:'explicit-human-reviewed-srt'},
    color:plan.grade,music:plan.music?{sha256:plan.music.sha256,

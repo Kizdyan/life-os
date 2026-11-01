@@ -79,10 +79,13 @@ test('real FFmpeg burned SRT + optional music + bounded grade -> new QA, origina
   assert.equal(res.distributionAllowed,false);
   assert.equal(res.captions.burnedIn,true);
   assert.ok(res.stages.includes('real-ffmpeg-technical-qa-passed-no-publication'));
+  assert.ok(res.stages.includes('local-video-quality-analysis-written'));
+  assert.equal(res.publicationApproved,false);
   assert.ok((await stat(res.output)).size>1000);
   assert.deepEqual(await readFile(movie),original);
   assert.equal(hash(await readFile(movie)),qa.evidence.sha256);
   const finishedQa=JSON.parse(await readFile(res.qaPath,'utf8'));
+  assert.equal(JSON.parse(await readFile(res.qualityPath,'utf8')).video.sha256,finishedQa.evidence.sha256);
   assert.equal(finishedQa.handoff.passed,false);
   assert.equal(finishedQa.handoff.errors[0],'author approval required');
   await assert.rejects(()=>finishPersonaReel({draftDir:draft,optionsPath,outputDir:output}),/already exists/);

@@ -76,6 +76,22 @@ describe('Persona final local render and author review',()=>{
    rightsConfirmedByAuthor:false};
   expect(()=>inspectPersonaFinishedRenderImport(badMusic)).toThrow(/Музыкальная/);
  });
+ it('binds the local video-quality report to the exact finished MP4 without treating it as approval',()=>{
+  const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
+  input.report.stages.push('local-video-quality-analysis-written');
+  (input.report as Record<string,unknown>).qualityPath='D:\\Persona\\finished\\video-quality.json';
+  input.quality={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+   publicationApproved:false,distributionAllowed:false,analyzedAt:'2026-11-01T12:00:00.000Z',
+   video:{sha256:finishedSha,durationSec:31,width:1080,height:1920,fps:30},
+   findings:[{id:'black_frames',status:'measured',title:'Чёрные кадры',detail:'Нет',timecodes:[]}],
+   authorApproval:{approvedByAuthor:false,publicationApproved:false}};
+  const finished=inspectPersonaFinishedRenderImport(input);
+  expect(finished.quality?.videoSha256).toBe(finishedSha);
+  expect(finished.quality?.warningCount).toBe(0);
+  expect(finished.publicationApproved).toBe(false);
+  (input.quality as any).video.sha256='f'.repeat(64);
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества|SHA-256/);
+ });
  it('does not approve a final cut without whole-video viewing and six positive checks',()=>{
   const finished=inspectPersonaFinishedRenderImport(fixture());
   const input={finished,decision:'approved-final-cut' as const,reviewer:'Автор',
@@ -106,6 +122,7 @@ describe('Persona final local render and author review',()=>{
    draft,onSave:()=>false,canImport:false
   }));
   expect(html).toContain('Финишный Reels');
+  expect(html).toContain('video-quality.json');
   expect(html).toContain('disabled');
   expect(html).toContain('FINISH-RESULT.json');
  });
