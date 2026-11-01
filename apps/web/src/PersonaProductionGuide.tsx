@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
+ createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -53,6 +53,8 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   id:String(i+1),seconds:beat.durationSec,line:beat.line,action:beat.action,framing:'План уточняется в Production Brief',
   lighting:'Уточнить свет и план после утверждения сценария',source:'scenario' as const,
  })):brief?productionGuideScenes(brief):example?productionGuideScenes(null):[];
+ const showPilotDirections=allowExample&&scenes.length===exampleActorComposerBeats.length&&
+  scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line);
  const research=workspace?.research??[];
  const reviewed=research.filter(r=>r.observationStatus==='user_reviewed');
  const totalSeconds=scenes.reduce((sum,scene)=>sum+scene.seconds,0);
@@ -83,7 +85,8 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const downloadSheet=()=>{
   try{
    const text=exportPersonaShootingSheet({title:projectTitle,angle:projectAngle,guide:plan,
-    scenes,references:research.map(ref=>({
+    scenes:scenes.map(scene=>showPilotDirections?{...scene,...actorComposerShotDirections[exampleActorComposerBeats[scenes.indexOf(scene)].id]}:scene),
+    references:research.map(ref=>({
      title:ref.title||ref.url,url:ref.url,observedAt:ref.observedAt,
      status:ref.observationStatus==='user_reviewed'?'просмотрено автором':'не просмотрено автором',
     })),sample:example});
@@ -155,6 +158,11 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
       <small>СХЕМА КОМПОЗИЦИИ · НЕ РЕАЛЬНЫЙ КАДР</small>
      </div>
      <blockquote>«{scene.line}»</blockquote><p><b>Что делать:</b> {scene.action}</p><p><b>Кадр и свет:</b> {scene.lighting}</p>
+     {showPilotDirections&&actorComposerShotDirections[exampleActorComposerBeats[index].id]&&<div className="personaGuideDirection">
+      <p><b><span aria-hidden="true">▣</span> Камера:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].camera}</p>
+      <p><b>Игра:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].performance}</p>
+      <p><b>Монтаж:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].edit}</p>
+     </div>}
     </div>)}
    </div>
    <p><b>Предполагаемая длительность:</b> {totalSeconds} секунд. Точная речь, таймкоды, интонации и паузы проверяются по реальным дублям.</p>
