@@ -122,7 +122,8 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    <p>Скачайте настройки для этого MP4: SHA-256 будет подставлен автоматически, а проверка субтитров останется не подтверждённой.</p>
    <button type="button" onClick={downloadFinishTemplate}>Скачать настройки финализации</button>
    <p>Лично проверьте текст и таймкоды, сохраните captions.reviewed.srt, укажите абсолютный путь в JSON. Затем вручную установите captionsReviewed: true. Музыка добавляется только отдельно и с подтверждёнными правами.</p>
-   <pre>{'npm run media:finish:reel -- "<ПАПКА_ЧЕРНОВИКА>" "<finish-options.json>" "<НОВАЯ_ПАПКА>"'}</pre>
+   <p>На Windows укажи четвёртым аргументом каталог <code>bin</code>, содержащий <code>ffmpeg.exe</code> и <code>ffprobe.exe</code>. Тогда финализация работает даже если FFmpeg не находится в PATH.</p>
+   <pre>{'npm run media:finish:reel -- "<ПАПКА_ЧЕРНОВИКА>" "<finish-options.json>" "<НОВАЯ_ПАПКА>" "<ПАПКА_FFMPEG_BIN>"'}</pre>
    <p>Результат: finished-candidate.mp4, finish-qa.json и FINISH-RESULT.json. Это не утверждение или публикация.</p>
   </details>}
   {current&&<PersonaFinishedRenderReview key={projectId+':'+current.mp4Sha256} draft={current} onSave={onSave} canImport={Boolean(handoff?.allowed)}/>}
