@@ -75,7 +75,7 @@ if (shootingPack.includes('$selected') || shootingPack.includes('$out\\intake\\s
   fail('Shooting instructions contain a stale or undefined source-manifest command');
 const win = shootingPack.split('## Первый запуск на Windows')[1]?.split('## Возврат смонтированного MP4')[0] || '';
 if (!win.includes('$sourceFolder') ||
-    !win.includes('npm run media:shoot:intake -- folder $intake $sourceFolder') ||
+    !win.includes('npm run media:shoot:intake -- folder $intake $sourceFolder $ffmpegBin') ||
     !win.includes("persona-production-brief.json'") ||
     !win.includes('npm run media:first-reel:draft --') ||
     !win.includes('$brief $draft $whisperCli $whisperModel $ffmpegBin strict') ||
