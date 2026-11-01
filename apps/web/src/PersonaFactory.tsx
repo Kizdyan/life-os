@@ -111,7 +111,8 @@ export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,f
   }
   try{
    if(readProductionInputRaw(storage,projectId)!==current)throw Error('Правка изменена в другой вкладке.');
-   if(!onBriefChange(applyProductionInputField(brief,field,value))){
+   const next=applyProductionInputField(brief,field,value);
+   if(next!==brief&&!onBriefChange(next)){
     setInputError('Бриф не удалось записать. Страховочная копия сохранена.');return;
    }
    clearProductionInputDraft(storage,projectId,current);

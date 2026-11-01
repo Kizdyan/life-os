@@ -45,11 +45,16 @@ export function applyProductionInputField(b:PersonaProductionBrief,field:string,
   if(!value.trim()||!Number.isFinite(seconds)||seconds<=0)throw Error('Длительность должна быть больше нуля.');
   const script=b.script.map((x,i)=>i===index?{...x,durationSec:seconds}:x);
   const shots=b.shots.map((x,i)=>i===index?{...x,durationSec:seconds}:x);
+  // Canonical input has not changed: do not invalidate an existing approval.
+  if(b.script[index]?.durationSec===seconds&&b.shots[index]?.durationSec===seconds)return b;
   const total=shots.reduce((sum,x)=>sum+x.durationSec,0);
   return {...b,script,shots,adaptations:{reels:{...b.adaptations.reels,durationSec:total},
    shorts:{...b.adaptations.shorts,durationSec:total},vkClips:{...b.adaptations.vkClips,durationSec:total}}};
  }
  if(!value.trim())throw Error('Нельзя сохранить пустое поле. Текст остаётся в страховочной копии.');
+ // Returning the original object lets the editor clear a no-op journal without
+ // recording a new revision or resetting a prior shoot approval.
+ if((arr[index] as Record<string,unknown>)[prop]===value)return b;
  return kind==='script'?{...b,script:b.script.map((x,i)=>i===index?{...x,[prop]:value}:x)}
   :{...b,shots:b.shots.map((x,i)=>i===index?{...x,[prop]:value}:x)};
 }

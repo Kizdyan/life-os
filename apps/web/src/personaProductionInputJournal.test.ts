@@ -33,6 +33,14 @@ describe('Production Brief crash journal',()=>{
   const fail={...mem(),setItem:()=>{throw Error('quota')}};
   expect(()=>saveProductionInputDraft(fail,draft,null)).toThrow('quota');
  });
+ it('does not revise or revoke approval when a user types then restores the original value',()=>{
+  expect(applyProductionInputField(b,'script:0:line',b.script[0].line)).toBe(b);
+  expect(applyProductionInputField(b,'script:0:action',b.script[0].action)).toBe(b);
+  expect(applyProductionInputField(b,'shot:0:lighting',b.shots[0].lighting)).toBe(b);
+  expect(applyProductionInputField(b,'script:0:durationSec',String(b.script[0].durationSec))).toBe(b);
+  expect(applyProductionInputField(b,'script:0:durationSec',b.script[0].durationSec.toFixed(1))).toBe(b);
+  expect(applyProductionInputField(b,'script:0:line',b.script[0].line+'!')).not.toBe(b);
+ });
  it('validates text and synchronized duration changes',()=>{
   const changed=applyProductionInputField(b,'script:0:line','Rewritten');
   expect(changed.script[0].line).toBe('Rewritten');
