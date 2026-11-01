@@ -209,6 +209,15 @@ describe('Persona full preproduction guide',()=>{
   expect(guideProgress(loaded.scenarioWorkspace!.preProductionGuide!)).toBe(2);
   expect(loaded.scenarioWorkspace?.preProductionGuide?.fields.location).toBe(guide.fields.location);
  });
+ it('recognizes an existing brief-only script and requests editorial approval, not rewriting the hook',()=>{
+  const brief=buildPersonaProductionBrief({idea});
+  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle}
+   allowExample={false} pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).not.toContain('Составьте хук, развитие и финальную реплику');
+  expect(html).toContain('Проверьте и утвердите текущую редакцию реплик');
+  expect(html).toContain(brief.script[0].line);
+ });
  it('does not imply saved scenes in a generic empty shooting-sheet export',()=>{
   const sheet=exportPersonaShootingSheet({
    title:'Новая идея',angle:'Ищем конфликт',guide:createPersonaProductionGuide(now),
