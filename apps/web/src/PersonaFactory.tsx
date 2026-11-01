@@ -32,6 +32,10 @@ import type { PersonaProductionBrief } from '../../../packages/core/src/persona-
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 
 /** Do not approve a production brief using older dialogue than the current script revision. */
+/** The same rule is applied to tabs, project switches and browser hash navigation. */
+export function canNavigateFromPersonaGuide(hasUnsavedChanges:boolean):boolean{
+ return hasUnsavedChanges===false;
+}
 export function productionBriefMatchesBeats(
  brief:PersonaProductionBrief|undefined,
  beats:readonly {line:string;action:string;durationSec:number}[]|undefined,
@@ -323,7 +327,7 @@ export default function PersonaFactory(){
  function remember(idea:Idea,status:'later'|'rejected'|'used'){setH(v=>[...v.filter(x=>x.title!==idea.title),{title:idea.title,status}]);setIdeas(v=>v.map(x=>x.title===idea.title?{...x,status}:x))}
  function resetLocalAsset(){mediaProbeSequence.current+=1;if(assetUrlRef.current){URL.revokeObjectURL(assetUrlRef.current);assetUrlRef.current=null}setAsset(null);setAssetName('');setAssetIsVideo(false)}
  function canLeaveGuide():boolean{
-  if(!guideDirty.current)return true;
+  if(canNavigateFromPersonaGuide(guideDirty.current))return true;
   setGuideGuardMessage('Есть несохранённые изменения в «Плане съёмки». Повторите сохранение или скачайте съёмочный лист, прежде чем уходить.');
   return false;
  }
