@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import PersonaFinishedRenderReview from './PersonaFinishedRenderReview';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
-import {inspectPersonaLocalRenderImport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {productionInputDraftExists} from './personaProductionInputJournal';
 import {resolvePersonaScenarioDraftStorage} from './personaScenarioDraftJournal';
 import './persona-local-render-review.css';
@@ -80,10 +80,11 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
     projectId,brief,briefFingerprintSha256:fingerprint,result,qa,quality,
     video:{name:videoFile.name,size:videoFile.size,sha256,durationSec:duration},importedAt:new Date().toISOString(),
    });
-   if(!onSave(imported))throw Error('Проект изменился в другой вкладке или хранилище недоступно. Результат не сохранён.');
+   const merged=mergePersonaDraftReimport(current,imported);
+   if(!onSave(merged))throw Error('Проект изменился в другой вкладке или хранилище недоступно. Результат не сохранён.');
    if(lastUrl.current)URL.revokeObjectURL(lastUrl.current);
    const url=URL.createObjectURL(videoFile);lastUrl.current=url;setPreview(url);
-   setMessage('MP4 совпадает по SHA-256 с локальным QA. Отчёт и статус проверки сохранены в проекте; видео хранится только в выбранном файле.');
+   setMessage(merged.finished?'Тот же черновой MP4 повторно проверен: финальная художественная приёмка сохранена; файлы видео остаются локальными.':'MP4 совпадает по SHA-256 с локальным QA. Отчёт и статус проверки сохранены в проекте; видео хранится только в выбранном файле.');
   }catch(error){if(task===generation.current)setMessage('Импорт отклонён: '+String((error as Error).message||error))}
   finally{if(task===generation.current)setBusy(false)}
  }
@@ -114,7 +115,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
      </li>)}</ul>
     </>:<p>Старый черновик: video-quality.json не импортирован. После локального анализа повторно выбери четыре файла; отсутствие отчёта не означает, что недостатков нет.</p>}
    </details>
-   {!preview&&<p>Чтобы снова посмотреть видео после перезагрузки, выбери те же три локальных файла: браузер сохраняет отчёт, но не копию MP4.</p>}
+   {!preview&&<p>Чтобы снова посмотреть видео после перезагрузки, выбери файлы исходного MP4 и двух отчётов, а при наличии — video-quality.json. Браузер сохраняет сведения о проверке, но не копию MP4.</p>}
   </div>}
   {current&&<details className="personaRenderFinishHandoff">
    <summary>Финишная обработка: титры, музыка, цвет</summary>
