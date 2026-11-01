@@ -76,6 +76,20 @@ describe('Persona final local render and author review',()=>{
    rightsConfirmedByAuthor:false};
   expect(()=>inspectPersonaFinishedRenderImport(badMusic)).toThrow(/Музыкальная/);
  });
+ it('shows a validated timed soundtrack but rejects a forged or out-of-range cue',()=>{
+  const input=fixture();
+  (input.report as any).music={sha256:'e'.repeat(64),volume:0.16,originalVolume:0.9,
+   rightsConfirmedByAuthor:true,startSec:24.53,endSec:26.65,fadeInSec:0.04,fadeOutSec:0.18};
+  const result=inspectPersonaFinishedRenderImport(input);
+  expect(result.musicCue).toEqual({startSec:24.53,endSec:26.65,fadeInSec:0.04,fadeOutSec:0.18});
+  expect(readPersonaFinishedRenderRecord(result)).not.toBeNull();
+  expect(readPersonaLocalRenderRecord({...draft,finished:result})).not.toBeNull();
+  expect(readPersonaFinishedRenderRecord({...result,musicCue:{...result.musicCue!,endSec:40}})).toBeNull();
+  (input.report as any).music.fadeOutSec=4;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/музыкального/);
+  delete (input.report as any).music.startSec;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/музыкального/);
+ });
  it('binds the local video-quality report to the exact finished MP4 without treating it as approval',()=>{
   const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
   input.report.stages.push('local-video-quality-analysis-written');
