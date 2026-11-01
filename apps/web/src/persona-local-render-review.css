@@ -1,0 +1,9 @@
+.personaRenderReturn{margin:18px 0;padding:20px;border:1px solid #d5d0c7;border-radius:19px;background:#faf8f3;color:#282621}
+.personaRenderReturn h3{margin:0 0 10px;font-size:21px;line-height:1.25}
+.personaRenderReturn p{font-size:14px;line-height:1.5;max-width:780px}
+.personaRenderReturnPicker{display:grid;gap:8px;margin:14px 0;font-weight:650;font-size:14px}
+.personaRenderReturnPicker input{max-width:100%;font:inherit;font-weight:400}
+.personaRenderReturnDetails{border:1px solid #dad8cb;border-radius:14px;padding:14px;background:#fff}
+.personaRenderReturnDetails p{margin:8px 0}
+.personaRenderReturnVideo{display:block;width:100%;max-width:400px;max-height:690px;background:#111;border-radius:12px;margin:14px auto}
+.personaRenderReturnWarning{border-left:3px solid #888071;padding-left:12px;color:#5b564c}
