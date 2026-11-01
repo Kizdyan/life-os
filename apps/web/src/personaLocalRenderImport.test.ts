@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
-import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord,buildPersonaFinishOptionsTemplate} from './personaLocalRenderImport';
 
 const brief=JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json',import.meta.url),'utf8'));
 const fingerprint='a'.repeat(64),videoSha='b'.repeat(64),bytes=800_000;
@@ -20,6 +20,15 @@ function fixture(){
   video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31},importedAt:'2026-11-01T12:00:00Z'};
 }
 describe('Persona local render evidence intake',()=>{
+ it('exports only a disabled human-review template bound to the rendered MP4',()=>{
+  const record=inspectPersonaLocalRenderImport(fixture());
+  const options=buildPersonaFinishOptionsTemplate(record);
+  expect(options.sourceSha256).toBe(record.mp4Sha256);
+  expect(options.publicationApproved).toBe(false);
+  expect(options.captionsReviewed).toBe(false);
+  expect(options.captionsPath).toMatch(/REPLACE_WITH_ABSOLUTE_PATH/);
+ });
+
  it('accepts a matching local report but preserves the human-only approval gate',()=>{
   const record=inspectPersonaLocalRenderImport(fixture());
   expect(record.status).toBe('awaiting-author-review');

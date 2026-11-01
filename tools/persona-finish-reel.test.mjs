@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtemp,mkdir,readFile,rm,stat,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rm,stat,writeFile,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
@@ -27,6 +27,17 @@ test('preflight rejects unapproved choices and never creates an output directory
    captionsPath:join(root,'captions.reviewed.srt')});
   await assert.rejects(()=>preflightFinish({draftDir:input,optionsPath:options,outputDir:out}),/reviewed captions/);
   await assert.rejects(()=>stat(out),/ENOENT/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+test('reject symlinked output parents before writing anything',{skip:process.platform==='win32'},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-finish-symlink-'));
+ try{
+  const draft=join(root,'draft'),link=join(root,'redirect');
+  await mkdir(draft);await symlink(draft,link,'dir');
+  await assert.rejects(()=>preflightFinish({
+   draftDir:draft,optionsPath:join(root,'missing.json'),outputDir:join(link,'next')
+  }),/outside the existing draft folder/);
+  await assert.rejects(()=>stat(join(draft,'next')),/ENOENT/);
  }finally{await rm(root,{recursive:true,force:true})}
 });
 const media=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'utf8'}).status===0);

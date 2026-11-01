@@ -79,7 +79,9 @@ export async function preflightFinish({draftDir,optionsPath,outputDir,ffmpegDir}
  if(![draftDir,optionsPath,outputDir].every(p=>typeof p==='string'&&p.trim()))
   fail('Usage: <existing-draft-dir> <finish-options.json> <NEW-output-dir> [ffmpeg-bin-dir]');
  const root=await realpath(resolve(draftDir)),output=resolve(outputDir);
- if(inside(root,output))fail('Output must be outside the existing draft folder');
+ const resolvedParent=await realpath(dirname(output));
+ if(inside(root,output)||inside(root,join(resolvedParent,basename(output))))
+  fail('Output must be outside the existing draft folder');
  await access(output).then(()=>fail('Output folder already exists'),e=>{if(e.code!=='ENOENT')throw e});
  const options=await readJson(resolve(optionsPath));
  if(options?.version!==1||options.kind!=='persona-finish-choices-v1'||

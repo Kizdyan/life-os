@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
-import {inspectPersonaLocalRenderImport,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {productionInputDraftExists} from './personaProductionInputJournal';
 import {resolvePersonaScenarioDraftStorage} from './personaScenarioDraftJournal';
 import './persona-local-render-review.css';
@@ -46,6 +46,17 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  const current=record&&brief&&record.projectId===projectId&&record.briefSnapshot===JSON.stringify(brief)?record:null;
  const isStale=Boolean(record&&!current);
  const handoff=pipeline?assessPersonaLocalHandoff(pipeline,productionInputDraftExists(resolvePersonaScenarioDraftStorage(),projectId)):null;
+ function downloadFinishTemplate(){
+  if(!current){setMessage('Сначала импортируйте и проверьте MP4.');return}
+  try{
+   const data=buildPersonaFinishOptionsTemplate(current);
+   const blob=new Blob([JSON.stringify(data,null,2)+'\n'],{type:'application/json'});
+   const url=URL.createObjectURL(blob),link=document.createElement('a');
+   link.href=url;link.download='finish-options.json';document.body.appendChild(link);link.click();link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+   setMessage('Шаблон скачан. Проверьте SRT, укажите полный путь и подтвердите captionsReviewed=true.');
+  }catch(error){setMessage('Настройки не подготовлены: '+String((error as Error).message||error))}
+ }
  async function importLocalFiles(files:FileList|null){
   if(!files||busy)return;
   const task=++generation.current;
@@ -93,6 +104,14 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    <p>Хронометраж: {current.timingStatus==='needs-human-timing-review'?'отличается от сценария — обязательно проверить паузы и музыку':current.timingStatus==='within-brief-tolerance'?'близок к сценарию, но ритм нужно просмотреть':current.timingStatus}</p>
    {!preview&&<p>Чтобы снова посмотреть видео после перезагрузки, выбери те же три локальных файла: браузер сохраняет отчёт, но не копию MP4.</p>}
   </div>}
+  {current&&<details className="personaRenderFinishHandoff">
+   <summary>Финишная обработка: титры, музыка, цвет</summary>
+   <p>Скачайте настройки для этого MP4: SHA-256 будет подставлен автоматически, а проверка субтитров останется не подтверждённой.</p>
+   <button type="button" onClick={downloadFinishTemplate}>Скачать настройки финализации</button>
+   <p>Лично проверьте текст и таймкоды, сохраните captions.reviewed.srt, укажите абсолютный путь в JSON. Затем вручную установите captionsReviewed: true. Музыка добавляется только отдельно и с подтверждёнными правами.</p>
+   <pre>{'npm run media:finish:reel -- "<ПАПКА_ЧЕРНОВИКА>" "<finish-options.json>" "<НОВАЯ_ПАПКА>"'}</pre>
+   <p>Результат: finished-candidate.mp4, finish-qa.json и FINISH-RESULT.json. Это не утверждение или публикация.</p>
+  </details>}
   {preview&&current&&<video className="personaRenderReturnVideo" controls playsInline preload="metadata" src={preview}/>}
   <p className="personaRenderReturnWarning">Перед финализацией лично оцени актёрскую игру, свет, цвет кожи, сохранность внешности, баланс голоса и музыки, ритм и точность субтитров. Импорт не включает автопубликацию и не означает финального утверждения.</p>
  </section>;

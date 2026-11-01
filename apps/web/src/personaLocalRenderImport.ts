@@ -7,6 +7,16 @@ export type PersonaLocalRenderRecord={
  qaProvenance:'locally-imported-report-not-independently-attested';publicationApproved:false;
 };
 type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number};
+/** Template is intentionally unapproved; the author must edit and review SRT. */
+export function buildPersonaFinishOptionsTemplate(record:PersonaLocalRenderRecord){
+ if(!readPersonaLocalRenderRecord(record))throw Error('Invalid saved Persona render evidence');
+ return {version:1 as const,kind:'persona-finish-choices-v1' as const,
+  publicationApproved:false as const,sourceSha256:record.mp4Sha256,
+  captionsReviewed:false as const,
+  captionsPath:'REPLACE_WITH_ABSOLUTE_PATH_TO_captions.reviewed.srt',
+  color:{brightness:0,contrast:1,saturation:1}};
+}
+
 const hashPattern=/^[a-f0-9]{64}$/i;
 const fail=(text:string):never=>{throw new Error(text)};
 const obj=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
