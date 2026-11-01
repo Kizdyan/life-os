@@ -9,6 +9,7 @@ export type PilotRisk = 'read_only' | 'reversible' | 'external' | 'financial' | 
 
 export interface RufloPilotRequest {
   experimentId: string;
+  pinnedRuntimeVersion: string; // exact X.Y.Z, never @latest or a tag
   domain: PilotDomain;
   dataClass: PilotDataClass;
   taskIds: string[];
@@ -43,6 +44,15 @@ export function assessRufloPilotRequest(q: RufloPilotRequest): PilotDecision {
   const blocked: string[] = [];
   const approval: string[] = [];
   if (!ID.test(q.experimentId)) blocked.push('Invalid experiment id');
+  // Security baseline as of 2026-11-01: 3.66.2 includes multiple recent patches;
+  // GHSA-c4hm-4h84-2cf3 affects all releases below 3.16.3.
+  const versionMatch = /^(\d+)\.(\d+)\.(\d+)$/.exec(q.pinnedRuntimeVersion ?? '');
+  if (!versionMatch) blocked.push('Explicit exact Ruflo semver required; never use @latest');
+  else {
+    const [major, minor, patch] = versionMatch.slice(1).map(Number);
+    if (major < 3 || (major === 3 && (minor < 66 || (minor === 66 && patch < 2))))
+      blocked.push('Ruflo version predates reviewed 3.66.2 security baseline');
+  }
   if (!DOMAINS.includes(q.domain)) blocked.push('Unknown domain');
   if (!DATA.includes(q.dataClass)) blocked.push('Unknown data class');
   if (!Array.isArray(q.taskIds) || q.taskIds.length < 2 || q.taskIds.length > 3 ||
