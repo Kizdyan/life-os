@@ -104,6 +104,8 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
    <b>{finished.authorReview?.decision==='approved-final-cut'?'Финальный монтаж принят (не опубликован)':
     finished.authorReview?.decision==='needs-revision'?'Нужна доработка':'Готов для личного просмотра'}</b>
    <p>{finished.durationSec.toFixed(2)} сек. · 1080×1920 / 30 fps · субтитров: {finished.captionCount} · музыка: {finished.musicAdded?'добавлена':'без нового трека'}</p>
+   {finished.musicCue&&<p>Музыкальный фрагмент: {finished.musicCue.startSec.toFixed(2)}–{finished.musicCue.endSec.toFixed(2)} с, вход {finished.musicCue.fadeInSec.toFixed(2)} с, затухание {finished.musicCue.fadeOutSec.toFixed(2)} с. Проверь на слух попадание в реплики.</p>}
+   {finished.musicAdded&&!finished.musicCue&&<p role="alert">Старый результат: музыка без сохранённых точек входа и окончания. Проверь весь ролик или заново собери финальный MP4.</p>}
    <p>Проверен SHA-256 загруженного MP4 и соответствие отчётов FFmpeg. Качество изображения и звука оценивается только после личного просмотра.</p>
    <div className="personaRenderReturnDetails" aria-label="Анализ качества видео">
     <h4>Анализ качества видео</h4>
