@@ -66,6 +66,12 @@ export function PersonaProductionGuide({projectTitle,projectAngle,workspace,pipe
    <div className="personaGuideNumber">01</div><h4>Определить идею и проверить актуальность</h4>
    <p><b>Идея этого проекта:</b> {projectTitle}. {projectAngle}</p>
    <p>Актуальность нельзя вывести из даты или количества просмотров чужого ролика. Тему нужно подкрепить источником, датой, механикой и собственной оригинальной интерпретацией.</p>
+   <aside className="personaGuideTrend" aria-label="Проверенные внешние сигналы формата">
+    <strong>Почему стоит проверить формат «актёр + композитор» сейчас</strong>
+    <p><a href="https://later.com/blog/instagram-reels-trends/" target="_blank" rel="noreferrer">Later · обзор 30 октября 2026</a>: выпуск от 23 октября отмечает формат «не ограничивайся одной нишей», где автор показывает несколько своих интересов. Наш вариант — оригинальная актёрская мини-сценка о двух профессиях, без копирования звука или сюжета.</p>
+    <p><a href="https://about.fb.com/news/2026/01/2026-ai-drives-performance/" target="_blank" rel="noreferrer">Meta · 28 января 2026</a>: сообщает о росте доли оригинального контента в Instagram-рекомендациях в США. Это контекст платформы, а не прогноз просмотров конкретного Reels.</p>
+    <small>Это публичные источники, не лично просмотренные автором референсные видео; их даты и применимость нужно пересматривать перед съёмкой. Источники не сохраняются как «просмотренные» автоматически.</small>
+   </aside>
    {research.length?<div className="personaGuideEvidence"><b>Референсы, уже записанные в проекте</b>
     {research.map(ref=><div key={ref.id}><span>{ref.observationStatus==='user_reviewed'?'Просмотрен автором':ref.observationStatus==='metadata_only'?'Только метаданные':'Недоступен'}</span>
      {/^https?:\/\//i.test(ref.url)?<a href={ref.url} target="_blank" rel="noreferrer">{ref.title||ref.url}</a>:<span>{ref.title||'Некорректная ссылка'}</span>}
@@ -99,6 +105,21 @@ export function PersonaProductionGuide({projectTitle,projectAngle,workspace,pipe
   <article className="personaGuideSection">
    <div className="personaGuideNumber">03</div><h4>Локация, камера, свет, звук и реквизит</h4>
    <p>Сначала выбери реальные зоны и сделай десятисекундную проверку лица и звука. Поля ниже — редактируемый план, не подтверждение наличия оборудования.</p>
+   <figure className="personaGuideDiagram">
+    <svg viewBox="0 0 460 235" role="img" aria-label="Схема предполагаемой постановки в комнате: смартфон перед актёром, основной мягкий свет под углом 45 градусов, клавиши во второй зоне">
+     <rect x="8" y="8" width="444" height="219" rx="16" fill="#f8f6f1" stroke="#dad5cb"/>
+     <rect x="28" y="25" width="404" height="38" rx="8" fill="#e3e2db"/><text x="230" y="49" textAnchor="middle" fontSize="13" fill="#555">Нейтральный фон · без лишних деталей</text>
+     <circle cx="143" cy="119" r="27" fill="#cdc2ae"/><text x="143" y="123" textAnchor="middle" fontSize="12" fill="#252421">Актёр</text>
+     <circle cx="325" cy="119" r="27" fill="#c4c7bd"/><text x="325" y="123" textAnchor="middle" fontSize="11" fill="#252421">Комп.</text>
+     <rect x="283" y="65" width="88" height="15" rx="4" fill="#393936"/><text x="327" y="76" textAnchor="middle" fill="#fff" fontSize="9">Клавиши</text>
+     <rect x="195" y="184" width="70" height="26" rx="8" fill="#333"/><text x="230" y="201" textAnchor="middle" fill="#fff" fontSize="12">Камера</text>
+     <path d="M215 182 L151 146 M244 182 L316 146" stroke="#858073" strokeWidth="2" strokeDasharray="5 4"/>
+     <ellipse cx="70" cy="155" rx="39" ry="14" fill="#e9cc96" stroke="#ad935d"/><text x="70" y="159" textAnchor="middle" fontSize="11" fill="#4c402f">Свет 45°</text>
+     <path d="M105 153 L123 136" stroke="#bf9556" strokeWidth="3"/>
+     <text x="232" y="174" textAnchor="middle" fontSize="10" fill="#706b62">Одна камера · две позиции</text>
+    </svg>
+    <figcaption>Схема постановки, не фотография твоей комнаты. Фактическое расположение окна, розеток, клавиш и штатива нужно уточнить на месте.</figcaption>
+   </figure>
    {sections[1].fields.map(key=><label key={key}>{guideFieldLabels[key]}
     <textarea aria-label={guideFieldLabels[key]} value={plan.fields[key]} onChange={e=>edit(key,e.target.value)}/></label>)}
    <button type="button" className="ghost" onClick={()=>onNavigate('assets')}>Перейти к исходникам и дублям</button>
