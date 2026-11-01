@@ -60,6 +60,15 @@ export const exampleActorComposerBeats=[
  {id:'A04',seconds:4,line:'Это колыбельная? Это финал триллера.',framing:'Крупный план',action:'Сначала услышать музыку, затем повернуться к камере; панчлайн.',lighting:'Как в A01/A03.'},
 ] as const;
 
+export const exampleActorComposerSourceFiles:Readonly<Record<string,string>>={
+ A01:'A01_actor_hook_take01.mp4',
+ B01:'B01_composer_problem_take01.mp4',
+ A02:'A02_actor_audition_take01.mp4',
+ B02:'B02_composer_deadline_take01.mp4',
+ A03:'A03_actor_sleep_take01.mp4',
+ B03:'B03_composer_lullaby_take01.mp4',
+ A04:'A04_actor_payoff_take01.mp4',
+};
 export function createPersonaProductionGuide(now:string):PersonaProductionGuide{
  return {version:1,fields:{...defaultGuideFields},checks:{},updatedAt:now};
 }
@@ -95,7 +104,7 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
   order:i+1,durationSec:beat.seconds,framing:framings[i],
   angle:beat.framing+' · '+(beat.id.startsWith('A')?'Актёр обращён вправо или в камеру':'Композитор у клавиш, взгляд влево'),
   cameraMovement:'Камера на штативе, без движения',
-  lighting:beat.lighting,action:beat.action+'; исходник '+beat.id+'_take01.mp4',
+  lighting:beat.lighting,action:beat.action+'; исходник '+exampleActorComposerSourceFiles[beat.id],
  }));
  return {...base,hook:{...base.hook,firstSeconds:script[0].line,visual:exampleActorComposerBeats[0].action},
   script,shots,capture:{...base.capture,
