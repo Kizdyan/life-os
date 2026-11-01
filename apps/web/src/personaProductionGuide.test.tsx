@@ -4,6 +4,7 @@ import {renderToString} from 'react-dom/server';
 import {buildPersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import {evaluatePersonaProductionBrief} from '../../../packages/core/src/persona-production-qa';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
+import {createScenarioScript,reviseScenarioScript,type ScenarioIdea} from '../../../packages/core/src/persona-scenario-intelligence';
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
@@ -46,6 +47,27 @@ describe('Persona full preproduction guide',()=>{
   expect(pipeline.materials.editorialDecision).toBeUndefined();
   expect(pipeline.stage).toBe('QA');
   expect(pipeline.materials.qa?.editorialReview.state).toBe('pending');
+ });
+ it('does not conceal a newer scenario revision behind a stale Production Brief',()=>{
+  const brief=buildPersonaProductionBrief({idea});
+  const scIdea:ScenarioIdea={
+   id:'scenario-1',title:idea.title,referenceIds:[],originalConflict:idea.angle,
+   actingTask:'Сыграть две роли',ending:'Панчлайн',productionComplexity:'medium',
+   estimatedDurationSec:31,creativeProfileFit:'Для актёра и композитора',
+   origin:'template_fallback',evidenceNote:'Демонстрационный сценарий',
+  };
+  const script=createScenarioScript(scIdea,{createdAt:now,beats:brief.script.map((beat,index)=>({
+   purpose:index===0?'hook' as const:index===brief.script.length-1?'ending' as const:'development' as const,
+   line:beat.line,action:beat.action,durationSec:beat.durationSec,
+  }))});
+  const revised=reviseScenarioScript(script,{createdAt:now,reason:'Изменили хук',beats:script.currentRevision.beats.map((beat,i)=>
+   i===0?{...beat,line:'Новый сохранённый хук'}:beat)});
+  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle}
+   allowExample={true} workspace={{version:1,research:[],analyses:[],ideas:[],script:revised}}
+   pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('Новый сохранённый хук');
+  expect(html).toContain('устарели');
  });
  it('exports every spoken line and setup decision without pretending the example was approved',()=>{
   const guide=createPersonaProductionGuide(now);
