@@ -17,7 +17,7 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  typeof v.briefIdeaId==='string'&&typeof v.briefSnapshot==='string'&&v.briefSnapshot.length<=150000&&
  typeof v.briefFingerprintSha256==='string'&&hashPattern.test(v.briefFingerprintSha256)&&
  typeof v.mp4Sha256==='string'&&hashPattern.test(v.mp4Sha256)&&v.mp4Name==='draft-reel.mp4'&&
- Number.isSafeInteger(v.mp4Bytes)&&Number(v.mp4Bytes)>0&&Number.isFinite(v.durationSec)&&Number(v.durationSec)>0&&
+ typeof v.mp4Bytes==='number'&&Number.isSafeInteger(v.mp4Bytes)&&v.mp4Bytes>0&&typeof v.durationSec==='number'&&Number.isFinite(v.durationSec)&&v.durationSec>0&&
  v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
  v.qaProvenance==='locally-imported-report-not-independently-attested'?v as PersonaLocalRenderRecord:null;
@@ -47,10 +47,10 @@ export function inspectPersonaLocalRenderImport(input:{
   fail('QA не сохраняет обязательный запрет публикации до авторской проверки.');
  const valid=evidence.fileExists===true&&evidence.probeVerified===true&&evidence.blackFrameCheckPassed===true&&
   evidence.audioCheckPassed===true&&evidence.width===1080&&evidence.height===1920&&evidence.fps===30&&
-  evidence.videoCodec==='h264'&&evidence.audioCodec==='aac'&&Number.isSafeInteger(evidence.bytes)&&
+  evidence.videoCodec==='h264'&&evidence.audioCodec==='aac'&&typeof evidence.bytes==='number'&&Number.isSafeInteger(evidence.bytes)&&
   evidence.bytes===video.size&&typeof evidence.sha256==='string'&&
   evidence.sha256.toLowerCase()===video.sha256.toLowerCase()&&
-  Number.isFinite(evidence.durationSec)&&Number(evidence.durationSec)>0;
+  typeof evidence.durationSec==='number'&&Number.isFinite(evidence.durationSec)&&evidence.durationSec>0;
  if(!valid)fail('MP4 не совпадает с QA или в отчёте не пройдена техническая проверка.');
  const recorded=obj(result.technicalChecks);
  if(recorded.sha256!==evidence.sha256||recorded.bytes!==evidence.bytes||
