@@ -1,10 +1,12 @@
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
+import {readPersonaFinishedRenderRecord,type PersonaFinishedRenderRecord} from './personaFinishedRenderImport';
 
 export type PersonaLocalRenderRecord={
  version:1;kind:'persona-local-render-review-v1';projectId:string;briefIdeaId:string;briefSnapshot:string;
  briefFingerprintSha256:string;mp4Sha256:string;mp4Bytes:number;mp4Name:'draft-reel.mp4';durationSec:number;
  width:1080;height:1920;fps:30;timingStatus:string;status:'awaiting-author-review';importedAt:string;
  qaProvenance:'locally-imported-report-not-independently-attested';publicationApproved:false;
+ finished?:PersonaFinishedRenderRecord;
 };
 type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number};
 /** Template is intentionally unapproved; the author must edit and review SRT. */
@@ -30,7 +32,11 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  typeof v.mp4Bytes==='number'&&Number.isSafeInteger(v.mp4Bytes)&&v.mp4Bytes>0&&typeof v.durationSec==='number'&&Number.isFinite(v.durationSec)&&v.durationSec>0&&
  v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
- v.qaProvenance==='locally-imported-report-not-independently-attested'?v as PersonaLocalRenderRecord:null;
+ v.qaProvenance==='locally-imported-report-not-independently-attested'&&
+ (v.finished===undefined||Boolean(readPersonaFinishedRenderRecord(v.finished))&&
+  readPersonaFinishedRenderRecord(v.finished)?.sourceDraftSha256===v.mp4Sha256&&
+  readPersonaFinishedRenderRecord(v.finished)?.briefFingerprintSha256===v.briefFingerprintSha256)
+ ?v as PersonaLocalRenderRecord:null;
 }
 
 /** Browser-provided bytes, independently hashed, are matched against an untrusted local report.
