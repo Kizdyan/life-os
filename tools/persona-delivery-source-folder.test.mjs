@@ -100,6 +100,7 @@ test('published Windows handoff requires exported brief, explicit FFmpeg bin and
  assert.ok(first,'Windows first-run section exists');
  assert.match(first,/\$brief\s*=\s*'[^\n]*persona-production-brief\.json'/);
  assert.doesNotMatch(first,/\$brief\s*=\s*'[^\n]*editorial-candidate-production-brief\.json'/);
+ assert.match(first,/npm run media:shoot:intake -- folder \$intake \$sourceFolder \$ffmpegBin/);
  assert.match(first,/npm run media:first-reel:draft --[^\n]*\$brief[^\n]*\$ffmpegBin strict/);
  assert.match(first,/node tools\\persona-video-quality\.mjs[^\n]*\$ffmpegBin/);
  const failFast=(first.match(/if \(\$LASTEXITCODE -ne 0\) \{ throw/g)||[]).length;
