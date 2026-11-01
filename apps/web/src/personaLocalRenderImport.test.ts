@@ -61,6 +61,30 @@ describe('Persona local render evidence intake',()=>{
   const d=fixture();d.result.distributionAllowed=true;
   expect(()=>inspectPersonaLocalRenderImport(d)).toThrow();
  });
+ it('accepts measured local video-quality with exact MP4 SHA, and preserves old three-file reports',()=>{
+  const old=inspectPersonaLocalRenderImport(fixture());
+  expect(old.quality).toBeUndefined();
+  const a=fixture() as ReturnType<typeof fixture>&{quality:unknown};
+  a.quality={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+   publicationApproved:false,distributionAllowed:false,analyzedAt:'2026-11-01T12:00:00Z',
+   video:{sha256:videoSha,bytes,width:1080,height:1920,fps:30,durationSec:31},
+   findings:[{id:'black_frames',status:'warning',title:'Чёрные кадры',
+    detail:'Предупреждение на 00:00:03.000',timecodes:['00:00:03.000']}],
+   authorApproval:{approvedByAuthor:false,publicationApproved:false}};
+  const imported=inspectPersonaLocalRenderImport(a);
+  expect(imported.quality?.videoSha256).toBe(videoSha);
+  expect(imported.quality?.warningCount).toBe(1);
+  expect(imported.publicationApproved).toBe(false);
+  expect(readPersonaLocalRenderRecord(imported)?.quality).toEqual(imported.quality);
+  (a.quality as any).video.sha256='f'.repeat(64);
+  expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/video-quality.json/);
+  (a.quality as any).video.sha256=videoSha;
+  (a.quality as any).video.bytes=bytes+1;
+  expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/video-quality.json/);
+  (a.quality as any).video.bytes=bytes;
+  (a.quality as any).publicationApproved=true;
+  expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/video-quality.json/);
+ });
  it('requires actual output and QA paths from the chosen runner directory',()=>{
   const a=fixture();a.result.output='D:\\another.mp4';
   expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/Выберите файлы/);
