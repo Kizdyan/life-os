@@ -14,6 +14,8 @@ type Props={
  workspace?:PersonaScenarioWorkspace;
  pipeline:PersonaProductionPipeline|null;
  onSave:(guide:PersonaProductionGuide)=>void;
+ /** Synchronous signal for host navigation guard when a browser save fails. */
+ onDirtyChange?:(dirty:boolean)=>void;
  onUseExample:(guide:PersonaProductionGuide)=>void;
  onNavigate:(step:'script'|'assets'|'edit'|'review')=>void;
 };
@@ -24,7 +26,7 @@ const sections:{
  {id:'filming',title:'Где и как снимаем',intro:'Это конкретные стартовые предложения. Проверь помещение, свет и технику в реальности.',fields:['location','setArrangement','camera','keyLight','wardrobeProps','sound']},
  {id:'post',title:'Предварительный монтаж',intro:'Распиши сборку ДО съёмки, чтобы получить нужные реакции, паузы и детали.',fields:['editing','captions','color','safetyNotes']},
 ];
-export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,workspace,pipeline,onSave,onUseExample,onNavigate}:Props){
+export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,workspace,pipeline,onSave,onDirtyChange,onUseExample,onNavigate}:Props){
  const stored=workspace?.preProductionGuide;
  const [draftPlan,setDraftPlan]=useState<PersonaProductionGuide>(()=>stored??createPersonaProductionGuide(new Date().toISOString(),allowExample?'actor_composer':'general'));
  const [unsaved,setUnsaved]=useState(false);
@@ -71,9 +73,11 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   draftRef.current=next;
   setDraftPlan(next);
   setUnsaved(true);
+  onDirtyChange?.(true);
   try{
    onSave(next);
    setUnsaved(false);
+   onDirtyChange?.(false);
    setNotice('План сохранён в проекте. Это не утверждение съёмки и не разрешение на публикацию.');
   }catch(error){
    setNotice('ВНИМАНИЕ: текст остался на экране, но не сохранён. Не закрывайте страницу. Скачайте съёмочный лист и повторите сохранение. '+String((error as Error).message||error));
