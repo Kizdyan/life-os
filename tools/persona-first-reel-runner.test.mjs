@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming } from './persona-first-reel-runner.mjs';
+import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming, firstReelCliExitCode } from './persona-first-reel-runner.mjs';
 import {renderReviewedReel} from './persona-reviewed-render.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
@@ -18,6 +18,13 @@ test('two-shot live speech brief matches only the first two beats of the full Re
  assert.deepEqual(two.script.map(x=>x.line),full.script.slice(0,2).map(x=>x.line));
  assert.deepEqual(two.shots.map(x=>x.order),[1,2]);
  assert.equal(two.sourceFormat,'reel');
+});
+test('CLI never reports success when Whisper only prepared Recovery Review and no MP4 exists',()=>{
+ assert.equal(firstReelCliExitCode({status:'needs-manual-transcript-review',reviewHtml:'review.html',publicationApproved:false}),2);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'D:\\Persona\\draft-01\\draft-reel.mp4'}),0);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'/tmp/draft/draft-reel.mp4'}),0);
+ assert.equal(firstReelCliExitCode({status:'failed',output:null}),2);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'/tmp/missing.mp4'}),2);
 });
 test('distinguishes actual ASR montage duration from the authored 31 seconds',()=>{
  const brief={script:[3,4,5,5,4,6,4].map(durationSec=>({durationSec}))};
