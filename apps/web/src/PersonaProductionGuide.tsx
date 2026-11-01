@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
+ createPersonaProductionGuide,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -108,7 +108,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    </div>
    <div className="personaGuideShots">
     {scenes.map((scene,index)=><div className="personaGuideShot" key={scene.id+'-'+index}>
-     <div><strong>{scene.id} · {scene.framing}</strong><small>{scene.seconds} с · {index===0?'Хук':index===scenes.length-1?'Панчлайн':'Развитие'}</small></div>
+     <div><strong>{scene.id} · {scene.framing}</strong><small>{scene.seconds} с · {index===0?'Хук':index===scenes.length-1?'Панчлайн':'Развитие'}</small>{example&&exampleActorComposerSourceFiles[scene.id]&&<small>Исходный дубль: {exampleActorComposerSourceFiles[scene.id]}</small>}</div>
      <div className="personaGuideStoryboard" aria-label={scene.id+': схема крупности и композиции'}>
       <svg viewBox="0 0 170 225" role="img" aria-label={'Схематичная вертикальная композиция: '+scene.framing}>
        <rect x="1" y="1" width="168" height="223" rx="9" fill="#e6e1d7" stroke="#aaa499"/>
