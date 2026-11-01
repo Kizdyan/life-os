@@ -158,7 +158,7 @@ test('one chosen V2 folder reaches real renderer and QA across seven synthetic c
    const ff=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
     '-f','lavfi','-i','color=c='+colors[i]+':s=240x320:r=30',
     '-f','lavfi','-i','sine=frequency='+(300+i*50)+':sample_rate=48000',
-    '-t','3.7','-c:v','mpeg4','-c:a','aac','-shortest',path],
+    '-t',String([4.2,5.2,6.2,6.2,5.2,7.5,5.2][i]),'-c:v','mpeg4','-c:a','aac','-shortest',path],
     {encoding:'utf8',timeout:30000});
    assert.equal(ff.status,0,ff.stderr);
    originals.push(await readFile(path));
@@ -176,8 +176,15 @@ test('one chosen V2 folder reaches real renderer and QA across seven synthetic c
     const source=packet.sources[i];
     const words=script.script[i].line.split(/[^А-Яа-яЁё0-9]+/u).filter(Boolean);
     assert.ok(words.length>=3);
+    // Synthetic segment with explicit word timestamps, like Whisper word-level data.
+    // B03 requires word-level speech boundaries before its post-dialogue music hold.
+    const tokens=words.map((word,j)=>({
+     text:(j===0?'':' ')+word,offsets:{from:220+j*290,to:480+j*290}
+    }));
     await mkJson(join(dirname(analysisPath),source.id+'-whisper.json'),{
-     transcription:words.map((text,j)=>({text,offsets:{from:220+j*290,to:480+j*290}}))
+     transcription:[{text:script.script[i].line,
+      offsets:{from:tokens[0].offsets.from,to:tokens[tokens.length-1].offsets.to},
+      tokens}]
     });
    }
    return {status:'fixture-asr-only'};
