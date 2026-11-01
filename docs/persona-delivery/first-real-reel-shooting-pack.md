@@ -70,7 +70,7 @@ npm run persona:delivery:sources -- "D:\Persona\actor-composer-01\captures" "D:\
 4. Из корня Life OS выполните **единый блок PowerShell** в разделе [«Первый запуск на Windows»](#первый-запуск-на-windows--одна-папка-без-ручного-редактирования-json). Это основной воспроизводимый маршрут. Он сначала создаёт отдельный `intake/sources.json`, затем делает монтаж и QA. Архивный `editorial-candidate-production-brief.json` не заменяет актуальный бриф, экспортированный из утверждённого проекта Persona. Команда аварийно прекращает цепочку при ошибке; выходные каталоги заранее не создавайте.
 
 5. При полном совпадении речи команда создаст `draft-reel.mp4`, `qa.json`, `captions.draft.srt`, `captions.draft.vtt`, `decisions.json`, `RESULT.json` и отдельный каталог `$intake` рядом с `$draft`. Выбор первых по номеру дублей является непроверенным, а не выбором лучшей игры. Автор должен просмотреть исходники и черновой результат. **Фактический MP4 может быть короче 31 секунд:** ASR иногда срезает паузы. В `RESULT.json → timing` проверьте `targetDurationSec`, `renderedDurationSec`, `differenceSec`, `status`. Не ускоряйте речь искусственно.
-6. Если Whisper не нашёл реплику или определил границу речи перед музыкой B03 только приблизительно, это не повод подставлять текст: откройте `$draft\RECOVERY-RESULT.md`, просмотрите локальную страницу кандидатов и внесите реальные границы/текст. Затем используется существующая команда `npm run media:review:render` из этого отчёта. Если аудио отсутствует — переснять дубль.
+6. Если Whisper не нашёл реплику или определил границу речи перед музыкой B03 только приблизительно, CLI возвращает **код 2**, оставляет Recovery Review и **не сообщает об успешном MP4**. PowerShell останавливается до анализа качества. Это не повод подставлять текст: откройте `$draft\RECOVERY-RESULT.md`, просмотрите локальную страницу кандидатов и внесите реальные границы/текст. Затем используется существующая команда `npm run media:review:render` из этого отчёта. Если аудио отсутствует — переснять дубль.
 
 ## Передача брифа из веб-интерфейса Persona
 
@@ -106,7 +106,17 @@ npm run media:shoot:intake -- folder $intake $sourceFolder $ffmpegBin
 if ($LASTEXITCODE -ne 0) { throw 'Intake завершился ошибкой; монтаж не запускается' }
 
 npm run media:first-reel:draft -- (Join-Path $intake 'sources.json') $brief $draft $whisperCli $whisperModel $ffmpegBin strict
-if ($LASTEXITCODE -ne 0) { throw 'Черновой монтаж завершился ошибкой; отчёт качества не запускается' }
+if ($LASTEXITCODE -ne 0) {
+    $recovery = Join-Path $draft 'RECOVERY-RESULT.md'
+    if (Test-Path -LiteralPath $recovery -PathType Leaf) {
+        Write-Host "Whisper не подтвердил все реплики. Откройте Recovery Review: $recovery"
+        throw 'Требуется ручная разметка речи. Черновой MP4 пока не создан; QA не запускается.'
+    }
+    throw 'Черновой монтаж завершился ошибкой; отчёт качества не запускается'
+}
+if (-not (Test-Path -LiteralPath (Join-Path $draft 'draft-reel.mp4') -PathType Leaf)) {
+    throw 'Отсутствует draft-reel.mp4. Проверьте RESULT.json или RECOVERY-RESULT.md; нельзя запускать QA без видео.'
+}
 
 node tools\persona-video-quality.mjs (Join-Path $draft 'draft-reel.mp4') (Join-Path $draft 'captions.draft.srt') 31 (Join-Path $draft 'video-quality.json') $ffmpegBin
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать отчёт качества; результат нельзя считать полностью проверенным' }
