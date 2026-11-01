@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,
+ createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -72,7 +72,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  };
  const edit=(key:GuideField,value:string)=>{
   const base=unsaved?draftRef.current:stored??draftRef.current;
-  savePlan({...base,fields:{...base.fields,[key]:value},updatedAt:new Date().toISOString()});
+  savePlan(reviseGuideField(base,key,value,new Date().toISOString()));
  };
  const mark=(key:(typeof guideChecks)[number][0],checked:boolean)=>{
   const base=unsaved?draftRef.current:stored??draftRef.current;
@@ -85,7 +85,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const downloadSheet=()=>{
   try{
    const text=exportPersonaShootingSheet({title:projectTitle,angle:projectAngle,guide:plan,
-    scenes:scenes.map(scene=>showPilotDirections?{...scene,...actorComposerShotDirections[exampleActorComposerBeats[scenes.indexOf(scene)].id]}:scene),
+    scenes:scenes.map((scene,index)=>showPilotDirections?{...scene,...actorComposerShotDirections[exampleActorComposerBeats[index].id]}:scene),
     references:research.map(ref=>({
      title:ref.title||ref.url,url:ref.url,observedAt:ref.observedAt,
      status:ref.observationStatus==='user_reviewed'?'просмотрено автором':'не просмотрено автором',
