@@ -1,13 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, registerPersonaExitFlush } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, registerPersonaExitFlush } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
 const candidate={sourceTitle:'Один день между театром и музыкой',sourceAngle:'Две профессии одной историей',sourceFormat:'reel'};
 
+describe('production approval must follow latest current dialogue',()=>{
+ it('refuses a changed line or timing while keeping legacy brief-only projects compatible',()=>{
+  const prod=buildPersonaProductionWorkflow({id:'script-sync',title:'Сценка',angle:'Две роли',format:'reel',score:0});
+  const brief=prod.materials.productionBrief!;
+  expect(productionBriefMatchesBeats(brief,undefined)).toBe(true);
+  const current=brief.script.map(beat=>({line:beat.line,action:beat.action,durationSec:beat.durationSec}));
+  expect(productionBriefMatchesBeats(brief,current)).toBe(true);
+  expect(productionBriefMatchesBeats(brief,current.map((beat,i)=>i===0?{...beat,line:'Новая реплика'}:beat))).toBe(false);
+  expect(productionBriefMatchesBeats(brief,current.map((beat,i)=>i===0?{...beat,durationSec:beat.durationSec+1}:beat))).toBe(false);
+  expect(productionBriefMatchesBeats(brief,[...current,{...current[0]}])).toBe(false);
+ });
+});
 describe('brief import identity',()=>{
  it('lets an empty quick-start project adopt a validated candidate identity without changing its project ID',()=>{
   expect(ideaForImportedBrief(quick,candidate,true)).toMatchObject({id:'local-project',title:candidate.sourceTitle,angle:candidate.sourceAngle,format:'reel',source:'imported-brief'});
