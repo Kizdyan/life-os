@@ -91,6 +91,14 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   const base=draftRef.current;
   savePlan({...base,checks:{...base.checks,[key]:checked},updatedAt:new Date().toISOString()});
  };
+ const discardFailedSave=()=>{
+  const lastSaved=stored??createPersonaProductionGuide(new Date().toISOString(),allowExample?'actor_composer':'general');
+  draftRef.current=lastSaved;
+  setDraftPlan(lastSaved);
+  setUnsaved(false);
+  onDirtyChange?.(false);
+  setNotice('Несохранённые правки отменены по вашему выбору. Сохранённый проект не изменён.');
+ };
  const navigate=(step:'script'|'assets'|'edit'|'review')=>{
   if(unsaved){setNotice('Сначала повторите сохранение или скачайте лист: есть несохранённые изменения.');return}
   onNavigate(step);
@@ -121,7 +129,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    <h3>От идеи до первого монтажа</h3>
    <p>Один производственный маршрут для «{projectTitle}»: тема, хук, точные реплики, кадры, свет, звук и монтажный замысел. Все правки сохраняются в этом проекте, а утверждение сценария и видео остаётся отдельным.</p>
    <div className="personaGuideMeter"><span>Чек-лист: {guideProgress(plan)} из {guideChecks.length}</span><span>{unsaved?'Есть несохранённые правки':stored?'План сохранён в проекте':'Предложение · ещё не сохранено'}</span></div>
-   <div className="personaGuideActions">{(!stored||unsaved)&&<button type="button" className="primary" onClick={()=>savePlan(draftRef.current)}>{unsaved?'Повторить сохранение':'Сохранить предложенный план'}</button>}<button type="button" className="ghost" onClick={downloadSheet}>Скачать съёмочный лист</button></div>
+   <div className="personaGuideActions">{(!stored||unsaved)&&<button type="button" className="primary" onClick={()=>savePlan(draftRef.current)}>{unsaved?'Повторить сохранение':'Сохранить предложенный план'}</button>}<button type="button" className="ghost" onClick={downloadSheet}>Скачать съёмочный лист</button>{unsaved&&<button type="button" className="ghost" onClick={discardFailedSave}>Отменить несохранённые правки</button>}</div>
   </header>
 
   <article className="personaGuideSection">
