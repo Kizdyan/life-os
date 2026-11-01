@@ -1,5 +1,6 @@
 {
   "experimentId": "ruflo-sandbox-01",
+  "pinnedRuntimeVersion": "3.66.2",
   "domain": "engineering",
   "dataClass": "public",
   "taskIds": ["review-synthetic-code", "test-synthetic-code"],
