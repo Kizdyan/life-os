@@ -181,7 +181,9 @@ export async function runFolderShootIntake({outputDir,folderPath}={}){
    alternateTakes:selected.alternateTakes,mappingNotes:[...selected.notes,
     'Export the exact approved production brief from Persona for the next rendering step.']};
   const reportPath=join(root,'INTAKE.json');await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
-  const summaryPath=join(root,'INTAKE.md');await writeFile(summaryPath,formatIntakeMarkdown(report)+'\n\n## Сопоставление\n'+selected.notes.map(note=>'- '+note).join('\n')+'\n',{flag:'wx'});
+  const alternativeNotes=report.alternateTakes.length?'\n\n## Альтернативные дубли — не включены в первичный монтаж\n'+
+   report.alternateTakes.map(take=>'- '+take.id+': '+take.file).join('\n')+'\n':'';
+  const summaryPath=join(root,'INTAKE.md');await writeFile(summaryPath,formatIntakeMarkdown(report)+'\n\n## Сопоставление\n'+selected.notes.map(note=>'- '+note).join('\n')+'\n'+alternativeNotes,{flag:'wx'});
   return {status:report.status,reportPath,summaryPath,manifestPath,evidencePath:result.analysis,
    sourceCount:report.sourceCount,alternateTakeCount:report.alternateTakes.length,
    folderMode:selected.mode,warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
