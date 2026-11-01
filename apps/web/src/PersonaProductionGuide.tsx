@@ -10,6 +10,7 @@ import './persona-production-guide.css';
 type Props={
  projectTitle:string;
  projectAngle:string;
+ allowExample:boolean;
  workspace?:PersonaScenarioWorkspace;
  pipeline:PersonaProductionPipeline|null;
  onSave:(guide:PersonaProductionGuide)=>void;
@@ -23,7 +24,7 @@ const sections:{
  {id:'filming',title:'Где и как снимаем',intro:'Это конкретные стартовые предложения. Проверь помещение, свет и технику в реальности.',fields:['location','setArrangement','camera','keyLight','wardrobeProps','sound']},
  {id:'post',title:'Предварительный монтаж',intro:'Распиши сборку ДО съёмки, чтобы получить нужные реакции, паузы и детали.',fields:['editing','captions','color','safetyNotes']},
 ];
-export function PersonaProductionGuide({projectTitle,projectAngle,workspace,pipeline,onSave,onUseExample,onNavigate}:Props){
+export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,workspace,pipeline,onSave,onUseExample,onNavigate}:Props){
  const stored=workspace?.preProductionGuide;
  const plan=stored??createPersonaProductionGuide(new Date().toISOString());
  const [notice,setNotice]=useState('');
@@ -110,8 +111,8 @@ export function PersonaProductionGuide({projectTitle,projectAngle,workspace,pipe
     </div>)}
    </div>
    <p><b>Предполагаемая длительность:</b> {totalSeconds} секунд. Точная речь, таймкоды, интонации и паузы проверяются по реальным дублям.</p>
-   {example&&<button type="button" className="primary" onClick={useExample}>Создать редактируемый сценарий из этих 7 сцен</button>}
-   {!example&&<button type="button" className="ghost" onClick={()=>onNavigate('script')}>Редактировать реплики в сценарии</button>}
+   {example&&allowExample&&<button type="button" className="primary" onClick={useExample}>Создать редактируемый сценарий из этих 7 сцен</button>}
+   {(!example||!allowExample)&&<button type="button" className="ghost" onClick={()=>onNavigate('script')}>Редактировать реплики в сценарии</button>}
    {brief&&<button type="button" className="ghost" onClick={()=>onNavigate('review')}>Проверить съёмочный бриф и авторское решение</button>}
   </article>
 
