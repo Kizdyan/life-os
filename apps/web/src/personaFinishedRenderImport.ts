@@ -1,0 +1,139 @@
+import type {PersonaLocalRenderRecord} from './personaLocalRenderImport';
+
+export const PERSONA_FINAL_REVIEW_KEYS=['performance','framing','color','audio','captions','rhythm'] as const;
+export type PersonaFinalReviewKey=typeof PERSONA_FINAL_REVIEW_KEYS[number];
+export type PersonaFinalReviewChecks=Record<PersonaFinalReviewKey,boolean>;
+export type PersonaFinalAuthorReview={
+ decision:'approved-final-cut'|'needs-revision';reviewer:string;notes:string;reviewedAt:string;
+ watchedEntireVideo:true;criteria:PersonaFinalReviewChecks;videoSha256:string;
+ publicationApproved:false;
+};
+export type PersonaFinishedRenderRecord={
+ version:1;kind:'persona-finished-render-review-v1';sourceDraftSha256:string;briefFingerprintSha256:string;
+ finishedSha256:string;finishedBytes:number;durationSec:number;width:1080;height:1920;fps:30;
+ captionsBurnedIn:true;captionCount:number;color:{brightness:number;contrast:number;saturation:number};
+ musicAdded:boolean;importedAt:string;status:'awaiting-author-review';publicationApproved:false;
+ qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
+};
+type VideoFile={name:string;size:number;sha256:string;durationSec:number};
+const hash=/^[a-f0-9]{64}$/i;
+const record=(x:unknown):Record<string,unknown>=>x&&typeof x==='object'&&!Array.isArray(x)?x as Record<string,unknown>:{};
+const fail=(message:string):never=>{throw Error(message)};
+const fileName=(path:unknown)=>typeof path==='string'?path.split(/[\\/]/).at(-1):null;
+const within=(x:unknown,min:number,max:number)=>typeof x==='number'&&Number.isFinite(x)&&x>=min&&x<=max;
+export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
+ const r=record(value),color=record(r.color);
+ const checks=record(record(r.authorReview).criteria),review=record(r.authorReview);
+ const reviewValid=r.authorReview===undefined||(
+  (review.decision==='approved-final-cut'||review.decision==='needs-revision')&&
+  typeof review.reviewer==='string'&&review.reviewer.trim().length>=2&&review.reviewer.length<=100&&
+  typeof review.notes==='string'&&review.notes.length<=3000&&typeof review.reviewedAt==='string'&&
+  review.watchedEntireVideo===true&&review.videoSha256===r.finishedSha256&&
+  review.publicationApproved===false&&
+  PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof checks[k]==='boolean')&&
+  (review.decision==='needs-revision'?review.notes.trim().length>=5:
+   PERSONA_FINAL_REVIEW_KEYS.every(k=>checks[k]===true))
+ );
+ return r.version===1&&r.kind==='persona-finished-render-review-v1'&&isSha(r.sourceDraftSha256)&&
+  isSha(r.briefFingerprintSha256)&&isSha(r.finishedSha256)&&
+  Number.isSafeInteger(r.finishedBytes)&&typeof r.finishedBytes==='number'&&r.finishedBytes>0&&
+  within(r.durationSec,0.1,900)&&r.width===1080&&r.height===1920&&r.fps===30&&
+  r.captionsBurnedIn===true&&Number.isSafeInteger(r.captionCount)&&
+  typeof r.captionCount==='number'&&r.captionCount>0&&r.captionCount<=80&&
+  within(color.brightness,-0.05,0.05)&&within(color.contrast,0.92,1.08)&&
+  within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&
+  typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
+  r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
+  reviewValid?r as PersonaFinishedRenderRecord:null;
+}
+function isSha(value:unknown):value is string{return typeof value==='string'&&hash.test(value)}
+/**
+ * Match actual browser bytes with two *local claims*. This is not independent
+ * FFmpeg QA and does not prove subtitle aesthetics, playback or authorship.
+ */
+export function inspectPersonaFinishedRenderImport(input:{
+ draft:PersonaLocalRenderRecord;report:unknown;qa:unknown;video:VideoFile;importedAt:string;
+}):PersonaFinishedRenderRecord{
+ const {draft,video,importedAt}=input,report=record(input.report),qa=record(input.qa);
+ const evidence=record(qa.evidence),handoff=record(qa.handoff),caption=record(report.captions);
+ const color=record(report.color),music=report.music;
+ if(!isSha(video.sha256)||video.name!=='finished-candidate.mp4'||video.size<1024||
+   video.size>160*1024*1024||!within(video.durationSec,0.1,900))
+  fail('Нужно выбрать действительный finished-candidate.mp4.');
+ if(report.version!==1||report.kind!=='persona-finished-candidate-v1'||
+  report.status!=='awaiting-author-review'||report.publicationApproved!==false||
+  report.distributionAllowed!==false||
+  report.briefIdeaId!==draft.briefIdeaId||
+  report.briefFingerprintSha256!==draft.briefFingerprintSha256||
+  report.originalSha256!==draft.mp4Sha256||
+  fileName(report.originalDraft)!=='draft-reel.mp4')
+  fail('FINISH-RESULT.json не соответствует сохранённому черновику или разрешает публикацию.');
+ if(fileName(report.output)!==video.name||fileName(report.qaPath)!=='finish-qa.json'||
+  !isSha(report.outputSha256)||report.outputSha256.toLowerCase()!==video.sha256.toLowerCase())
+  fail('FINISH-RESULT.json не совпадает с выбранным итоговым MP4.');
+ if(!Array.isArray(report.stages)||
+  !report.stages.includes('reviewed-srt-burned-into-new-mp4')||
+  !report.stages.includes('real-ffmpeg-technical-qa-passed-no-publication')||
+  caption.burnedIn!==true||caption.source!=='explicit-human-reviewed-srt'||
+  !isSha(caption.sourceSha256)||!Number.isSafeInteger(caption.cueCount)||
+  !within(caption.cueCount,1,80))
+  fail('Нет подтверждения этапа проверки и встраивания субтитров.');
+ if(!within(color.brightness,-0.05,0.05)||!within(color.contrast,0.92,1.08)||
+   !within(color.saturation,0.88,1.12))
+  fail('Параметры цвета за пределами допустимого диапазона.');
+ if(music!==null&&(
+  !isSha(record(music).sha256)||record(music).rightsConfirmedByAuthor!==true||
+  !within(record(music).volume,0,0.3)||!within(record(music).originalVolume,0.7,1)
+ ))fail('Музыкальная дорожка не прошла явное подтверждение прав и уровня.');
+ if(handoff.passed!==false||handoff.status!=='blocked'||!Array.isArray(handoff.errors)||
+  handoff.errors.length!==1||handoff.errors[0]!=='author approval required'||
+  !Array.isArray(handoff.assets)||handoff.assets.length!==1||
+  record(handoff.assets[0]).passed!==true||qa.distribution!==null)
+  fail('Заблокированное состояние публикации отсутствует в техническом QA.');
+ if(evidence.fileExists!==true||evidence.probeVerified!==true||
+  evidence.blackFrameCheckPassed!==true||evidence.audioCheckPassed!==true||
+  evidence.videoCodec!=='h264'||evidence.audioCodec!=='aac'||
+  evidence.width!==1080||evidence.height!==1920||evidence.fps!==30||
+  evidence.path!==report.output||
+  !Number.isSafeInteger(evidence.bytes)||evidence.bytes!==video.size||
+  !isSha(evidence.sha256)||evidence.sha256.toLowerCase()!==video.sha256.toLowerCase()||
+  !within(evidence.durationSec,0.1,900)||
+  Math.abs((evidence.durationSec as number)-video.durationSec)>0.75||
+  Math.abs((evidence.durationSec as number)-draft.durationSec)>0.25)
+  fail('Итоговый MP4 не соответствует QA, оригинальному хронометражу или SHA-256.');
+ const finished:PersonaFinishedRenderRecord={
+  version:1,kind:'persona-finished-render-review-v1',
+  sourceDraftSha256:draft.mp4Sha256,briefFingerprintSha256:draft.briefFingerprintSha256,
+  finishedSha256:video.sha256.toLowerCase(),finishedBytes:video.size,
+  durationSec:evidence.durationSec as number,width:1080,height:1920,fps:30,
+  captionsBurnedIn:true,captionCount:caption.cueCount as number,
+  color:{brightness:color.brightness as number,contrast:color.contrast as number,
+   saturation:color.saturation as number},musicAdded:music!==null,importedAt,
+  status:'awaiting-author-review',publicationApproved:false,
+  qaProvenance:'browser-sha256-matched-local-ffmpeg-report'
+ };
+ return finished;
+}
+export function makePersonaFinalAuthorReview(input:{
+ finished:PersonaFinishedRenderRecord;decision:PersonaFinalAuthorReview['decision'];
+ reviewer:string;notes:string;criteria:PersonaFinalReviewChecks;watchedEntireVideo:boolean;
+ videoSha256:string;reviewedAt:string;
+}):PersonaFinalAuthorReview{
+ const {finished,decision,criteria,watchedEntireVideo,videoSha256,reviewedAt}=input;
+ const reviewer=input.reviewer.trim(),notes=input.notes.trim();
+ if(!readPersonaFinishedRenderRecord(finished)||!isSha(videoSha256)||
+  videoSha256!==finished.finishedSha256||watchedEntireVideo!==true)
+  fail('Для редакторского решения нужно заново открыть и полностью проверить тот же MP4.');
+ if(reviewer.length<2||reviewer.length>100||notes.length>3000||
+  typeof reviewedAt!=='string'||!reviewedAt.trim()||
+  !PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof criteria?.[k]==='boolean'))
+  fail('Заполните имя автора и все пункты художественной проверки.');
+ if(decision==='approved-final-cut'){
+  if(!PERSONA_FINAL_REVIEW_KEYS.every(k=>criteria[k]))
+   fail('Финальный монтаж нельзя принять с непроверенными художественными критериями.');
+ }else if(decision==='needs-revision'){
+  if(notes.length<5)fail('Укажите, какие изменения нужно внести в ролик.');
+ }else fail('Неизвестное редакторское решение');
+ return {decision,reviewer,notes,reviewedAt,criteria:{...criteria},watchedEntireVideo:true,
+  videoSha256:finished.finishedSha256,publicationApproved:false};
+}
