@@ -6,7 +6,7 @@ import {mkdtemp,mkdir,readFile,rm,stat,writeFile,symlink} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
-import {preflightFinish,finishPersonaReel,validateReviewedSrt} from './persona-finish-reel.mjs';
+import {preflightFinish,finishPersonaReel,validateReviewedSrt,validateMusicCue} from './persona-finish-reel.mjs';
 
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const writeJson=(p,x)=>writeFile(p,JSON.stringify(x,null,2)+'\n');
@@ -17,6 +17,29 @@ test('reviewed SRT rejects overlap, ASS overrides and outside-video timestamps',
  assert.throws(()=>validateReviewedSrt(valid.replace('Я актёр.','{\\an8}Я актёр.'),2.5),/styled/);
  assert.throws(()=>validateReviewedSrt(valid,1.9),/out-of-video/);
 });
+test('music cue is mandatory, bounded and cannot silently become a full-length soundtrack',()=>{
+ const options={startSec:0.85,endSec:1.85,volume:0.16,originalVolume:0.9};
+ const cue=validateMusicCue(options,2.5,1.1);
+ assert.equal(cue.durationSec,1);
+ assert.equal(cue.fadeInSec,0.04);
+ assert.equal(cue.fadeOutSec,0.18);
+ assert.throws(()=>validateMusicCue({volume:0.16,originalVolume:0.9},2.5,3),/startSec/);
+ assert.throws(()=>validateMusicCue({...options,endSec:2.8},2.5,3),/endSec/);
+ assert.throws(()=>validateMusicCue({...options,endSec:0.7},2.5,3),/cue/);
+ assert.throws(()=>validateMusicCue({...options,fadeInSec:0.6,fadeOutSec:0.6},2.5,3),/fades/);
+ assert.throws(()=>validateMusicCue(options,2.5,0.4),/whole selected cue/);
+});
+function bandRms(path,startSec){
+ const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss',String(startSec),
+  '-t','0.25','-i',path,'-vn','-af','bandpass=f=560:w=25',
+  '-ar','8000','-ac','1','-f','s16le','pipe:1'],
+  {encoding:null,timeout:30000,maxBuffer:1_000_000});
+ assert.equal(result.status,0,String(result.stderr));
+ assert.ok(result.stdout.length>=1000,'audio sample was missing');
+ let energy=0;
+ for(let i=0;i+1<result.stdout.length;i+=2){const sample=result.stdout.readInt16LE(i);energy+=sample*sample}
+ return Math.sqrt(energy/(result.stdout.length/2));
+}
 test('preflight rejects unapproved choices and never creates an output directory',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-finish-preflight-'));
  try{
@@ -74,7 +97,8 @@ test('real FFmpeg burned SRT + optional music + bounded grade -> new QA, origina
   const opts={version:1,kind:'persona-finish-choices-v1',publicationApproved:false,
    sourceSha256:qa.evidence.sha256,captionsReviewed:true,captionsPath:captions,
    color:{brightness:0.01,contrast:1.01,saturation:1.02},
-   music:{path:music,volume:0.16,originalVolume:0.9,rightsConfirmed:true}};
+   music:{path:music,volume:0.16,originalVolume:0.9,rightsConfirmed:true,
+    startSec:0.85,endSec:1.85,fadeInSec:0.1,fadeOutSec:0.2}};
   await writeJson(optionsPath,opts);
   const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH',originalPath=process.env[pathKey];
   process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
@@ -84,6 +108,16 @@ test('real FFmpeg burned SRT + optional music + bounded grade -> new QA, origina
   assert.equal(res.publicationApproved,false);
   assert.equal(res.distributionAllowed,false);
   assert.equal(res.captions.burnedIn,true);
+  assert.equal(res.music.startSec,0.85);
+  assert.equal(res.music.endSec,1.85);
+  assert.equal(res.music.fadeOutSec,0.2);
+  assert.ok(res.stages.includes('explicit-timed-licensed-music-with-fades-and-local-voice-ducking'));
+  // A 560 Hz tone must appear only inside the author's cue, not everywhere.
+  const before=bandRms(res.output,0.2),during=bandRms(res.output,1.05),after=bandRms(res.output,2.05);
+  assert.ok(during>before*1.6,'Music was not audible inside selected cue');
+  assert.ok(during>after*1.6,'Music leaked past selected cue');
+  assert.ok(Math.abs(before-after)<Math.max(before,after)*0.3,
+   'Voice should match before and after selected cue');
   assert.ok(res.stages.includes('real-ffmpeg-technical-qa-passed-no-publication'));
   assert.ok(res.stages.includes('local-video-quality-analysis-written'));
   assert.equal(res.publicationApproved,false);
