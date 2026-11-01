@@ -19,7 +19,7 @@ const storage=()=>{
 };
 describe('Persona full preproduction guide',()=>{
  it('renders a concrete, mobile-compatible shooting route, 7 exact lines, lighting and editing, with no false trends',()=>{
-  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle}
+  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle} allowExample={true}
    pipeline={null} onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
   expect(html).toContain('От идеи до первого монтажа');
   expect(html).toContain('Я актёр. И ещё пишу музыку.');
@@ -65,7 +65,7 @@ describe('Persona full preproduction guide',()=>{
   const guide=createPersonaProductionGuide(now);
   const generic=buildPersonaProductionBrief({idea});
   const pipeline=importPersonaProductionBrief({brief:generic,selectedIdea:idea});
-  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle}
+  const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle} allowExample={true}
    workspace={{version:1,research:[],analyses:[],ideas:[],preProductionGuide:guide}}
    pipeline={pipeline} onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
   expect(html).not.toContain('Создать редактируемый сценарий из этих 7 сцен');
