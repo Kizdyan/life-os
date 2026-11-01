@@ -7,6 +7,12 @@
 - Upstream advertises 98+ agent definitions, MCP, RAG memory, swarms, cross-provider routing and background workers. **These are vendor claims, not benchmarks of our system or proof of 100 active free models.**
 - The upstream README makes a critical distinction: Claude marketplace plugins are limited; `npx ruflo init` creates `.claude/`, `.claude-flow/`, `CLAUDE.md`, config and hooks in the target project. Running that command inside our production checkout could conflict with existing agent instructions and Skill Registry.
 
+## Security advisory and version policy (checked 2026-11-01)
+- The upstream repository discloses critical **GHSA-c4hm-4h84-2cf3 / CVE-2026-59726** (CVSS 10.0), affecting the default Docker-compose MCP bridge for versions **below 3.16.3**, with unauthenticated remote code execution and possible theft of provider keys / poisoning of persistent agent memory. Fixed in 3.16.3. https://github.com/ruvnet/ruflo/security/advisories/GHSA-c4hm-4h84-2cf3
+- The upstream release list also shows security fixes in 3.65.1 (DNS rebinding SSRF), 3.66.1 (federation trust) and 3.66.2 (Bearer parsing, sanitizer). Latest reviewed release here is **3.66.2** (2026-10-31). https://github.com/ruvnet/ruflo/releases
+- Our evaluation gate requires an exact version number **>=3.66.2**, not a mutable `@latest` or a branch. This is a minimum preflight, **not a claim that Ruflo is free of vulnerabilities**. Audit source integrity, scripts, dependencies, config, and exposed listeners before any test execution.
+- Never use default public Docker/HTTP MCP endpoints. Keep ports bound to loopback and no production API keys. No automatic federation/daemon/trader plugins.
+
 ## Architecture decision
 **DO NOT run `npx ruflo@latest init` in `Kizdyan/life-os` or `Kizdyan/dive-m` yet.**
 
@@ -22,7 +28,7 @@ Preserve existing independent source of truth: Life OS/Erika Orchestrator + Poli
 ## Windows / Codex isolated experiment (requires separate review before commands that install tools)
 1. Snapshot existing `.claude`, `.agents`, MCP configuration, tasks, and current baseline without leaking secrets.
 2. Check upstream license, security, current pinned version and transitive dependencies. Audit installation scripts and tool permissions. Disable telemetry/daemon/background workers unless independently needed and approved.
-3. Create a **new empty disposable directory** and separate Git branch/worktree with synthetic, public fixtures, zero production credentials and no access to user-owned video or finance records. In that directory only, use reviewed and pinned Ruflo version. Avoid `curl | bash` and `npx @latest` without preview.
+3. Create a **new empty disposable directory** and separate Git branch/worktree with synthetic, public fixtures, zero production credentials and no access to user-owned video or finance records. In that directory only, use reviewed and pinned Ruflo version (security minimum 3.66.2 as of this assessment). Avoid `curl | bash` and `npx @latest` without preview.
 4. Compare baseline single-agent vs Ruflo researcher/coder/tester on the **same 2–3 public synthetic tasks**, same snapshot and test suite, independent observer, runtime limits (<=600s per run), cost limit <=$5 per pilot, no external effects.
 5. Run the local preflight: `node --experimental-strip-types scripts/ruflo-pilot-report.mjs plan docs/examples/ruflo-request.json` (this sample deliberately requires explicit owner approval; it will not invoke Ruflo).
 6. When real evidence is obtained, save JSON with `TrialMeasurements` fields: runId, observer, fixture SHA256, output SHA256, measured, cases/passes/critical defects, time, total USD and tokens or null. Then use `... report.mjs compare baseline.json pilot.json`.
