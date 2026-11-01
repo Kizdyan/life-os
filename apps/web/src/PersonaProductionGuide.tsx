@@ -93,6 +93,19 @@ export function PersonaProductionGuide({projectTitle,projectAngle,workspace,pipe
    <div className="personaGuideShots">
     {scenes.map((scene,index)=><div className="personaGuideShot" key={scene.id+'-'+index}>
      <div><strong>{scene.id} · {scene.framing}</strong><small>{scene.seconds} с · {index===0?'Хук':index===scenes.length-1?'Панчлайн':'Развитие'}</small></div>
+     <div className="personaGuideStoryboard" aria-label={scene.id+': схема крупности и композиции'}>
+      <svg viewBox="0 0 170 225" role="img" aria-label={'Схематичная вертикальная композиция: '+scene.framing}>
+       <rect x="1" y="1" width="168" height="223" rx="9" fill="#e6e1d7" stroke="#aaa499"/>
+       <path d="M2 75H168 M2 150H168 M57 2V223 M113 2V223" stroke="#c3bcaf" strokeWidth="0.8" strokeDasharray="4 4"/>
+       <rect x="11" y="14" width="148" height="16" rx="4" fill="#eee9df"/>
+       <ellipse cx="86" cy={scene.framing.toLowerCase().includes('крупн')||scene.framing==='close-up'?87:112} rx={scene.framing.toLowerCase().includes('крупн')||scene.framing==='close-up'?37:25} ry={scene.framing.toLowerCase().includes('крупн')||scene.framing==='close-up'?47:32} fill="#baaa93"/>
+       <path d="M30 223 Q32 156 86 149 Q138 156 140 223" fill="#847c72"/>
+       {scene.id.startsWith('B')&&<><rect x="12" y="182" width="146" height="29" rx="4" fill="#3b3b37"/>{Array.from({length:9},(_,k)=><rect key={k} x={16+k*15} y="185" width="12" height="18" fill="#ecece6"/>)}</>}
+       <rect x="35" y="196" width="100" height="22" rx="5" fill="#151515" opacity=".85"/>
+       <text x="85" y="211" textAnchor="middle" fontSize="11" fill="#fff">{scene.id}</text>
+      </svg>
+      <small>СХЕМА КОМПОЗИЦИИ · НЕ РЕАЛЬНЫЙ КАДР</small>
+     </div>
      <blockquote>«{scene.line}»</blockquote><p><b>Что делать:</b> {scene.action}</p><p><b>Кадр и свет:</b> {scene.lighting}</p>
     </div>)}
    </div>
