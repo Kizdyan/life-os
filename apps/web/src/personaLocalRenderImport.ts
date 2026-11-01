@@ -46,6 +46,36 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  ?v as PersonaLocalRenderRecord:null;
 }
 
+/**
+ * Reimporting the exact same draft is a metadata refresh, not a new editorial cut.
+ * Keep the original import identity (used for concurrency checks), its finished
+ * candidate, and any previously verified quality report. Never transfer those
+ * records to a changed MP4, brief or project.
+ */
+export function mergePersonaDraftReimport(
+ previous:PersonaLocalRenderRecord|null|undefined,
+ imported:PersonaLocalRenderRecord
+):PersonaLocalRenderRecord{
+ if(!readPersonaLocalRenderRecord(imported))throw Error('Invalid new Persona draft evidence');
+ if(!previous||!readPersonaLocalRenderRecord(previous)||
+  previous.projectId!==imported.projectId||
+  previous.briefIdeaId!==imported.briefIdeaId||
+  previous.briefSnapshot!==imported.briefSnapshot||
+  previous.briefFingerprintSha256!==imported.briefFingerprintSha256||
+  previous.mp4Sha256!==imported.mp4Sha256||
+  previous.mp4Bytes!==imported.mp4Bytes||
+  Math.abs(previous.durationSec-imported.durationSec)>0.001)
+  return imported;
+ const merged:PersonaLocalRenderRecord={
+  ...imported,importedAt:previous.importedAt,
+  ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
+  ...(previous.finished?{finished:previous.finished}:{})
+ };
+ if(!readPersonaLocalRenderRecord(merged))
+  throw Error('Reimport does not match the saved Persona review');
+ return merged;
+}
+
 /** Browser-provided bytes, independently hashed, are matched against an untrusted local report.
  * This does not independently rerun FFprobe/FFmpeg or grant approval. */
 export function inspectPersonaLocalRenderImport(input:{
