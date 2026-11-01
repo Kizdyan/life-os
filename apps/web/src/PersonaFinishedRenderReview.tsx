@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {advancePersonaPlaybackProof,emptyPersonaPlaybackProof} from './personaPlaybackProof';
 import {inspectPersonaFinishedRenderImport,makePersonaFinalAuthorReview,
  PERSONA_FINAL_REVIEW_KEYS,type PersonaFinalReviewChecks,type PersonaFinalAuthorReview} from './personaFinishedRenderImport';
 
@@ -43,6 +44,7 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
  const [videoUrl,setVideoUrl]=useState<string|null>(null);
  const [reviewer,setReviewer]=useState(''),[notes,setNotes]=useState('');
  const [watched,setWatched]=useState(false),[checks,setChecks]=useState<PersonaFinalReviewChecks>(initialChecks);
+ const [playbackProof,setPlaybackProof]=useState(emptyPersonaPlaybackProof);
  const urlRef=useRef<string|null>(null),fileHash=useRef<string|null>(null),generation=useRef(0);
  useEffect(()=>()=>{generation.current++;if(urlRef.current)URL.revokeObjectURL(urlRef.current)},[]);
  const finished=draft.finished;
@@ -71,13 +73,14 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
     throw Error('Не удалось сохранить: проект или исходный черновик изменился.');
    if(urlRef.current)URL.revokeObjectURL(urlRef.current);
    const url=URL.createObjectURL(videoFile);urlRef.current=url;fileHash.current=fileSha;setVideoUrl(url);
-   setWatched(false);setChecks(initialChecks());setReviewer('');setNotes('');
+   setWatched(false);setPlaybackProof(emptyPersonaPlaybackProof());setChecks(initialChecks());setReviewer('');setNotes('');
    setMessage(result.quality?'Финишный MP4 и отчёт качества проверены по SHA-256. Художественное решение остаётся за автором.':'Финишный MP4 проверен по SHA-256 и двум локальным отчётам. Для этого старого результата отдельный отчёт качества ещё не создан.');
   }catch(error){if(run===generation.current)setMessage('Импорт отклонён: '+String((error as Error).message||error))}
   finally{if(run===generation.current)setBusy(false)}
  }
  function decide(decision:PersonaFinalAuthorReview['decision']){
   if(!finished||!sameFile){setMessage('Сначала откройте проверенный финальный MP4.');return}
+  if(!playbackProof.completed){setMessage('Для авторского решения воспроизведи итоговый ролик целиком, без перемотки.');return}
   try{
    const authorReview=makePersonaFinalAuthorReview({
     finished,decision,reviewer,notes,criteria:checks,watchedEntireVideo:watched,
@@ -121,11 +124,20 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
    {!sameFile&&<p>После обновления страницы выбери те же файлы повторно, чтобы посмотреть видео. MP4 не сохраняется внутри браузерного проекта.</p>}
   </div>}
   {sameFile&&finished&&<>
-   <video className="personaRenderReturnVideo" controls playsInline preload="metadata" src={videoUrl??undefined}/>
+   <video className="personaRenderReturnVideo" controls playsInline preload="metadata" src={videoUrl??undefined}
+    onPlay={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'play',currentTime:v.currentTime,duration:v.duration}))}}
+    onTimeUpdate={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'timeupdate',currentTime:v.currentTime,duration:v.duration,paused:v.paused,seeking:v.seeking,playbackRate:v.playbackRate}))}}
+    onPause={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'pause',currentTime:v.currentTime,duration:v.duration}))}}
+    onSeeking={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'seeking',currentTime:v.currentTime,duration:v.duration}))}}
+    onEnded={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'ended',currentTime:v.currentTime,duration:v.duration}))}}/>
    <div className="personaFinalReviewChecklist">
     <h4>Решение автора — отдельно от публикации</h4>
-    <label><input type="checkbox" checked={watched} onChange={e=>setWatched(e.target.checked)}/>
-     Я лично посмотрел итоговый MP4 целиком со звуком</label>
+    <p role="status">{playbackProof.completed?
+     'Воспроизведение пройдено. Лично подтверди качество игры, изображения и звука.':
+     'Сначала воспроизведи финальный MP4 от начала до конца без перемотки. Плеер проверяет пройденные участки, но не может оценить внимание зрителя.'}</p>
+    <label><input type="checkbox" checked={watched} disabled={!playbackProof.completed}
+     onChange={e=>setWatched(e.target.checked)}/>
+     Я лично посмотрел итоговый MP4 целиком со звуком и подтверждаю это</label>
     {PERSONA_FINAL_REVIEW_KEYS.map(key=><label key={key}>
      <input type="checkbox" checked={checks[key]} onChange={e=>setChecks(p=>({...p,[key]:e.target.checked}))}/>
      {criteriaLabels[key]}</label>)}
@@ -134,10 +146,10 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
     <label>Замечания или причины доработки<textarea maxLength={3000} value={notes}
      onChange={e=>setNotes(e.target.value)} placeholder="Что изменить перед публикационной подготовкой?"/></label>
     <div className="actions">
-     <button type="button" disabled={!watched||reviewer.trim().length<2||notes.trim().length<5}
+     <button type="button" disabled={!watched||!playbackProof.completed||reviewer.trim().length<2||notes.trim().length<5}
       onClick={()=>decide('needs-revision')}>Вернуть на доработку</button>
      <button type="button" className="primary"
-      disabled={!watched||reviewer.trim().length<2||!PERSONA_FINAL_REVIEW_KEYS.every(k=>checks[k])}
+      disabled={!watched||!playbackProof.completed||reviewer.trim().length<2||!PERSONA_FINAL_REVIEW_KEYS.every(k=>checks[k])}
       onClick={()=>decide('approved-final-cut')}>Утвердить финальный монтаж (без публикации)</button>
     </div>
     <p>Даже подтверждённая художественная приёмка не даёт разрешения на публикацию. Отдельный сетевой этап не подключён.</p>
