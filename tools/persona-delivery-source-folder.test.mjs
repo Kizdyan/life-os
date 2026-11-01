@@ -92,3 +92,20 @@ test('unrelated nested videos and symlinks are not silently imported',async t=>{
  await writeFile(join(selected,'composer_long.mp4'),'top-level fixture');
  await assert.rejects(makeManifest({sourceFolder:selected,outputFolder:join(base,'out')}),/ambiguous names|expected 1/);
 });
+
+
+test('published Windows handoff requires exported brief, explicit FFmpeg bin and fail-fast QA',async()=>{
+ const instructions=await readFile(new URL('../docs/persona-delivery/first-real-reel-shooting-pack.md',import.meta.url),'utf8');
+ const first=instructions.split('## Первый запуск на Windows')[1]?.split('## Возврат смонтированного MP4')[0];
+ assert.ok(first,'Windows first-run section exists');
+ assert.match(first,/\$brief\s*=\s*'[^\n]*persona-production-brief\.json'/);
+ assert.doesNotMatch(first,/\$brief\s*=\s*'[^\n]*editorial-candidate-production-brief\.json'/);
+ assert.match(first,/npm run media:first-reel:draft --[^\n]*\$brief[^\n]*\$ffmpegBin strict/);
+ assert.match(first,/node tools\\persona-video-quality\.mjs[^\n]*\$ffmpegBin/);
+ const failFast=(first.match(/if \(\$LASTEXITCODE -ne 0\) \{ throw/g)||[]).length;
+ assert.equal(failFast,3,'intake, draft and QA must each stop on native command failure');
+ const finish=instructions.split('## Локальная финишная сборка')[1]?.split('## Возврат финишного MP4')[0];
+ assert.ok(finish,'Final-stage instructions exist');
+ assert.match(finish,/npm run media:finish:reel --[^\n]*\$ffmpegBin/);
+ assert.match(finish,/if \(\$LASTEXITCODE -ne 0\) \{ throw/);
+});
