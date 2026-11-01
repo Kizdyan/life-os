@@ -134,3 +134,5 @@
 | Реальные авторские видео | WAITING_FOR_REAL_FOOTAGE | В разрешённой задаче не передано ни одного исходника. Их не искали, не загружали и не добавляли в Git. |
 
 Фактические команды на изолированном Windows checkout от `b278d2d78f99eabe7bfe2f9cf2843257912c32e0`: `npm run typecheck`, `npm run api:typecheck`, `npm test` (**97 файлов / 423 теста**), `npm run media:test` (**120 passed / 0 failed / 3 skipped**), `npm run web:build`. Локальный Chrome smoke проверил рендер Persona и отсутствие горизонтальной прокрутки на 390×844 и 1440×900; скриншоты вне Git: `C:\Users\Kostya\.codex\.chatgpt-projects\g-p-6aa138b77ffc81919a6d3ab4c0758bc3\artifacts\persona-video-quality-browser`.
+
+Реализация сохранена в PR #135 commit `6dbbe26f5acd758a3a5399c1216a5aee0ff4560c`; после него исходное рабочее дерево чисто. Статус реальных съёмок: **WAITING_FOR_REAL_FOOTAGE**.
