@@ -29,7 +29,7 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    await writeFile(srt,'1\n00:00:00,100 --> 00:00:00,900\nКороткая реплика.\n\n2\n00:00:00,850 --> 00:00:01,700\nПересекающийся титр.\n');
    const movieSha=createHash('sha256').update(await readFile(movie)).digest('hex');
    await writeFile(timelinePath,JSON.stringify({version:1,operation:'timeline-render',output:{path:movie,durationSec:2,sha256:movieSha},outputTimeline:[
-    {clipIndex:1,beat:1,outputStartSec:0,outputEndSec:.4,durationSec:.4},{clipIndex:2,beat:2,outputStartSec:.4,outputEndSec:2,durationSec:1.6}]}));
+    {clipIndex:1,beat:1,sourceSha256:'a'.repeat(64),outputStartSec:0,outputEndSec:.4,durationSec:.4},{clipIndex:2,beat:2,sourceSha256:'b'.repeat(64),outputStartSec:.4,outputEndSec:2,durationSec:1.6}]}));
    const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH';
    const originalPath=process.env[pathKey];process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
    let quality;
@@ -52,6 +52,9 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.ok(visual?.measurement.color.uMean>=0&&visual?.measurement.color.uMean<=255);
    assert.ok(visual?.measurement.color.vMean>=0&&visual?.measurement.color.vMean<=255);
    assert.equal(quality.findings.find(x=>x.id==='scene_visual_metrics')?.measurement.scenes.length,2);
+   const comparison=quality.findings.find(x=>x.id==='scene_color_comparisons');
+   assert.equal(comparison?.status,'measured');
+   assert.equal(comparison?.measurement.comparisons[0].classification,'not_comparable');
    assert.equal(quality.visualEvidence?.kind,'persona-visual-evidence-v1');
    assert.equal(quality.visualEvidence?.frames.length,2);
    assert.ok((await stat(quality.visualEvidence.contactSheetPath)).size>1000);

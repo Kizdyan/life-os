@@ -107,7 +107,7 @@ async function trustedTimeline(timelinePath,videoPath,durationSec,timelineSource
  for(const item of raw.outputTimeline){
   if(!Number.isFinite(item?.outputStartSec)||!Number.isFinite(item?.outputEndSec)||Math.abs(item.outputStartSec-previous)>.03||item.outputEndSec<=item.outputStartSec||item.outputEndSec>durationSec+.25||!Number.isFinite(item.durationSec)||Math.abs(item.durationSec-(item.outputEndSec-item.outputStartSec))>.03)
    return {scenes:null,reason:'manifest has gaps, overlaps, or invalid clip durations'};
-  scenes.push({clipIndex:item.clipIndex,beat:item.beat,outputStartSec:item.outputStartSec,outputEndSec:item.outputEndSec,durationSec:item.durationSec});previous=item.outputEndSec;
+  scenes.push({clipIndex:item.clipIndex,beat:item.beat,sourceSha256:item.sourceSha256??null,outputStartSec:item.outputStartSec,outputEndSec:item.outputEndSec,durationSec:item.durationSec});previous=item.outputEndSec;
  }
  if(!scenes.length||Math.abs(previous-durationSec)>.25)return {scenes:null,reason:'manifest duration does not cover rendered video'};
  return {scenes,reason:null};
@@ -170,12 +170,23 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
      const sceneMetrics=scenes.map(scene=>{
       const indexes=luma.map((_,index)=>index).filter(index=>index/sampleRate>=scene.outputStartSec&&index/sampleRate<scene.outputEndSec);
       const sceneLuma=indexes.map(index=>luma[index]),sceneU=indexes.map(index=>u[index]),sceneV=indexes.map(index=>v[index]);
-      if(!sceneLuma.length)return {beat:scene.beat,clipIndex:scene.clipIndex,status:'not_measured'};
-      const sd=distribution(sceneLuma);return {beat:scene.beat,clipIndex:scene.clipIndex,status:'measured',luma:sd,
+      if(!sceneLuma.length)return {beat:scene.beat,clipIndex:scene.clipIndex,sourceSha256:scene.sourceSha256,status:'not_measured'};
+      const sd=distribution(sceneLuma);return {beat:scene.beat,clipIndex:scene.clipIndex,sourceSha256:scene.sourceSha256,status:'measured',luma:sd,
        uMean:sceneU.reduce((sum,value)=>sum+value,0)/sceneU.length,vMean:sceneV.reduce((sum,value)=>sum+value,0)/sceneV.length,
        saturationMean:sceneU.reduce((sum,value,index)=>sum+Math.hypot(value-128,sceneV[index]-128),0)/sceneU.length};
      });
      findings.push(finding('scene_visual_metrics','measured','Покадровая сводка сцен','Сцены привязаны к доверенному manifest рендера; метрики вычислены по пробам 4 кадра/с и требуют визуального авторского решения.',[],{sampleRate,scenes:sceneMetrics}));
+     const colorComparable=Boolean(colorMetadata.pixelFormat&&colorMetadata.colorSpace&&colorMetadata.colorRange);
+     const comparisons=sceneMetrics.slice(1).map((scene,index)=>{
+      const previous=sceneMetrics[index],comparable=colorComparable&&scene.status==='measured'&&previous.status==='measured';
+      if(!comparable)return {from:previous.beat,to:scene.beat,classification:'not_comparable',reason:'color metadata or scene samples unavailable'};
+      const metrics={lumaDelta:Math.abs(scene.luma.mean-previous.luma.mean),contrastDelta:Math.abs(scene.luma.contrastP90P10-previous.luma.contrastP90P10),
+       saturationDelta:Math.abs(scene.saturationMean-previous.saturationMean),chromaDelta:Math.hypot(scene.uMean-previous.uMean,scene.vMean-previous.vMean)};
+      const differs=metrics.lumaDelta>=35||metrics.contrastDelta>=25||metrics.saturationDelta>=18||metrics.chromaDelta>=20;
+      return {from:previous.beat,to:scene.beat,classification:differs?(previous.sourceSha256&&previous.sourceSha256===scene.sourceSha256?'potential_inconsistency':'signal_difference'):'measured_consistent',...metrics,
+       reason:differs?'Статистическое различие не доказывает ошибку цветокоррекции; требуется просмотр соседних кадров.':'В доступной выборке заметных различий не найдено.'};
+     });
+     findings.push(finding('scene_color_comparisons','measured','Сравнение цвета соседних сцен','Сравнение нормализовано только внутри общего кодированного color space финального MP4; разные источники помечаются как signal_difference, а не как художественная ошибка.',[],{unit:'8-bit YUV sample values / delta',method:'FFmpeg signalstats at 4 fps',comparability:colorComparable?'comparable':'not_comparable',comparisons}));
      const differences=sceneMetrics.slice(1).map((scene,index)=>({from:sceneMetrics[index].beat,to:scene.beat,
       lumaDelta:scene.status==='measured'&&sceneMetrics[index].status==='measured'?Math.abs(scene.luma.mean-sceneMetrics[index].luma.mean):null})).filter(item=>item.lumaDelta!==null&&item.lumaDelta>=35);
      findings.push(finding('scene_visual_consistency',differences.length?'warning':'measured','Согласованность сцен',differences.length?'Есть заметные различия средней яркости между соседними сценами; это может быть художественным замыслом, проверьте контактный лист.':'В доступных пробах не найдено заметных скачков средней яркости между соседними сценами.',[],{differences}));
