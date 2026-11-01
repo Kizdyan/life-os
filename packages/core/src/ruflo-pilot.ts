@@ -141,8 +141,10 @@ export function evaluateRufloAgainstBaseline(baseline: TrialMeasurements, pilot:
   const p = pilot.passedCases / pilot.testCases;
   const time = (pilot.elapsedSeconds / baseline.elapsedSeconds - 1) * 100;
   const cost = baseline.costUsd === 0 ? null : (pilot.costUsd / baseline.costUsd - 1) * 100;
-  if (pilot.criticalDefects || pilot.passedCases < baseline.passedCases) {
-    reasons.push('Pilot has critical defects or lower test pass rate');
+  // A cheap or fast agent is not an improvement if it cannot solve the task reliably.
+  // This absolute floor is independent of relative performance against a weak baseline.
+  if (pilot.criticalDefects || pilot.passedCases < baseline.passedCases || p < 0.90) {
+    reasons.push('Pilot has critical defects, lower quality, or under 90% test pass rate');
     return { decision:'reject', reasons, baselinePassRate:b, pilotPassRate:p,
       timeChangePct:time, costChangePct:cost, productionApproved:false };
   }
