@@ -58,6 +58,22 @@ export function validateReviewedSrt(text,durationSec){
  }
  return {cueCount:blocks.length,lastEndMs:previousEnd};
 }
+/** Keep the original voice unchanged outside the author's explicit musical cue. */
+export function validateMusicCue(selected,seconds,clipDuration){
+ const startSec=number(selected?.startSec,0,seconds,'music startSec');
+ const endSec=number(selected?.endSec,0,seconds,'music endSec');
+ const durationSec=endSec-startSec;
+ if(durationSec<0.25)fail('Music cue must have at least 0.25 seconds and start before end');
+ const fadeInSec=number(selected.fadeInSec??0.04,0,1,'music fadeInSec');
+ const fadeOutSec=number(selected.fadeOutSec??0.18,0,1,'music fadeOutSec');
+ if(fadeInSec+fadeOutSec>durationSec)
+  fail('Music fades exceed the selected cue duration');
+ if(!Number.isFinite(clipDuration)||clipDuration+0.03<durationSec)
+  fail('Music file must cover the whole selected cue; never loop or stretch sound implicitly');
+ return {startSec,endSec,durationSec,fadeInSec,fadeOutSec,
+  volume:number(selected.volume,0,0.3,'music volume'),
+  originalVolume:number(selected.originalVolume,0.7,1,'original voice volume')};
+}
 function envWithMediaTools(ffmpegDir){
  const env={...process.env},key=Object.keys(env).find(k=>k.toLowerCase()==='path')||'PATH';
  if(ffmpegDir)env[key]=resolve(ffmpegDir)+(process.platform==='win32'?';':':')+(env[key]||'');
@@ -129,14 +145,12 @@ export async function preflightFinish({draftDir,optionsPath,outputDir,ffmpegDir}
      path===input||path===captionFile)fail('Unsupported soundtrack path');
   const st=await stat(path);
   if(!st.isFile()||st.size<256||st.size>250*1024*1024)fail('Invalid soundtrack size');
-  const volume=number(selected.volume,0,0.3,'music volume');
-  const originalVolume=number(selected.originalVolume,0.7,1,'original voice volume');
   const probe=JSON.parse(await run('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type','-of','json',path],
    {env:envWithMediaTools(ffmpegDir)}));
-  if(!probe.streams?.some(s=>s.codec_type==='audio')||
-     !Number.isFinite(Number(probe.format?.duration))||Number(probe.format.duration)<seconds)
-   fail('Music requires a real audio stream at least as long as the draft');
-  music={path,sha256:await sha256(path),volume,originalVolume};
+  if(!probe.streams?.some(s=>s.codec_type==='audio'))
+   fail('Music requires a real audio stream');
+  const cue=validateMusicCue(selected,seconds,Number(probe.format?.duration));
+  music={path,sha256:await sha256(path),...cue};
  }
  return {root,output,input,result,qa,options,captionFile,captionQa,grade,music,sourceSha256:actualSha,
   captionSha256:await sha256(captionFile)};
@@ -162,9 +176,17 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
   if(plan.music)args.push('-i',plan.music.path);
   args.push('-vf',color+','+subtitle);
   if(plan.music){
-   const graph='[0:a]volume='+plan.music.originalVolume+'[voice];[1:a]volume='+
-    plan.music.volume+',atrim=duration='+plan.qa.evidence.durationSec+
-    ',asetpts=PTS-STARTPTS[music];[voice][music]amix=inputs=2:duration=first:normalize=0,'+
+   const cue=plan.music;
+   // Position relative to the final Reel, not the original music file.
+   const musicFilters=['atrim=start=0:duration='+cue.durationSec,'asetpts=PTS-STARTPTS',
+    'volume='+cue.volume];
+   if(cue.fadeInSec>0)musicFilters.push('afade=t=in:st=0:d='+cue.fadeInSec);
+   if(cue.fadeOutSec>0)musicFilters.push('afade=t=out:st='+(cue.durationSec-cue.fadeOutSec)+':d='+cue.fadeOutSec);
+   musicFilters.push('adelay='+Math.round(cue.startSec*1000)+':all=1');
+   // A 0.9 voice volume must NOT lower the original soundtrack for the entire Reel.
+   const voiceVolume="volume='if(between(t,"+cue.startSec+','+cue.endSec+'),'+cue.originalVolume+",1)':eval=frame";
+   const graph='[0:a]'+voiceVolume+'[voice];[1:a]'+musicFilters.join(',')+
+    '[music];[voice][music]amix=inputs=2:duration=first:normalize=0,'+
     'alimiter=limit=0.95:level=0[a]';
    args.push('-filter_complex',graph,'-map','0:v:0','-map','[a]');
   }else args.push('-map','0:v:0','-map','0:a:0');
@@ -173,7 +195,7 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
    '-t',String(plan.qa.evidence.durationSec),movie);
   await run('ffmpeg',args,{cwd:plan.output,env});
   stages.push('reviewed-srt-burned-into-new-mp4');
-  if(plan.music)stages.push('explicit-licensed-music-mixed-at-conservative-level');
+  if(plan.music)stages.push('explicit-timed-licensed-music-with-fades-and-local-voice-ducking');
   stages.push('explicit-bounded-color-adjustments-only');
   const qaPath=join(plan.output,'finish-qa.json');
   await run(process.execPath,[resolve(verifierPath),movie,'persona-finish-candidate','reel',qaPath],{env});
@@ -197,6 +219,8 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
     burnedIn:true,source:'explicit-human-reviewed-srt'},
    color:plan.grade,music:plan.music?{sha256:plan.music.sha256,
     volume:plan.music.volume,originalVolume:plan.music.originalVolume,
+    startSec:plan.music.startSec,endSec:plan.music.endSec,
+    fadeInSec:plan.music.fadeInSec,fadeOutSec:plan.music.fadeOutSec,
     rightsConfirmedByAuthor:true}:null,
    stages,
    caveat:'Technical QA and subtitle filter success do not assess acting, color perception, lip sync, music balance, or subtitle placement. Watch the entire new MP4 before any approval.'};
@@ -206,7 +230,7 @@ export async function finishPersonaReel({draftDir,optionsPath,outputDir,ffmpegDi
    '- Видео: '+movie,'- QA: '+qaPath,
    '- Субтитры: встроены в новое MP4 из отдельно просмотренного SRT',
    '- Цвет: только явные ограниченные настройки автора',
-   '- Музыка: '+(plan.music?'добавлена по подтверждённому выбору':'не добавлялась'),'',
+   '- Музыка: '+(plan.music?'только '+plan.music.startSec+'–'+plan.music.endSec+' с, с авторским выбором и затуханиями':'не добавлялась'),'',
    'Просмотри все 7 кадров: мимику, глаза, очки, цвет кожи, клавиши, переходы,',
    'разборчивость речи, музыку, читаемость и синхронизацию субтитров.',
    'Затем утверди или отправь на доработку. Публикация заблокирована.',''
