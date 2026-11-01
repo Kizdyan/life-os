@@ -75,7 +75,7 @@ export function buildReviewHtml(pack,template,files){
   const recovery=beat.candidates.length===0?beat.recovery:null;
   const recoveryOptions=recovery?.availableSources?.map(source=>{
    const video=recoveryFiles[source.sourceId];
-   if(typeof video!=='string'||!/^[a-z0-9-]+\.mp4$/i.test(video))fail('Missing generated recovery preview');
+   if(typeof video!=='string'||!/^[a-z0-9_-]+\.mp4$/i.test(video))fail('Missing generated recovery preview');
    return '<article class="take recovery"><strong>Recovery Review · '+esc(source.sourceId)+'</strong><video controls playsinline preload="metadata" src="'+esc(video)+'"></video>'+
     '<small>Whisper: '+esc(source.asrStatus==='empty'?'речь не распознана':'нет пригодного совпадения')+'. Этот прокси только для просмотра; исходник не изменяется.</small>'+
     '<label><input type="radio" name="recovery'+beat.beat+'" value="'+esc(source.sourceId)+'"> Выбрать этот исходник для ручной разметки</label></article>';
