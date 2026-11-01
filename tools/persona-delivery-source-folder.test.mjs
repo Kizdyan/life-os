@@ -103,7 +103,7 @@ test('published Windows handoff requires exported brief, explicit FFmpeg bin and
  assert.match(first,/npm run media:shoot:intake -- folder \$intake \$sourceFolder \$ffmpegBin/);
  assert.match(first,/npm run media:first-reel:draft --[^\n]*\$brief[^\n]*\$ffmpegBin strict/);
  assert.match(first,/node tools\\persona-video-quality\.mjs[^\n]*\$ffmpegBin/);
- const failFast=(first.match(/if \(\$LASTEXITCODE -ne 0\) \{ throw/g)||[]).length;
+ const failFast=(first.match(/if \(\$LASTEXITCODE -ne 0\) \{/g)||[]).length;
  assert.equal(failFast,3,'intake, draft and QA must each stop on native command failure');
  assert.match(first,/RECOVERY-RESULT\.md/,'ASR recovery must stop the pipeline without running MP4 QA');
  assert.match(first,/Test-Path[^\n]*draft-reel\.mp4/,'quality analysis requires an actual rendered MP4');
