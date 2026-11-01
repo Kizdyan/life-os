@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {advancePersonaPlaybackProof,emptyPersonaPlaybackProof} from './personaPlaybackProof';
-import {inspectPersonaFinishedRenderImport,makePersonaFinalAuthorReview,
+import {inspectPersonaFinishedRenderImport,mergePersonaFinishedReimport,makePersonaFinalAuthorReview,
  PERSONA_FINAL_REVIEW_KEYS,type PersonaFinalReviewChecks,type PersonaFinalAuthorReview} from './personaFinishedRenderImport';
 
 const criteriaLabels:Record<keyof PersonaFinalReviewChecks,string>={
@@ -67,14 +67,13 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
    const result=inspectPersonaFinishedRenderImport({draft,report,qa,quality,
     video:{name:videoFile.name,size:videoFile.size,sha256:fileSha,durationSec:duration},
     importedAt:new Date().toISOString()});
-   const merged=result.finishedSha256===finished?.finishedSha256?
-    {...result,authorReview:finished?.authorReview}:result;
+   const merged=mergePersonaFinishedReimport(finished,result);
    if(!onSave({...draft,finished:merged}))
     throw Error('Не удалось сохранить: проект или исходный черновик изменился.');
    if(urlRef.current)URL.revokeObjectURL(urlRef.current);
    const url=URL.createObjectURL(videoFile);urlRef.current=url;fileHash.current=fileSha;setVideoUrl(url);
    setWatched(false);setPlaybackProof(emptyPersonaPlaybackProof());setChecks(initialChecks());setReviewer('');setNotes('');
-   setMessage(result.quality?'Финишный MP4 и отчёт качества проверены по SHA-256. Художественное решение остаётся за автором.':'Финишный MP4 проверен по SHA-256 и двум локальным отчётам. Для этого старого результата отдельный отчёт качества ещё не создан.');
+   setMessage(merged.authorReview?'Тот же финальный MP4 подтверждён по SHA-256. Сохранены его художественное решение и предыдущие проверки.':merged.quality?'Финишный MP4 и отчёт качества проверены по SHA-256. Художественное решение остаётся за автором.':'Финишный MP4 проверен по SHA-256 и двум локальным отчётам. Для этого старого результата отдельный отчёт качества ещё не создан.');
   }catch(error){if(run===generation.current)setMessage('Импорт отклонён: '+String((error as Error).message||error))}
   finally{if(run===generation.current)setBusy(false)}
  }
