@@ -20,7 +20,7 @@ Preserve existing independent source of truth: Life OS/Erika Orchestrator + Poli
 
 ## What is implemented in this PR
 - `packages/core/src/ruflo-pilot.ts`: pure guarded **trial assessment** and paired baseline-vs-Ruflo measurement evaluation.
-- `scripts/ruflo-pilot.test.mjs`: regression coverage; no external providers, agent binaries, accounts or data.
+- `scripts/ruflo-pilot.test.mjs`: Vitest regression coverage, included in `npm test`; no external providers, agent binaries, accounts or data.
 - `scripts/ruflo-pilot-report.mjs`: read-only CLI to inspect the request and compare objective measurements supplied by a separate trusted observer.
 - `docs/examples/ruflo-request.json`: synthetic fixture; no real names, personal data, client projects or secrets.
 - **No Ruflo install, CLI execution or MCP connection is made here.** `sandbox_ready` means the request is eligible for a separate user-authorized pilot, not that anything has run. `worth_expanding` is not production approval.
@@ -46,3 +46,6 @@ Preserve existing independent source of truth: Life OS/Erika Orchestrator + Poli
 - Proof of no mutation outside sandbox and no secret disclosure.
 - Human approval for any install in user workspace, external effects, production changes or public publication.
 - Never describe this as a completed multi-agent integration until a real Ruflo run is independently observed.
+
+## CI remediation (2026-11-01)
+The initial CI attempt ran 207 existing Vitest tests successfully but failed to collect `scripts/ruflo-pilot.test.mjs`: it imported `node:test`, which Vitest does not collect as a suite. This test file now imports `test` from `vitest` and participates in the repository's normal test runner. Use `npm test` (or `npx vitest run scripts/ruflo-pilot.test.mjs`) to verify the checked-out PR. The earlier isolated `node --experimental-strip-types --test` invocation applies only to the **pre-fix** copy and must not be reported as the current verification command.
