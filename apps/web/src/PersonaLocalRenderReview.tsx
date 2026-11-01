@@ -65,18 +65,19 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
   try{
    if(!handoff?.allowed||!brief)throw Error(handoff?.reason??'Сначала импортируйте и одобрите съёмочный бриф.');
    const selected=Array.from(files);
-   if(selected.length!==3||new Set(selected.map(file=>file.name)).size!==3)
-    throw Error('Выберите ровно три файла из одного локального каталога: RESULT.json, qa.json и draft-reel.mp4.');
+   if(![3,4].includes(selected.length)||new Set(selected.map(file=>file.name)).size!==selected.length)
+    throw Error('Выберите RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json.');
    const byName=new Map(selected.map(f=>[f.name,f]));
-   const resultFile=byName.get('RESULT.json'),qaFile=byName.get('qa.json'),videoFile=byName.get('draft-reel.mp4');
+   const resultFile=byName.get('RESULT.json'),qaFile=byName.get('qa.json'),videoFile=byName.get('draft-reel.mp4'),qualityFile=byName.get('video-quality.json');
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов должны быть RESULT.json, qa.json и draft-reel.mp4.');
    if(videoFile.size<1024||videoFile.size>160*1024*1024)throw Error('MP4 должен быть от 1 КБ до 160 МБ для безопасной проверки в браузере.');
    // Perform all checks client-side: neither reports nor media leave this device.
-   const [result,qa,fingerprint,duration,sha256]=await Promise.all([
-    readJson(resultFile),readJson(qaFile),briefHash(brief),videoDuration(videoFile),fileHash(videoFile)]);
+   const [result,qa,quality,fingerprint,duration,sha256]=await Promise.all([
+    readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),
+    briefHash(brief),videoDuration(videoFile),fileHash(videoFile)]);
    if(task!==generation.current)return;
    const imported=inspectPersonaLocalRenderImport({
-    projectId,brief,briefFingerprintSha256:fingerprint,result,qa,
+    projectId,brief,briefFingerprintSha256:fingerprint,result,qa,quality,
     video:{name:videoFile.name,size:videoFile.size,sha256,durationSec:duration},importedAt:new Date().toISOString(),
    });
    if(!onSave(imported))throw Error('Проект изменился в другой вкладке или хранилище недоступно. Результат не сохранён.');
@@ -88,10 +89,10 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  }
  return <section className="personaRenderReturn" aria-label="Возврат локального монтажа в Persona">
   <h3>Черновой монтаж · авторский просмотр</h3>
-  <p>После запуска локального runner выбери его RESULT.json, qa.json и draft-reel.mp4 одновременно. Persona проверит SHA-256 реального файла, соответствие отчётов и точную версию сценария.</p>
+  <p>После запуска локального runner выбери RESULT.json, qa.json, draft-reel.mp4 и, если создан, video-quality.json. Persona проверит SHA-256 реального файла, соответствие отчётов и точную версию сценария.</p>
   <label className="personaRenderReturnPicker">Импорт результата с компьютера
    <input type="file" multiple accept=".json,.mp4,application/json,video/mp4" disabled={busy||!handoff?.allowed}
-    aria-label="Загрузить локальные RESULT.json, qa.json и draft-reel.mp4"
+    aria-label="Загрузить RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json"
     onChange={event=>{void importLocalFiles(event.currentTarget.files);event.currentTarget.value=''}}/>
   </label>
   {!handoff?.allowed&&<p role="status">{handoff?.reason??'Нет съёмочного брифа для Reels.'}</p>}
@@ -103,6 +104,16 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    <p>Видео {current.durationSec.toFixed(2)} сек. · {current.width}×{current.height} · {current.fps} fps · {(current.mp4Bytes/1048576).toFixed(1)} МБ</p>
    <p>Сопоставлены SHA-256 и данные импортированного QA. Это не повторное независимое выполнение FFprobe или проверка художественного качества.</p>
    <p>Хронометраж: {current.timingStatus==='needs-human-timing-review'?'отличается от сценария — обязательно проверить паузы и музыку':current.timingStatus==='within-brief-tolerance'?'близок к сценарию, но ритм нужно просмотреть':current.timingStatus}</p>
+   <details className="personaDraftQuality" open={Boolean(current.quality?.warningCount)}>
+    <summary>Анализ качества черновика {current.quality?`· ${current.quality.warningCount} предупреждений`:'· отчёт пока отсутствует'}</summary>
+    {current.quality?<>
+     <p>Локальный отчёт связан с SHA-256 выбранного MP4. Это не художественная оценка.</p>
+     <ul>{current.quality.findings.map((finding,index)=><li key={finding.id+'-'+index}>
+      <b>{finding.status==='warning'?'Предупреждение':finding.status==='measured'?'Измерено':finding.status==='not_measured'?'Не измерено':'Проверить вручную'}: {finding.title}</b>
+      <span> {finding.detail}{finding.timecodes.length?' · '+finding.timecodes.join(', '):''}</span>
+     </li>)}</ul>
+    </>:<p>Старый черновик: video-quality.json не импортирован. После локального анализа повторно выбери четыре файла; отсутствие отчёта не означает, что недостатков нет.</p>}
+   </details>
    {!preview&&<p>Чтобы снова посмотреть видео после перезагрузки, выбери те же три локальных файла: браузер сохраняет отчёт, но не копию MP4.</p>}
   </div>}
   {current&&<details className="personaRenderFinishHandoff">
