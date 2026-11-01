@@ -1,5 +1,5 @@
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
-import {readPersonaFinishedRenderRecord,type PersonaFinishedRenderRecord} from './personaFinishedRenderImport';
+import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
 
 export type PersonaLocalRenderRecord={
  version:1;kind:'persona-local-render-review-v1';projectId:string;briefIdeaId:string;briefSnapshot:string;
@@ -7,6 +7,7 @@ export type PersonaLocalRenderRecord={
  width:1080;height:1920;fps:30;timingStatus:string;status:'awaiting-author-review';importedAt:string;
  qaProvenance:'locally-imported-report-not-independently-attested';publicationApproved:false;
  finished?:PersonaFinishedRenderRecord;
+ quality?:PersonaVideoQualitySummary;
 };
 type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number};
 /** Template is intentionally unapproved; the author must edit and review SRT. */
@@ -33,6 +34,12 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
  v.qaProvenance==='locally-imported-report-not-independently-attested'&&
+ (v.quality===undefined||Boolean(parsePersonaVideoQuality({
+  version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+  publicationApproved:false,distributionAllowed:false,analyzedAt:obj(v.quality).analyzedAt,
+  video:{sha256:obj(v.quality).videoSha256},
+  authorApproval:{approvedByAuthor:false,publicationApproved:false},
+  findings:obj(v.quality).findings},v.mp4Sha256)))&&
  (v.finished===undefined||Boolean(readPersonaFinishedRenderRecord(v.finished))&&
   readPersonaFinishedRenderRecord(v.finished)?.sourceDraftSha256===v.mp4Sha256&&
   readPersonaFinishedRenderRecord(v.finished)?.briefFingerprintSha256===v.briefFingerprintSha256)
@@ -42,7 +49,7 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
 /** Browser-provided bytes, independently hashed, are matched against an untrusted local report.
  * This does not independently rerun FFprobe/FFmpeg or grant approval. */
 export function inspectPersonaLocalRenderImport(input:{
- projectId:string;brief:PersonaProductionBrief;briefFingerprintSha256:string;result:unknown;qa:unknown;
+ projectId:string;brief:PersonaProductionBrief;briefFingerprintSha256:string;result:unknown;qa:unknown;quality?:unknown;
  video:MediaFileInfo;importedAt:string;
 }):PersonaLocalRenderRecord{
  const {projectId,brief,briefFingerprintSha256,video,importedAt}=input;
@@ -68,6 +75,13 @@ export function inspectPersonaLocalRenderImport(input:{
   evidence.sha256.toLowerCase()===video.sha256.toLowerCase()&&
   typeof evidence.durationSec==='number'&&Number.isFinite(evidence.durationSec)&&evidence.durationSec>0;
  if(!valid)fail('MP4 не совпадает с QA или в отчёте не пройдена техническая проверка.');
+ const quality=input.quality===undefined?null:parsePersonaVideoQuality(input.quality,video.sha256.toLowerCase());
+ const rawQualityVideo=obj(obj(input.quality).video);
+ if(input.quality!==undefined&&(!quality||rawQualityVideo.bytes!==video.size||
+  rawQualityVideo.width!==1080||rawQualityVideo.height!==1920||rawQualityVideo.fps!==30||
+  typeof rawQualityVideo.durationSec!=='number'||
+  Math.abs(rawQualityVideo.durationSec-Number(evidence.durationSec))>0.75))
+  fail('video-quality.json отсутствует, повреждён либо относится к другому MP4.');
  const recorded=obj(result.technicalChecks);
  if(recorded.sha256!==evidence.sha256||recorded.bytes!==evidence.bytes||
    recorded.durationSec!==evidence.durationSec||recorded.width!==evidence.width||
@@ -83,6 +97,7 @@ export function inspectPersonaLocalRenderImport(input:{
   durationSec:Number(evidence.durationSec),width:1080 as const,height:1920 as const,fps:30 as const,
   timingStatus:typeof timing.status==='string'?timing.status.slice(0,100):'unknown',
   status:'awaiting-author-review' as const,importedAt,
-  qaProvenance:'locally-imported-report-not-independently-attested' as const,publicationApproved:false as const};
+  qaProvenance:'locally-imported-report-not-independently-attested' as const,publicationApproved:false as const,
+  ...(quality?{quality}:{})};
  return record;
 }
