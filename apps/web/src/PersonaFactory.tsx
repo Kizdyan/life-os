@@ -31,6 +31,16 @@ import type { PersonaProductionBrief } from '../../../packages/core/src/persona-
 
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 
+/** Do not approve a production brief using older dialogue than the current script revision. */
+export function productionBriefMatchesBeats(
+ brief:PersonaProductionBrief|undefined,
+ beats:readonly {line:string;action:string;durationSec:number}[]|undefined,
+):boolean{
+ if(!beats)return true; // Older projects can carry a brief without Scenario Intelligence.
+ if(!brief||brief.script.length!==beats.length)return false;
+ return beats.every((beat,i)=>beat.line===brief.script[i]?.line&&
+  beat.action===brief.script[i]?.action&&beat.durationSec===brief.script[i]?.durationSec);
+}
 export function buildPersonaProductionWorkflow(idea:Idea):PersonaProductionPipeline{
  let pipeline=startPersonaProductionPipeline({idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format}});
  for(let step=0;step<4;step+=1)pipeline=advancePersonaProductionPipeline(pipeline);
@@ -417,6 +427,7 @@ export default function PersonaFactory(){
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Есть незавершённая правка съёмочного брифа. Сначала сохраните или разрешите её.');
    if(decision==='approved'&&production.materials.qa?.status==='needs_revision')throw new Error('Нельзя утвердить бриф с ошибками QA.');
+   if(decision==='approved'&&!productionBriefMatchesBeats(production.materials.productionBrief,scenarioWorkspace?.script?.currentRevision.beats))throw new Error('Сценарий изменился после создания брифа. Сначала перенесите актуальные реплики и кадры в Production Brief.');
    if(decision==='approved'&&(production.input.idea.angle.trim()!==production.materials.productionBrief?.sourceAngle||production.input.idea.title.trim()!==production.materials.productionBrief?.sourceTitle||production.input.idea.format!==production.materials.productionBrief?.sourceFormat))throw new Error('Сценарий устарел: сначала обновите бриф после правки.');
    const next=recordPersonaEditorialDecision(production,{decision,editor:productionEditor,comment:productionComment,factReviewCompleted:productionFactsChecked,decidedAt:new Date().toISOString()});
    persistProductionMilestone(next);
