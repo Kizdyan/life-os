@@ -26,7 +26,7 @@ const fail=(message:string):never=>{throw Error(message)};
 const fileName=(path:unknown)=>typeof path==='string'?path.split(/[\\/]/).at(-1):null;
 const within=(x:unknown,min:number,max:number)=>typeof x==='number'&&Number.isFinite(x)&&x>=min&&x<=max;
 const qualityStatuses=new Set(['measured','warning','needs_human_review','not_measured']);
-function parseQuality(value:unknown,expectedSha:string):PersonaVideoQualitySummary|null{
+export function parsePersonaVideoQuality(value:unknown,expectedSha:string):PersonaVideoQualitySummary|null{
  const quality=record(value),video=record(quality.video),approval=record(quality.authorApproval);
  const raw=Array.isArray(quality.findings)?quality.findings:[];
  if(quality.version!==1||quality.kind!=='persona-video-quality-v1'||quality.status!=='awaiting-author-review'||
@@ -73,7 +73,7 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&cueValid&&
   typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
-  (r.quality===undefined||Boolean(parseQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
+  (r.quality===undefined||Boolean(parsePersonaVideoQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
    analyzedAt:record(r.quality).analyzedAt,video:{sha256:record(r.quality).videoSha256},authorApproval:{approvedByAuthor:false,publicationApproved:false},findings:record(r.quality).findings},r.finishedSha256)))&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
 }
@@ -110,7 +110,7 @@ export function inspectPersonaFinishedRenderImport(input:{
   !within(caption.cueCount,1,80))
   fail('Нет подтверждения этапа проверки и встраивания субтитров.');
  const qualityRequired=report.stages.includes('local-video-quality-analysis-written');
- const quality=qualityRequired?parseQuality(input.quality,video.sha256.toLowerCase()):null;
+ const quality=qualityRequired?parsePersonaVideoQuality(input.quality,video.sha256.toLowerCase()):null;
  if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality))
   fail('Отчёт качества видео отсутствует, повреждён или относится к другому MP4.');
  if(!within(color.brightness,-0.05,0.05)||!within(color.contrast,0.92,1.08)||
