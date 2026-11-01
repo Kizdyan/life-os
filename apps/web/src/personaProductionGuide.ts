@@ -111,6 +111,43 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
   adaptations:Object.fromEntries(Object.entries(base.adaptations).map(([k,v])=>[k,{...v,durationSec:31}])) as PersonaProductionBrief['adaptations'],
  };
 }
+/** Self-contained, unapproved on-set handoff. No original assets, private paths or
+ * implicit authorization to record, render or publish are included. */
+export function exportPersonaShootingSheet(input:{
+ title:string;angle:string;guide:PersonaProductionGuide;
+ scenes:readonly {id:string;seconds:number;line:string;action:string;framing:string;lighting:string}[];
+ references:readonly {title:string;url:string;observedAt:string;status:string}[];
+ sample:boolean;
+}):string{
+ const {title,angle,guide,scenes,references,sample}=input;
+ const lines=[
+  '# Persona · Съёмочный лист',
+  '',
+  '**Статус:** РАБОЧИЙ ПЛАН · НЕ УТВЕРЖДЕНИЕ И НЕ РАЗРЕШЕНИЕ НА ПУБЛИКАЦИЮ',
+  sample?'**Сцены:** демонстрационный пример — не перенесён в сценарий проекта.':'**Сцены:** из сохранённого сценария/Production Brief; проверить текущую редакцию.',
+  '', '## Идея',title,angle,
+  '', '## Проверка референсов',
+  ...(references.length?references.map(ref=>`- ${ref.title}: ${ref.url} · ${ref.observedAt} · ${ref.status}`):['- Проверенные автором референсы пока не добавлены.']),
+  '', '## Хук и реплики',
+  ...scenes.flatMap(scene=>[
+   `### ${scene.id} · ${scene.seconds} с · ${scene.framing}`,
+   `Реплика: ${scene.line}`,
+   `Действие: ${scene.action}`,
+   `Свет: ${scene.lighting}`,
+   '',
+  ]),
+  '## Практический план',
+  ...(Object.entries(guideFieldLabels) as [GuideField,string][]).flatMap(([id,label])=>[`### ${label}`,guide.fields[id],'']),
+  '## Чек-лист перед съёмкой',
+  ...guideChecks.map(([id,label])=>`- [${guide.checks[id]?'x':' '}] ${label}`),
+  '',
+  '## Финальные ограничения',
+  'Перед реальной съёмкой автор проверяет местоположение, факты, кадр, права на музыку и окончательную редакцию текста.',
+  'Исходники не изменялись. Выгрузка листа не означает художественный PASS, монтаж или публикацию.',
+  '',
+ ];
+ return lines.join('\n');
+}
 export function guideProgress(guide:PersonaProductionGuide){
  return guideChecks.filter(([id])=>guide.checks[id]===true).length;
 }
