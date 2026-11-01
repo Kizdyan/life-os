@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseShootInputs, buildFolderShootManifest, createIntakeReport, formatIntakeMarkdown, runShootIntake } from './persona-shoot-intake.mjs';
+import { parseShootInputs, buildFolderShootManifest, createIntakeReport, formatIntakeMarkdown, runShootIntake, runFolderShootIntake } from './persona-shoot-intake.mjs';
 
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>
  spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
@@ -56,6 +56,41 @@ test('one explicitly selected folder maps seven conventional takes or two clearl
  }finally{await rm(d,{recursive:true,force:true})}
 });
 
+test('21 takes: folder intake sends only 7 UNREVIEWED defaults, retains 14 alternatives',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-21-takes-'));
+ try{
+  const names=['A01_actor_hook','B01_composer_problem','A02_actor_audition',
+   'B02_composer_deadline','A03_actor_sleep','B03_composer_lullaby','A04_actor_payoff'];
+  for(const name of names){
+   for(const n of ['01','02','03'])await writeFile(join(d,name+'_take'+n+'.mp4'),'untouched original placeholder');
+  }
+  await writeFile(join(d,'notes.txt'),'not an intake input');
+  const result=await buildFolderShootManifest(d);
+  assert.equal(result.mode,'seven_named_takes');
+  assert.equal(result.manifest.sources.length,7,'Media Engine cannot accept 21 inputs');
+  assert.deepEqual(result.manifest.sources.map(x=>x.id),[
+   'A01_take01','B01_take01','A02_take01','B02_take01',
+   'A03_take01','B03_take01','A04_take01'
+  ]);
+  assert.equal(result.alternateTakes.length,14);
+  assert.ok(result.alternateTakes.some(t=>t.id==='A01_take02'));
+  assert.ok(result.notes.join(' ').includes('UNREVIEWED'));
+  assert.equal((await readFile(join(d,'A01_actor_hook_take02.mp4'),'utf8')),
+   'untouched original placeholder');
+ }finally{await rm(d,{recursive:true,force:true})}
+});
+test('folder intake refuses output inside author source folder before writing any file',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-intake-nested-'));
+ try{
+  for(const name of ['A01_actor_hook','B01_composer_problem','A02_actor_audition',
+   'B02_composer_deadline','A03_actor_sleep','B03_composer_lullaby','A04_actor_payoff'])
+   await writeFile(join(d,name+'_take01.mp4'),'untouched original');
+  const out=join(d,'inadvertent-output');
+  await assert.rejects(()=>runFolderShootIntake({outputDir:out,folderPath:d}),
+   /outside the selected source folder/);
+  await assert.rejects(stat(out),/ENOENT/);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
 test('two real FFmpeg takes -> local evidence, hash, previews, WAV and intake report; no source edits',{skip:!mediaTools,timeout:180000},async()=>{
  const d=await mkdtemp(join(tmpdir(),'persona-shoot-intake-'));
  try{
