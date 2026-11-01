@@ -8,7 +8,7 @@ import {createScenarioScript,reviseScenarioScript,type ScenarioIdea} from '../..
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
- createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideProgress,
+ createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,
  productionGuideScenes,validatePersonaProductionGuide,
 } from './personaProductionGuide';
 
@@ -30,6 +30,21 @@ describe('Persona full preproduction guide',()=>{
   expect(html).toContain('Подтверждённых референсов пока нет');
   expect(html).toContain('НЕ ПУБЛИКАЦИЯ');
   expect(html).toContain('Создать редактируемый сценарий из этих 7 сцен');
+ });
+ it('does not inject unrelated actor/composer scenes or sources into an unrelated Reel',()=>{
+  const other={title:'Как устроен мой спектакль',angle:'Показать реквизит и работу над образом'};
+  expect(isActorComposerPilot(other)).toBe(false);
+  expect(isActorComposerPilot(actorComposerPilot)).toBe(true);
+  const html=renderToString(<PersonaProductionGuide projectTitle={other.title}
+   projectAngle={other.angle} allowExample={false}
+   pipeline={null} onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('нет утверждённых реплик');
+  expect(html).not.toContain('Это колыбельная? Это финал триллера.');
+  expect(html).not.toContain('Почему стоит проверить формат');
+  expect(html).not.toContain('Создать редактируемый сценарий из этих 7 сцен');
+  expect(html).toContain('Определите конкретную аудиторию');
+  expect(createPersonaProductionGuide(now).fields.sound).not.toContain('B03');
+  expect(createPersonaProductionGuide(now,'actor_composer').fields.sound).toContain('B03');
  });
  it('creates an unapproved 31-second candidate inside canonical production model, not a published reel',()=>{
   const guide=createPersonaProductionGuide(now);
