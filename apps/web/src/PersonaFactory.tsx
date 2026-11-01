@@ -4,7 +4,7 @@ import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
 import {PersonaLocalRenderReview} from './PersonaLocalRenderReview';
 import {readPersonaLocalRenderRecord,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
-import {PersonaLocalProductionHandoff} from './PersonaLocalProductionHandoff';
+import {PersonaLocalProductionHandoff,assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
@@ -241,9 +241,25 @@ export default function PersonaFactory(){
   try{
    const live=loadPersonaProjects(localStorage,newProjectId);
    const saved=live.projects.find(item=>item.id===activeProjectId);
-   const savedBrief=(saved?.shootingPlan as PersonaProductionPipeline|null)?.materials?.productionBrief;
-   if(live.activeProjectId!==activeProjectId||!savedBrief||JSON.stringify(savedBrief)!==record.briefSnapshot)
-    throw Error('Сценарий или активный проект изменились во время проверки видео.');
+   const savedPipeline=saved?.shootingPlan as PersonaProductionPipeline|null;
+   const savedBrief=savedPipeline?.materials?.productionBrief;
+   if(live.activeProjectId!==activeProjectId||saved?.contentType!=='reel'||
+    !savedBrief||JSON.stringify(savedBrief)!==record.briefSnapshot||
+    !savedPipeline||!assessPersonaLocalHandoff(savedPipeline,
+     productionInputDraftExists(localStorage,activeProjectId)).allowed)
+    throw Error('Сценарий или редакторское решение изменились во время проверки видео.');
+   if(!readPersonaLocalRenderRecord(record))
+    throw Error('Импортированные сведения о видео не прошли проверку.');
+   const previousRecord=readPersonaLocalRenderRecord(saved.processing);
+   if(record.finished){
+    if(!previousRecord||previousRecord.mp4Sha256!==record.mp4Sha256||
+       previousRecord.briefFingerprintSha256!==record.briefFingerprintSha256||
+       previousRecord.importedAt!==record.importedAt)
+     throw Error('Заменён исходный черновик, нужен новый импорт финального MP4.');
+    if(record.finished.authorReview&&
+       previousRecord.finished?.finishedSha256!==record.finished.finishedSha256)
+     throw Error('Нельзя утвердить MP4, который не сохранён в этом проекте.');
+   }
    if(!saveActiveProject(undefined,chosen,undefined,undefined,record))return false;
    setLocalRenderReview(record);
    return true;
