@@ -41,6 +41,15 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   return ()=>window.removeEventListener('beforeunload',warn);
  },[unsaved]);
  const brief=pipeline?.materials.productionBrief??null;
+ const briefMismatchFields=brief?[
+  ...(brief.capture.location!==plan.fields.location?['Локация']:[]),
+  ...(brief.capture.lighting!==plan.fields.keyLight?['Свет']:[]),
+  ...(brief.capture.wardrobe!==plan.fields.wardrobeProps?['Костюм и реквизит']:[]),
+  ...(brief.capture.audio.recording!==plan.fields.sound?['Звук']:[]),
+  ...(brief.postProduction.transitions!==plan.fields.editing?['Склейки']:[]),
+  ...(brief.postProduction.subtitles.instruction!==plan.fields.captions?['Титры']:[]),
+  ...(brief.postProduction.color!==plan.fields.color?['Цвет']:[]),
+ ]:[];
  const script=workspace?.script;
  const approvedScript=Boolean(script?.approval&&script.approval.revisionId===script.currentRevisionId);
  const scriptBeats=script?.currentRevision.beats;
@@ -189,7 +198,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
     </svg>
     <figcaption>Схема постановки, не фотография твоей комнаты. Фактическое расположение окна, розеток, клавиш и штатива нужно уточнить на месте.</figcaption>
    </figure>
-   {brief&&brief.capture.location!==plan.fields.location&&<p className="personaGuideWarn">Внимание: предлагаемая локация отличается от текущего Production Brief. Плановые заметки не меняют утверждённый съёмочный бриф — согласуйте изменения на этапе «Проверка».</p>}
+   {briefMismatchFields.length>0&&<p className="personaGuideWarn" role="status">Плановые заметки отличаются от Production Brief: {briefMismatchFields.join(', ')}. Эти поля НЕ обновляют съёмочный бриф автоматически. Перенесите изменения в редактор брифа и пройдите проверку заново.</p>}
    {sections[1].fields.map(key=><label key={key}>{guideFieldLabels[key]}
     <textarea aria-label={guideFieldLabels[key]} value={plan.fields[key]} onChange={e=>edit(key,e.target.value)}/></label>)}
    <button type="button" className="ghost" onClick={()=>navigate('assets')}>Перейти к исходникам и дублям</button>
