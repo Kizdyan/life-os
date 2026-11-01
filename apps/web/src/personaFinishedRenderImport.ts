@@ -14,7 +14,8 @@ export type PersonaFinishedRenderRecord={
  version:1;kind:'persona-finished-render-review-v1';sourceDraftSha256:string;briefFingerprintSha256:string;
  finishedSha256:string;finishedBytes:number;durationSec:number;width:1080;height:1920;fps:30;
  captionsBurnedIn:true;captionCount:number;color:{brightness:number;contrast:number;saturation:number};
- musicAdded:boolean;importedAt:string;status:'awaiting-author-review';publicationApproved:false;
+ musicAdded:boolean;musicCue?:{startSec:number;endSec:number;fadeInSec:number;fadeOutSec:number};
+ importedAt:string;status:'awaiting-author-review';publicationApproved:false;
  qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
  quality?:PersonaVideoQualitySummary;
 };
@@ -45,7 +46,13 @@ function parseQuality(value:unknown,expectedSha:string):PersonaVideoQualitySumma
 }
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);
- const checks=record(record(r.authorReview).criteria),review=record(r.authorReview);
+ const checks=record(record(r.authorReview).criteria),review=record(r.authorReview),cue=record(r.musicCue);
+ const cueValid=r.musicCue===undefined||(r.musicAdded===true&&
+  within(cue.startSec,0,r.durationSec as number)&&within(cue.endSec,0,r.durationSec as number)&&
+  typeof cue.startSec==='number'&&typeof cue.endSec==='number'&&cue.endSec-cue.startSec>=0.25&&
+  within(cue.fadeInSec,0,1)&&within(cue.fadeOutSec,0,1)&&
+  typeof cue.fadeInSec==='number'&&typeof cue.fadeOutSec==='number'&&
+  cue.fadeInSec+cue.fadeOutSec<=cue.endSec-cue.startSec);
  const reviewValid=r.authorReview===undefined||(
   (review.decision==='approved-final-cut'||review.decision==='needs-revision')&&
   typeof review.reviewer==='string'&&review.reviewer.trim().length>=2&&review.reviewer.length<=100&&
@@ -63,7 +70,7 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   r.captionsBurnedIn===true&&Number.isSafeInteger(r.captionCount)&&
   typeof r.captionCount==='number'&&r.captionCount>0&&r.captionCount<=80&&
   within(color.brightness,-0.05,0.05)&&within(color.contrast,0.92,1.08)&&
-  within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&
+  within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&cueValid&&
   typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
   (r.quality===undefined||Boolean(parseQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
@@ -113,6 +120,16 @@ export function inspectPersonaFinishedRenderImport(input:{
   !isSha(record(music).sha256)||record(music).rightsConfirmedByAuthor!==true||
   !within(record(music).volume,0,0.3)||!within(record(music).originalVolume,0.7,1)
  ))fail('Музыкальная дорожка не прошла явное подтверждение прав и уровня.');
+ const rawMusic=record(music),hasCue=music!==null&&['startSec','endSec','fadeInSec','fadeOutSec']
+  .some(key=>rawMusic[key]!==undefined);
+ const cue=hasCue?{startSec:rawMusic.startSec,endSec:rawMusic.endSec,
+  fadeInSec:rawMusic.fadeInSec,fadeOutSec:rawMusic.fadeOutSec}:null;
+ if(cue&&(!within(cue.startSec,0,draft.durationSec)||!within(cue.endSec,0,draft.durationSec)||
+  typeof cue.startSec!=='number'||typeof cue.endSec!=='number'||cue.endSec-cue.startSec<0.25||
+  !within(cue.fadeInSec,0,1)||!within(cue.fadeOutSec,0,1)||
+  typeof cue.fadeInSec!=='number'||typeof cue.fadeOutSec!=='number'||
+  cue.fadeInSec+cue.fadeOutSec>cue.endSec-cue.startSec))
+  fail('Некорректные временные границы или затухания музыкального фрагмента.');
  if(handoff.passed!==false||handoff.status!=='blocked'||!Array.isArray(handoff.errors)||
   handoff.errors.length!==1||handoff.errors[0]!=='author approval required'||
   !Array.isArray(handoff.assets)||handoff.assets.length!==1||
@@ -136,7 +153,8 @@ export function inspectPersonaFinishedRenderImport(input:{
   durationSec:evidence.durationSec as number,width:1080,height:1920,fps:30,
   captionsBurnedIn:true,captionCount:caption.cueCount as number,
   color:{brightness:color.brightness as number,contrast:color.contrast as number,
-   saturation:color.saturation as number},musicAdded:music!==null,importedAt,
+   saturation:color.saturation as number},musicAdded:music!==null,
+  ...(cue?{musicCue:cue as PersonaFinishedRenderRecord['musicCue']}:{}),importedAt,
   status:'awaiting-author-review',publicationApproved:false,
   qaProvenance:'browser-sha256-matched-local-ffmpeg-report',...(quality?{quality}:{})
  };
