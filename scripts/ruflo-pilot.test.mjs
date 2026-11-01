@@ -61,3 +61,12 @@ test('requires exact pinned Ruflo security-reviewed version',()=>{
   for(const version of ['latest','3.16.2','3.65.1','3.66.1','v3.66.2',''])
     assert.equal(assessRufloPilotRequest({...req,pinnedRuntimeVersion:version,ownerApprovedThirdPartyExecution:true}).status,'blocked');
 });
+
+test('does not mistake faster, cheaper, low-quality results for a useful agent',()=>{
+  const weakBaseline={...metrics,passedCases:5};
+  const fastButWeak={...metrics,runId:'ruflo-fast',passedCases:6,elapsedSeconds:25,costUsd:.1};
+  const r=evaluateRufloAgainstBaseline(weakBaseline,fastButWeak);
+  assert.equal(r.decision,'reject');
+  assert.equal(r.productionApproved,false);
+  assert.ok(r.reasons.some(reason=>reason.includes('90%')));
+});
