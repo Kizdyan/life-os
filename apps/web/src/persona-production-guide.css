@@ -1,0 +1,39 @@
+.personaGuide{max-width:930px;margin:0 auto 26px;display:grid;gap:16px;color:#242320}
+.personaGuideHero,.personaGuideSection{border:1px solid #e5e2db;border-radius:22px;padding:clamp(17px,3vw,28px);background:#fff;box-shadow:0 5px 20px rgba(0,0,0,.025)}
+.personaGuideHero{background:linear-gradient(135deg,#f2eee7,#fff 70%)}
+.personaGuideHero small{letter-spacing:.14em;font-size:11px;color:#796e5e;font-weight:700}
+.personaGuideHero h3{font-size:clamp(26px,4vw,36px);line-height:1.09;margin:8px 0 10px}
+.personaGuide h4{font-size:22px;line-height:1.2;margin:7px 0 8px}
+.personaGuide p{font-size:14px;color:#5c5952;line-height:1.65;margin:7px 0 12px}
+.personaGuideMeter{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:17px 0 0;padding:11px 0;border-top:1px solid #e8e4dc;font-size:12px;color:#645f57}
+.personaGuideNumber{width:35px;height:35px;display:grid;place-items:center;border-radius:11px;background:#efeae1;font-weight:800;font-size:13px}
+.personaGuideSection{display:grid;gap:10px}
+.personaGuideSection label{display:grid;gap:6px;font-size:13px;font-weight:700;color:#3e3c38}
+.personaGuideSection textarea{box-sizing:border-box;display:block;width:100%;min-height:82px;resize:vertical;border:1px solid #d8d5ce;border-radius:12px;background:#fcfbf9;padding:12px;font:inherit;font-size:14px;font-weight:400;line-height:1.5;color:#222}
+.personaGuideSection textarea:focus{outline:2px solid #898173;outline-offset:1px}
+.personaGuide button{justify-self:start;border:0;border-radius:12px;min-height:43px;padding:10px 15px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.personaGuide button.primary{color:#fff;background:#171717}
+.personaGuide button.ghost{background:#efeee9;color:#222}
+.personaGuide button:disabled{opacity:.5;cursor:not-allowed}
+.personaGuideEvidence{display:grid;gap:7px;border:1px solid #e1e2da;background:#f9faf6;border-radius:14px;padding:15px}
+.personaGuideEvidence>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-top:1px solid #e8e9e2;padding-top:8px;font-size:12px}
+.personaGuideEvidence a{overflow-wrap:anywhere}
+.personaGuideEvidence span{color:#665d4e}
+.personaGuideEvidence small{color:#777}
+.personaGuideWarn{background:#f7f1e9;border-radius:12px;padding:12px!important;color:#735e3f!important}
+.personaGuideHook{padding:14px;border-left:4px solid #54483b;background:#f5f1eb;border-radius:4px 13px 13px 4px;display:grid;gap:7px}
+.personaGuideHook small{font-size:11px;color:#746d64;letter-spacing:.06em}
+.personaGuideHook b{font-size:19px;line-height:1.3}
+.personaGuideHook span{font-size:12px;color:#625c55}
+.personaGuideShots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.personaGuideShot{padding:14px;border:1px solid #eceae5;border-radius:15px;background:#fcfbfa;min-width:0}
+.personaGuideShot>div{display:grid;gap:3px}
+.personaGuideShot small{font-size:11px;color:#7c786f}
+.personaGuideShot blockquote{margin:14px 0 10px;font-size:17px;line-height:1.35;font-weight:700}
+.personaGuideShot p{margin:5px 0;color:#625e57;line-height:1.5;font-size:12px}
+.personaGuideChecks{display:grid;gap:7px}
+.personaGuideChecks label{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.45;padding:10px;border:1px solid #eae8e2;border-radius:11px;font-weight:500}
+.personaGuideChecks input{width:19px;height:19px;flex-shrink:0;accent-color:#171717;margin:0}
+.personaGuideActions{display:flex;gap:8px;flex-wrap:wrap}
+.personaGuideNotice{border:1px solid #ddd6c7;border-radius:12px;padding:12px;background:#fbf8f2}
+@media(max-width:650px){.personaGuideShots{grid-template-columns:minmax(0,1fr)}.personaGuideHero,.personaGuideSection{border-radius:17px}.personaGuide h4{font-size:20px}.personaGuideHero h3{font-size:27px}}
