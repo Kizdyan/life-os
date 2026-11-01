@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
@@ -26,7 +27,8 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
     '-c:v','libx264','-preset','ultrafast','-c:a','aac','-shortest',movie],{encoding:'utf8',timeout:60000});
    assert.equal(made.status,0,made.stderr);
    await writeFile(srt,'1\n00:00:00,100 --> 00:00:00,900\nКороткая реплика.\n\n2\n00:00:00,850 --> 00:00:01,700\nПересекающийся титр.\n');
-   await writeFile(timelinePath,JSON.stringify({operation:'timeline-render',output:{path:movie,durationSec:2},outputTimeline:[
+   const movieSha=createHash('sha256').update(await readFile(movie)).digest('hex');
+   await writeFile(timelinePath,JSON.stringify({version:1,operation:'timeline-render',output:{path:movie,durationSec:2,sha256:movieSha},outputTimeline:[
     {clipIndex:1,beat:1,outputStartSec:0,outputEndSec:.4,durationSec:.4},{clipIndex:2,beat:2,outputStartSec:.4,outputEndSec:2,durationSec:1.6}]}));
    const pathKey=Object.keys(process.env).find(key=>key.toLowerCase()==='path')||'PATH';
    const originalPath=process.env[pathKey];process.env[pathKey]='C:\\persona-no-ffmpeg-on-path';
@@ -53,6 +55,10 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.equal(quality.visualEvidence?.kind,'persona-visual-evidence-v1');
    assert.equal(quality.visualEvidence?.frames.length,2);
    assert.ok((await stat(quality.visualEvidence.contactSheetPath)).size>1000);
+   await writeFile(timelinePath,JSON.stringify({version:1,operation:'timeline-render',output:{path:movie,durationSec:2,sha256:'0'.repeat(64)},outputTimeline:[
+    {clipIndex:1,beat:1,outputStartSec:0,outputEndSec:1,durationSec:1},{clipIndex:2,beat:2,outputStartSec:1.2,outputEndSec:2,durationSec:.8}]}));
+   const stale=await analyzePersonaVideoQuality({videoPath:movie,expectedDurationSec:2,ffmpegDir:ffmpegBin,timelinePath});
+   assert.equal(stale.findings.find(x=>x.id==='scene_timeline')?.status,'not_measured');
    assert.ok(quality.findings.some(x=>x.id==='subtitle_overlap'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='acting'&&x.status==='needs_human_review'));
    assert.deepEqual(JSON.parse(await readFile(reportPath,'utf8')),quality);

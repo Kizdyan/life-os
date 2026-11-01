@@ -96,16 +96,21 @@ async function visualEvidence({videoPath,durationSec,outputPath,env,scenes=[]}){
   caveat:'Representative decoded frames for local author review; not a visual or artistic approval.'};
 }
 async function trustedTimeline(timelinePath,videoPath,durationSec,timelineSourceVideoPath){
- if(typeof timelinePath!=='string'||!timelinePath.trim())return null;
- let raw;try{raw=JSON.parse(await readFile(resolve(timelinePath),'utf8'));}catch(error){if(error?.code==='ENOENT')return null;throw error}
- if(raw?.operation!=='timeline-render'||!Array.isArray(raw.outputTimeline)||raw.output?.path!==(timelineSourceVideoPath??videoPath)||
-  !Number.isFinite(raw.output?.durationSec)||Math.abs(raw.output.durationSec-durationSec)>.25)fail('timeline manifest does not bind to this MP4 duration');
+ if(typeof timelinePath!=='string'||!timelinePath.trim())return {scenes:null,reason:'manifest not provided'};
+ let raw;try{raw=JSON.parse(await readFile(resolve(timelinePath),'utf8'));}catch(error){return {scenes:null,reason:error?.code==='ENOENT'?'manifest missing':'manifest unreadable'}}
+ const sourcePath=timelineSourceVideoPath??videoPath;
+ if(raw?.version!==1||raw?.operation!=='timeline-render'||!Array.isArray(raw.outputTimeline)||raw.output?.path!==sourcePath||
+  !/^[a-f0-9]{64}$/i.test(raw.output?.sha256??'')||!Number.isFinite(raw.output?.durationSec)||Math.abs(raw.output.durationSec-durationSec)>.25)
+  return {scenes:null,reason:'manifest does not bind to the rendered file'};
+ if((await hash(sourcePath)).toLowerCase()!==raw.output.sha256.toLowerCase())return {scenes:null,reason:'manifest SHA-256 differs from rendered source'};
  let previous=0;const scenes=[];
  for(const item of raw.outputTimeline){
-  if(!Number.isFinite(item?.outputStartSec)||!Number.isFinite(item?.outputEndSec)||item.outputStartSec<previous||item.outputEndSec<=item.outputStartSec||item.outputEndSec>durationSec+.25)fail('invalid trusted output timeline');
+  if(!Number.isFinite(item?.outputStartSec)||!Number.isFinite(item?.outputEndSec)||Math.abs(item.outputStartSec-previous)>.03||item.outputEndSec<=item.outputStartSec||item.outputEndSec>durationSec+.25||!Number.isFinite(item.durationSec)||Math.abs(item.durationSec-(item.outputEndSec-item.outputStartSec))>.03)
+   return {scenes:null,reason:'manifest has gaps, overlaps, or invalid clip durations'};
   scenes.push({clipIndex:item.clipIndex,beat:item.beat,outputStartSec:item.outputStartSec,outputEndSec:item.outputEndSec,durationSec:item.durationSec});previous=item.outputEndSec;
  }
- return scenes;
+ if(!scenes.length||Math.abs(previous-durationSec)>.25)return {scenes:null,reason:'manifest duration does not cover rendered video'};
+ return {scenes,reason:null};
 }
 function latestNumber(log,pattern){
  const values=[...log.matchAll(pattern)].map(match=>Number(match[1])).filter(Number.isFinite);
@@ -124,15 +129,17 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
  const env=mediaEnv(ffmpegDir);
  const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
-  'format=duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate','-of','json',path],{env})).stdout);
+  'format=duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries','-of','json',path],{env})).stdout);
  const details=await stat(path);if(!details.isFile()||details.size<1024)fail('MP4 is missing or too small');
  const video=info.streams?.find(stream=>stream.codec_type==='video'),audio=info.streams?.find(stream=>stream.codec_type==='audio');
  if(!video)fail('video stream missing');
  const durationSec=Number(info.format?.duration),fps=rational(video.avg_frame_rate);
  if(!Number.isFinite(durationSec)||durationSec<=0||!Number.isFinite(fps))fail('FFprobe did not return duration or FPS');
  const findings=[];
- const scenes=await trustedTimeline(timelinePath,path,durationSec,timelineSourceVideoPath&&resolve(timelineSourceVideoPath));
- findings.push(scenes?finding('scene_timeline','measured','Достоверные границы сцен','Границы взяты из manifest существующего рендера, а не из анализа имён или Whisper.',scenes.map(scene=>timecode(scene.outputStartSec)),{scenes}):finding('scene_timeline','not_measured','Границы сцен','Не передан проверяемый manifest рендера: анализ по сценам не выполнялся, чтобы не подменять границы предположениями.'));
+ const colorMetadata={pixelFormat:video.pix_fmt??null,colorRange:video.color_range??null,colorSpace:video.color_space??null,transfer:video.color_transfer??null,primaries:video.color_primaries??null};
+ findings.push(finding('color_space_metadata',colorMetadata.pixelFormat?'measured':'not_measured','Параметры цветового пространства',colorMetadata.pixelFormat?'FFprobe сообщил параметры кодированного финального MP4; сравнение сцен выполняется только внутри этого общего пространства.':'FFprobe не сообщил pixel format; сравнение цветности ограничено.',[],{units:'FFmpeg stream metadata',method:'ffprobe',...colorMetadata}));
+ const timeline=await trustedTimeline(timelinePath,path,durationSec,timelineSourceVideoPath&&resolve(timelineSourceVideoPath)),scenes=timeline.scenes;
+ findings.push(scenes?finding('scene_timeline','measured','Достоверные границы сцен','Границы взяты из manifest существующего рендера, а не из анализа имён или Whisper.',scenes.map(scene=>timecode(scene.outputStartSec)),{scenes}):finding('scene_timeline','not_measured','Границы сцен','Анализ по сценам не выполнен: '+timeline.reason+'.'));
  const blackLog=await scan(path,['-vf','blackdetect=d=0.2:pix_th=0.10','-an'],env);
  const blacks=parseIntervals(blackLog,'black');
  findings.push(cleanFinding(blacks.length?
@@ -224,7 +231,7 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  findings.push(finding('identity_preservation','needs_human_review','Лицо, очки, руки и клавиши','FFprobe/FFmpeg не доказывают сохранность внешности и геометрии. Убедитесь визуально, что финализация не изменила лицо, очки, руки или инструмент.',[]));
  const evidence=await visualEvidence({videoPath:path,durationSec,outputPath,env,scenes:scenes??[]});
  const report={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
-  analyzedAt:new Date().toISOString(),video:{path,sha256:await hash(path),bytes:details.size,durationSec,width:video.width,height:video.height,fps,codec:video.codec_name,bitrate:Number(video.bit_rate||info.format?.bit_rate)||null,audioCodec:audio?.codec_name??null},
+  analyzedAt:new Date().toISOString(),video:{path,sha256:await hash(path),bytes:details.size,durationSec,width:video.width,height:video.height,fps,codec:video.codec_name,bitrate:Number(video.bit_rate||info.format?.bit_rate)||null,audioCodec:audio?.codec_name??null,...colorMetadata},
   findings,...(evidence?{visualEvidence:evidence}:{}),authorApproval:{approvedByAuthor:false,publicationApproved:false},
   caveat:'Measured findings are local FFmpeg/FFprobe evidence for this exact SHA-256. They do not approve artistic quality, identity preservation, music suitability, or publication.'};
  if(outputPath){const out=resolve(outputPath);await access(out).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});await writeFile(out,JSON.stringify(report,null,2)+'\n',{flag:'wx'});}
