@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, registerPersonaExitFlush } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, canNavigateFromPersonaGuide, registerPersonaExitFlush } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
 const candidate={sourceTitle:'Один день между театром и музыкой',sourceAngle:'Две профессии одной историей',sourceFormat:'reel'};
 
+describe('guide failed-save navigation safety',()=>{
+ it('blocks navigation while an unsaved plan exists and permits it only after save or explicit discard',()=>{
+  expect(canNavigateFromPersonaGuide(true)).toBe(false);
+  expect(canNavigateFromPersonaGuide(false)).toBe(true);
+ });
+});
 describe('production approval must follow latest current dialogue',()=>{
  it('refuses a changed line or timing while keeping legacy brief-only projects compatible',()=>{
   const prod=buildPersonaProductionWorkflow({id:'script-sync',title:'Сценка',angle:'Две роли',format:'reel',score:0});
