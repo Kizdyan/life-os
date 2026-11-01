@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -71,6 +72,8 @@ const evidence={path,fileExists:true,probeVerified:true,bytes:statSync(path).siz
 writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,status:'blocked',errors:['author approval required'],assets:[{passed:true}]},distribution:null}));`);
  const result=await runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier});
  assert.equal(result.status,'awaiting-author-review');
+ assert.equal(result.briefFingerprintSha256,createHash('sha256').update(JSON.stringify(JSON.parse(await readFile(brief,'utf8')))).digest('hex'));
+ assert.equal(result.briefIdeaId,null,'older minimal two-beat test briefs have no explicit idea ID');
  assert.equal(result.events.length,8,'the timeline mismatch is an explicit review event');
  assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
  assert.equal(result.subtitleDraft.status,'needs-human-review');
