@@ -230,6 +230,35 @@ export function exportPersonaShootingSheet(input:{
  ];
  return lines.join('\n');
 }
+export interface PersonaGuideReadiness{
+ items:{id:string;label:string;state:'done'|'pending'|'manual'}[];
+ nextAction:string;
+}
+/** Only record-confirmed steps are 'done'. Checking a box is an author assertion
+ * and never proves actual camera footage, review approval or publication. */
+export function getPersonaGuideReadiness(input:{
+ hasScript:boolean;scriptApproved:boolean;hasCurrentBrief:boolean;
+ briefApproved:boolean;guide:PersonaProductionGuide;
+}):PersonaGuideReadiness{
+ const {hasScript,scriptApproved,hasCurrentBrief,briefApproved,guide}=input;
+ const setupKeys:GuideCheck[]=['set','lighting','sound'];
+ const setupChecked=setupKeys.every(key=>guide.checks[key]===true);
+ const items:PersonaGuideReadiness['items']=[
+  {id:'idea',label:'01 · Идея и актуальность — проверить тему и датированные источники',state:'manual'},
+  {id:'script',label:'02 · Реплики и хук утверждены автором',state:scriptApproved?'done':'pending'},
+  {id:'brief',label:'03 · Кадры, свет и Production Brief согласованы и утверждены',state:hasCurrentBrief&&briefApproved?'done':'pending'},
+  {id:'setup',label:'04 · Локация, свет и звук проверены на месте',state:setupChecked?'done':'pending'},
+  {id:'takes',label:'05 · Реальные дубли просмотрены и выбраны автором',state:'manual'},
+  {id:'edit',label:'06 · Монтаж и художественная приёмка MP4',state:'manual'},
+ ];
+ const nextAction=!hasScript?'Составьте хук, развитие и финальную реплику во вкладке «Сценарий».'
+  :!scriptApproved?'Проверьте и утвердите текущую редакцию реплик в сценарном редакторе.'
+  :!hasCurrentBrief?'Создайте или обновите Production Brief с актуальной раскадровкой и репликами.'
+  :!briefApproved?'Проверьте Production Brief и примите отдельное редакторское решение.'
+  :!setupChecked?'Проверьте на месте камеру, свет и звук; отметьте три соответствующих пункта.'
+  :'Подготовьте и запишите реальные дубли; далее отдельно проверьте монтаж и MP4.';
+ return {items,nextAction};
+}
 export function guideProgress(guide:PersonaProductionGuide){
  return guideChecks.filter(([id])=>guide.checks[id]===true).length;
 }
