@@ -1,6 +1,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { assessRufloPilotRequest, evaluateRufloAgainstBaseline } from '../packages/core/src/ruflo-pilot.ts';
+import { review } from './ruflo-pilot-report.mjs';
+import { createHash } from 'node:crypto';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const req = { experimentId:'ruflo-smoke', pinnedRuntimeVersion:'3.66.2', domain:'engineering', dataClass:'public',
   taskIds:['review-code','test-code'],taskDescription:'Synthetic code-quality fixture',
@@ -69,4 +74,32 @@ test('does not mistake faster, cheaper, low-quality results for a useful agent',
   assert.equal(r.decision,'reject');
   assert.equal(r.productionApproved,false);
   assert.ok(r.reasons.some(reason=>reason.includes('90%')));
+});
+
+test('comparison requires real fixture/output files with matching SHA-256 bytes',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ruflo-evidence-'));
+  const sha=x=>createHash('sha256').update(x).digest('hex');
+  const data=[['fixture.json','synthetic fixture: 3 questions'],['baseline-output.json','9/10 correct'],['pilot-output.json','10/10 correct']];
+  try {
+    for(const [name,bytes] of data)await writeFile(join(dir,name),bytes);
+    const [fixture,baseFile,pilotFile]=data.map(x=>join(dir,x[0]));
+    const common={...metrics,sourceSnapshotSha256:sha(data[0][1])};
+    const base={...common,outputEvidenceSha256:sha(data[1][1])};
+    const pilot={...common,runId:'ruflo',passedCases:10,elapsedSeconds:72,
+      outputEvidenceSha256:sha(data[2][1])};
+    const baseJson=join(dir,'baseline.json'),pilotJson=join(dir,'pilot.json');
+    await writeFile(baseJson,JSON.stringify(base));
+    await writeFile(pilotJson,JSON.stringify(pilot));
+    const args=[baseJson,pilotJson,fixture,baseFile,pilotFile];
+    const ok=await review('compare',args);
+    assert.equal(ok.artifactHashesVerified,true);
+    assert.equal(ok.decision,'worth_expanding');
+    await writeFile(pilotFile,'tampered output');
+    const tampered=await review('compare',args);
+    assert.equal(tampered.decision,'insufficient_evidence');
+    assert.equal(tampered.artifactHashesVerified,false);
+    await assert.rejects(review('compare',[baseJson,pilotJson]),/Usage/);
+  } finally {
+    await rm(dir,{recursive:true,force:true});
+  }
 });
