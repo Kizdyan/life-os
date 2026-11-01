@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,getPersonaGuideReadiness,
+ createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,getPersonaGuideReadiness,guideShotNoteForScene,updateGuideShotNote,type GuideShotField,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -98,6 +98,27 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   const base=draftRef.current;
   savePlan({...base,checks:{...base.checks,[key]:checked},updatedAt:new Date().toISOString()});
  };
+ const baseNoteForScene=(scene:(typeof scenes)[number],index:number)=>{
+  const pilot=showPilotDirections?actorComposerShotDirections[exampleActorComposerBeats[index].id]:null;
+  return {
+   camera:pilot?.camera??('angle' in scene&&typeof scene.angle==='string'?scene.angle:'Уточнить положение штатива, высоту, расстояние и крупность'),
+   lighting:scene.lighting,
+   performance:pilot?.performance??scene.action,
+   edit:pilot?.edit??'Указать начало и конец кадра, монтажный переход и смысловую паузу',
+  };
+ };
+ const changeShot=(scene:(typeof scenes)[number],index:number,key:GuideShotField,value:string)=>{
+  const base=draftRef.current;
+  const previous=guideShotNoteForScene(base,scene).note;
+  const fields=previous??baseNoteForScene(scene,index);
+  savePlan(updateGuideShotNote(base,scene,{...fields,[key]:value},new Date().toISOString()));
+ };
+ const reconfirmShot=(scene:(typeof scenes)[number])=>{
+  const base=draftRef.current;
+  const prior=guideShotNoteForScene(base,scene);
+  if(!prior.note||!prior.stale)return;
+  savePlan(updateGuideShotNote(base,scene,prior.note,new Date().toISOString()));
+ };
  const discardFailedSave=()=>{
   const lastSaved=stored??createPersonaProductionGuide(new Date().toISOString(),allowExample?'actor_composer':'general');
   draftRef.current=lastSaved;
@@ -113,7 +134,11 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const downloadSheet=()=>{
   try{
    const text=exportPersonaShootingSheet({title:projectTitle,angle:projectAngle,guide:plan,
-    scenes:scenes.map((scene,index)=>showPilotDirections?{...scene,...actorComposerShotDirections[exampleActorComposerBeats[index].id]}:scene),
+    scenes:scenes.map((scene,index)=>{
+     const base=showPilotDirections?{...scene,...actorComposerShotDirections[exampleActorComposerBeats[index].id]}:scene;
+     const saved=guideShotNoteForScene(plan,scene);
+     return saved.note&&!saved.stale?{...base,...saved.note}:base;
+    }),
     references:research.map(ref=>({
      title:ref.title||ref.url,url:ref.url,observedAt:ref.observedAt,
      status:ref.observationStatus==='user_reviewed'?'просмотрено автором':'не просмотрено автором',
@@ -193,6 +218,27 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
      <blockquote>«{scene.line}»</blockquote><p><b>Что делать:</b> {scene.action}</p><p><b>Кадр и свет:</b> {scene.lighting}</p>
      {'angle' in scene&&typeof scene.angle==='string'&&<p><b>Ракурс:</b> {scene.angle}</p>}
      {'cameraMovement' in scene&&typeof scene.cameraMovement==='string'&&<p><b>Движение камеры:</b> {scene.cameraMovement}</p>}
+     {(()=>{
+      const saved=guideShotNoteForScene(plan,scene);
+      const note=saved.note??baseNoteForScene(scene,index);
+      return <details className="personaGuideShotEditor">
+       <summary>Режиссёрский план этого кадра {saved.stale?'· требует повторной проверки':saved.note?'· сохранён':'· уточнить'}</summary>
+       {saved.stale&&<div className="personaGuideWarn" role="status">
+        Реплика, действие или длительность изменились. Старые указания сохранены, но больше не считаются согласованными.
+        <button type="button" className="ghost" onClick={()=>reconfirmShot(scene)}>Я сверил указания с новой версией — подтвердить</button>
+       </div>}
+       {([
+        ['camera','Камера, крупность, расстояние и ракурс'],
+        ['lighting','Свет, тени и отражения'],
+        ['performance','Актёрская задача, движения и интонация'],
+        ['edit','Начало, конец, склейка, музыка'],
+       ] as [GuideShotField,string][]).map(([field,label])=><label key={field}>{label}
+        <textarea value={note[field]} disabled={saved.stale} onChange={e=>changeShot(scene,index,field,e.target.value)}
+         aria-label={scene.id+' · '+label} maxLength={4000}/>
+       </label>)}
+       <small>Это режиссёрские заметки. Они не меняют утверждённый Production Brief и не запускают монтаж.</small>
+      </details>;
+     })()}
      {showPilotDirections&&actorComposerShotDirections[exampleActorComposerBeats[index].id]&&<div className="personaGuideDirection">
       <p><b><span aria-hidden="true">▣</span> Камера:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].camera}</p>
       <p><b>Игра:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].performance}</p>
