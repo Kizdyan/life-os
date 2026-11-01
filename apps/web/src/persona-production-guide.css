@@ -37,3 +37,12 @@
 .personaGuideActions{display:flex;gap:8px;flex-wrap:wrap}
 .personaGuideNotice{border:1px solid #ddd6c7;border-radius:12px;padding:12px;background:#fbf8f2}
 @media(max-width:650px){.personaGuideShots{grid-template-columns:minmax(0,1fr)}.personaGuideHero,.personaGuideSection{border-radius:17px}.personaGuide h4{font-size:20px}.personaGuideHero h3{font-size:27px}}
+
+.personaGuideTrend{display:grid;gap:6px;border:1px solid #e0d9cb;border-radius:14px;padding:15px;background:#fbf8ef}
+.personaGuideTrend strong{font-size:14px}
+.personaGuideTrend p{margin:3px 0;font-size:12px;line-height:1.5}
+.personaGuideTrend a{color:#514831;text-decoration:underline}
+.personaGuideTrend small{color:#766c5d;font-size:11px;line-height:1.5}
+.personaGuideDiagram{margin:4px 0 12px;max-width:550px;display:grid;gap:5px}
+.personaGuideDiagram svg{width:100%;height:auto;border-radius:14px}
+.personaGuideDiagram figcaption{font-size:11px;color:#7e796f;line-height:1.5}
