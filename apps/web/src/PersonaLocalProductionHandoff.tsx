@@ -3,6 +3,7 @@ import type {PersonaProductionPipeline} from '../../../packages/core/src/persona
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import {productionInputDraftExists} from './personaProductionInputJournal';
 import {resolvePersonaScenarioDraftStorage} from './personaScenarioDraftJournal';
+import './persona-local-production-handoff.css';
 
 /** A local handoff is a copy of the saved, shoot-approved brief; never an approval to publish. */
 export function assessPersonaLocalHandoff(pipeline:PersonaProductionPipeline,hasUnsavedDraft:boolean):{allowed:boolean;reason:string;brief:PersonaProductionBrief|null}{
