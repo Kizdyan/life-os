@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
-import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord,buildPersonaFinishOptionsTemplate} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 
 const brief=JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json',import.meta.url),'utf8'));
 const fingerprint='a'.repeat(64),videoSha='b'.repeat(64),bytes=800_000;
@@ -84,6 +84,53 @@ describe('Persona local render evidence intake',()=>{
   (a.quality as any).video.bytes=bytes;
   (a.quality as any).publicationApproved=true;
   expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/video-quality.json/);
+ });
+ it('retains the accepted final cut and original timestamp when only QA of the same draft is refreshed',()=>{
+  const previous=inspectPersonaLocalRenderImport(fixture());
+  const finished={
+   version:1 as const,kind:'persona-finished-render-review-v1' as const,
+   sourceDraftSha256:previous.mp4Sha256,briefFingerprintSha256:previous.briefFingerprintSha256,
+   finishedSha256:'d'.repeat(64),finishedBytes:390000,durationSec:previous.durationSec,
+   width:1080 as const,height:1920 as const,fps:30 as const,captionsBurnedIn:true as const,
+   captionCount:7,color:{brightness:0,contrast:1,saturation:1},musicAdded:false,
+   importedAt:'2026-11-01T13:00:00Z',status:'awaiting-author-review' as const,
+   publicationApproved:false as const,qaProvenance:'browser-sha256-matched-local-ffmpeg-report' as const,
+   authorReview:{decision:'approved-final-cut' as const,reviewer:'Автор',notes:'',
+    reviewedAt:'2026-11-01T14:00:00Z',watchedEntireVideo:true as const,
+    criteria:{performance:true,framing:true,color:true,audio:true,captions:true,rhythm:true},
+    videoSha256:'d'.repeat(64),publicationApproved:false as const}
+  };
+  const old:PersonaLocalRenderRecord={...previous,finished};
+  expect(readPersonaLocalRenderRecord(old)).not.toBeNull();
+  const withQuality=fixture() as ReturnType<typeof fixture>&{quality:unknown};
+  withQuality.quality={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+   publicationApproved:false,distributionAllowed:false,analyzedAt:'2026-11-01T15:00:00Z',
+   video:{sha256:videoSha,bytes,width:1080,height:1920,fps:30,durationSec:31},
+   findings:[{id:'audio_silence',status:'warning',title:'Тишина',
+    detail:'Проверить паузу',timecodes:['00:00:12.000']}],
+   authorApproval:{approvedByAuthor:false,publicationApproved:false}};
+  const updated=inspectPersonaLocalRenderImport(withQuality);
+  const merged=mergePersonaDraftReimport(old,updated);
+  expect(merged.importedAt).toBe(old.importedAt);
+  expect(merged.finished?.authorReview?.decision).toBe('approved-final-cut');
+  expect(merged.quality?.warningCount).toBe(1);
+  expect(readPersonaLocalRenderRecord(merged)).not.toBeNull();
+  const again=mergePersonaDraftReimport(merged,inspectPersonaLocalRenderImport(fixture()));
+  expect(again.quality).toEqual(merged.quality);
+  expect(again.finished).toEqual(merged.finished);
+ });
+ it('does not transfer final review or quality reports to a different draft, project or brief',()=>{
+  const original=inspectPersonaLocalRenderImport(fixture());
+  const old:PersonaLocalRenderRecord={...original,quality:{version:1,
+   videoSha256:videoSha,analyzedAt:'2026-11-01T12:00:00Z',warningCount:1,
+   humanReviewCount:0,findings:[{id:'black_frames',status:'warning',
+    title:'Чёрные кадры',detail:'Дефект',timecodes:[]}]}};
+  const newVideo={...original,mp4Sha256:'e'.repeat(64),importedAt:'2026-11-01T15:00:00Z'};
+  expect(mergePersonaDraftReimport(old,newVideo)).toEqual(newVideo);
+  const otherProject={...original,projectId:'other-project'};
+  expect(mergePersonaDraftReimport(old,otherProject)).toEqual(otherProject);
+  const changedBrief={...original,briefFingerprintSha256:'f'.repeat(64)};
+  expect(mergePersonaDraftReimport(old,changedBrief)).toEqual(changedBrief);
  });
  it('requires actual output and QA paths from the chosen runner directory',()=>{
   const a=fixture();a.result.output='D:\\another.mp4';
