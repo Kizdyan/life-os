@@ -9,7 +9,8 @@ export type PersonaFinalAuthorReview={
  publicationApproved:false;
 };
 export type PersonaVideoQualityFinding={id:string;status:'measured'|'warning'|'needs_human_review'|'not_measured';title:string;detail:string;timecodes:string[]};
-export type PersonaVideoQualitySummary={version:1;videoSha256:string;analyzedAt:string;warningCount:number;humanReviewCount:number;findings:PersonaVideoQualityFinding[]};
+export type PersonaVideoQualitySummary={version:1;videoSha256:string;analyzedAt:string;warningCount:number;humanReviewCount:number;findings:PersonaVideoQualityFinding[];
+ visualEvidence?:{contactSheetPath:string;frameCount:number}};
 export type PersonaFinishedRenderRecord={
  version:1;kind:'persona-finished-render-review-v1';sourceDraftSha256:string;briefFingerprintSha256:string;
  finishedSha256:string;finishedBytes:number;durationSec:number;width:1080;height:1920;fps:30;
@@ -40,9 +41,12 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
     timecodes.some(time=>typeof time!=='string'||time.length>30))return null;
   findings.push({id:finding.id,status:finding.status as PersonaVideoQualityFinding['status'],title:finding.title,detail:finding.detail,timecodes:timecodes as string[]});
  }
+ const evidence=record(quality.visualEvidence),frames=Array.isArray(evidence.frames)?evidence.frames:[];
+ const visualEvidence=typeof evidence.contactSheetPath==='string'&&evidence.contactSheetPath.length<=1000&&frames.length>0&&frames.length<=12?
+  {contactSheetPath:evidence.contactSheetPath,frameCount:frames.length}:undefined;
  return {version:1,videoSha256:expectedSha,analyzedAt:quality.analyzedAt as string,
   warningCount:findings.filter(finding=>finding.status==='warning').length,
-  humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings};
+  humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings,...(visualEvidence?{visualEvidence}:{})};
 }
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);

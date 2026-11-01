@@ -6,8 +6,8 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
-import {access,readFile,stat,writeFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
+import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const fail=message=>{throw Error('Persona video quality: '+message)};
@@ -77,9 +77,33 @@ async function scan(path,args,env){
  const result=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
  return result.stderr+'\n'+result.stdout;
 }
+async function visualEvidence({videoPath,durationSec,outputPath,env}){
+ if(!outputPath)return null;
+ const root=join(dirname(resolve(outputPath)),'visual-evidence');
+ await mkdir(root,{recursive:false});
+ const moments=[0,Math.max(0,durationSec/2),Math.max(0,durationSec-.05)];
+ const frames=[];
+ for(const [index,atSec] of moments.entries()){
+  const path=join(root,'frame-'+String(index+1).padStart(2,'0')+'.jpg');
+  await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(atSec),'-i',videoPath,'-frames:v','1','-vf','scale=320:-2','-q:v','3',path],{env});
+  frames.push({atSec,timecode:timecode(atSec),path});
+ }
+ const contactSheetPath=join(root,'contact-sheet.jpg');
+ await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-i',join(root,'frame-%02d.jpg'),'-vf','tile=3x1:padding=4:margin=4','-frames:v','1','-q:v','3',contactSheetPath],{env});
+ return {kind:'persona-visual-evidence-v1',directory:root,frames,contactSheetPath,
+  caveat:'Representative decoded frames for local author review; not a visual or artistic approval.'};
+}
 function latestNumber(log,pattern){
  const values=[...log.matchAll(pattern)].map(match=>Number(match[1])).filter(Number.isFinite);
  return values.length?values.at(-1):null;
+}
+function distribution(values){
+ const sorted=[...values].sort((a,b)=>a-b),at=p=>sorted[Math.min(sorted.length-1,Math.round((sorted.length-1)*p))];
+ const mean=values.reduce((sum,value)=>sum+value,0)/values.length;
+ return {mean,median:at(.5),p10:at(.1),p90:at(.9),contrastP90P10:at(.9)-at(.1),
+  shadowSamplePercent:values.filter(value=>value<32).length/values.length*100,
+  midtoneSamplePercent:values.filter(value=>value>=32&&value<=223).length/values.length*100,
+  highlightSamplePercent:values.filter(value=>value>223).length/values.length*100};
 }
 
 export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir}={}){
@@ -112,6 +136,14 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
   const u=[...signalLog.matchAll(/lavfi\.signalstats\.UAVG=([0-9.]+)/g)].map(m=>Number(m[1])).filter(Number.isFinite);
   const v=[...signalLog.matchAll(/lavfi\.signalstats\.VAVG=([0-9.]+)/g)].map(m=>Number(m[1])).filter(Number.isFinite);
   if(luma.length>=2){
+   const lumaDistribution=distribution(luma);
+   if(u.length>=2&&v.length>=2){
+    const color={uMean:u.reduce((sum,value)=>sum+value,0)/u.length,vMean:v.reduce((sum,value)=>sum+value,0)/v.length,
+     uMedian:distribution(u).median,vMedian:distribution(v).median};
+    findings.push(finding('visual_metrics','measured','Яркость, контраст и цветовая сводка',
+     'Измерено по '+luma.length+' равномерным кадрам (4 кадра/с). Проценты относятся к выборке средних яркостей кадров, а не к пикселям; пересвет и цвет кожи требуют просмотра.',[],
+     {sampleRate,sampleCount:luma.length,luma:lumaDistribution,color,pixelExposure:'not_measured'}));
+   }else findings.push(finding('visual_metrics','not_measured','Яркость, контраст и цветовая сводка','FFmpeg не вернул достаточных UAVG/VAVG-проб для воспроизводимой цветовой сводки.'));
    const jumps=luma.slice(1).map((value,index)=>({atSec:(index+1)/sampleRate,delta:Math.abs(value-luma[index])})).filter(x=>x.delta>=55);
    findings.push(cleanFinding(jumps.length?
     finding('luma_jumps','warning','Резкие перепады яркости',`На 4-кадровых пробах в секунду есть ${jumps.length} сильных скачков средней яркости.`,jumps.map(x=>timecode(x.atSec)),{sampleRate,sampleCount:luma.length,jumps}):
@@ -160,9 +192,10 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  }
  findings.push(finding('acting','needs_human_review','Актёрская игра и реакции','Автоматический анализ не оценивает игру, мимику, естественность пауз или выразительность монтажа. Просмотрите указанные проблемные таймкоды.',[]));
  findings.push(finding('identity_preservation','needs_human_review','Лицо, очки, руки и клавиши','FFprobe/FFmpeg не доказывают сохранность внешности и геометрии. Убедитесь визуально, что финализация не изменила лицо, очки, руки или инструмент.',[]));
+ const evidence=await visualEvidence({videoPath:path,durationSec,outputPath,env});
  const report={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
   analyzedAt:new Date().toISOString(),video:{path,sha256:await hash(path),bytes:details.size,durationSec,width:video.width,height:video.height,fps,codec:video.codec_name,bitrate:Number(video.bit_rate||info.format?.bit_rate)||null,audioCodec:audio?.codec_name??null},
-  findings,authorApproval:{approvedByAuthor:false,publicationApproved:false},
+  findings,...(evidence?{visualEvidence:evidence}:{}),authorApproval:{approvedByAuthor:false,publicationApproved:false},
   caveat:'Measured findings are local FFmpeg/FFprobe evidence for this exact SHA-256. They do not approve artistic quality, identity preservation, music suitability, or publication.'};
  if(outputPath){const out=resolve(outputPath);await access(out).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});await writeFile(out,JSON.stringify(report,null,2)+'\n',{flag:'wx'});}
  return report;

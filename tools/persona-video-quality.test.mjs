@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
@@ -39,6 +39,17 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.ok(quality.findings.some(x=>x.id==='black_frames'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='luma_jumps'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='chroma_jumps'&&x.status==='warning'));
+   const visual=quality.findings.find(x=>x.id==='visual_metrics');
+   assert.equal(visual?.status,'measured');
+   assert.equal(visual?.measurement.sampleRate,4);
+   assert.ok(visual?.measurement.luma.mean>=0&&visual?.measurement.luma.mean<=255);
+   assert.ok(visual?.measurement.luma.median>=0&&visual?.measurement.luma.median<=255);
+   assert.ok(visual?.measurement.luma.shadowSamplePercent>0);
+   assert.ok(visual?.measurement.color.uMean>=0&&visual?.measurement.color.uMean<=255);
+   assert.ok(visual?.measurement.color.vMean>=0&&visual?.measurement.color.vMean<=255);
+   assert.equal(quality.visualEvidence?.kind,'persona-visual-evidence-v1');
+   assert.equal(quality.visualEvidence?.frames.length,3);
+   assert.ok((await stat(quality.visualEvidence.contactSheetPath)).size>1000);
    assert.ok(quality.findings.some(x=>x.id==='subtitle_overlap'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='acting'&&x.status==='needs_human_review'));
    assert.deepEqual(JSON.parse(await readFile(reportPath,'utf8')),quality);
