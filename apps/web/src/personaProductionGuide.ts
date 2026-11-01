@@ -35,6 +35,30 @@ export const guideFieldLabels:Record<GuideField,string>={
  color:'Цвет, кожа и контроль согласованности',
  safetyNotes:'Что проверить до съёмки и какие риски остались',
 };
+/** The example is specific to this opt-in project, not a global Reel template. */
+export const actorComposerPilot={
+ title:'Актёр и композитор — колыбельная',
+ angle:'Два срочных дела превращают «колыбельную» в финал триллера. Оригинальная комедийная сценка на 31 секунду.',
+} as const;
+export function isActorComposerPilot(value:{title:string;angle:string}):boolean{
+ return value.title===actorComposerPilot.title&&value.angle===actorComposerPilot.angle;
+}
+/** New projects must not silently inherit the actor-and-composer story. */
+export const generalGuideFields:Record<GuideField,string>={
+ audience:'Определите конкретную аудиторию: кого история должна заинтересовать и почему.',
+ viewerPromise:'Что изменится для зрителя за время ролика? Какую эмоцию или открытие он получит?',
+ topicEvidence:'Творческая гипотеза. Добавьте проверяемые датированные источники и опишите, что именно они подтверждают.',
+ location:'Укажите реально доступное и разрешённое для съёмки место. Не выдавайте предложение за подтверждение.',
+ setArrangement:'Опишите фон, направление взглядов, точки актёра и положение реквизита; проверьте ось съёмки.',
+ camera:'Вертикально 9:16, смартфон на устойчивой опоре; выберите план, высоту и дистанцию для каждого кадра. Проверьте экспозицию и частоту кадров.',
+ keyLight:'Основной мягкий свет чуть выше уровня глаз, без пересветов лица; проверьте тени, отражения и мерцание. Зафиксируйте баланс белого.',
+ sound:'Запишите пробную реплику, проверьте шум, уровень и понятность речи; сохраните 10 секунд комнатного тона.',
+ wardrobeProps:'Выберите костюм и реальные предметы, которые раскрывают действие. Уберите личные данные и чужие логотипы.',
+ editing:'Сначала определить хук, развитие, поворот, финал и необходимые реакции. Монтажные склейки и музыкальные акценты привязать к смыслу сцен.',
+ captions:'Субтитры из утверждённых реплик, синхронно с голосом; не закрывать глаза, руки и важный объект, проверить safe area.',
+ color:'Естественная фактура кожи, нейтральный баланс белого и сопоставимость планов; любые стилизации сравнить на одних и тех же кадрах.',
+ safetyNotes:'Нельзя автоматически считать готовыми сюжет, факты, права на музыку и художественный результат. Все решения проверяет автор.',
+};
 export const defaultGuideFields:Record<GuideField,string>={
  audience:'Зрители, которым интересны актёрская игра, юмор и создание музыки. Проверить на реальных публикациях.',
  viewerPromise:'Через комедийную сценку увидеть, как музыка мгновенно меняет жанр истории.',
@@ -69,8 +93,8 @@ export const exampleActorComposerSourceFiles:Readonly<Record<string,string>>={
  B03:'B03_composer_lullaby_take01.mp4',
  A04:'A04_actor_payoff_take01.mp4',
 };
-export function createPersonaProductionGuide(now:string):PersonaProductionGuide{
- return {version:1,fields:{...defaultGuideFields},checks:{},updatedAt:now};
+export function createPersonaProductionGuide(now:string,preset:'general'|'actor_composer'='general'):PersonaProductionGuide{
+ return {version:1,fields:{...(preset==='actor_composer'?defaultGuideFields:generalGuideFields)},checks:{},updatedAt:now};
 }
 export function validatePersonaProductionGuide(value:unknown):value is PersonaProductionGuide{
  if(!value||typeof value!=='object')return false;
