@@ -167,6 +167,8 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
       <small>СХЕМА КОМПОЗИЦИИ · НЕ РЕАЛЬНЫЙ КАДР</small>
      </div>
      <blockquote>«{scene.line}»</blockquote><p><b>Что делать:</b> {scene.action}</p><p><b>Кадр и свет:</b> {scene.lighting}</p>
+     {'angle' in scene&&typeof scene.angle==='string'&&<p><b>Ракурс:</b> {scene.angle}</p>}
+     {'cameraMovement' in scene&&typeof scene.cameraMovement==='string'&&<p><b>Движение камеры:</b> {scene.cameraMovement}</p>}
      {showPilotDirections&&actorComposerShotDirections[exampleActorComposerBeats[index].id]&&<div className="personaGuideDirection">
       <p><b><span aria-hidden="true">▣</span> Камера:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].camera}</p>
       <p><b>Игра:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].performance}</p>
