@@ -58,8 +58,20 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
   });
   assert.equal(result.status,'awaiting-author-review');
   assert.equal(result.distributionAllowed,false);
-  assert.equal(result.events.length,7);
- assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
+  // Rendering time can legitimately differ from the authored estimate on
+  // different FFmpeg builds. The optional timing-warning event must match
+  // the verified timing outcome; every mandatory stage still runs in order.
+  assert.deepEqual(
+   result.events.filter(event=>event!=='duration_mismatch_requires_human_review'),
+   ['media_evidence_generated','offline_asr_completed','dialogue_cuts_proposed',
+    'clips_verified_and_timeline_built','reviewable_subtitle_sidecars_written',
+    'real_mp4_rendered','technical_qa_passed'],
+  );
+  assert.equal(
+   result.events.includes('duration_mismatch_requires_human_review'),
+   result.timing.status==='needs-human-timing-review',
+  );
+  assert.equal(result.timing.reviewRequired,true);
   const captions=await readFile(result.subtitleDraft.srtPath,'utf8');
   assert.match(captions,/Я актёр/);
   assert.match(captions,/И у нас есть проблема/);
