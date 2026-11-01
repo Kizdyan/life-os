@@ -7,7 +7,7 @@
  * node tools/persona-shoot-intake.mjs <new-output-dir> A01=<video> B01=<video> [A01=<video> ...]
  */
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, isAbsolute, sep, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze } from './persona-semantic-montage.mjs';
 import {classifyFiles} from './persona-delivery-source-folder.mjs';
@@ -127,7 +127,29 @@ export function formatIntakeMarkdown(report){
   '');
  return lines.join(String.fromCharCode(10));
 }
-export async function runShootIntake({outputDir,labeledFiles}={}){
+/**
+ * The first Windows intake must use the same explicitly installed FFmpeg tools
+ * as the subsequent draft/final render. Only change THIS Node process and the
+ * environments of its children; never alter the machine/user PATH.
+ */
+export async function prependIntakeFfmpegBin(ffmpegDir){
+ if(ffmpegDir===undefined||ffmpegDir===null)return null;
+ if(typeof ffmpegDir!=='string'||!ffmpegDir.trim())
+  fail('ffmpegDir must be the directory containing ffmpeg and ffprobe');
+ const root=await realpath(resolve(ffmpegDir));
+ if(!(await stat(root)).isDirectory())fail('ffmpegDir must be a directory');
+ const ext=process.platform==='win32'?'.exe':'';
+ for(const name of ['ffmpeg','ffprobe']){
+  const target=join(root,name+ext);
+  const info=await stat(target).catch(()=>null);
+  if(!info?.isFile())fail('Missing '+name+ext+' in explicitly selected ffmpegDir: '+root);
+ }
+ const key=Object.keys(process.env).find(k=>k.toUpperCase()==='PATH')??'PATH';
+ process.env[key]=root+delimiter+(process.env[key]??'');
+ return root;
+}
+
+export async function runShootIntake({outputDir,labeledFiles,ffmpegDir}={}){
  if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
  const manifest=parseShootInputs(labeledFiles);
  const resolvedInputs=new Set();
@@ -139,6 +161,7 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
   if(resolvedInputs.has(key))fail('The same source file was assigned to two takes');
   resolvedInputs.add(key);
  }
+ await prependIntakeFfmpegBin(ffmpegDir);
  const root=resolve(outputDir);
  await mkdir(root,{recursive:false}); // Refuse existing output; never replace original.
  const manifestPath=join(root,'sources.json');
@@ -161,9 +184,10 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
   throw error;
  }
 }
-export async function runFolderShootIntake({outputDir,folderPath}={}){
+export async function runFolderShootIntake({outputDir,folderPath,ffmpegDir}={}){
  if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
  const selected=await buildFolderShootManifest(folderPath);
+ await prependIntakeFfmpegBin(ffmpegDir);
  const root=resolve(outputDir);
  // Never write into the author's source folder, including through a symlinked parent.
  const canonicalParent=await realpath(dirname(root));
@@ -193,7 +217,7 @@ export async function runFolderShootIntake({outputDir,folderPath}={}){
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
  const [mode,outputDir,...rest]=process.argv.slice(2);
- const run=mode==='folder'?runFolderShootIntake({outputDir,folderPath:rest[0]}):runShootIntake({outputDir:mode,labeledFiles:[outputDir,...rest].filter(Boolean)});
+ const run=mode==='folder'?runFolderShootIntake({outputDir,folderPath:rest[0],ffmpegDir:rest[1]}):runShootIntake({outputDir:mode,labeledFiles:[outputDir,...rest].filter(Boolean)});
  run.then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{
   console.error('Persona shoot intake:',e.message);process.exitCode=1;
  });
