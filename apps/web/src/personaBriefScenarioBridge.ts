@@ -4,6 +4,15 @@ import type { PersonaScenarioWorkspace } from './personaProjectStore';
 
 const importedReason='Импорт съёмочного брифа JSON · редакторский кандидат, автором не утверждён.';
 
+/** Production briefs can carry an explicit author instruction to retain a line unchanged. */
+function briefAuthorLocks(brief: PersonaProductionBrief, ideaId: string) {
+  return brief.script.flatMap((beat, index) =>
+    /\b[A-Z]\d{2}\s*[—-]\s*без изменений/i.test(beat.action)
+      ? [{ ideaId, index, line: beat.line }]
+      : [],
+  );
+}
+
 /** Rejects edits to exact spoken lines the author explicitly pinned in THIS idea. */
 export function assertPersonaAuthorLockedLines(
  workspace: PersonaScenarioWorkspace,
@@ -36,7 +45,11 @@ export function addImportedBriefScenario(workspace: PersonaScenarioWorkspace | u
     if (!current.script.currentRevision.reason?.startsWith('Импорт съёмочного брифа JSON')) {
       throw new Error('Текущий сценарий изменён после импорта. Сохраните новый кандидат через редакторскую проверку.');
     }
-    return { ...current, script: reviseScenarioScript(current.script, {
+    const locks = [...(current.authorLockedLines ?? [])];
+    for (const lock of briefAuthorLocks(brief, current.script.idea.id)) {
+      if (!locks.some(existing => existing.ideaId === lock.ideaId && existing.index === lock.index)) locks.push(lock);
+    }
+    return { ...current, authorLockedLines: locks.length ? locks : undefined, script: reviseScenarioScript(current.script, {
       createdAt, beats, reason: importedReason,
     }) };
   }
@@ -50,6 +63,8 @@ export function addImportedBriefScenario(workspace: PersonaScenarioWorkspace | u
   };
   const script = createScenarioScript(idea, { createdAt, beats, sourceFacts: brief.factReferences });
   const first = { ...script.currentRevision, reason: importedReason };
+  const locks = briefAuthorLocks(brief, idea.id);
   return { ...current, ideas: [...current.ideas, idea], selectedIdeaId: idea.id,
+    authorLockedLines: locks.length ? locks : undefined,
     script: { ...script, revisions: [first], currentRevision: first } };
 }

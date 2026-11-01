@@ -6,6 +6,7 @@ import { createPersonaProject, loadPersonaProjects, savePersonaProject } from '.
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 
 const brief = JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/candidate-production-brief.json', import.meta.url), 'utf8'));
+const editorialBrief = JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json', import.meta.url), 'utf8'));
 const project = createPersonaProject({ id: 'actor-composer', title: brief.sourceTitle, contentType: 'reel', sourceIdea: brief.sourceAngle, now: '2026-10-31T10:00:00.000Z' });
 const checked = importPersonaProductionBrief({ brief, selectedIdea: { id: project.id, title: project.title, angle: project.sourceIdea, format: project.contentType } }).materials.productionBrief!;
 
@@ -19,6 +20,19 @@ describe('Production Brief to Scenario Workspace', () => {
     const storage = { getItem: (key:string) => data.get(key) ?? null, setItem: (key:string,value:string) => { data.set(key,value); }, removeItem: (key:string) => { data.delete(key); } };
     savePersonaProject(storage, { ...project, scenarioWorkspace: workspace, shootingPlan: { materials: { productionBrief: checked } }, revision: 2 });
     expect(loadPersonaProjects(storage, () => 'unused').projects[0].scenarioWorkspace?.script?.currentRevision.beats).toHaveLength(7);
+  });
+
+  it('turns the V2 author markers into persisted A01/B01 locks', () => {
+    const editorialProject = createPersonaProject({ id: 'actor-composer-v2', title: editorialBrief.sourceTitle, contentType: 'reel', sourceIdea: editorialBrief.sourceAngle, now: '2026-11-01T10:00:00.000Z' });
+    const editorial = importPersonaProductionBrief({ brief: editorialBrief, selectedIdea: { id: editorialProject.id, title: editorialProject.title, angle: editorialProject.sourceIdea, format: editorialProject.contentType } }).materials.productionBrief!;
+    const workspace = addImportedBriefScenario(undefined, editorial, '2026-11-01T10:01:00.000Z');
+    const ideaId = workspace.script!.idea.id;
+    expect(workspace.authorLockedLines).toEqual([
+      { ideaId, index: 0, line: editorial.script[0].line },
+      { ideaId, index: 1, line: editorial.script[1].line },
+    ]);
+    const rewritten = { ...editorial, script: editorial.script.map((beat, index) => index === 0 ? { ...beat, line: 'Несанкционированная замена A01' } : beat) };
+    expect(() => addImportedBriefScenario(workspace, rewritten, '2026-11-01T10:02:00.000Z')).toThrow(/Закреплённая автором реплика кадра 1/);
   });
 
   it('appends to an existing script and keeps older revisions while removing approval', () => {
