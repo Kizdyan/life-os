@@ -46,3 +46,7 @@
 .personaGuideDiagram{margin:4px 0 12px;max-width:550px;display:grid;gap:5px}
 .personaGuideDiagram svg{width:100%;height:auto;border-radius:14px}
 .personaGuideDiagram figcaption{font-size:11px;color:#7e796f;line-height:1.5}
+
+.personaGuideStoryboard{display:grid;justify-items:center;gap:5px;margin:10px auto}
+.personaGuideStoryboard svg{display:block;width:min(170px,100%);height:auto}
+.personaGuideStoryboard small{font-size:9px;color:#80796c;text-align:center;letter-spacing:.03em}
