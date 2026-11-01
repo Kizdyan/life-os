@@ -66,6 +66,26 @@ test('recovery review page keeps an unmatched recorded take available for a sepa
  assert.match(html,/Границы фразы выходят за доступную длительность исходника/);
 });
 
+test('Recovery Review accepts underscored scene-take proxy but rejects paths and unsafe names',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'A01_take01',sourceSha256:sig,durationSec:3,hasAudio:true,asrStatus:'empty'
+ }]};
+ const template={version:1,kind:'persona-editorial-selection-v1',selections:[{beat:1},{beat:2}]};
+ const files={candidates:{'beat1-a':'beat-01-candidate-01.mp4'},
+  recovery:{A01_take01:'source-A01_take01-inspection.mp4'}};
+ const html=buildReviewHtml(pack,template,files);
+ assert.match(html,/source-A01_take01-inspection\.mp4/);
+ for(const invalid of ['../source-A01_take01-inspection.mp4','nested/source-A01_take01-inspection.mp4',
+  'nested\\\\source-A01_take01-inspection.mp4','source-A01_take01-inspection.mp4?x=1',
+  '<script>.mp4']){
+  assert.throws(()=>buildReviewHtml(pack,template,{
+   ...files,recovery:{A01_take01:invalid}
+  }),/Missing generated recovery preview/);
+ }
+});
+
 const installed=['ffmpeg','ffprobe'].every(x=>spawnSync(x,['-version'],{encoding:'utf8'}).status===0);
 test('real FFmpeg preview clips created with preserved originals and no overwrite',{skip:!installed,timeout:180000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-editorial-previews-'));
