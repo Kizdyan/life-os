@@ -7,15 +7,14 @@
  * node tools/persona-shoot-intake.mjs <new-output-dir> A01=<video> B01=<video> [A01=<video> ...]
  */
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze } from './persona-semantic-montage.mjs';
+import {classifyFiles} from './persona-delivery-source-folder.mjs';
 
 const briefPath=resolve(dirname(fileURLToPath(import.meta.url)),'../docs/persona-two-line-live-asr-check-2026-10-29.json');
 const fail=m=>{throw Error(m)};
 const allowedExtensions=/\.(?:mp4|mov|mkv|webm|m4v)$/i;
-const fullBriefPath=resolve(dirname(fileURLToPath(import.meta.url)),'../docs/persona-delivery/editorial-candidate-production-brief.json');
-const sceneOrder=['A01','B01','A02','B02','A03','B03','A04'];
 
 /** Lists only direct files from an author-selected folder; it never searches elsewhere. */
 export async function buildFolderShootManifest(folderPath){
@@ -23,30 +22,26 @@ export async function buildFolderShootManifest(folderPath){
  const root=await realpath(resolve(folderPath));
  const directory=await stat(root);if(!directory.isDirectory())fail('Selected path is not a folder');
  const entries=await readdir(root,{withFileTypes:true});
- const files=[];
- for(const entry of entries){
-  if(!entry.isFile()||!allowedExtensions.test(entry.name))continue;
-  const path=await realpath(join(root,entry.name));
-  if(relative(root,path).startsWith('..'))fail('Selected source is outside the chosen folder');
-  files.push({name:entry.name,path});
+ const videos=entries.filter(entry=>entry.isFile()&&allowedExtensions.test(entry.name));
+ // Use one canonical classification policy: exactly 7 UNREVIEWED default takes
+ // or 2 named long-role files; other takes remain alternatives, not engine inputs.
+ const mapping=classifyFiles(videos.map(entry=>entry.name));
+ const sources=[];
+ for(const selected of mapping.files){
+  const canonical=await realpath(join(root,selected.file));
+  const outside=relative(root,canonical);
+  if(outside==='..'||outside.startsWith('..'+sep)||isAbsolute(outside))
+   fail('Selected source is outside the chosen folder');
+  const id=mapping.layout==='two-long-roles'?
+   selected.id.replace(/_long$/,'_take01'):selected.id;
+  sources.push({id,path:canonical});
  }
- if(!files.length)fail('The selected folder contains no supported video files');
- const named=files.map(file=>({...file,scene:/^(A0[1-4]|B0[1-3])(?:[_-]|$)/i.exec(file.name)?.[1]?.toUpperCase()}));
- const unknown=named.filter(file=>!file.scene);
- if(!unknown.length){
-  const counts=new Map();const sources=[];
-  for(const scene of sceneOrder){for(const file of named.filter(item=>item.scene===scene)){
-   const number=(counts.get(scene)??0)+1;counts.set(scene,number);sources.push({id:`${scene}_take${String(number).padStart(2,'0')}`,path:file.path});
-  }}
-  if(sceneOrder.every(scene=>counts.has(scene)))return {mode:'seven_named_takes',root,manifest:{version:1,sources},notes:['Сопоставление основано только на именах файлов A01…A04/B01…B03. Проверьте реальные реплики перед монтажом.']};
-  fail(`Named takes are incomplete; missing ${sceneOrder.filter(scene=>!counts.has(scene)).join(', ')}`);
- }
- if(files.length===2){
-  const actor=files.find(file=>/(?:^|[_-])(?:actor|актер|актёр)(?:[_-]|$)/iu.test(file.name));
-  const composer=files.find(file=>/(?:^|[_-])(?:composer|композитор)(?:[_-]|$)/iu.test(file.name));
-  if(actor&&composer&&actor.path!==composer.path)return {mode:'role_long_takes_needs_review',root,manifest:{version:1,sources:[{id:'actor_take01',path:actor.path},{id:'composer_take01',path:composer.path}]},notes:['Два длинных файла распознаны только по явным именам ролей. Persona выполнит техническую проверку и ASR, но границы семи сцен требуют ручного Review, а не угадываются.']};
- }
- fail('Cannot safely map selected videos. Name seven takes A01…A04/B01…B03, or exactly two files with actor and composer in their names.');
+ const roleMode=mapping.layout==='two-long-roles';
+ return {mode:roleMode?'role_long_takes_needs_review':'seven_named_takes',root,
+  manifest:{version:1,sources},alternateTakes:mapping.alternatives??[],
+  notes:[mapping.note,roleMode?
+   'Two long role recordings require transcript and scene-boundary review; no automatic approval.':
+   'Seven earliest numbered takes are UNREVIEWED defaults; see alternateTakes for all other original clips.']};
 }
 
 export function parseShootInputs(labeledFiles){
@@ -169,16 +164,27 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
 export async function runFolderShootIntake({outputDir,folderPath}={}){
  if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
  const selected=await buildFolderShootManifest(folderPath);
- const root=resolve(outputDir);await mkdir(root,{recursive:false});
+ const root=resolve(outputDir);
+ // Never write into the author's source folder, including through a symlinked parent.
+ const canonicalParent=await realpath(dirname(root));
+ const outputActual=join(canonicalParent,basename(root));
+ const child=relative(selected.root,outputActual);
+ if(child===''||(child!=='..'&&!child.startsWith('..'+sep)&&!isAbsolute(child)))
+  fail('Output directory must be outside the selected source folder');
+ await mkdir(root,{recursive:false});
  const manifestPath=join(root,'sources.json');
  try{
   await writeFile(manifestPath,JSON.stringify(selected.manifest,null,2)+'\n',{flag:'wx'});
   const result=await analyze(manifestPath,join(root,'evidence'));
   const analysis=JSON.parse(await readFile(result.analysis,'utf8'));
-  const report={...createIntakeReport(analysis,manifestPath),briefPath:fullBriefPath,folderMode:selected.mode,mappingNotes:selected.notes};
+  const report={...createIntakeReport(analysis,manifestPath),briefPath:null,folderMode:selected.mode,
+   alternateTakes:selected.alternateTakes,mappingNotes:[...selected.notes,
+    'Export the exact approved production brief from Persona for the next rendering step.']};
   const reportPath=join(root,'INTAKE.json');await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
   const summaryPath=join(root,'INTAKE.md');await writeFile(summaryPath,formatIntakeMarkdown(report)+'\n\n## Сопоставление\n'+selected.notes.map(note=>'- '+note).join('\n')+'\n',{flag:'wx'});
-  return {status:report.status,reportPath,summaryPath,manifestPath,evidencePath:result.analysis,sourceCount:report.sourceCount,folderMode:selected.mode,warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
+  return {status:report.status,reportPath,summaryPath,manifestPath,evidencePath:result.analysis,
+   sourceCount:report.sourceCount,alternateTakeCount:report.alternateTakes.length,
+   folderMode:selected.mode,warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
  }catch(error){
   await writeFile(join(root,'FAILED.json'),JSON.stringify({status:'failed',error:String(error.message||error),note:'No input video was modified. Partial technical evidence stays local.'},null,2)+'\n',{flag:'wx'}).catch(()=>{});throw error;
  }
