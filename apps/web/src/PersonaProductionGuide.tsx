@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,
+ createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,getPersonaGuideReadiness,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -66,6 +66,13 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  })):brief?productionGuideScenes(brief):example?productionGuideScenes(null):[];
  const showPilotDirections=allowExample&&scenes.length===exampleActorComposerBeats.length&&
   scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line);
+ const readiness=getPersonaGuideReadiness({
+  hasScript:Boolean(scriptBeats?.length),
+  scriptApproved:approvedScript,
+  hasCurrentBrief:Boolean(brief&&!scriptDiffersFromBrief),
+  briefApproved:Boolean(pipeline?.stage==='READY_FOR_SHOOT'&&pipeline.materials.editorialDecision?.decision==='approved'),
+  guide:plan,
+ });
  const research=workspace?.research??[];
  const reviewed=research.filter(r=>r.observationStatus==='user_reviewed');
  const totalSeconds=scenes.reduce((sum,scene)=>sum+scene.seconds,0);
@@ -128,6 +135,11 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    <small>PERSONA · PRE-PRODUCTION / НЕ ПУБЛИКАЦИЯ</small>
    <h3>От идеи до первого монтажа</h3>
    <p>Один производственный маршрут для «{projectTitle}»: тема, хук, точные реплики, кадры, свет, звук и монтажный замысел. Все правки сохраняются в этом проекте, а утверждение сценария и видео остаётся отдельным.</p>
+   <div className="personaGuideNext"><strong>Твой следующий конкретный шаг</strong><p>{readiness.nextAction}</p>
+    <div className="personaGuideReadiness" aria-label="Состояние производственных этапов">
+     {readiness.items.map(item=><div key={item.id}><span aria-hidden="true">{item.state==='done'?'✓':item.state==='manual'?'○':'·'}</span><span>{item.label}</span><small>{item.state==='done'?'Подтверждено':item.state==='manual'?'Решение автора':'Ещё не завершено'}</small></div>)}
+    </div>
+   </div>
    <div className="personaGuideMeter"><span>Чек-лист: {guideProgress(plan)} из {guideChecks.length}</span><span>{unsaved?'Есть несохранённые правки':stored?'План сохранён в проекте':'Предложение · ещё не сохранено'}</span></div>
    <div className="personaGuideActions">{(!stored||unsaved)&&<button type="button" className="primary" onClick={()=>savePlan(draftRef.current)}>{unsaved?'Повторить сохранение':'Сохранить предложенный план'}</button>}<button type="button" className="ghost" onClick={downloadSheet}>Скачать съёмочный лист</button>{unsaved&&<button type="button" className="ghost" onClick={discardFailedSave}>Отменить несохранённые правки</button>}</div>
   </header>
