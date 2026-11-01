@@ -172,7 +172,7 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
  * implicit authorization to record, render or publish are included. */
 export function exportPersonaShootingSheet(input:{
  title:string;angle:string;guide:PersonaProductionGuide;
- scenes:readonly {id:string;seconds:number;line:string;action:string;framing:string;lighting:string}[];
+ scenes:readonly {id:string;seconds:number;line:string;action:string;framing:string;lighting:string;camera?:string;performance?:string;edit?:string}[];
  references:readonly {title:string;url:string;observedAt:string;status:string}[];
  sample:boolean;
 }):string{
@@ -191,6 +191,9 @@ export function exportPersonaShootingSheet(input:{
    `Реплика: ${scene.line}`,
    `Действие: ${scene.action}`,
    `Свет: ${scene.lighting}`,
+   ...(scene.camera?[`Камера: ${scene.camera}`]:[]),
+   ...(scene.performance?[`Актёрское действие: ${scene.performance}`]:[]),
+   ...(scene.edit?[`Монтаж: ${scene.edit}`]:[]),
    '',
   ]),
   '## Практический план',
