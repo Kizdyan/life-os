@@ -2,6 +2,7 @@ import React from 'react';
 import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
+import {PersonaLocalProductionHandoff} from './PersonaLocalProductionHandoff';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
@@ -146,6 +147,7 @@ export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,f
   <div className={qa.status==='needs_revision'?'briefIssues':'briefChecks'}><b>{qa.status==='needs_revision'?'Нужны правки структуры':'Проверка брифа'}</b><ul>{qa.structuralChecks.map(check=><li key={check.id} className={check.passed?'ok':'bad'}>{check.passed?'✓':'!'} {check.message}</li>)}</ul>{requiresFactReview&&<p className="factReview"><b>Нужна ручная проверка фактов.</b> {qa.factReview.message}</p>}</div>
   {pipeline.stage==='QA'&&<div className="editorialGate"><h4>Редакторское решение</h4><p>Сценарий, кадры и бриф сохранятся при отклонении.</p><input aria-label="Имя редактора" value={editor} onChange={e=>onEditorChange(e.target.value)} placeholder="Имя редактора"/><textarea aria-label="Комментарий редактора" value={comment} onChange={e=>onCommentChange(e.target.value)} placeholder="Комментарий: что подтверждено или что исправить"/>{requiresFactReview&&<label><input type="checkbox" checked={factsChecked} onChange={e=>onFactsCheckedChange(e.target.checked)}/> Факты в свободных репликах сверены с автором или источником.</label>}<div className="actions"><button className="dangerGhost" disabled={!editor.trim()||!comment.trim()} onClick={()=>onDecision('rejected')}>Вернуть на доработку</button><button className="primary" disabled={!canApprove} onClick={()=>onDecision('approved')}>Одобрить для съёмки</button></div></div>}
   {pipeline.materials.editorialDecision&&<p className="decisionLog"><b>{pipeline.materials.editorialDecision.decision==='approved'?'Одобрено':'Возвращено на доработку'}:</b> {pipeline.materials.editorialDecision.editor} · {pipeline.materials.editorialDecision.comment}</p>}
+  {brief.sourceFormat==='reel'&&<PersonaLocalProductionHandoff pipeline={pipeline} projectId={projectId} hasUnsavedDraft={raw!==null}/>}
  </section>;
 }
 /** Preserve the complete user brief for the model. The short title is display-only. */
