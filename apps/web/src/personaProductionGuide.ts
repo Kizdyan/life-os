@@ -1,0 +1,86 @@
+import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
+
+/** Editorial notes only. The approved script, rendering manifest and publication gate
+ * remain in their existing authoritative project records. */
+export type GuideField='audience'|'viewerPromise'|'topicEvidence'|'location'|'setArrangement'|'camera'|
+ 'keyLight'|'sound'|'wardrobeProps'|'editing'|'captions'|'color'|'safetyNotes';
+export type GuideCheck='research'|'script'|'set'|'lighting'|'sound'|'takes'|'editReview';
+export const guideChecks:[GuideCheck,string][]=[
+ ['research','Проверил актуальность темы и источники; непроверенные утверждения не озвучиваю'],
+ ['script','Проговорил хук и все реплики вслух; утверждена только моя редакция'],
+ ['set','Уточнил помещение, фон, реквизит, расположение камеры и направление взглядов'],
+ ['lighting','Проверил лицо, тени и блики на очках; зафиксировал баланс белого'],
+ ['sound','Проверил микрофон, отсутствие клиппинга и записал комнатный тон'],
+ ['takes','Выбрал необходимые дубли и отдельно отметил удачные актёрские исполнения'],
+ ['editReview','Проверил порядок склеек, паузы, титры, музыку и цвет до финального решения'],
+];
+export interface PersonaProductionGuide{
+ version:1;
+ fields:Record<GuideField,string>;
+ checks:Partial<Record<GuideCheck,boolean>>;
+ updatedAt:string;
+}
+export const guideFieldLabels:Record<GuideField,string>={
+ audience:'Кому адресован ролик',
+ viewerPromise:'Что зритель поймёт или почувствует в конце',
+ topicEvidence:'Почему тема актуальна · ссылки, дата и что именно подтверждают',
+ location:'Точное место съёмки (подтвердить лично)',
+ setArrangement:'Как стоят актёр, клавиши, фон и реквизит',
+ camera:'Камера, план, ракурс и расстояние',
+ keyLight:'Рисунок света и практическая проверка',
+ sound:'Запись речи, музыка и контроль звука',
+ wardrobeProps:'Костюм и предметы для ролей',
+ editing:'Порядок сцен, паузы и предварительные склейки',
+ captions:'Субтитры, графика, safe area',
+ color:'Цвет, кожа и контроль согласованности',
+ safetyNotes:'Что проверить до съёмки и какие риски остались',
+};
+export const defaultGuideFields:Record<GuideField,string>={
+ audience:'Зрители, которым интересны актёрская игра, юмор и создание музыки. Проверить на реальных публикациях.',
+ viewerPromise:'Через комедийную сценку увидеть, как музыка мгновенно меняет жанр истории.',
+ topicEvidence:'Гипотеза автора, а не подтверждённый тренд. Добавить свежие датированные источники во вкладке «Сценарий» и записать, что они доказывают.',
+ location:'Предложение: одна тихая домашняя комната. Уточнить фактическое помещение и доступность фортепиано.',
+ setArrangement:'Две зоны в одной комнате: актёр — нейтральный фон, композитор — клавиши. Условную ось диалога не менять: актёр смотрит вправо, композитор — влево.',
+ camera:'Смартфон на устойчивом штативе, вертикально 9:16, основной объектив 1×, без цифрового зума. На уровне глаз; крупность менять перестановкой штатива. Начать с 1080×1920, 30 fps; проверить мерцание света.',
+ keyLight:'Один мягкий источник сбоку под 30–45°, чуть выше уровня глаз; одинаковая температура для обеих ролей. Перед дублем проверить пересветы кожи, тени и отражение в очках.',
+ sound:'Микрофон ближе к лицу и вне кадра; 10 секунд room tone; короткий тест записи. Собственный музыкальный акцент — отдельно после реплики B03, не под голосом.',
+ wardrobeProps:'Актёр: пиджак и папка с текстом. Композитор: футболка с закатанными рукавами и клавиши. Без чужих логотипов и личных данных в кадре.',
+ editing:'Если выбран семисценный пример: A01 → B01 → A02 → B02 → A03 → B03 → A04; жёсткие склейки по действиям/репликам; в B03 музыкальный акцент, затем реакция и панчлайн A04.',
+ captions:'Точные слова из утверждённого сценария, синхронно с голосом. Не закрывать лицо, очки, руки на клавишах; проверить safe area Reels.',
+ color:'Сначала нейтральная экспозиция и баланс белого; сохранить естественную кожу, лицо, очки и геометрию. Обработка сравнивается на одинаковых кадрах, не утверждается автоматически.',
+ safetyNotes:'Это план, а не свидетельство готовой съёмки. Актуальность темы, помещение, доступные инструменты, актёрские решения и права на музыку подтверждает автор.',
+};
+export const exampleActorComposerBeats=[
+ {id:'A01',seconds:3,line:'Я актёр. И ещё пишу музыку.',framing:'Крупный план',action:'Взгляд в объектив, лёгкая улыбка; без заставки.',lighting:'Мягкий боковой свет; глаза на верхней трети.'},
+ {id:'B01',seconds:4,line:'И у нас есть проблема.',framing:'Средний план у клавиш',action:'Сухой тон, пауза перед «проблема».',lighting:'Тот же свет и баланс белого.'},
+ {id:'A02',seconds:5,line:'Завтра проба. Текст ещё не выучен.',framing:'Средний план',action:'Папка в руках, взгляд на часы, затем к композитору.',lighting:'Лицо не перекрыто предметами.'},
+ {id:'B02',seconds:5,line:'А мне к утру сдать аранжировку.',framing:'Лицо и клавиши в кадре',action:'Кладёт руки на клавиши и показывает дедлайн без личных данных.',lighting:'Не терять детали рук и клавиш.'},
+ {id:'A03',seconds:4,line:'Значит, кто-то сегодня не спит.',framing:'Крупный план',action:'Бровь, закрыть папку; оставить полсекунды реакции.',lighting:'Экспозиция как в A01.'},
+ {id:'B03',seconds:6,line:'Нет. Я усыплю нас колыбельной.',framing:'Средний план за клавишами',action:'Реплика → короткий оригинальный тревожный музыкальный мотив.',lighting:'Сохранить видимость лица и пальцев.'},
+ {id:'A04',seconds:4,line:'Это колыбельная? Это финал триллера.',framing:'Крупный план',action:'Сначала услышать музыку, затем повернуться к камере; панчлайн.',lighting:'Как в A01/A03.'},
+] as const;
+
+export function createPersonaProductionGuide(now:string):PersonaProductionGuide{
+ return {version:1,fields:{...defaultGuideFields},checks:{},updatedAt:now};
+}
+export function validatePersonaProductionGuide(value:unknown):value is PersonaProductionGuide{
+ if(!value||typeof value!=='object')return false;
+ const x=value as Partial<PersonaProductionGuide>;
+ if(x.version!==1||!x.fields||typeof x.fields!=='object'||!x.checks||typeof x.checks!=='object'||
+  typeof x.updatedAt!=='string'||!Number.isFinite(Date.parse(x.updatedAt)))return false;
+ const fieldKeys=Object.keys(defaultGuideFields) as GuideField[];
+ if(fieldKeys.some(key=>typeof x.fields?.[key]!=='string'||x.fields[key].length>6000))return false;
+ return Object.entries(x.checks).every(([key,val])=>guideChecks.some(([check])=>check===key)&&typeof val==='boolean');
+}
+export function productionGuideScenes(brief:PersonaProductionBrief|null){
+ if(!brief||!Array.isArray(brief.script)||!Array.isArray(brief.shots)||brief.script.length!==brief.shots.length)
+  return exampleActorComposerBeats.map(beat=>({...beat,source:'example' as const}));
+ return brief.script.map((beat,i)=>({
+  id:String(beat.order),seconds:beat.durationSec,line:beat.line,
+  framing:brief.shots[i].framing,action:beat.action,
+  lighting:brief.shots[i].lighting,source:'brief' as const,
+ }));
+}
+export function guideProgress(guide:PersonaProductionGuide){
+ return guideChecks.filter(([id])=>guide.checks[id]===true).length;
+}
