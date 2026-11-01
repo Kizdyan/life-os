@@ -7,7 +7,7 @@ import {importPersonaProductionBrief} from '../../../packages/core/src/persona-p
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
- createPersonaProductionGuide,createActorComposerWorkingBrief,exportPersonaShootingSheet,guideProgress,
+ createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideProgress,
  productionGuideScenes,validatePersonaProductionGuide,
 } from './personaProductionGuide';
 
@@ -36,6 +36,8 @@ describe('Persona full preproduction guide',()=>{
   expect(brief.script).toHaveLength(7);
   expect(brief.shots).toHaveLength(7);
   expect(brief.shots.reduce((n,s)=>n+s.durationSec,0)).toBe(31);
+  expect(brief.shots[0].action).toContain(exampleActorComposerSourceFiles.A01);
+  expect(brief.shots[5].action).toContain(exampleActorComposerSourceFiles.B03);
   expect(brief.script[0].line).toBe('Я актёр. И ещё пишу музыку.');
   expect(brief.script[6].line).toBe('Это колыбельная? Это финал триллера.');
   const qa=evaluatePersonaProductionBrief({brief,allowedFacts:[]});
