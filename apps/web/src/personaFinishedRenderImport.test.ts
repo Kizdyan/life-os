@@ -3,7 +3,7 @@ import React from 'react';
 import {renderToString} from 'react-dom/server';
 import PersonaFinishedRenderReview from './PersonaFinishedRenderReview';
 import {readPersonaLocalRenderRecord,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
-import {inspectPersonaFinishedRenderImport,makePersonaFinalAuthorReview,
+import {inspectPersonaFinishedRenderImport,mergePersonaFinishedReimport,makePersonaFinalAuthorReview,
  readPersonaFinishedRenderRecord,type PersonaFinalReviewChecks} from './personaFinishedRenderImport';
 
 const draftSha='a'.repeat(64),finishedSha='b'.repeat(64),briefSha='c'.repeat(64);
@@ -130,6 +130,33 @@ describe('Persona final local render and author review',()=>{
    sourceDraftSha256:'f'.repeat(64)}})).toBeNull();
   expect(readPersonaFinishedRenderRecord({...finished,authorReview:{
    ...makePersonaFinalAuthorReview(input),publicationApproved:true}})).toBeNull();
+ });
+ it('preserves an identical SHA final cut decision and previously verified quality on repeat import',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const review=makePersonaFinalAuthorReview({finished:previous,decision:'approved-final-cut',
+   reviewer:'Автор',notes:'',criteria:allChecks,watchedEntireVideo:true,
+   videoSha256:finishedSha,reviewedAt:'2026-11-01T13:00:00Z'});
+  const withQuality={...previous,authorReview:review,quality:{
+   version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:1,humanReviewCount:0,findings:[{id:'audio_loudness',
+    status:'warning' as const,title:'Громкость',detail:'Проверить',timecodes:[]}]
+  }};
+  expect(readPersonaFinishedRenderRecord(withQuality)).not.toBeNull();
+  const another=inspectPersonaFinishedRenderImport(fixture());
+  const merged=mergePersonaFinishedReimport(withQuality,another);
+  expect(merged.authorReview).toEqual(review);
+  expect(merged.quality).toEqual(withQuality.quality);
+  expect(merged.importedAt).toBe(withQuality.importedAt);
+  expect(merged.publicationApproved).toBe(false);
+  expect(readPersonaLocalRenderRecord({...draft,finished:merged})).not.toBeNull();
+ });
+ it('does not carry creative decisions to changed MP4 and detects contradictory same-file claims',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const next=inspectPersonaFinishedRenderImport(fixture());
+  const changed={...next,finishedSha256:'f'.repeat(64)};
+  expect(mergePersonaFinishedReimport(previous,changed)).toEqual(changed);
+  const inconsistent={...next,color:{brightness:0.01,contrast:1,saturation:1}};
+  expect(()=>mergePersonaFinishedReimport(previous,inconsistent)).toThrow(/противоречат/);
  });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
