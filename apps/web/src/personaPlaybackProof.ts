@@ -25,8 +25,9 @@ export function advancePersonaPlaybackProof(state:PersonaPlaybackProof,event:Per
   return {...state,reachedStart,lastTime:currentTime};
  }
  if(kind==='timeupdate'){
-  if(event.paused||event.seeking||!Number.isFinite(event.playbackRate)||event.playbackRate!<0.75||
-   event.playbackRate!>1.5)return {...state,lastTime:null};
+  const rate=event.playbackRate;
+  if(event.paused||event.seeking||typeof rate!=='number'||!Number.isFinite(rate)||
+   rate<0.75||rate>1.5)return {...state,lastTime:null};
   const prev=state.lastTime;
   if(prev===null||currentTime<=prev||currentTime-prev>2.5)
    return {...state,lastTime:currentTime};
