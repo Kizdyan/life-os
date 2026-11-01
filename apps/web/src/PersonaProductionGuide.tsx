@@ -106,7 +106,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   <article className="personaGuideSection">
    <div className="personaGuideNumber">02</div><h4>Хук и слова, которые произнести</h4>
    <p>Устная речь — не подпись к ролику. Сохраняем паузы, действия и живую драматургию. Только явное авторское утверждение делает текст съёмочным сценарием.</p>
-   {scriptDiffersFromBrief&&<p className="personaGuideWarn" role="status">Сохранённый сценарий изменился после создания Production Brief. Ниже показана АКТУАЛЬНАЯ редакция сценария, но кадры и монтажный бриф устарели. Пересоберите бриф и пройдите редакторскую приёмку заново.</p>
+   {scriptDiffersFromBrief&&<p className="personaGuideWarn" role="status">Сохранённый сценарий изменился после создания Production Brief. Ниже показана АКТУАЛЬНАЯ редакция сценария, но кадры и монтажный бриф устарели. Пересоберите бриф и пройдите редакторскую приёмку заново.</p>}
    <div className="personaGuideHook"><small>{example?'ГОТОВЫЙ РАБОЧИЙ ПРИМЕР · НЕ ПРИМЕНЁН К ПРОЕКТУ':approvedScript?'АВТОРСКАЯ ВЕРСИЯ СЦЕНАРИЯ':'ТЕКУЩИЙ НЕУТВЕРЖДЁННЫЙ СЦЕНАРИЙ / БРИФ'}</small>
     <b>Хук 0–{scenes[0]?.seconds??0} с: «{scenes[0]?.line??'Сначала сформируйте сценарий'}»</b>
     <span>Цель — сразу показать противоречие или действие; не заставка и не общее представление.</span>
