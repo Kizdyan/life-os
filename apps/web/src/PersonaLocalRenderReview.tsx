@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import PersonaFinishedRenderReview from './PersonaFinishedRenderReview';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
 import {inspectPersonaLocalRenderImport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
@@ -112,6 +113,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    <pre>{'npm run media:finish:reel -- "<ПАПКА_ЧЕРНОВИКА>" "<finish-options.json>" "<НОВАЯ_ПАПКА>"'}</pre>
    <p>Результат: finished-candidate.mp4, finish-qa.json и FINISH-RESULT.json. Это не утверждение или публикация.</p>
   </details>}
+  {current&&<PersonaFinishedRenderReview key={projectId+':'+current.mp4Sha256} draft={current} onSave={onSave} canImport={Boolean(handoff?.allowed)}/>}
   {preview&&current&&<video className="personaRenderReturnVideo" controls playsInline preload="metadata" src={preview}/>}
   <p className="personaRenderReturnWarning">Перед финализацией лично оцени актёрскую игру, свет, цвет кожи, сохранность внешности, баланс голоса и музыки, ритм и точность субтитров. Импорт не включает автопубликацию и не означает финального утверждения.</p>
  </section>;
