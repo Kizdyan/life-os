@@ -62,8 +62,9 @@ for (let i = 0; i < ids.length; i++) {
       !source.path.startsWith('REPLACE_WITH_EXPLICIT_ABSOLUTE_PATH_'))
     fail('source-template missing correct explicit placeholder at ' + ids[i]);
 }
-if (!shootingPack.includes('editorial-candidate-production-brief.json'))
-  fail('shooting command uses a stale or different Production Brief');
+if (!shootingPack.includes('editorial-candidate-production-brief.json') ||
+    !shootingPack.includes('«JSON для локального монтажа»'))
+  fail('selected rehearsal candidate and author-approved Persona brief export must both be documented');
 if (!shootingPack.includes('Публикация заблокирована'))
   fail('publication approval gate is missing from shooting instructions');
 if (!brief.script[6].action.includes('без обязательного титра') ||
@@ -72,6 +73,13 @@ if (!brief.script[6].action.includes('без обязательного титр
   fail('A04 script, shot and shooting pack must not force a title into the four-second payoff');
 if (shootingPack.includes('$selected') || shootingPack.includes('$out\\intake\\sources.json'))
   fail('Shooting instructions contain a stale or undefined source-manifest command');
-if (!shootingPack.includes('$sources') || !shootingPack.includes('npm run persona:delivery:sources --'))
-  fail('Shooting instructions do not use one consistent explicit-folder manifest workflow');
-console.log('PASS: selected editorial-candidate JSON (not archived V1), 7 ordered scenes + shots, locked A01/B01/payoff, 31 s, matching shooting pack and explicit source IDs');
+const win = shootingPack.split('## Первый запуск на Windows')[1]?.split('## Возврат смонтированного MP4')[0] || '';
+if (!win.includes('$sourceFolder') ||
+    !win.includes('npm run media:shoot:intake -- folder $intake $sourceFolder') ||
+    !win.includes("persona-production-brief.json'") ||
+    !win.includes('npm run media:first-reel:draft --') ||
+    !win.includes('$brief $draft $whisperCli $whisperModel $ffmpegBin strict') ||
+    !win.includes('node tools\\persona-video-quality.mjs') ||
+    !shootingPack.includes('npm run persona:delivery:sources --'))
+  fail('Shooting instructions must consistently use selected explicit folder, exported brief and Windows tool paths');
+console.log('PASS: rehearsal candidate has 7 ordered scenes/shots and 31 s; Windows handoff requires explicitly selected folder, approved Persona brief and FFmpeg bin');
