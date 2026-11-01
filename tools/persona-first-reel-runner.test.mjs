@@ -86,7 +86,7 @@ writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,sta
  }finally{await rm(d,{recursive:true,force:true})}
 });
 
-test('one-folder mode prevents writes into author's recorded source directory before mkdir',async()=>{
+test('one-folder mode prevents output inside selected source directory before mkdir',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-folder-guard-'));
  try{
   const selected=join(root,'captures'),output=join(selected,'output');
