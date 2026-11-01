@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
@@ -143,6 +144,8 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   requestedBrief.script.some((line,i)=>line?.order!==i+1||typeof line.line!=='string'||!line.line.trim())||
   requestedBrief.shots.some((shot,i)=>shot?.order!==i+1))
   fail('Invalid Persona Reel brief: expected 2–30 ordered spoken beats with matching shots');
+ // Bind the rendered result to this exact JSON brief, independent of whitespace.
+ const briefFingerprintSha256=createHash('sha256').update(JSON.stringify(requestedBrief)).digest('hex');
  const root=resolve(outputDir);
  const input=resolve(sources);
  const inputStats=await stat(input);
@@ -208,6 +211,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const timing=assessFirstReelTiming(requestedBrief,qa);
   if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
   const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+    briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
     subtitleDraft,timing,
     warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
