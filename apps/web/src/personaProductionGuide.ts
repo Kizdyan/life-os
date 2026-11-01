@@ -120,6 +120,21 @@ export const exampleActorComposerSourceFiles:Readonly<Record<string,string>>={
 export function createPersonaProductionGuide(now:string,preset:'general'|'actor_composer'='general'):PersonaProductionGuide{
  return {version:1,fields:{...(preset==='actor_composer'?defaultGuideFields:generalGuideFields)},checks:{},updatedAt:now};
 }
+/** A changed production decision invalidates attestations that depended on it. */
+export function reviseGuideField(guide:PersonaProductionGuide,field:GuideField,value:string,now:string):PersonaProductionGuide{
+ if(guide.fields[field]===value)return guide;
+ const invalidates:Partial<Record<GuideField,GuideCheck[]>>={
+  audience:['research'],viewerPromise:['research'],topicEvidence:['research'],
+  location:['set','takes','editReview'],setArrangement:['set','takes','editReview'],
+  camera:['set','takes','editReview'],wardrobeProps:['set','takes','editReview'],
+  keyLight:['lighting','takes','editReview'],
+  sound:['sound','takes','editReview'],
+  editing:['editReview'],captions:['editReview'],color:['editReview'],
+ };
+ const checks={...guide.checks};
+ for(const check of invalidates[field]??[])delete checks[check];
+ return {...guide,fields:{...guide.fields,[field]:value},checks,updatedAt:now};
+}
 export function validatePersonaProductionGuide(value:unknown):value is PersonaProductionGuide{
  if(!value||typeof value!=='object')return false;
  const x=value as Partial<PersonaProductionGuide>;
