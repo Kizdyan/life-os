@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming } from './persona-first-reel-runner.mjs';
