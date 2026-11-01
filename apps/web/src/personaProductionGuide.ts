@@ -1,4 +1,4 @@
-import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
+import {buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionIdea} from '../../../packages/core/src/persona-production-brief';
 
 /** Editorial notes only. The approved script, rendering manifest and publication gate
  * remain in their existing authoritative project records. */
@@ -80,6 +80,36 @@ export function productionGuideScenes(brief:PersonaProductionBrief|null){
   framing:brief.shots[i].framing,action:beat.action,
   lighting:brief.shots[i].lighting,source:'brief' as const,
  }));
+}
+/** Explicit click creates an editable, unapproved working candidate in the canonical
+ * Scenario/Production Brief workflow; nothing is auto-approved or rendered. */
+export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide:PersonaProductionGuide):PersonaProductionBrief{
+ const base=buildPersonaProductionBrief({idea});
+ const script=exampleActorComposerBeats.map((beat,i)=>({
+  order:i+1,durationSec:beat.seconds,line:beat.line,action:beat.action,
+ }));
+ const framings:PersonaProductionBrief['shots'][number]['framing'][]=[
+  'close-up','medium','medium','medium','close-up','medium','close-up'
+ ];
+ const shots=exampleActorComposerBeats.map((beat,i)=>({
+  order:i+1,durationSec:beat.seconds,framing:framings[i],
+  angle:beat.framing+' · '+(beat.id.startsWith('A')?'Актёр обращён вправо или в камеру':'Композитор у клавиш, взгляд влево'),
+  cameraMovement:'Камера на штативе, без движения',
+  lighting:beat.lighting,action:beat.action+'; исходник '+beat.id+'_take01.mp4',
+ }));
+ return {...base,hook:{...base.hook,firstSeconds:script[0].line,visual:exampleActorComposerBeats[0].action},
+  script,shots,capture:{...base.capture,
+   location:guide.fields.location,lighting:guide.fields.keyLight,
+   wardrobe:guide.fields.wardrobeProps,
+   props:[...base.capture.props,'Клавиши/фортепиано','Папка с текстом'],
+   audio:{recording:guide.fields.sound,processing:base.capture.audio.processing},
+  },
+  postProduction:{...base.postProduction,
+   transitions:guide.fields.editing,
+   subtitles:{...base.postProduction.subtitles,instruction:guide.fields.captions},
+   color:guide.fields.color},
+  adaptations:Object.fromEntries(Object.entries(base.adaptations).map(([k,v])=>[k,{...v,durationSec:31}])) as PersonaProductionBrief['adaptations'],
+ };
 }
 export function guideProgress(guide:PersonaProductionGuide){
  return guideChecks.filter(([id])=>guide.checks[id]===true).length;
