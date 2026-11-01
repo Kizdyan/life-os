@@ -226,7 +226,21 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   throw error;
  }
 }
+/** A manual Recovery Review is a valid artifact, but NOT a successful MP4 render. */
+export function firstReelCliExitCode(result){
+ return result?.status==='awaiting-author-review'&&
+  typeof result?.output==='string'&&result.output.endsWith('draft-reel.mp4')?0:2;
+}
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
  const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode]=process.argv.slice(2);
- runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
+ runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'})
+  .then(result=>{
+   console.log(JSON.stringify(result,null,2));
+   const code=firstReelCliExitCode(result);
+   if(code!==0){
+    console.error('Persona first-reel runner: No rendered MP4. Manual Recovery Review is available at RECOVERY-RESULT.md in the selected draft directory. Audio/video QA must not run.');
+    process.exitCode=code;
+   }
+  })
+  .catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
 }
