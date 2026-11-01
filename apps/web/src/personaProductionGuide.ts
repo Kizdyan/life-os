@@ -14,10 +14,21 @@ export const guideChecks:[GuideCheck,string][]=[
  ['takes','Выбрал необходимые дубли и отдельно отметил удачные актёрские исполнения'],
  ['editReview','Проверил порядок склеек, паузы, титры, музыку и цвет до финального решения'],
 ];
+export type GuideShotField='camera'|'lighting'|'performance'|'edit';
+export interface GuideShotNote{
+ /** Fingerprint of exact source scene. If dialogue/timing changes, the note is stale until reconfirmed. */
+ sceneFingerprint:string;
+ camera:string;
+ lighting:string;
+ performance:string;
+ edit:string;
+}
 export interface PersonaProductionGuide{
  version:1;
  fields:Record<GuideField,string>;
  checks:Partial<Record<GuideCheck,boolean>>;
+ /** Planning annotations only: they never mutate the authoritative Production Brief or rendering timeline. */
+ shotNotes?:Record<string,GuideShotNote>;
  updatedAt:string;
 }
 export const guideFieldLabels:Record<GuideField,string>={
@@ -135,6 +146,30 @@ export function reviseGuideField(guide:PersonaProductionGuide,field:GuideField,v
  for(const check of invalidates[field]??[])delete checks[check];
  return {...guide,fields:{...guide.fields,[field]:value},checks,updatedAt:now};
 }
+/** Fingerprint includes the exact current spoken line and cut timing, so revised scripts
+ * cannot quietly reuse old camera/lighting directions as if they were reviewed. */
+export function guideSceneFingerprint(scene:{
+ id:string;seconds:number;line:string;action:string;
+}):string{
+ return JSON.stringify([scene.id,scene.seconds,scene.line,scene.action]);
+}
+export function guideShotNoteForScene(guide:PersonaProductionGuide,scene:{
+ id:string;seconds:number;line:string;action:string;
+}):{note:GuideShotNote|null;stale:boolean}{
+ const note=guide.shotNotes?.[scene.id]??null;
+ return {note,stale:Boolean(note&&note.sceneFingerprint!==guideSceneFingerprint(scene))};
+}
+export function updateGuideShotNote(
+ guide:PersonaProductionGuide,
+ scene:{id:string;seconds:number;line:string;action:string},
+ values:Pick<GuideShotNote,GuideShotField>,
+ now:string,
+):PersonaProductionGuide{
+ const nextNote:GuideShotNote={sceneFingerprint:guideSceneFingerprint(scene),...values};
+ const checks={...guide.checks};
+ for(const key of ['set','lighting','takes','editReview'] as GuideCheck[])delete checks[key];
+ return {...guide,shotNotes:{...guide.shotNotes,[scene.id]:nextNote},checks,updatedAt:now};
+}
 export function validatePersonaProductionGuide(value:unknown):value is PersonaProductionGuide{
  if(!value||typeof value!=='object')return false;
  const x=value as Partial<PersonaProductionGuide>;
@@ -142,6 +177,17 @@ export function validatePersonaProductionGuide(value:unknown):value is PersonaPr
   typeof x.updatedAt!=='string'||!Number.isFinite(Date.parse(x.updatedAt)))return false;
  const fieldKeys=Object.keys(defaultGuideFields) as GuideField[];
  if(fieldKeys.some(key=>typeof x.fields?.[key]!=='string'||x.fields[key].length>6000))return false;
+ const shotNotes=x.shotNotes;
+ if(shotNotes!==undefined){
+  if(!shotNotes||typeof shotNotes!=='object'||Array.isArray(shotNotes)||Object.keys(shotNotes).length>100)return false;
+  for(const [id,note] of Object.entries(shotNotes)){
+   if(!/^[a-zA-Z0-9_-]{1,64}$/.test(id)||!note||typeof note!=='object'||Array.isArray(note))return false;
+   const n=note as Partial<GuideShotNote>;
+   if(typeof n.sceneFingerprint!=='string'||n.sceneFingerprint.length>10000)return false;
+   if((['camera','lighting','performance','edit'] as GuideShotField[]).some(key=>
+    typeof n[key]!=='string'||n[key]!.length>4000))return false;
+  }
+ }
  return Object.entries(x.checks).every(([key,val])=>guideChecks.some(([check])=>check===key)&&typeof val==='boolean');
 }
 export interface PersonaGuideScene{
@@ -216,6 +262,7 @@ export function exportPersonaShootingSheet(input:{
    ...(scene.camera?[`Камера: ${scene.camera}`]:[]),
    ...(scene.performance?[`Актёрское действие: ${scene.performance}`]:[]),
    ...(scene.edit?[`Монтаж: ${scene.edit}`]:[]),
+   ...(guideShotNoteForScene(guide,scene).stale?['ВНИМАНИЕ: режиссёрская заметка к сцене устарела после изменения текста/времени — требуется повторное согласование.']:[]),
    '',
   ]),
   '## Практический план',
