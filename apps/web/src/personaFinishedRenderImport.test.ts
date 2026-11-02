@@ -110,6 +110,12 @@ describe('Persona final local render and author review',()=>{
   expect(finished.quality?.videoSha256).toBe(finishedSha);
   expect(finished.quality?.warningCount).toBe(0);
   expect(finished.publicationApproved).toBe(false);
+  (input.quality as any).video.bytes=390001;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества/);
+  (input.quality as any).video.bytes=390000;
+  (input.quality as any).video.fps=25;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества/);
+  (input.quality as any).video.fps=30;
   (input.quality as any).video.sha256='f'.repeat(64);
   expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества|SHA-256/);
  });
