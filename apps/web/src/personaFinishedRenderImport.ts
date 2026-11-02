@@ -19,6 +19,9 @@ export type PersonaFinishedRenderRecord={
  importedAt:string;status:'awaiting-author-review';publicationApproved:false;
  qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
  quality?:PersonaVideoQualitySummary;
+ /** Earlier SHA-bound measurements remain visible when a later local analysis
+  * adds non-conflicting findings for this exact MP4. */
+ qualityHistory?:PersonaVideoQualitySummary[];
 };
 type VideoFile={name:string;size:number;sha256:string;durationSec:number;width?:number;height?:number};
 const hash=/^[a-f0-9]{64}$/i;
@@ -71,6 +74,19 @@ export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
  return Boolean(normalized&&normalized.warningCount===summary.warningCount&&
   normalized.humanReviewCount===summary.humanReviewCount);
 }
+function isPersonaVideoQualityHistory(value:unknown,sha:string,current:PersonaVideoQualitySummary|undefined):boolean{
+ if(value===undefined)return true;
+ if(!Array.isArray(value)||value.length<1||value.length>12)return false;
+ let previousTimestamp=-Infinity;
+ return value.every(item=>{
+  if(!isPersonaVideoQualitySummary(item,sha))return false;
+  const timestamp=Date.parse(item.analyzedAt);
+  if(!Number.isFinite(timestamp)||timestamp<=previousTimestamp||
+    (current!==undefined&&timestamp>=Date.parse(current.analyzedAt)))return false;
+  previousTimestamp=timestamp;
+  return true;
+ });
+}
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);
  const checks=record(record(r.authorReview).criteria),review=record(r.authorReview),cue=record(r.musicCue);
@@ -103,6 +119,7 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   typeof r.importedAt==='string'&&Number.isFinite(Date.parse(r.importedAt))&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
   (r.quality===undefined||isPersonaVideoQualitySummary(r.quality,r.finishedSha256 as string))&&
+  isPersonaVideoQualityHistory(r.qualityHistory,r.finishedSha256 as string,r.quality)&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
 }
 function isSha(value:unknown):value is string{return typeof value==='string'&&hash.test(value)}
@@ -240,9 +257,14 @@ export function mergePersonaFinishedReimport(
   if(oldFlags.some(item=>!newFlags.some(next=>next.id===item.id&&next.status===item.status)))
    fail('Новый отчёт качества скрывает ранее сохранённые предупреждения.');
  }
+ const qualityHistory=previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
+  ?[...(previous.qualityHistory??[]),previous.quality]
+  :previous.qualityHistory;
  const merged:PersonaFinishedRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
+  ...(qualityHistory?.length?{qualityHistory}:{}),
   ...(imported.musicCue||previous.musicCue?{musicCue:imported.musicCue??previous.musicCue}:{}),
   ...(previous.authorReview?{authorReview:previous.authorReview}:{})
  };

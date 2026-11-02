@@ -225,6 +225,18 @@ describe('Persona final local render and author review',()=>{
   expect(()=>mergePersonaFinishedReimport(newer,older)).toThrow(/старым анализом/);
   expect(mergePersonaFinishedReimport(older,newer).quality?.analyzedAt).toBe(quality.analyzedAt);
  });
+ it('keeps earlier measured QA evidence when a later analysis of the same MP4 changes its finding set',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const first={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]}};
+  const later={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T15:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'audio_loudness',status:'measured' as const,
+    title:'Audio',detail:'Measured again',timecodes:[]}]}};
+  const merged=mergePersonaFinishedReimport(first,later);
+  expect(merged.quality).toEqual(later.quality);
+  expect(merged.qualityHistory).toEqual([first.quality]);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false
@@ -233,5 +245,17 @@ describe('Persona final local render and author review',()=>{
   expect(html).toContain('video-quality.json');
   expect(html).toContain('disabled');
   expect(html).toContain('FINISH-RESULT.json');
+ });
+ it('shows preserved earlier measurements separately from the current report',()=>{
+  const current=inspectPersonaFinishedRenderImport(fixture());
+  const earlier={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T11:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]};
+  const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
+   draft:{...draft,finished:{...current,quality:{...earlier,analyzedAt:'2026-11-01T12:00:00Z'},qualityHistory:[earlier]}},
+   onSave:()=>false,canImport:false
+  }));
+  expect(html).toContain('История технических измерений');
+  expect(html).toContain('11:00');
  });
 });

@@ -119,6 +119,10 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
       <b>{finding.status==='warning'?'Предупреждение':finding.status==='measured'?'Измерено':'Проверить вручную'}: {finding.title}</b><br/>
       {finding.detail}{finding.timecodes.length?' · '+finding.timecodes.join(', '):''}
      </li>)}</ul>
+     {finished.qualityHistory?.length&&<details className="personaQualityHistory"><summary>История технических измерений ({finished.qualityHistory.length})</summary>
+      <p>Предыдущие SHA-256-привязанные отчёты сохранены для сравнения; это не художественное решение.</p>
+      <ul>{finished.qualityHistory.map((entry,index)=><li key={entry.analyzedAt+'-'+index}>{entry.analyzedAt} · предупреждений: {entry.warningCount} · ручной проверки: {entry.humanReviewCount}</li>)}</ul>
+     </details>}
     </>:<p>Для этого ранее собранного результата нет <code>video-quality.json</code>. Запусти новую локальную финализацию для измеримого отчёта; это не означает дефект или одобрение.</p>}
    </div>
    {finished.authorReview&&<p>Последнее решение: {finished.authorReview.reviewer} · {finished.authorReview.notes||'без замечаний'}</p>}
