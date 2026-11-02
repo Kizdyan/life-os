@@ -184,6 +184,16 @@ describe('Persona local render evidence intake',()=>{
   expect(()=>mergePersonaDraftReimport(old,newer)).toThrow(/кадры/);
   expect(mergePersonaDraftReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
  });
+ it('rejects rewritten QA descriptions for the same finding ID',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Black frames',detail:'No black frames',timecodes:['00:00:05.000']}]};
+  const previous={...base,quality};
+  const rewritten={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',
+   findings:[{...quality.findings[0],detail:'Altered after review'}]}};
+  expect(()=>mergePersonaDraftReimport(previous,rewritten)).toThrow(/содержание/);
+ });
  it('rejects older draft QA reports on reimport of the same video',()=>{
   const base=inspectPersonaLocalRenderImport(fixture());
   const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
