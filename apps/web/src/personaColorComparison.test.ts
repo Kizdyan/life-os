@@ -1,3 +1,6 @@
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
 import {describe,expect,it} from 'vitest';
 import {
  COLOR_VARIANT_PRESETS,choosePersonaColorVariant,inspectPersonaColorComparisonManifest,
@@ -86,5 +89,23 @@ describe('Persona color comparison import',()=>{
   const restored=loadPersonaProjects(storage,()=> 'unused').projects[0].colorComparison;
   expect(restored).toEqual(selected);
   expect(readPersonaColorComparisonRecord(restored)?.selectedVariantId).toBe('muted-filmic');
+ });
+});
+
+describe('Comparison Studio restored review',()=>{
+ it('shows the saved author decision without pretending the old MP4s are still available',()=>{
+  const {manifest,files}=fixture();
+  const approved=choosePersonaColorVariant(
+   inspectPersonaColorComparisonManifest(manifest,files,stamp),
+   'warm-cinematic','Natural skin tones','2026-11-02T21:00:00.000Z');
+  const markup=renderToStaticMarkup(React.createElement(PersonaColorComparisonStudio,{
+   projectId:'color-test',record:approved,onSave:()=>true,
+  }));
+  expect(markup).toContain('Автор выбрал Warm Cinematic');
+  expect(markup).toContain('Natural skin tones');
+  expect(markup).toContain('повторно выберите пять исходных файлов');
+  expect(markup).not.toContain('aria-label="Цветовой вариант для просмотра"');
+  expect(markup).not.toContain('aria-label="Обработанное видео"');
+  expect(markup).toMatch(/disabled=""[^>]*>Сохранить выбор:/);
  });
 });
