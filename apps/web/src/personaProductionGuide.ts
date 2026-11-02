@@ -274,6 +274,45 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
   adaptations:Object.fromEntries(Object.entries(base.adaptations).map(([k,v])=>[k,{...v,durationSec:31}])) as PersonaProductionBrief['adaptations'],
  };
 }
+/** Explicit, reviewed handoff of preproduction decisions into the canonical brief.
+ * This is deliberately NOT called during autosave. Only the production pipeline may
+ * record approvals; every changed brief must go through revisePersonaProductionBrief.
+ * Script dialogue and timing are not touched. */
+export function applyPersonaGuideToBrief(
+ guide:PersonaProductionGuide,brief:PersonaProductionBrief,
+):PersonaProductionBrief{
+ if(!validatePersonaProductionGuide(guide))throw new Error('Съёмочный план не прошёл проверку целостности.');
+ const scenes=productionGuideScenes(brief);
+ if(brief.script.length!==brief.shots.length||!scenes.every((scene,index)=>
+  scene.id===String(brief.script[index].order)))
+  throw new Error('Съёмочный бриф не содержит согласованной раскадровки.');
+ const notes=scenes.map(scene=>guideShotNoteForScene(guide,scene));
+ if(notes.some(entry=>entry.stale))
+  throw new Error('Есть устаревшие режиссёрские указания. Сначала сверяйте их с новыми репликами и длительностями.');
+ const actionMarker='\n[PERSONA_ACTING_DIRECTION] ';
+ const shots=brief.shots.map((shot,index)=>{
+  const note=notes[index].note;
+  if(!note)return shot;
+  // Preserve native source filename and stage directions before this optional
+  // keyed section. Re-applying a new note does not append a second copy.
+  const baseAction=shot.action.split(actionMarker)[0];
+  return {...shot,angle:note.camera,lighting:note.lighting,
+   action:baseAction+actionMarker+note.performance};
+ });
+ const perShotEdits=scenes.flatMap((scene,index)=>notes[index].note?.edit
+  ?[`Кадр ${scene.id}: ${notes[index].note!.edit}`]:[]);
+ const transitions=perShotEdits.length
+  ?[guide.fields.editing,'Указания по отдельным кадрам:',...perShotEdits].join('\n')
+  :guide.fields.editing;
+ return {...brief,shots,
+  capture:{...brief.capture,location:guide.fields.location,
+   wardrobe:guide.fields.wardrobeProps,lighting:guide.fields.keyLight,
+   audio:{...brief.capture.audio,recording:guide.fields.sound}},
+  postProduction:{...brief.postProduction,transitions,color:guide.fields.color,
+   subtitles:{...brief.postProduction.subtitles,instruction:guide.fields.captions}},
+ };
+}
+
 /** Self-contained, unapproved on-set handoff. No original assets, private paths or
  * implicit authorization to record, render or publish are included. */
 export function exportPersonaShootingSheet(input:{
