@@ -39,6 +39,8 @@ async function preflight(input,environment){
  try{data=JSON.parse(stdout)}catch{fail('ffprobe did not return valid JSON')}
  const video=data.streams?.find(stream=>stream.codec_type==='video');
  if(!video)fail('no video stream');
+ if(data.streams?.some(stream=>stream.codec_type==='subtitle'))
+  fail('embedded subtitles would be lost during color rendering; use a subtitle-free source or an explicitly burnt-in copy');
  const transfer=String(video.color_transfer||'unknown').toLowerCase();
  const primaries=String(video.color_primaries||'unknown').toLowerCase();
  if(transfer==='smpte2084'||transfer==='arib-std-b67'||primaries.startsWith('bt2020'))
