@@ -91,7 +91,7 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   typeof r.captionCount==='number'&&r.captionCount>0&&r.captionCount<=80&&
   within(color.brightness,-0.05,0.05)&&within(color.contrast,0.92,1.08)&&
   within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&cueValid&&
-  typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
+  typeof r.importedAt==='string'&&Number.isFinite(Date.parse(r.importedAt))&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
   (r.quality===undefined||isPersonaVideoQualitySummary(r.quality,r.finishedSha256 as string))&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
