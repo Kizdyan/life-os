@@ -285,13 +285,21 @@ export function applyPersonaGuideToBrief(
  guide:PersonaProductionGuide,brief:PersonaProductionBrief,
 ):PersonaProductionBrief{
  if(!validatePersonaProductionGuide(guide))throw new Error('Съёмочный план не прошёл проверку целостности.');
+ const requiredFields:GuideField[]=['location','keyLight','wardrobeProps','sound','editing','captions','color'];
+ for(const field of requiredFields)
+  if(!guide.fields[field].trim())throw new Error('Перед переносом заполните поле: '+guideFieldLabels[field]);
  const scenes=productionGuideScenes(brief);
  if(brief.script.length!==brief.shots.length||!scenes.every((scene,index)=>
   scene.id===String(brief.script[index].order)))
   throw new Error('Съёмочный бриф не содержит согласованной раскадровки.');
  const notes=scenes.map(scene=>guideShotNoteForScene(guide,scene));
  if(notes.some(entry=>entry.stale))
-  throw new Error('Есть устаревшие режиссёрские указания. Сначала сверяйте их с новыми репликами и длительностями.');
+  throw new Error('Есть устаревшие режиссёрские указания. Сначала сверьте их с новыми репликами и длительностями.');
+ for(let i=0;i<notes.length;i++){
+  const note=notes[i].note;
+  if(note&&(!note.camera.trim()||!note.lighting.trim()||!note.performance.trim()))
+   throw new Error('Не заполнены камера, свет или актёрская задача для кадра '+scenes[i].id);
+ }
  const actionMarker=actingDirectionMarker;
  const shots=brief.shots.map((shot,index)=>{
   const note=notes[index].note;
