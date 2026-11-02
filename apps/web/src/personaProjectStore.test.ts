@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createPersonaProject,loadPersonaProjects,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {applyPersonaImportedProductionBrief,applyPersonaProductionMilestone,assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 
 function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
@@ -8,6 +8,124 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
 }
 
 describe('Persona project storage',()=>{
+ it('persists an editorial approval before the browser can reload',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'milestone',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const decision={stage:'READY_FOR_SHOOT',materials:{editorialDecision:{decision:'approved',editor:'Author'}}};
+  const saved=applyPersonaProductionMilestone({...original,revision:2},decision);
+  savePersonaProject(storage,saved);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.shootingPlan).toEqual(decision);
+  expect(restored.editPlan).toEqual(decision);
+  expect(restored.revision).toBe(2);
+  expect(restored.stage).toBe('strategy');
+  expect(restored.scenarioWorkspace).toBeUndefined();
+ });
+ it('does not replace the previous approval when production persistence fails',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'quota-case',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const broken:PersonaProjectStorage={
+   getItem:key=>storage.getItem(key),
+   setItem:()=>{throw Error('quota exceeded')},
+   removeItem:key=>storage.removeItem(key),
+  };
+  const proposal=applyPersonaProductionMilestone({...original,revision:2},{editorialDecision:{decision:'approved'}});
+  expect(()=>savePersonaProject(broken,proposal)).toThrow('quota exceeded');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].shootingPlan).toBeNull();
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].revision).toBe(1);
+ });
+ it('persists imported scenario and full production plan before the next React effect',()=>{
+  const storage=memoryStorage();
+  const project={...createPersonaProject({id:'atomic-import',title:'First Reels',contentType:'reel',sourceIdea:'Acting',now:'2026-11-01T00:00:00.000Z'}),qa:{pass:true},lastOpenStep:'idea',revision:2};
+  savePersonaProject(storage,project);
+  const workspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-import'};
+  const production={stage:'QA',materials:{shotList:[{order:1,line:'A01'},{order:2,line:'B01'}]}};
+  const imported=applyPersonaImportedProductionBrief({...project,revision:3},production,workspace);
+  savePersonaProject(storage,imported);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.revision).toBe(3);
+  expect(restored.scenarioWorkspace).toEqual(workspace);
+  expect(restored.shootingPlan).toEqual(production);
+  expect(restored.editPlan).toEqual(production);
+  expect(restored.stage).toBe('final_qa');
+  expect(restored.lastOpenStep).toBe('script');
+  expect(restored.qa).toBeNull();
+  expect(project.lastOpenStep).toBe('idea');
+ });
+
+ it('rejects async import after the author switches to another project',()=>{
+  const storage=memoryStorage();
+  const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  const b=createPersonaProject({id:'b',title:'B',contentType:'reel',sourceIdea:'Second',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,a);
+  savePersonaProject(storage,b);
+  const initial=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(initial,'b',b.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(initial,'a',a.revision)).toThrow('другой проект');
+ });
+ it('rejects async import after the current project changes during file read',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'a',title:'Before',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,first);
+  const revisionBefore=loadPersonaProjects(storage,()=> 'unused').projects[0].revision;
+  savePersonaProject(storage,{...first,revision:2,title:'Updated by other tab'});
+  const latest=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(latest,first.id,revisionBefore)).toThrow('Проект изменился');
+  expect(latest.projects[0].title).toBe('Updated by other tab');
+ });
+ it('permits an unchanged project at both sides of an async file read',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'a',title:'Stable',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,project);
+  const before=loadPersonaProjects(storage,()=> 'unused');
+  const after=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(before,'a',project.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(after,'a',project.revision)).not.toThrow();
+ });
+
+ it('autosave uses the latest persisted scenario, not the older React script object',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'p-reel',title:'Actor and Composer',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const savedWorkspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-editorial-version'};
+  const updated={...old,scenarioWorkspace:savedWorkspace,revision:2,updatedAt:'2026-10-31T09:01:00Z'};
+  savePersonaProject(storage,updated);
+  const base=resolvePersonaProjectSaveBase(storage,updated);
+  expect(base.scenarioWorkspace).toEqual(savedWorkspace);
+  const autosave={...base,lastOpenStep:'review',revision:base.revision+1};
+  savePersonaProject(storage,autosave);
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace).toEqual(savedWorkspace);
+ });
+ it('accepts a newer revision already written by this tab while React is behind',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'same-tab',title:'First',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const ownLatest={...old,revision:2,title:'Own synchronous edit'};
+  savePersonaProject(storage,ownLatest);
+  const rendered={...old};
+  const knownOwnRevision=ownLatest.revision;
+  expect(resolvePersonaProjectSaveBase(storage,{...rendered,revision:knownOwnRevision}).title).toBe('Own synchronous edit');
+  expect(()=>resolvePersonaProjectSaveBase(storage,rendered)).toThrow('persona_project_changed_since_open');
+ });
+ it('rejects stale React saves from another tab without rewriting the latest version',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,first);
+  const oldTab={...first};
+  const latest={...first,revision:2,title:'Second tab saved new text',updatedAt:'2026-10-31T09:02:00Z'};
+  savePersonaProject(storage,latest);
+  expect(()=>resolvePersonaProjectSaveBase(storage,oldTab)).toThrow('persona_project_changed_since_open');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe(latest.title);
+  expect(resolvePersonaProjectSaveBase(storage,latest).revision).toBe(2);
+ });
+ it('refuses saves for a project deleted from storage rather than resurrecting it',()=>{
+  const storage=memoryStorage();
+  const removed=createPersonaProject({id:'deleted',title:'Old',contentType:'reel',sourceIdea:'Old',now:'2026-10-31T09:00:00Z'});
+  expect(()=>resolvePersonaProjectSaveBase(storage,removed)).toThrow('persona_project_missing_at_save');
+ });
+
  it('migrates the previous single active draft without deleting its source keys',()=>{
   const storage=memoryStorage({
    'persona:active-idea:v1':JSON.stringify({id:'legacy-1',title:'Сцена',angle:'Одна репетиция',format:'reel',score:0}),
@@ -86,6 +204,31 @@ describe('Persona project storage',()=>{
   const reloaded=loadPersonaProjects(storage,()=> 'unused');
 
   expect((reloaded.projects[0] as any).scenarioWorkspace).toBeUndefined();
+ });
+
+ it('preserves multiple distinct corrupt collection backups rather than overwriting history',()=>{
+  const main='lifeos:persona:projects:v1';
+  const backup=main+':corrupt';
+  const storage=memoryStorage({[backup]:'{first-snapshot',[main]:'{second-snapshot'});
+  expect(loadPersonaProjects(storage,()=> 'unused').projects).toEqual([]);
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+  expect(storage.getItem(backup+':2')).toBe('{second-snapshot');
+  storage.setItem(main,'{third-snapshot');
+  loadPersonaProjects(storage,()=> 'unused');
+  expect(storage.getItem(backup+':3')).toBe('{third-snapshot');
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+ });
+ it('keeps the malformed original when the recovery backup cannot be written',()=>{
+  const main='lifeos:persona:projects:v1';
+  const original=memoryStorage({[main]:'{valuable-corrupt-data'});
+  const denied:PersonaProjectStorage={
+   getItem:key=>original.getItem(key),
+   setItem:(key,value)=>{if(key.includes(':corrupt'))throw new Error('storage quota');original.setItem(key,value)},
+   removeItem:key=>original.removeItem(key),
+  };
+  expect(()=>loadPersonaProjects(denied,()=> 'unused')).toThrow('storage quota');
+  expect(original.getItem(main)).toBe('{valuable-corrupt-data');
+  expect(original.getItem(main+':corrupt')).toBeNull();
  });
 
  it('quarantines corrupt project data instead of throwing or overwriting it',()=>{

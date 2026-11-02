@@ -1,7 +1,7 @@
 # Persona · Local Script Doctor (zero paid credits)
 
 ## Status / integration boundary
-This is a **standalone Windows-local two-pass Script Doctor**, not a claim that the hosted Persona UI can already call Ollama. It is an additive module on top of PR #132. No existing code or Project Store contracts are modified.
+This is a **Windows-local two-pass Script Doctor** integrated with Persona's existing JSON export/import UI. The hosted UI does not directly call the Windows Ollama service. This increment modifies the local CLI while preserving the existing core Project Store and imported suggestion contract.
 
 - Ollama `/api/tags` verifies the **already installed** local model.
 - First local `/api/chat` call critiques specified screenplay frames with concrete role, evidence and proposed solution.
@@ -29,7 +29,7 @@ Here, scenes 3 and 4 can change; scene 1 is explicitly locked; all other scenes 
 **Step 2 — run the two-pass editor (local only):**
 
 ```powershell
-node tools/persona-local-script-doctor.mjs "C:\path\doctor-task.json" "C:\path\doctor-suggestion.json" --model qwen2.5-coder:7b
+node tools/persona-local-script-doctor.mjs "C:\path\doctor-task.json" "C:\path\doctor-suggestion.json" --model qwen3:4b-instruct --timeout-ms 180000
 ```
 
 No model is downloaded by these commands. The model must appear in `ollama list`. The local Ollama endpoint is restricted to loopback.
@@ -39,6 +39,72 @@ No model is downloaded by these commands. The model must appear in `ollama list`
 Read `doctor-suggestion.json`, especially `diagnosis.findings`, `diff`, and `revisedBeats`. The editor may fail to propose good changes; this does **not** constitute artistic validation.
 
 In the same Persona project, choose **Загрузить результат локального редактора**, select the suggestion JSON and inspect every changed scene. Click **Принять как новую версию** only after review. The browser calls `applyPersonaLocalDoctorSuggestion()` and saves the new *unapproved* version through the existing `PersonaProjectStore`. Stale/tampered files, changed locked frames and nonrequested changes are rejected. No Production Brief or author approval happens automatically.
+
+## Patch-only review and durable stage artifacts (current workflow)
+
+The critique is now intentionally minimal: actionable `summary` + `findings` are mandatory, but the full `storyMap` is **optional**. A provided Story Map is still validated. This reduces the amount of narrative metadata a small local model must produce before offering concrete editorial corrections.
+
+**The rewrite model only returns patches for selected scenes.** Its schema is:
+
+```json
+{
+  "patches": [
+    {"beatIndex": 3, "line": "Новая реплика", "action": "Новое действие", "durationSec": 4}
+  ],
+  "changeSummary": "Почему конкретно изменён финал"
+}
+```
+
+Indices are **zero-based** in model JSON; Persona's selection UI is human-numbered. `assembleDoctorPatches()` copies every untouched beat from the saved original, not from the model; it refuses missing/duplicate/locked/unrequested indices, unexpected fields, no-op changes, repeated spoken lines and invalid durations. The final output remains the existing `persona-local-doctor-suggestion-v1` with `revisedBeats`, `sourceBeats`, `diagnosis` and exact `diff` for the **unchanged** Persona import adapter.
+
+Both Ollama JSON calls now explicitly set `think:false`. A successful schema response still passes the independent validators; technical correctness is not an artistic approval.
+
+For `doctor-suggestion.json`, the CLI automatically creates a **separate new local directory**:
+
+```text
+doctor-suggestion.json.artifacts/
+  task.json
+  run.json
+  diagnosis.request.json
+  diagnosis.started.json
+  diagnosis.raw.txt      # only when critique was newly generated
+  diagnosis.source-raw.txt  # only on resume: verified copy of earlier raw critique
+  diagnosis.metrics.json  # only for a new critique
+  diagnosis.validated.json
+  revision.request.json
+  revision.started.json
+  revision.raw.txt
+  revision.metrics.json
+  revision.validated.json
+  success.json             # only after successful output
+  failure.json             # only on failure
+```
+
+Each `*.request.json` records the full exact local Ollama request (including the original task, system prompt, JSON Schema, and parameters) **before** calling the model; these files can contain private screenplay material and must remain local. Each `*.started.json` records a stage start and the bounded model options. Each `*.metrics.json` records actual elapsed milliseconds and whether the model returned a parseable JSON payload; this does not establish artistic quality. The `failure.json` records the last recorded stage and distinguishes `FAILED`, `TIMEOUT` and `CANCELLED`, making interruption visible without implying that the script is bad. All three states can be resumed when a validated critique exists. Files after an incomplete phase may be absent, but earlier completed phases remain available. Raw model text is stored **unchanged**. The CLI refuses to reuse an existing output file or artifacts directory and never silently overwrites previous runs. These artifacts can contain private local screenplay text: **do not publish them to GitHub**.
+
+### Resume a failed second pass without repeating critique
+
+If a previous attempt saved `diagnosis.validated.json` but did not produce an accepted `suggestion.json`, create a **different output filename** and pass the failed artifacts directory:
+
+```powershell
+node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\path\\doctor-suggestion-retry.json" --model qwen3:4b-instruct --timeout-ms 180000 --resume-from "C:\\path\\doctor-suggestion.json.artifacts"
+```
+
+The old artifact set must contain `task.json`, `run.json`, `failure.json`, `diagnosis.validated.json` and the original raw critique (`diagnosis.raw.txt`, or `diagnosis.source-raw.txt` for repeated recoveries). The saved task must match the new input exactly, and the previously used model must match. The recovered critique is **independently revalidated** against the saved source task before the second call; changes to the task, invalid comments or cross-project reuse fail closed. Only the **rewrite** call is made (after the normal local model availability check). The retry directory records `diagnosis.reused.json`, the revalidated diagnosis and new patch-stage evidence. No new `diagnosis.raw.txt` is fabricated. Instead, the retry preserves a distinctly named verified copy in `diagnosis.source-raw.txt`. The saved canonical critique is checked against that original Ollama response, so even a structurally valid but manually altered finding is refused. Resume is allowed only for a recorded failure during the **rewrite** stage and when the earlier proposal file does not already exist. The same critique can be reused after multiple failed rewrite attempts without re-running diagnosis. This is not a guarantee of creative improvement.
+
+### Recovery after a hard process interruption
+
+A Windows shutdown, forced termination or power loss may leave a fully saved critique but **no `failure.json`**. For safety, ordinary `--resume-from` refuses these ambiguous folders: the original process may still be running.
+
+**First verify in Task Manager that the previous Script Doctor Node process is no longer running** (and any previous Qwen3 generation has stopped). Then explicitly opt in with a fresh output name:
+
+```powershell
+node tools/persona-local-script-doctor.mjs "C:\\path\\doctor-task.json" "C:\\path\\doctor-suggestion-hard-stop-retry.json" --model qwen3:4b-instruct --timeout-ms 180000 --resume-from "C:\\path\\doctor-suggestion.json.artifacts" --recover-interrupted
+```
+
+The run must have a completed `diagnosis.validated.json` and its original `diagnosis.raw.txt` (or `diagnosis.source-raw.txt` from an earlier retry); the task and model must match, original response must revalidate against the saved critique, and neither `success.json` nor the original proposal file may exist. The new `run.json` records `recovery.kind: UNRECORDED_INTERRUPTION`. No completed output is overwritten, and the critique is not recomputed. Do not use this flag while another Script Doctor process is active. `--recover-interrupted` without `--resume-from` fails closed.
+
+Old unsuccessful runs whose folders contain only `task.json` cannot reconstruct missing Ollama responses retrospectively. A new local run is required to generate stage artifacts; do not claim that historic reasons have been recovered.
 
 ## Learning from an explicit rejection
 
@@ -69,17 +135,17 @@ npm run persona:scenario:doctor:test
 ## Test commands (no running Ollama required)
 
 ```powershell
-node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs
+npm run persona:scenario:doctor:test
 npm run typecheck
 npm test
 npm run web:build
 ```
 
-The 12 standalone Node tests were previously executed in an isolated Node 22 environment with mocked Ollama. Newly authored Vitest task-builder and adapter tests, the full repository suite, TypeScript/web build, real Windows Ollama output and Playwright browser integration **have not been executed in this GitHub-only session**.
+This increment includes new patch-only, failure-preservation, raw-evidence integrity and repeat-resume regression tests. Canonical tasks without an optional `authorFeedback` are valid and tested. The patch assembler has been exercised on the GitHub source in isolated V8 checks; a full Node/npm suite, Windows Ollama, real creative acceptance and browser QA **must still run in the repository** before merging. No live creative V1→V2 success is claimed.
 
 ## Cooperation with parallel Codex work
 
-PR #132's local Windows worktree may contain unpublished modifications to existing `persona-scenario-intelligence.ts`, `PersonaFactory.tsx` and tests. This PR only adds new modules and documentation, and is intentionally **stacked on the published #132 head**. Check for live conflicts and cherry-pick/integrate carefully; don't merge blindly or overwrite Codex changes.
+The separate Draft PR for this increment is stacked on the last published PR #132 HEAD. Codex exhausted its usage before committing its local TDD changes, which may still be present in Windows worktree. Compare carefully, preserve local files and only cherry-pick/integrate after running repository tests. No changes to main or to the author's local files were made here.
 
 ## Not implemented here
 - The browser never calls Ollama directly. UI task export/import is implemented; direct secure browser-to-local bridge is not.

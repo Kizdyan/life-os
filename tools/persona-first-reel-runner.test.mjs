@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runFirstReel, validateDraftQa, validateFirstReelMode } from './persona-first-reel-runner.mjs';
+import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming, firstReelCliExitCode } from './persona-first-reel-runner.mjs';
 import {renderReviewedReel} from './persona-reviewed-render.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
@@ -18,6 +19,26 @@ test('two-shot live speech brief matches only the first two beats of the full Re
  assert.deepEqual(two.shots.map(x=>x.order),[1,2]);
  assert.equal(two.sourceFormat,'reel');
 });
+test('CLI never reports success when Whisper only prepared Recovery Review and no MP4 exists',()=>{
+ assert.equal(firstReelCliExitCode({status:'needs-manual-transcript-review',reviewHtml:'review.html',publicationApproved:false}),2);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'D:\\Persona\\draft-01\\draft-reel.mp4'}),0);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'/tmp/draft/draft-reel.mp4'}),0);
+ assert.equal(firstReelCliExitCode({status:'failed',output:null}),2);
+ assert.equal(firstReelCliExitCode({status:'awaiting-author-review',output:'/tmp/missing.mp4'}),2);
+});
+test('distinguishes actual ASR montage duration from the authored 31 seconds',()=>{
+ const brief={script:[3,4,5,5,4,6,4].map(durationSec=>({durationSec}))};
+ const exact=assessFirstReelTiming(brief,{evidence:{durationSec:31.05}});
+ assert.equal(exact.status,'within-brief-tolerance');
+ assert.equal(exact.targetDurationSec,31);
+ const shortened=assessFirstReelTiming(brief,{evidence:{durationSec:18}});
+ assert.equal(shortened.status,'needs-human-timing-review');
+ assert.equal(shortened.differenceSec,-13);
+ assert.equal(shortened.reviewRequired,true);
+ assert.match(shortened.notice,/do not time-stretch speech/);
+ assert.equal(assessFirstReelTiming({script:[{line:'unknown'}]},{evidence:{durationSec:5}}).status,'brief-duration-unavailable');
+});
+
 test('missing inputs fail preflight without creating output directory',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'persona-runner-preflight-'));
  try{await assert.rejects(()=>runFirstReel({sources:join(dir,'missing.json'),brief:join(dir,'no.json'),outputDir:join(dir,'output'),whisperCli:'no',whisperModel:'no'}),/Missing required local file/);
@@ -58,9 +79,15 @@ const evidence={path,fileExists:true,probeVerified:true,bytes:statSync(path).siz
 writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,status:'blocked',errors:['author approval required'],assets:[{passed:true}]},distribution:null}));`);
  const result=await runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier});
  assert.equal(result.status,'awaiting-author-review');
- assert.equal(result.events.length,7);
+ assert.equal(result.briefFingerprintSha256,createHash('sha256').update(JSON.stringify(JSON.parse(await readFile(brief,'utf8')))).digest('hex'));
+ assert.equal(result.briefIdeaId,null,'older minimal two-beat test briefs have no explicit idea ID');
+ assert.equal(result.events.length,8,'the timeline mismatch is an explicit review event');
  assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
  assert.equal(result.subtitleDraft.status,'needs-human-review');
+ assert.equal(result.timing.status,'needs-human-timing-review');
+ assert.equal(result.timing.targetDurationSec,4);
+ assert.equal(result.timing.renderedDurationSec,.5);
+ assert.ok(result.events.includes('duration_mismatch_requires_human_review'));
  assert.match(await readFile(result.subtitleDraft.srtPath,'utf8'),/Я актёр/);
  assert.equal(result.distributionAllowed,false);
  assert.ok((await stat(result.output)).size>1000);
@@ -69,6 +96,56 @@ writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,sta
  }finally{await rm(d,{recursive:true,force:true})}
 });
 
+test('one-folder mode prevents output inside selected source directory before mkdir',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-folder-guard-'));
+ try{
+  const selected=join(root,'captures'),output=join(selected,'output');
+  await mkdir(selected);
+  await writeFile(join(selected,'A01_actor_hook_take01.mp4'),'fixture');
+  const brief=join(root,'brief.json'),model=join(root,'ggml-small.bin');
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:[{order:1,line:'Первый',durationSec:2},{order:2,line:'Второй',durationSec:2}],
+   shots:[{order:1},{order:2}]});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel({sources:selected,brief,outputDir:output,
+    whisperCli:process.execPath,whisperModel:model}),/outside the selected source folder/);
+  await assert.rejects(()=>stat(output),/ENOENT/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+test('selected seven-scene folder creates the real manifest without touching originals, even if video is invalid',
+ {skip:!mediaTools,timeout:90000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-folder-draft-'));
+ try{
+  const selected=join(root,'captures'),output=join(root,'output');
+  await mkdir(selected);
+  const files=['A01_actor_hook_take01.mp4','B01_composer_problem_take01.mp4',
+   'A02_actor_audition_take01.mp4','B02_composer_deadline_take01.mp4',
+   'A03_actor_sleep_take01.mp4','B03_composer_lullaby_take01.mp4',
+   'A04_actor_payoff_take01.mp4'];
+  const originals=[];
+  for(const filename of files){
+   const bytes=Buffer.from('invalid video fixture for '+filename);
+   await writeFile(join(selected,filename),bytes);originals.push(bytes);
+  }
+  const brief=join(root,'brief.json'),model=join(root,'ggml-small.bin');
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:files.map((_,i)=>({order:i+1,line:'Сцена '+(i+1),durationSec:3})),
+   shots:files.map((_,i)=>({order:i+1,action:'Съёмочный план'}))});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  await assert.rejects(()=>runFirstReel({sources:selected,brief,outputDir:output,
+   whisperCli:process.execPath,whisperModel:model}));
+  const manifest=JSON.parse(await readFile(join(output,'intake','sources.json'),'utf8'));
+  const report=JSON.parse(await readFile(join(output,'intake','intake-report.json'),'utf8'));
+  assert.deepEqual(manifest.sources.map(s=>s.id),
+   ['A01_take01','B01_take01','A02_take01','B02_take01','A03_take01','B03_take01','A04_take01']);
+  assert.equal(report.status,'filenames-only-unverified');
+  assert.equal(report.autoApproval,false);
+  assert.equal(report.sourceOriginalsModified,false);
+  await assert.rejects(()=>stat(join(output,'draft-reel.mp4')),/ENOENT/);
+  for(let i=0;i<files.length;i++)
+   assert.deepEqual(await readFile(join(selected,files[i])),originals[i]);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 test('draft QA rejects a fake success, technical failure, and a missing publication blocker',()=>{
  const output=join(tmpdir(),'persona-draft-contract.mp4');
  const evidence={path:output,fileExists:true,probeVerified:true,bytes:1024,sha256:'a'.repeat(64),durationSec:3.7,width:1080,height:1920,fps:30,videoCodec:'h264',audioCodec:'aac',blackFrameCheckPassed:true,audioCheckPassed:true};

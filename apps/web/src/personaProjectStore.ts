@@ -1,5 +1,6 @@
 import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript, ScenarioCreativeProfile } from '../../../packages/core/src/persona-scenario-intelligence';
 import type { FormatMemoryObservation } from '../../../packages/core/src/format-memory';
+import {validatePersonaProductionGuide,type PersonaProductionGuide} from './personaProductionGuide';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -42,6 +43,10 @@ export type PersonaScenarioWorkspace={
  creativeProfile?:ScenarioCreativeProfile;
  /** Rejection feedback remains separate from positive Format Memory. */
  editorialFeedback?:Array<{revisionId:string;comment:string;createdAt:string}>;
+ /** Explicit author action only. Locks the exact written LINE in one idea, not global beat numbers. */
+ authorLockedLines?:Array<{ideaId:string;index:number;line:string}>;
+ /** Project-owned, unapproved creative-to-shoot plan. */
+ preProductionGuide?:PersonaProductionGuide;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -54,12 +59,18 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  if(!value||typeof value!=='object')return false;
  const workspace=value as Partial<PersonaScenarioWorkspace>;
- if(workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory))||(workspace.creativeProfile!==undefined&&
+ if((workspace.preProductionGuide!==undefined&&!validatePersonaProductionGuide(workspace.preProductionGuide))||workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory))||(workspace.creativeProfile!==undefined&&
  (!Array.isArray(workspace.creativeProfile.priorities)||!Array.isArray(workspace.creativeProfile.constraints)||
  workspace.creativeProfile.priorities.some(value=>typeof value!=='string')||
  workspace.creativeProfile.constraints.some(value=>typeof value!=='string')))||
  (workspace.editorialFeedback!==undefined&&(!Array.isArray(workspace.editorialFeedback)||
- workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string'))))return false;
+ workspace.editorialFeedback.some(item=>!item||typeof item.revisionId!=='string'||typeof item.comment!=='string'||typeof item.createdAt!=='string')))||
+ (workspace.authorLockedLines!==undefined&&(!Array.isArray(workspace.authorLockedLines)||
+ workspace.authorLockedLines.length>12||
+ workspace.authorLockedLines.some(item=>!item||typeof item.ideaId!=='string'||!item.ideaId.trim()||item.ideaId.length>150||
+ !Number.isInteger(item.index)||item.index<0||item.index>=12||
+ typeof item.line!=='string'||!item.line.trim()||item.line.length>2000)||
+ new Set(workspace.authorLockedLines.map(item=>item.ideaId+':'+item.index)).size!==workspace.authorLockedLines.length)))return false;
  if(workspace.research.some(item=>!item||typeof item!=='object')||workspace.analyses.some(item=>!item||typeof item!=='object')||workspace.ideas.some(item=>!item||typeof item!=='object'))return false;
  if(workspace.script===undefined)return true;
  const script=workspace.script as Partial<ScenarioScript>;
@@ -84,7 +95,17 @@ function readCollection(storage:PersonaProjectStorage):PersonaProjectCollection|
  try{
   return validatePersonaProjectCollection(JSON.parse(raw));
  }catch{
-  storage.setItem(CORRUPT_KEY,raw);
+  // Preserve every distinct corrupt snapshot. Never overwrite an earlier backup.
+  // If storage refuses the backup, keep the original collection key untouched.
+  let backupKey:string|null=null;
+  for(let slot=1;slot<=1000;slot++){
+   const candidate=slot===1?CORRUPT_KEY:`${CORRUPT_KEY}:${slot}`;
+   const existing=storage.getItem(candidate);
+   if(existing===raw)break;
+   if(existing===null){backupKey=candidate;break;}
+   if(slot===1000)throw new Error('persona_project_corrupt_backup_limit');
+  }
+  if(backupKey)storage.setItem(backupKey,raw);
   storage.removeItem(PERSONA_PROJECTS_KEY);
   return null;
  }
@@ -93,6 +114,26 @@ function parseLegacy<T>(storage:PersonaProjectStorage,key:string):T|null{try{con
 
 export function createPersonaProject(input:{id:string;title:string;contentType:PersonaContentType;sourceIdea:string;now:string}):PersonaProject{
  return {id:input.id,title:input.title,contentType:input.contentType,sourceIdea:input.sourceIdea,script:null,shootingPlan:null,editPlan:null,timeline:null,mediaAssets:[],cloudAssetRefs:[],processing:null,captions:null,socialCaptions:null,stage:'strategy',qa:null,createdAt:input.now,updatedAt:input.now,schemaVersion:1,revision:1};
+}
+
+/** Imported Production Briefs persist scenario, shoot/edit plans and navigation
+ * in one project snapshot, without waiting for a React autosave timer. */
+/** Persist an editorial milestone as one coherent production snapshot. */
+export function applyPersonaProductionMilestone(
+ project:PersonaProject,production:unknown,
+ options:{stage?:PersonaProjectStage;lastOpenStep?:string;resetQa?:boolean}={},
+):PersonaProject{
+ return {...project,shootingPlan:production,editPlan:production,
+  stage:options.stage??project.stage,
+  lastOpenStep:options.lastOpenStep??project.lastOpenStep,
+  qa:options.resetQa?null:project.qa};
+}
+
+export function applyPersonaImportedProductionBrief(
+ project:PersonaProject,production:unknown,workspace:PersonaScenarioWorkspace,
+):PersonaProject{
+ return applyPersonaProductionMilestone({...project,scenarioWorkspace:workspace},production,
+  {stage:'final_qa',lastOpenStep:'script',resetQa:true});
 }
 
 function migrateLegacy(storage:PersonaProjectStorage,id:string,now:string):PersonaProjectCollection{
@@ -120,6 +161,33 @@ export function loadPersonaProjects(storage:PersonaProjectStorage,newId:()=>stri
 export function validatePersonaProjectSnapshot(value:unknown):PersonaProject{
  if(!isProject(value))throw new Error('invalid_persona_project_snapshot');
  return value;
+}
+
+/** Fail closed when a project was updated elsewhere (including another browser tab).
+ * Call before constructing an autosave snapshot; never base a save on stale React state.
+ * The latest stored scenario is authoritative unless the caller explicitly supplies a new one.
+ */
+/** Reject async file reads that completed after project navigation or a new save.
+ * The caller captures the revision before awaiting file.text() and validates
+ * the active project and revision after the await, before applying imported data.
+ */
+export function assertPersonaAsyncImportTarget(
+ collection:PersonaProjectCollection,projectId:string,expectedRevision:number,
+):void{
+ if(collection.activeProjectId!==projectId)
+  throw new Error('Во время чтения файла был открыт другой проект. Импорт отменён.');
+ const current=collection.projects.find(project=>project.id===projectId);
+ if(!current||current.revision!==expectedRevision)
+  throw new Error('Проект изменился во время чтения файла. Импорт отменён, текущая версия сохранена.');
+}
+
+export function resolvePersonaProjectSaveBase(
+ storage:PersonaProjectStorage, rendered:PersonaProject,
+):PersonaProject{
+ const saved=loadPersonaProjects(storage,()=> 'unused-persona-migration-id').projects.find(item=>item.id===rendered.id);
+ if(!saved)throw new Error('persona_project_missing_at_save');
+ if(saved.revision!==rendered.revision)throw new Error('persona_project_changed_since_open');
+ return saved;
 }
 
 export function savePersonaProject(storage:PersonaProjectStorage,project:PersonaProject,activeProjectId=project.id):PersonaProjectCollection{

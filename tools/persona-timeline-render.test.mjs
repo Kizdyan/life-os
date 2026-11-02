@@ -50,6 +50,7 @@ test('renders three real clips, inserts silent audio, preserves originals and wr
     assert.ok((await stat(output)).size>0);
     const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
     assert.equal(manifest.clips.length,3);
+    assert.deepEqual(manifest.outputTimeline.map(clip=>[clip.outputStartSec,clip.outputEndSec]),[[0,.8],[.8,1.6],[1.6,2.4]]);
     assert.equal(manifest.verification.passed,true);
     assert.equal(manifest.output.audio,true);
     assert.equal(manifest.output.width,320);

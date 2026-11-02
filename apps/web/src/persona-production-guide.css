@@ -1,0 +1,86 @@
+.personaGuide{width:100%;min-width:0;max-width:930px;margin:0 auto 26px;display:grid;gap:16px;color:#242320}
+.personaGuideHero,.personaGuideSection{border:1px solid #e5e2db;border-radius:22px;padding:clamp(17px,3vw,28px);background:#fff;box-shadow:0 5px 20px rgba(0,0,0,.025)}
+/* app.css also treats every header as a toolbar; the guide hero is document
+   content, so it must own its grid and stay inside the narrow viewport. */
+.personaGuideHero{display:grid;min-width:0;background:linear-gradient(135deg,#f2eee7,#fff 70%)}
+.personaGuideHero small{letter-spacing:.14em;font-size:11px;color:#796e5e;font-weight:700}
+.personaGuideHero h3{font-size:clamp(26px,4vw,36px);line-height:1.09;margin:8px 0 10px}
+.personaGuide h4{font-size:22px;line-height:1.2;margin:7px 0 8px}
+.personaGuide p{font-size:14px;color:#5c5952;line-height:1.65;margin:7px 0 12px}
+.personaGuideMeter{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:17px 0 0;padding:11px 0;border-top:1px solid #e8e4dc;font-size:12px;color:#645f57}
+.personaGuideNumber{width:35px;height:35px;display:grid;place-items:center;border-radius:11px;background:#efeae1;font-weight:800;font-size:13px}
+/* `app.css` uses article for compact task rows. This guide uses articles as
+   long-form sections and must reset that shared grid on every viewport. */
+.personaGuideSection{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:10px}
+.personaGuideSection label{display:grid;gap:6px;font-size:13px;font-weight:700;color:#3e3c38}
+.personaGuideSection textarea{box-sizing:border-box;display:block;width:100%;min-height:82px;resize:vertical;border:1px solid #d8d5ce;border-radius:12px;background:#fcfbf9;padding:12px;font:inherit;font-size:14px;font-weight:400;line-height:1.5;color:#222}
+.personaGuideSection textarea:focus{outline:2px solid #898173;outline-offset:1px}
+.personaGuide button{justify-self:start;border:0;border-radius:12px;min-height:43px;padding:10px 15px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.personaGuide button.primary{color:#fff;background:#171717}
+.personaGuide button.ghost{background:#efeee9;color:#222}
+.personaGuide button:disabled{opacity:.5;cursor:not-allowed}
+.personaGuideEvidence{display:grid;gap:7px;border:1px solid #e1e2da;background:#f9faf6;border-radius:14px;padding:15px}
+.personaGuideEvidence>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-top:1px solid #e8e9e2;padding-top:8px;font-size:12px}
+.personaGuideEvidence a{overflow-wrap:anywhere}
+.personaGuideEvidence span{color:#665d4e}
+.personaGuideEvidence small{color:#777}
+.personaGuideWarn{background:#f7f1e9;border-radius:12px;padding:12px!important;color:#735e3f!important}
+.personaGuideHook{padding:14px;border-left:4px solid #54483b;background:#f5f1eb;border-radius:4px 13px 13px 4px;display:grid;gap:7px}
+.personaGuideHook small{font-size:11px;color:#746d64;letter-spacing:.06em}
+.personaGuideHook b{font-size:19px;line-height:1.3}
+.personaGuideHook span{font-size:12px;color:#625c55}
+.personaGuideShots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.personaGuideShot{padding:14px;border:1px solid #eceae5;border-radius:15px;background:#fcfbfa;min-width:0}
+.personaGuideShot>div{display:grid;gap:3px}
+.personaGuideShot small{font-size:11px;color:#7c786f}
+.personaGuideShot blockquote{margin:14px 0 10px;font-size:17px;line-height:1.35;font-weight:700}
+.personaGuideShot p{margin:5px 0;color:#625e57;line-height:1.5;font-size:12px}
+.personaGuideChecks{display:grid;gap:7px}
+.personaGuideChecks label{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.45;padding:10px;border:1px solid #eae8e2;border-radius:11px;font-weight:500}
+.personaGuideChecks input{width:19px;height:19px;flex-shrink:0;accent-color:#171717;margin:0}
+.personaGuideActions{display:flex;gap:8px;flex-wrap:wrap}
+.personaGuideNotice{border:1px solid #ddd6c7;border-radius:12px;padding:12px;background:#fbf8f2}
+@media(max-width:650px){.personaGuideShots{grid-template-columns:minmax(0,1fr)}.personaGuideHero,.personaGuideSection{border-radius:17px}.personaGuide h4{font-size:20px}.personaGuideHero h3{font-size:27px}}
+
+.personaGuideTrend{display:grid;gap:6px;border:1px solid #e0d9cb;border-radius:14px;padding:15px;background:#fbf8ef}
+.personaGuideTrend strong{font-size:14px}
+.personaGuideTrend p{margin:3px 0;font-size:12px;line-height:1.5}
+.personaGuideTrend a{color:#514831;text-decoration:underline}
+.personaGuideTrend small{color:#766c5d;font-size:11px;line-height:1.5}
+.personaGuideDiagram{margin:4px 0 12px;max-width:550px;display:grid;gap:5px}
+.personaGuideDiagram svg{width:100%;height:auto;border-radius:14px}
+.personaGuideDiagram figcaption{font-size:11px;color:#7e796f;line-height:1.5}
+
+.personaGuideStoryboard{display:grid;justify-items:center;gap:5px;margin:10px auto}
+.personaGuideStoryboard svg{display:block;width:min(170px,100%);height:auto}
+.personaGuideStoryboard small{font-size:9px;color:#80796c;text-align:center;letter-spacing:.03em}
+
+.personaGuideDirection{margin:12px 0 0;padding-top:9px;border-top:1px solid #e8e2d8;display:grid;gap:5px}
+.personaGuideDirection p{margin:0;font-size:12px;line-height:1.55}
+.personaGuideDirection b{color:#37342f}
+
+.personaGuideNavigationWarning{max-width:930px;box-sizing:border-box;margin:10px auto;padding:13px 16px;border:1px solid #d3ab69;background:#fff5df;color:#4b351a;border-radius:12px;font-size:14px;line-height:1.45}
+
+.personaGuideNext{display:grid;gap:9px;margin:16px 0 0;padding:15px;border:1px solid #dfd8cd;background:#fffdfa;border-radius:14px}
+.personaGuideNext>strong{font-size:14px;color:#2d2b27}
+.personaGuideNext>p{margin:0;font-size:14px;color:#565149}
+.personaGuideReadiness{display:grid;gap:4px}
+.personaGuideReadiness>div{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:9px;align-items:start;padding:7px 0;border-top:1px solid #efede8}
+.personaGuideReadiness>div>span:first-child{font-size:16px;color:#635d52;font-weight:bold}
+.personaGuideReadiness>div>span:nth-child(2){font-size:12px;line-height:1.5;color:#423f39}
+.personaGuideReadiness>div>small{font-size:10px;color:#777068;text-align:right}
+@media(max-width:550px){.personaGuideReadiness>div{grid-template-columns:20px minmax(0,1fr)}.personaGuideReadiness>div>small{grid-column:2;text-align:left}}
+
+.personaGuideShotEditor{margin-top:12px;border-top:1px solid #e7e0d6;padding-top:10px}
+.personaGuideShotEditor>summary{cursor:pointer;font-size:12px;line-height:1.4;font-weight:750;color:#413b32;padding:7px 0}
+.personaGuideShotEditor>label{display:grid;gap:5px;margin:11px 0;font-size:11px;color:#50493f}
+.personaGuideShotEditor textarea{width:100%;min-height:76px;box-sizing:border-box;border:1px solid #d9d3ca;border-radius:9px;padding:9px 10px;font:inherit;font-size:12px;font-weight:400;line-height:1.55;background:#fff;color:#222}
+.personaGuideShotEditor textarea:disabled{background:#f1eee8;color:#797268}
+.personaGuideShotEditor>small{display:block;font-size:11px;color:#7b7369;line-height:1.45}
+.personaGuideShotEditor .personaGuideWarn{display:grid;gap:9px;margin:6px 0;font-size:12px}
+.personaGuideShotEditor .personaGuideWarn button{font-size:11px;max-width:100%;white-space:normal;text-align:left}
+
+.personaGuideBriefSync{border:1px solid #cfc7b7;background:#fbfaf5;padding:15px;border-radius:13px;display:grid;gap:9px}
+.personaGuideBriefSync strong{font-size:14px}
+.personaGuideBriefSync p{font-size:12px;line-height:1.6;margin:0}
+.personaGuideBriefSync button{max-width:100%;white-space:normal;text-align:left;line-height:1.4}

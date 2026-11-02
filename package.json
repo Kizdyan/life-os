@@ -10,7 +10,7 @@
     "web:build": "vite build apps/web",
     "media:probe": "node tools/persona-media-engine.mjs probe",
     "media:render": "node tools/persona-media-engine.mjs render",
-    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs tools/persona-semantic-montage.test.mjs tools/persona-semantic-autoselect.test.mjs tools/persona-first-reel-runner.test.mjs tools/persona-take-qa.test.mjs tools/persona-shoot-intake.test.mjs tools/persona-subtitle-draft.test.mjs tools/persona-editorial-choices.test.mjs tools/persona-editorial-previews.test.mjs tools/persona-review-kit.test.mjs tools/persona-reviewed-render.test.mjs tools/persona-visual-review.test.mjs tools/persona-visual-finalize.test.mjs tools/persona-creative-review.test.mjs tools/persona-last-mile-smoke.test.mjs",
+    "media:test": "node --test tools/persona-render-bridge.test.mjs tools/persona-soundtrack-smoke.test.mjs tools/persona-audio-cuts.test.mjs tools/persona-media-engine.test.mjs tools/persona-timeline-render.test.mjs packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-verify-render.test.mjs tools/persona-semantic-montage.test.mjs tools/persona-semantic-autoselect.test.mjs tools/persona-first-reel-runner.test.mjs tools/persona-take-qa.test.mjs tools/persona-shoot-intake.test.mjs tools/persona-subtitle-draft.test.mjs tools/persona-editorial-choices.test.mjs tools/persona-editorial-previews.test.mjs tools/persona-review-kit.test.mjs tools/persona-reviewed-render.test.mjs tools/persona-visual-review.test.mjs tools/persona-visual-finalize.test.mjs tools/persona-creative-review.test.mjs tools/persona-last-mile-smoke.test.mjs tools/persona-finish-reel.test.mjs tools/persona-video-quality.test.mjs",
     "media:timeline": "node tools/persona-timeline-render.mjs",
     "media:bridge": "node tools/persona-render-bridge.mjs",
     "persona:preflight": "node tools/persona-preflight.mjs",
@@ -32,6 +32,7 @@
     "media:review:render": "node tools/persona-reviewed-render.mjs",
     "media:visual:review": "node tools/persona-visual-review.mjs",
     "media:visual:finalize": "node tools/persona-visual-finalize.mjs",
+    "media:finish:reel": "node tools/persona-finish-reel.mjs",
     "media:creative:review": "node tools/persona-creative-review.mjs",
     "persona:scenario:local": "node tools/persona-local-scenario.mjs",
     "persona:scenario:local:test": "node --test tools/persona-local-scenario.test.mjs",
@@ -40,7 +41,12 @@
     "persona:scenario:diagnose": "node tools/persona-local-scenario-diagnose.mjs",
     "persona:scenario:doctor": "node tools/persona-local-script-doctor.mjs",
     "persona:scenario:doctor:task": "node tools/persona-local-script-doctor-task.mjs",
-    "persona:scenario:doctor:test": "node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs"
+    "persona:scenario:doctor:test": "node --test tools/persona-local-script-doctor.test.mjs tools/persona-local-script-doctor-task.test.mjs tools/persona-local-doctor-patches.test.mjs",
+    "persona:scenario:delivery:test": "npm run persona:scenario:local:test && npm run persona:scenario:creative-benchmark:test && npm run persona:scenario:doctor:test && npm run persona:delivery:check && npm run persona:delivery:test",
+    "persona:delivery:check": "node docs/persona-delivery/check.mjs",
+    "persona:delivery:animatic": "node tools/persona-delivery-animatic.mjs",
+    "persona:delivery:sources": "node tools/persona-delivery-source-folder.mjs",
+    "persona:delivery:test": "node --test tools/persona-delivery-animatic.test.mjs tools/persona-delivery-source-folder.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

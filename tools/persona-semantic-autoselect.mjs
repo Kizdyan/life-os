@@ -118,8 +118,12 @@ export function createEditorialPlan(brief,sources,{mode='strict'}={}){
   if(!Array.isArray(brief?.script)||!Array.isArray(sources))fail('Invalid script or sources');
   if(!['strict','preview'].includes(mode))fail('Unknown editorial decision mode');
   const candidatesByBeat=brief.script.map((beat,index)=>{
+    const shot=brief.shots?.[index];
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
-      .map(x=>extendForShot(x,brief.shots?.[index],src))
+      // ASR segment-level timing cannot locate the music entry precisely.
+      // Leave B03 unmatched so the existing Recovery Review can request a real boundary.
+      .filter(x=>!requiresPostSpeechMusic(shot)||x.speechBoundaryConfidence==='word')
+      .map(x=>extendForShot(x,shot,src))
       .filter(x=>x!==null && x.endSec<=src.durationSec+0.02)
       .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals))
       .filter(x=>x.score>=0.75 && valid(x.endSec-x.startSec,0.25,60)));

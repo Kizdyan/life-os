@@ -1,6 +1,6 @@
-import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief";
-import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory";
-import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief.js";
+import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory.js";
+import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence.js";
 
 export type ScenarioPlatform = "instagram" | "youtube" | "vk" | "other";
 export type ScenarioObservationStatus = "metadata_only" | "user_reviewed" | "unavailable";

@@ -17,6 +17,11 @@ test('turns human scene numbers into indexed exact-source task',()=>{
  assert.equal(out.sourceRevisionId,'scene-r2');assert.equal(out.authorFeedback,'Слишком очевидная развязка');
  assert.deepEqual(validateDoctorTask(out).beats,out.beats);
 });
+test('optional author feedback survives canonical task export and subsequent validation',()=>{
+ const exported=buildLocalDoctorTask(script,{target:'2,3',lock:'1',instruction:'Усилить причинность развязки'});
+ assert.equal(exported.authorFeedback,null);
+ assert.deepEqual(validateDoctorTask(JSON.parse(JSON.stringify(exported))),exported);
+});
 test('selects the correct project and refuses guessing when multiple projects exist',()=>{
  const collection={projects:[{id:'a',scenarioWorkspace:{script}},{id:'b',scenarioWorkspace:{script}}]};
  assert.throws(()=>buildLocalDoctorTask(collection,options),/project-id/);

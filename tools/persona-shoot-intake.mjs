@@ -6,14 +6,43 @@
  *
  * node tools/persona-shoot-intake.mjs <new-output-dir> A01=<video> B01=<video> [A01=<video> ...]
  */
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, isAbsolute, sep, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze } from './persona-semantic-montage.mjs';
+import {classifyFiles} from './persona-delivery-source-folder.mjs';
 
 const briefPath=resolve(dirname(fileURLToPath(import.meta.url)),'../docs/persona-two-line-live-asr-check-2026-10-29.json');
 const fail=m=>{throw Error(m)};
 const allowedExtensions=/\.(?:mp4|mov|mkv|webm|m4v)$/i;
+
+/** Lists only direct files from an author-selected folder; it never searches elsewhere. */
+export async function buildFolderShootManifest(folderPath){
+ if(typeof folderPath!=='string'||!folderPath.trim())fail('Select one folder containing the recorded takes');
+ const root=await realpath(resolve(folderPath));
+ const directory=await stat(root);if(!directory.isDirectory())fail('Selected path is not a folder');
+ const entries=await readdir(root,{withFileTypes:true});
+ const videos=entries.filter(entry=>entry.isFile()&&allowedExtensions.test(entry.name));
+ // Use one canonical classification policy: exactly 7 UNREVIEWED default takes
+ // or 2 named long-role files; other takes remain alternatives, not engine inputs.
+ const mapping=classifyFiles(videos.map(entry=>entry.name));
+ const sources=[];
+ for(const selected of mapping.files){
+  const canonical=await realpath(join(root,selected.file));
+  const outside=relative(root,canonical);
+  if(outside==='..'||outside.startsWith('..'+sep)||isAbsolute(outside))
+   fail('Selected source is outside the chosen folder');
+  const id=mapping.layout==='two-long-roles'?
+   selected.id.replace(/_long$/,'_take01'):selected.id;
+  sources.push({id,path:canonical});
+ }
+ const roleMode=mapping.layout==='two-long-roles';
+ return {mode:roleMode?'role_long_takes_needs_review':'seven_named_takes',root,
+  manifest:{version:1,sources},alternateTakes:mapping.alternatives??[],
+  notes:[mapping.note,roleMode?
+   'Two long role recordings require transcript and scene-boundary review; no automatic approval.':
+   'Seven earliest numbered takes are UNREVIEWED defaults; see alternateTakes for all other original clips.']};
+}
 
 export function parseShootInputs(labeledFiles){
  if(!Array.isArray(labeledFiles)||labeledFiles.length<2||labeledFiles.length>12)
@@ -98,7 +127,29 @@ export function formatIntakeMarkdown(report){
   '');
  return lines.join(String.fromCharCode(10));
 }
-export async function runShootIntake({outputDir,labeledFiles}={}){
+/**
+ * The first Windows intake must use the same explicitly installed FFmpeg tools
+ * as the subsequent draft/final render. Only change THIS Node process and the
+ * environments of its children; never alter the machine/user PATH.
+ */
+export async function prependIntakeFfmpegBin(ffmpegDir){
+ if(ffmpegDir===undefined||ffmpegDir===null)return null;
+ if(typeof ffmpegDir!=='string'||!ffmpegDir.trim())
+  fail('ffmpegDir must be the directory containing ffmpeg and ffprobe');
+ const root=await realpath(resolve(ffmpegDir));
+ if(!(await stat(root)).isDirectory())fail('ffmpegDir must be a directory');
+ const ext=process.platform==='win32'?'.exe':'';
+ for(const name of ['ffmpeg','ffprobe']){
+  const target=join(root,name+ext);
+  const info=await stat(target).catch(()=>null);
+  if(!info?.isFile())fail('Missing '+name+ext+' in explicitly selected ffmpegDir: '+root);
+ }
+ const key=Object.keys(process.env).find(k=>k.toUpperCase()==='PATH')??'PATH';
+ process.env[key]=root+delimiter+(process.env[key]??'');
+ return root;
+}
+
+export async function runShootIntake({outputDir,labeledFiles,ffmpegDir}={}){
  if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
  const manifest=parseShootInputs(labeledFiles);
  const resolvedInputs=new Set();
@@ -110,6 +161,7 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
   if(resolvedInputs.has(key))fail('The same source file was assigned to two takes');
   resolvedInputs.add(key);
  }
+ await prependIntakeFfmpegBin(ffmpegDir);
  const root=resolve(outputDir);
  await mkdir(root,{recursive:false}); // Refuse existing output; never replace original.
  const manifestPath=join(root,'sources.json');
@@ -132,9 +184,41 @@ export async function runShootIntake({outputDir,labeledFiles}={}){
   throw error;
  }
 }
+export async function runFolderShootIntake({outputDir,folderPath,ffmpegDir}={}){
+ if(typeof outputDir!=='string'||!outputDir.trim())fail('Provide a new output directory');
+ const selected=await buildFolderShootManifest(folderPath);
+ await prependIntakeFfmpegBin(ffmpegDir);
+ const root=resolve(outputDir);
+ // Never write into the author's source folder, including through a symlinked parent.
+ const canonicalParent=await realpath(dirname(root));
+ const outputActual=join(canonicalParent,basename(root));
+ const child=relative(selected.root,outputActual);
+ if(child===''||(child!=='..'&&!child.startsWith('..'+sep)&&!isAbsolute(child)))
+  fail('Output directory must be outside the selected source folder');
+ await mkdir(root,{recursive:false});
+ const manifestPath=join(root,'sources.json');
+ try{
+  await writeFile(manifestPath,JSON.stringify(selected.manifest,null,2)+'\n',{flag:'wx'});
+  const result=await analyze(manifestPath,join(root,'evidence'));
+  const analysis=JSON.parse(await readFile(result.analysis,'utf8'));
+  const report={...createIntakeReport(analysis,manifestPath),briefPath:null,folderMode:selected.mode,
+   alternateTakes:selected.alternateTakes,mappingNotes:[...selected.notes,
+    'Export the exact approved production brief from Persona for the next rendering step.']};
+  const reportPath=join(root,'INTAKE.json');await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+  const alternativeNotes=report.alternateTakes.length?'\n\n## Альтернативные дубли — не включены в первичный монтаж\n'+
+   report.alternateTakes.map(take=>'- '+take.id+': '+take.file).join('\n')+'\n':'';
+  const summaryPath=join(root,'INTAKE.md');await writeFile(summaryPath,formatIntakeMarkdown(report)+'\n\n## Сопоставление\n'+selected.notes.map(note=>'- '+note).join('\n')+'\n'+alternativeNotes,{flag:'wx'});
+  return {status:report.status,reportPath,summaryPath,manifestPath,evidencePath:result.analysis,
+   sourceCount:report.sourceCount,alternateTakeCount:report.alternateTakes.length,
+   folderMode:selected.mode,warningCount:report.takes.reduce((n,t)=>n+t.warnings.length,0)};
+ }catch(error){
+  await writeFile(join(root,'FAILED.json'),JSON.stringify({status:'failed',error:String(error.message||error),note:'No input video was modified. Partial technical evidence stays local.'},null,2)+'\n',{flag:'wx'}).catch(()=>{});throw error;
+ }
+}
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
- const [outputDir,...labeledFiles]=process.argv.slice(2);
- runShootIntake({outputDir,labeledFiles}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{
+ const [mode,outputDir,...rest]=process.argv.slice(2);
+ const run=mode==='folder'?runFolderShootIntake({outputDir,folderPath:rest[0],ffmpegDir:rest[1]}):runShootIntake({outputDir:mode,labeledFiles:[outputDir,...rest].filter(Boolean)});
+ run.then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{
   console.error('Persona shoot intake:',e.message);process.exitCode=1;
  });
 }

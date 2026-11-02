@@ -1,0 +1,25 @@
+.personaRenderReturn{margin:18px 0;padding:20px;border:1px solid #d5d0c7;border-radius:19px;background:#faf8f3;color:#282621}
+.personaRenderReturn h3{margin:0 0 10px;font-size:21px;line-height:1.25}
+.personaRenderReturn p{font-size:14px;line-height:1.5;max-width:780px}
+.personaRenderReturnPicker{display:grid;gap:8px;margin:14px 0;font-weight:650;font-size:14px}
+.personaRenderReturnPicker input{max-width:100%;font:inherit;font-weight:400}
+.personaRenderReturnDetails{border:1px solid #dad8cb;border-radius:14px;padding:14px;background:#fff}
+.personaRenderReturnDetails p{margin:8px 0}
+.personaRenderReturnVideo{display:block;width:100%;max-width:400px;max-height:690px;background:#111;border-radius:12px;margin:14px auto}
+.personaRenderReturnWarning{border-left:3px solid #888071;padding-left:12px;color:#5b564c}
+
+
+.personaFinishedReview{margin-top:20px;padding:17px;border:1px solid #dad4c7;background:#fff;border-radius:16px}
+.personaFinishedReview h4{margin:0 0 10px;font-size:17px}
+.personaFinishedReview>label{display:grid;gap:8px;margin:12px 0;font-size:14px;font-weight:600}
+.personaFinishedReview input[type=file]{max-width:100%;font-size:13px}
+.personaFinalReviewChecklist{margin-top:16px;padding:15px;border:1px solid #dedbd3;border-radius:13px;background:#faf8f4}
+.personaFinalReviewChecklist h4{font-size:16px;margin:0 0 10px}
+.personaFinalReviewChecklist label{display:flex;gap:10px;align-items:flex-start;margin:10px 0;font-size:13px;line-height:1.45}
+.personaFinalReviewChecklist label:has(input[type=text]),.personaFinalReviewChecklist label:has(textarea){display:grid;gap:6px}
+.personaFinalReviewChecklist input[type=text],.personaFinalReviewChecklist textarea{box-sizing:border-box;width:100%;padding:10px;border-radius:9px;border:1px solid #c9c5be;background:#fff;color:#292722;font:inherit}
+.personaFinalReviewChecklist textarea{min-height:78px;resize:vertical}
+.personaFinalReviewChecklist input[type=checkbox]{flex:none;margin-top:3px}
+.personaFinalReviewChecklist .actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.personaFinalReviewChecklist .actions button{white-space:normal}
+.personaRenderFinishHandoff pre{white-space:pre-wrap;overflow-wrap:anywhere}

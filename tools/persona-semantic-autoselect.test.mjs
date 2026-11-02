@@ -101,9 +101,13 @@ test('An explicit post-dialogue music cue preserves the full shot and rejects sh
  const musicBeat={version:1,sourceFormat:'reel',
   script:[{order:1,line:'Почему? Сейчас напишу колыбельную.',durationSec:6}],
   shots:[{order:1,durationSec:6,action:'Сухо; затем 2–3 секунды оригинальной музыки на клавишах'}]};
- const speech=parseWhisperJson(whisper([
-  ['Почему',0.4,0.8],['сейчас',0.85,1.2],['напишу',1.25,1.6],['колыбельную',1.65,2.1]
- ]),8);
+ const speech=parseWhisperJson({transcription:[{
+  text:' Почему сейчас напишу колыбельную',offsets:{from:400,to:2100},
+  tokens:[{text:' Почему',offsets:{from:400,to:800}},
+   {text:' сейчас',offsets:{from:850,to:1200}},
+   {text:' напишу',offsets:{from:1250,to:1600}},
+   {text:' колыбельную',offsets:{from:1650,to:2100}}]
+ }]},8);
  const good={id:'music-complete',durationSec:8,segments:speech,technicalQuality:{blackIntervals:[]}};
  const chosen=chooseForBrief(musicBeat,[good]);
  assert.equal(chosen[0].sourceId,'music-complete');
@@ -112,6 +116,19 @@ test('An explicit post-dialogue music cue preserves the full shot and rejects sh
  assert.throws(()=>chooseForBrief(musicBeat,[{...good,id:'too-short',durationSec:4}]),/Manual review required/);
  assert.throws(()=>chooseForBrief(musicBeat,[{...good,technicalQuality:{blackIntervals:[{startSec:3,endSec:4}]}}]),/Manual review required/);
 });
+test('coarse Whisper timing on B03 requires recovery before montage',()=>{
+ const brief={version:1,sourceFormat:'reel',script:[{order:1,line:'Нет. Я усыплю нас колыбельной.',durationSec:6}],
+  shots:[{order:1,durationSec:6,action:'Затем играет оригинальную музыку после реплики'}]};
+ const segments=parseWhisperJson({transcription:[{
+  text:' Нет. Я усыплю нас колыбельной.',offsets:{from:500,to:3300}
+ }]},8);
+ const source={id:'B03_take01',durationSec:8,segments,technicalQuality:{blackIntervals:[]}};
+ assert.throws(()=>createEditorialPlan(brief,[source]),/Manual review required/);
+ const preview=createEditorialPlan(brief,[source],{mode:'preview'});
+ assert.deepEqual(preview.missingBeats,[1]);
+ assert.equal(preview.choices.length,0);
+});
+
 test('End-to-end decisions JSON from local Whisper fixture, output non-overwrite, no false auto-approval',async()=>{
  const d=await mk();
  try{

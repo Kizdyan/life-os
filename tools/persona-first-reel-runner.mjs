@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
 import {initReview} from './persona-creative-review.mjs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
+import { makeManifest } from './persona-delivery-source-folder.mjs';
 
 const fail = m => {throw Error(m)};
 const exists = async p => stat(p).then(()=>true,()=>false);
@@ -53,6 +55,24 @@ export function validateDraftQa(qa,expectedPath){
    gate.assets[0]?.passed!==true || qa.distribution!==null)
    fail('Unexpected publication handoff or QA errors: delivery blocked');
  return true;
+}
+/** Technical evidence for actual runtime, not proof of creative approval. */
+export function assessFirstReelTiming(brief,qa){
+ const durations=brief?.script?.map(beat=>beat?.durationSec);
+ if(!Array.isArray(durations)||!durations.length||
+    durations.some(value=>typeof value!=='number'||!Number.isFinite(value)||value<=0))
+  return {status:'brief-duration-unavailable',targetDurationSec:null,
+   renderedDurationSec:qa?.evidence?.durationSec??null,differenceSec:null,
+   reviewRequired:true,notice:'No validated brief duration: inspect the video before approval.'};
+ const targetDurationSec=Number(durations.reduce((sum,value)=>sum+value,0).toFixed(3));
+ const renderedDurationSec=qa?.evidence?.durationSec;
+ if(typeof renderedDurationSec!=='number'||!Number.isFinite(renderedDurationSec)||renderedDurationSec<=0)
+  fail('Verified MP4 duration missing for timing acceptance');
+ const differenceSec=Number((renderedDurationSec-targetDurationSec).toFixed(3));
+ const mismatch=Math.abs(differenceSec)>0.25;
+ return {status:mismatch?'needs-human-timing-review':'within-brief-tolerance',
+  targetDurationSec,renderedDurationSec,differenceSec,reviewRequired:true,
+  notice:mismatch?'The ASR edit differs from scripted runtime. Review pauses, B03 music and A04 payoff; do not time-stretch speech or claim a 31-second approved Reel.':'Runtime is close to script; music, acting and pacing still require author review.'};
 }
 export function validateFirstReelMode(mode='strict'){
  if(!['strict','preview'].includes(mode))fail('Invalid editorial decision mode');
@@ -124,22 +144,44 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   requestedBrief.script.some((line,i)=>line?.order!==i+1||typeof line.line!=='string'||!line.line.trim())||
   requestedBrief.shots.some((shot,i)=>shot?.order!==i+1))
   fail('Invalid Persona Reel brief: expected 2–30 ordered spoken beats with matching shots');
+ // Bind the rendered result to this exact JSON brief, independent of whitespace.
+ const briefFingerprintSha256=createHash('sha256').update(JSON.stringify(requestedBrief)).digest('hex');
+ const root=resolve(outputDir);
+ const input=resolve(sources);
+ const inputStats=await stat(input);
+ if(!inputStats.isFile()&&!inputStats.isDirectory())
+  fail('Source must be a manifest, one supported video, or one selected recording folder');
+ let selectedFolder=null;
+ if(inputStats.isDirectory()){
+  selectedFolder=await realpath(input);
+  const child=relative(selectedFolder,root);
+  // Fail before mkdir: never create output files inside the author's selected sources.
+  if(child===''||(child!=='..'&&!child.startsWith('..'+sep)&&!isAbsolute(child)))
+   fail('Output directory must be outside the selected source folder');
+ }
  temporaryBinPath(ffmpegDir);
  await Promise.all([call('ffmpeg',['-version'],{timeout:8000}),call('ffprobe',['-version'],{timeout:8000})]);
- const root=resolve(outputDir);
  await mkdir(root,{recursive:false});
  const events=[];
  let recoveryAnalysisPath=null;
  try{
-  // One explicitly selected video may replace a hand-written sources.json.
-  // Never scan a directory or silently add unrelated private media.
-  const input=resolve(sources);
-  const singleFile=new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase());
+  // Delegate exact-filename selection to the existing safe, non-recursive intake.
+  // It selects the first take only as an UNREVIEWED candidate, never the best performance.
   let sourcesManifest=input;
-  if(singleFile){
+  let sourceSelection={kind:'manifest',path:input};
+  if(selectedFolder){
+   const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
+   sourcesManifest=intake.manifest;
+   sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+    report:intake.report,layout:intake.layout};
+   events.push('selected_folder_manifest_created');
+  }else if(new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase())){
    sourcesManifest=join(root,'sources.generated.json');
    await writeFile(sourcesManifest,JSON.stringify({version:1,sources:[{id:'single',path:input}]},null,2)+'\n',{flag:'wx'});
+   sourceSelection={kind:'single-video',path:input,manifest:sourcesManifest};
    events.push('single_video_manifest_created');
+  }else if(extname(input).toLowerCase()!=='.json'){
+   fail('Source input must be a selected folder, supported video file, or sources.json');
   }
   const evidence=await analyze(sourcesManifest,join(root,'evidence'));
   recoveryAnalysisPath=evidence.analysis;
@@ -166,9 +208,12 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const qa=JSON.parse(await readFile(qaPath,'utf8'));
   validateDraftQa(qa,output);
   events.push('technical_qa_passed');
-  const summary={version:1,status:'awaiting-author-review',mode,events,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
-    subtitleDraft,
-    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. SRT/VTT are draft sidecars NOT burned into MP4 or word-level aligned. Human timing review and publication approval required.',
+  const timing=assessFirstReelTiming(requestedBrief,qa);
+  if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
+  const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+    briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
+    subtitleDraft,timing,
+    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;
@@ -181,7 +226,21 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   throw error;
  }
 }
+/** A manual Recovery Review is a valid artifact, but NOT a successful MP4 render. */
+export function firstReelCliExitCode(result){
+ return result?.status==='awaiting-author-review'&&
+  typeof result?.output==='string'&&result.output.endsWith('draft-reel.mp4')?0:2;
+}
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
  const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode]=process.argv.slice(2);
- runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'}).then(x=>console.log(JSON.stringify(x,null,2))).catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
+ runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'})
+  .then(result=>{
+   console.log(JSON.stringify(result,null,2));
+   const code=firstReelCliExitCode(result);
+   if(code!==0){
+    console.error('Persona first-reel runner: No rendered MP4. Manual Recovery Review is available at RECOVERY-RESULT.md in the selected draft directory. Audio/video QA must not run.');
+    process.exitCode=code;
+   }
+  })
+  .catch(e=>{console.error('Persona first-reel runner:',e.message);process.exitCode=1});
 }

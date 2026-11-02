@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile, stat, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -58,8 +58,20 @@ test('actual end-to-end: synthetic video → stub-ASR timestamps → actual Pers
   });
   assert.equal(result.status,'awaiting-author-review');
   assert.equal(result.distributionAllowed,false);
-  assert.equal(result.events.length,7);
- assert.ok(result.events.includes('reviewable_subtitle_sidecars_written'));
+  // Rendering time can legitimately differ from the authored estimate on
+  // different FFmpeg builds. The optional timing-warning event must match
+  // the verified timing outcome; every mandatory stage still runs in order.
+  assert.deepEqual(
+   result.events.filter(event=>event!=='duration_mismatch_requires_human_review'),
+   ['media_evidence_generated','offline_asr_completed','dialogue_cuts_proposed',
+    'clips_verified_and_timeline_built','reviewable_subtitle_sidecars_written',
+    'real_mp4_rendered','technical_qa_passed'],
+  );
+  assert.equal(
+   result.events.includes('duration_mismatch_requires_human_review'),
+   result.timing.status==='needs-human-timing-review',
+  );
+  assert.equal(result.timing.reviewRequired,true);
   const captions=await readFile(result.subtitleDraft.srtPath,'utf8');
   assert.match(captions,/Я актёр/);
   assert.match(captions,/И у нас есть проблема/);
@@ -124,6 +136,90 @@ test('one explicitly selected source video -> generated manifest -> real MP4 + r
   assert.equal(qa.handoff.passed,false);
   assert.deepEqual(qa.handoff.errors,['author approval required']);
   assert.deepEqual(await readFile(video),before);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('one chosen V2 folder reaches real renderer and QA across seven synthetic clips with fixture ASR',
+ {skip:!tools,timeout:240000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-v2-folder-e2e-'));
+ try{
+  const folder=join(root,'recorded-takes'),out=join(root,'draft');
+  await mkdir(folder);
+  const names=[
+   'A01_actor_hook_take01.mp4','B01_composer_problem_take01.mp4',
+   'A02_actor_audition_take01.mp4','B02_composer_deadline_take01.mp4',
+   'A03_actor_sleep_take01.mp4','B03_composer_lullaby_take01.mp4',
+   'A04_actor_payoff_take01.mp4'
+  ];
+  const originals=[];
+  const colors=['blue','red','yellow','green','magenta','cyan','white'];
+  for(let i=0;i<names.length;i++){
+   const path=join(folder,names[i]);
+   const ff=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
+    '-f','lavfi','-i','color=c='+colors[i]+':s=240x320:r=30',
+    '-f','lavfi','-i','sine=frequency='+(300+i*50)+':sample_rate=48000',
+    '-t',String([4.2,5.2,6.2,6.2,5.2,7.5,5.2][i]),'-c:v','mpeg4','-c:a','aac','-shortest',path],
+    {encoding:'utf8',timeout:30000});
+   assert.equal(ff.status,0,ff.stderr);
+   originals.push(await readFile(path));
+  }
+  const brief=join(here,'../docs/persona-delivery/editorial-candidate-production-brief.json');
+  const script=JSON.parse(await readFile(brief,'utf8'));
+  assert.equal(script.script.length,7);
+  assert.equal(script.shots.reduce((sum,shot)=>sum+shot.durationSec,0),31);
+  const fakeModel=join(root,'whisper-fixture.bin');
+  await writeFile(fakeModel,Buffer.alloc(1024*1024+1));
+  const fixtureTranscribe=async analysisPath=>{
+   const packet=JSON.parse(await readFile(analysisPath,'utf8'));
+   assert.equal(packet.sources.length,7);
+   for(let i=0;i<packet.sources.length;i++){
+    const source=packet.sources[i];
+    const words=script.script[i].line.split(/[^А-Яа-яЁё0-9]+/u).filter(Boolean);
+    assert.ok(words.length>=3);
+    // Synthetic segment with explicit word timestamps, like Whisper word-level data.
+    // B03 requires word-level speech boundaries before its post-dialogue music hold.
+    const tokens=words.map((word,j)=>({
+     text:(j===0?'':' ')+word,offsets:{from:220+j*290,to:480+j*290}
+    }));
+    await mkJson(join(dirname(analysisPath),source.id+'-whisper.json'),{
+     transcription:[{text:script.script[i].line,
+      offsets:{from:tokens[0].offsets.from,to:tokens[tokens.length-1].offsets.to},
+      tokens}]
+    });
+   }
+   return {status:'fixture-asr-only'};
+  };
+  const result=await runFirstReel({sources:folder,brief,outputDir:out,whisperCli:process.execPath,
+   whisperModel:fakeModel,transcribeStep:fixtureTranscribe});
+  assert.equal(result.status,'awaiting-author-review');
+  assert.equal(result.distributionAllowed,false);
+  assert.equal(result.sourceSelection.kind,'selected-folder');
+  assert.equal(result.sourceSelection.layout,'scene-takes');
+  assert.ok(result.events.includes('selected_folder_manifest_created'));
+  assert.ok(result.events.includes('real_mp4_rendered'));
+  assert.ok(result.events.includes('technical_qa_passed'));
+  const manifest=JSON.parse(await readFile(result.sourceSelection.manifest,'utf8'));
+  const intakeReport=JSON.parse(await readFile(result.sourceSelection.report,'utf8'));
+  assert.equal(manifest.sources.length,7);
+  assert.equal(intakeReport.autoApproval,false);
+  assert.equal(intakeReport.sourceOriginalsModified,false);
+  assert.ok((await stat(result.output)).size>10000);
+  const probe=spawnSync('ffprobe',['-v','error','-show_entries',
+   'stream=codec_type,codec_name,width,height:format=duration','-of','json',result.output],
+   {encoding:'utf8'});
+  assert.equal(probe.status,0,probe.stderr);
+  const streams=JSON.parse(probe.stdout).streams;
+  assert.ok(streams.some(x=>x.codec_type==='video'&&x.codec_name==='h264'&&x.width===1080&&x.height===1920));
+  assert.ok(streams.some(x=>x.codec_type==='audio'&&x.codec_name==='aac'));
+  const qa=JSON.parse(await readFile(result.qaPath,'utf8'));
+  assert.equal(qa.evidence.fps,30);
+  assert.deepEqual(qa.handoff.errors,['author approval required']);
+  assert.equal(qa.handoff.passed,false);
+  assert.equal(qa.distribution,null);
+  const captions=await readFile(result.subtitleDraft.srtPath,'utf8');
+  assert.match(captions,/Я актёр/u);
+  for(let i=0;i<names.length;i++)
+   assert.deepEqual(await readFile(join(folder,names[i])),originals[i]);
  }finally{await rm(root,{recursive:true,force:true})}
 });
 
