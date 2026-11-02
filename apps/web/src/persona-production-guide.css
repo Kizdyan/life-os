@@ -75,3 +75,8 @@
 .personaGuideShotEditor>small{display:block;font-size:11px;color:#7b7369;line-height:1.45}
 .personaGuideShotEditor .personaGuideWarn{display:grid;gap:9px;margin:6px 0;font-size:12px}
 .personaGuideShotEditor .personaGuideWarn button{font-size:11px;max-width:100%;white-space:normal;text-align:left}
+
+.personaGuideBriefSync{border:1px solid #cfc7b7;background:#fbfaf5;padding:15px;border-radius:13px;display:grid;gap:9px}
+.personaGuideBriefSync strong{font-size:14px}
+.personaGuideBriefSync p{font-size:12px;line-height:1.6;margin:0}
+.personaGuideBriefSync button{max-width:100%;white-space:normal;text-align:left;line-height:1.4}
