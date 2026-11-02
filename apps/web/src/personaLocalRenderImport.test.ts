@@ -155,6 +155,17 @@ describe('Persona local render evidence intake',()=>{
   const changedBrief={...original,briefFingerprintSha256:'f'.repeat(64)};
   expect(mergePersonaDraftReimport(old,changedBrief)).toEqual(changedBrief);
  });
+ it('keeps draft QA warnings from disappearing on same-file refresh',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:1,humanReviewCount:0,findings:[{id:'black_frames',status:'warning' as const,
+    title:'Black frames',detail:'Check frames',timecodes:[]}]};
+  const old={...base,quality};
+  const newQuality={...quality,warningCount:0,findings:[{id:'black_frames',
+   status:'measured' as const,title:'Black frames',detail:'Check frames',timecodes:[]}]};
+  expect(()=>mergePersonaDraftReimport(old,{...base,quality:newQuality})).toThrow(/предупреждения/);
+  expect(mergePersonaDraftReimport(old,base).quality).toEqual(quality);
+ });
  it('requires actual output and QA paths from the chosen runner directory',()=>{
   const a=fixture();a.result.output='D:\\another.mp4';
   expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/Выберите файлы/);
