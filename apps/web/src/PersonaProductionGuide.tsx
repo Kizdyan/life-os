@@ -79,8 +79,9 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
  const readiness=getPersonaGuideReadiness({
   hasScript:Boolean(scriptBeats?.length||brief?.script.length),
   scriptApproved:approvedScript||Boolean(!scriptBeats?.length&&brief&&pipeline?.materials.editorialDecision?.decision==='approved'),
-  hasCurrentBrief:Boolean(brief&&!scriptDiffersFromBrief),
-  briefApproved:Boolean(pipeline?.stage==='READY_FOR_SHOOT'&&pipeline.materials.editorialDecision?.decision==='approved'),
+  hasCurrentBrief:Boolean(brief&&!scriptDiffersFromBrief&&!briefSync.changed&&!briefSync.error),
+  briefApproved:Boolean(pipeline?.stage==='READY_FOR_SHOOT'&&pipeline.materials.editorialDecision?.decision==='approved'&&!briefSync.changed&&!briefSync.error),
+  pendingBriefSync:Boolean(brief&&!scriptDiffersFromBrief&&briefSync.changed),
   guide:plan,
  });
  const research=workspace?.research??[];
@@ -298,7 +299,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
     </svg>
     <figcaption>Схема постановки, не фотография твоей комнаты. Фактическое расположение окна, розеток, клавиш и штатива нужно уточнить на месте.</figcaption>
    </figure>
-   {briefMismatchFields.length>0&&<p className="personaGuideWarn" role="status">Плановые заметки отличаются от Production Brief: {briefMismatchFields.join(', ')}. Изменения в редакторе плана не попадают в бриф автоматически.</p>}
+   {briefMismatchFields.length>0&&(briefSync.changed||Boolean(briefSync.error))&&<p className="personaGuideWarn" role="status">Плановые заметки отличаются от Production Brief: {briefMismatchFields.join(', ')}. Изменения в редакторе плана не попадают в бриф автоматически.</p>}
    {brief&&<div className="personaGuideBriefSync">
     <strong>Передача режиссёрских решений в Production Brief</strong>
     <p>Переносит локацию, свет, звук, костюм, титры, цвет и сохранённые указания по кадрам. Реплики и длительности не изменяются. После переноса прежнее утверждение снимается, требуется новая QA и решение автора.</p>
