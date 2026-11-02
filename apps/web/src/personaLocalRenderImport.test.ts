@@ -204,6 +204,22 @@ describe('Persona local render evidence intake',()=>{
   expect(()=>mergePersonaDraftReimport(newer,older)).toThrow(/старым анализом/);
   expect(mergePersonaDraftReimport(older,newer).quality?.analyzedAt).toBe(quality.analyzedAt);
  });
+ it('keeps five successive draft measurements and validates history after JSON reload',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  let current=base;
+  for(let index=0;index<5;index++){
+   const analyzedAt=new Date(Date.parse('2026-11-01T14:00:00Z')+index*60000).toISOString();
+   const quality={version:1 as const,videoSha256:videoSha,analyzedAt,
+    warningCount:0,humanReviewCount:0,findings:[{id:'measurement_'+index,
+     status:'measured' as const,title:'Measurement',detail:'Result '+index,timecodes:[]}]};
+   current=mergePersonaDraftReimport(current,{...base,quality});
+  }
+  expect(current.qualityHistory).toHaveLength(4);
+  const restored=readPersonaLocalRenderRecord(JSON.parse(JSON.stringify(current)));
+  expect(restored?.qualityHistory?.map(item=>item.analyzedAt)).toEqual(current.qualityHistory?.map(item=>item.analyzedAt));
+  expect(readPersonaLocalRenderRecord({...current,mp4Sha256:'c'.repeat(64)})).toBeNull();
+  expect(readPersonaLocalRenderRecord({...current,qualityHistory:[...current.qualityHistory!].reverse()})).toBeNull();
+ });
  it('requires actual output and QA paths from the chosen runner directory',()=>{
   const a=fixture();a.result.output='D:\\another.mp4';
   expect(()=>inspectPersonaLocalRenderImport(a)).toThrow(/Выберите файлы/);
