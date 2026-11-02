@@ -243,6 +243,8 @@ export function makePersonaFinalAuthorReview(input:{
   typeof reviewedAt!=='string'||!reviewedAt.trim()||
   !PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof criteria?.[k]==='boolean'))
   fail('Заполните имя автора и все пункты художественной проверки.');
+ if(!Number.isFinite(Date.parse(reviewedAt))||Date.parse(reviewedAt)<Date.parse(finished.importedAt))
+  fail('Время художественной приёмки должно быть позже импорта MP4.');
  if(decision==='approved-final-cut'){
   if(!PERSONA_FINAL_REVIEW_KEYS.every(k=>criteria[k]))
    fail('Финальный монтаж нельзя принять с непроверенными художественными критериями.');
