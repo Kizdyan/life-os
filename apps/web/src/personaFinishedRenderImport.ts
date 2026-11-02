@@ -20,7 +20,7 @@ export type PersonaFinishedRenderRecord={
  qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
  quality?:PersonaVideoQualitySummary;
 };
-type VideoFile={name:string;size:number;sha256:string;durationSec:number};
+type VideoFile={name:string;size:number;sha256:string;durationSec:number;width?:number;height?:number};
 const hash=/^[a-f0-9]{64}$/i;
 const record=(x:unknown):Record<string,unknown>=>x&&typeof x==='object'&&!Array.isArray(x)?x as Record<string,unknown>:{};
 const fail=(message:string):never=>{throw Error(message)};
@@ -95,6 +95,10 @@ export function inspectPersonaFinishedRenderImport(input:{
  if(!isSha(video.sha256)||video.name!=='finished-candidate.mp4'||video.size<1024||
    video.size>160*1024*1024||!within(video.durationSec,0.1,900))
   fail('Нужно выбрать действительный finished-candidate.mp4.');
+ // Browser video metadata independently checks frame dimensions.
+ if((video.width!==undefined&&video.width!==1080)||
+    (video.height!==undefined&&video.height!==1920))
+  fail('Фактическое разрешение итогового MP4 отличается от заявленного 1080×1920.');
  if(report.version!==1||report.kind!=='persona-finished-candidate-v1'||
   report.status!=='awaiting-author-review'||report.publicationApproved!==false||
   report.distributionAllowed!==false||
