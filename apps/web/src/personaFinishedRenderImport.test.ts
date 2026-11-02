@@ -97,19 +97,30 @@ describe('Persona final local render and author review',()=>{
   delete (input.report as any).music.startSec;
   expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/музыкального/);
  });
+ it('rejects an undeclared final quality report instead of ignoring it',()=>{
+  const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
+  input.quality={version:1};
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/не подтверждает/);
+ });
  it('binds the local video-quality report to the exact finished MP4 without treating it as approval',()=>{
   const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
   input.report.stages.push('local-video-quality-analysis-written');
   (input.report as Record<string,unknown>).qualityPath='D:\\Persona\\finished\\video-quality.json';
   input.quality={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
    publicationApproved:false,distributionAllowed:false,analyzedAt:'2026-11-01T12:00:00.000Z',
-   video:{sha256:finishedSha,durationSec:31,width:1080,height:1920,fps:30},
+   video:{sha256:finishedSha,bytes:390000,durationSec:31,width:1080,height:1920,fps:30},
    findings:[{id:'black_frames',status:'measured',title:'Чёрные кадры',detail:'Нет',timecodes:[]}],
    authorApproval:{approvedByAuthor:false,publicationApproved:false}};
   const finished=inspectPersonaFinishedRenderImport(input);
   expect(finished.quality?.videoSha256).toBe(finishedSha);
   expect(finished.quality?.warningCount).toBe(0);
   expect(finished.publicationApproved).toBe(false);
+  (input.quality as any).video.bytes=390001;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества/);
+  (input.quality as any).video.bytes=390000;
+  (input.quality as any).video.fps=25;
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества/);
+  (input.quality as any).video.fps=30;
   (input.quality as any).video.sha256='f'.repeat(64);
   expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/качества|SHA-256/);
  });
@@ -165,6 +176,82 @@ describe('Persona final local render and author review',()=>{
   const inconsistent={...next,color:{brightness:0.01,contrast:1,saturation:1}};
   expect(()=>mergePersonaFinishedReimport(previous,inconsistent)).toThrow(/противоречат/);
  });
+ it('rejects same-file reimport when only one report contains a music cue',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const withCue={...previous,musicAdded:true,musicCue:{startSec:2,endSec:4,fadeInSec:0.1,fadeOutSec:0.1}};
+  const withoutCue={...previous,musicAdded:true};
+  expect(readPersonaFinishedRenderRecord(withCue)).not.toBeNull();
+  expect(readPersonaFinishedRenderRecord(withoutCue)).not.toBeNull();
+  expect(()=>mergePersonaFinishedReimport(withoutCue,withCue)).toThrow(/противоречат/);
+  expect(()=>mergePersonaFinishedReimport(withCue,withoutCue)).toThrow(/противоречат/);
+ });
+ it('does not silently drop prior QA warnings on same-video reimport',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const flagged={...previous,quality:{version:1 as const,videoSha256:finishedSha,
+   analyzedAt:'2026-11-01T14:00:00Z',warningCount:1,humanReviewCount:0,
+   findings:[{id:'audio_loudness',status:'warning' as const,title:'Audio',detail:'Review',timecodes:[]}]}};
+  const cleared={...flagged,quality:{...flagged.quality,warningCount:0,findings:[{id:'audio_loudness',status:'measured' as const,title:'Audio',detail:'Review',timecodes:[]}]}};
+  expect(()=>mergePersonaFinishedReimport(flagged,cleared)).toThrow(/предупреждения/);
+  expect(mergePersonaFinishedReimport(flagged,previous).quality).toEqual(flagged.quality);
+ });
+ it('does not silently erase contact-sheet evidence on same-video refresh',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'Measured',timecodes:[]}],
+   visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
+  const old={...base,quality};
+  const newer={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',visualEvidence:undefined}};
+  expect(()=>mergePersonaFinishedReimport(old,newer)).toThrow(/кадры/);
+  expect(mergePersonaFinishedReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
+ });
+ it('rejects rewritten QA descriptions for the same finding ID',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Black frames',detail:'No black frames',timecodes:['00:00:05.000']}]};
+  const previous={...base,quality};
+  const rewritten={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',
+   findings:[{...quality.findings[0],detail:'Altered after review'}]}};
+  expect(()=>mergePersonaFinishedReimport(previous,rewritten)).toThrow(/содержание/);
+ });
+ it('rejects older final QA reports on the same MP4',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]};
+  const newer={...base,quality};
+  const older={...base,quality:{...quality,analyzedAt:'2026-11-01T13:00:00Z'}};
+  expect(()=>mergePersonaFinishedReimport(newer,older)).toThrow(/старым анализом/);
+  expect(mergePersonaFinishedReimport(older,newer).quality?.analyzedAt).toBe(quality.analyzedAt);
+ });
+ it('keeps earlier measured QA evidence when a later analysis of the same MP4 changes its finding set',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const first={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]}};
+  const later={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T15:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'audio_loudness',status:'measured' as const,
+    title:'Audio',detail:'Measured again',timecodes:[]}]}};
+  const merged=mergePersonaFinishedReimport(first,later);
+  expect(merged.quality).toEqual(later.quality);
+  expect(merged.qualityHistory).toEqual([first.quality]);
+ });
+ it('keeps twelve prior final QA measurements and refuses the next one without altering the saved record',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  let current=base;
+  for(let index=0;index<13;index++){
+   const analyzedAt=new Date(Date.parse('2026-11-01T14:00:00Z')+index*60000).toISOString();
+   current=mergePersonaFinishedReimport(current,{...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt,
+    warningCount:0,humanReviewCount:0,findings:[{id:'limit_'+index,status:'measured' as const,title:'Measurement',detail:'Result '+index,timecodes:[]}]}});
+  }
+  expect(current.qualityHistory).toHaveLength(12);
+  const preserved=JSON.stringify(current);
+  const next={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:13:00.000Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'limit_13',status:'measured' as const,title:'Measurement',detail:'Result 13',timecodes:[]}]}};
+  expect(()=>mergePersonaFinishedReimport(current,next)).toThrow(/История технических измерений заполнена/);
+  expect(JSON.stringify(current)).toBe(preserved);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false
@@ -173,5 +260,17 @@ describe('Persona final local render and author review',()=>{
   expect(html).toContain('video-quality.json');
   expect(html).toContain('disabled');
   expect(html).toContain('FINISH-RESULT.json');
+ });
+ it('shows preserved earlier measurements separately from the current report',()=>{
+  const current=inspectPersonaFinishedRenderImport(fixture());
+  const earlier={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T11:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]};
+  const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
+   draft:{...draft,finished:{...current,quality:{...earlier,analyzedAt:'2026-11-01T12:00:00Z'},qualityHistory:[earlier]}},
+   onSave:()=>false,canImport:false
+  }));
+  expect(html).toContain('История технических измерений');
+  expect(html).toContain('11:00');
  });
 });

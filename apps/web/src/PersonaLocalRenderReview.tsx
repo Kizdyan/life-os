@@ -128,6 +128,14 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
      </li>)}</ul>
     </>:<p>Старый черновик: video-quality.json не импортирован. После локального анализа повторно выбери четыре файла; отсутствие отчёта не означает, что недостатков нет.</p>}
    </details>
+   {Boolean(current.qualityHistory?.length)&&<details className="personaDraftQualityHistory">
+    <summary>История технических измерений · {current.qualityHistory?.length}</summary>
+    <p>Предыдущие отчёты относятся к тому же SHA-256 чернового MP4. Они не заменяют текущую оценку.</p>
+    <ol>{current.qualityHistory?.map((item,index)=><li key={item.analyzedAt+'-'+index}>
+     <b>{item.analyzedAt}</b> · предупреждений: {item.warningCount} · проверить вручную: {item.humanReviewCount}
+     <ul>{item.findings.map(finding=><li key={finding.id}>{finding.title}: {finding.detail}</li>)}</ul>
+    </li>)}</ol>
+   </details>}
    {!preview&&<p>Чтобы снова посмотреть видео после перезагрузки, выбери файлы исходного MP4 и двух отчётов, а при наличии — video-quality.json. Браузер сохраняет сведения о проверке, но не копию MP4.</p>}
   </div>}
   {current&&<details className="personaRenderFinishHandoff">

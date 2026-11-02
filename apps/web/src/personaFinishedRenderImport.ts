@@ -19,6 +19,9 @@ export type PersonaFinishedRenderRecord={
  importedAt:string;status:'awaiting-author-review';publicationApproved:false;
  qaProvenance:'browser-sha256-matched-local-ffmpeg-report';authorReview?:PersonaFinalAuthorReview;
  quality?:PersonaVideoQualitySummary;
+ /** Earlier SHA-bound measurements remain visible when a later local analysis
+  * adds non-conflicting findings for this exact MP4. */
+ qualityHistory?:PersonaVideoQualitySummary[];
 };
 type VideoFile={name:string;size:number;sha256:string;durationSec:number;width?:number;height?:number};
 const hash=/^[a-f0-9]{64}$/i;
@@ -32,7 +35,7 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
  const raw=Array.isArray(quality.findings)?quality.findings:[];
  if(quality.version!==1||quality.kind!=='persona-video-quality-v1'||quality.status!=='awaiting-author-review'||
    quality.publicationApproved!==false||quality.distributionAllowed!==false||
-   video.sha256!==expectedSha||typeof quality.analyzedAt!=='string'||!quality.analyzedAt.trim()||
+   video.sha256!==expectedSha||typeof quality.analyzedAt!=='string'||!Number.isFinite(Date.parse(quality.analyzedAt))||
    approval.approvedByAuthor!==false||approval.publicationApproved!==false||!raw.length||raw.length>80)return null;
  const findings:PersonaVideoQualityFinding[]=[];
  for(const item of raw){const finding=record(item),timecodes=Array.isArray(finding.timecodes)?finding.timecodes:[];
@@ -41,12 +44,48 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
     timecodes.some(time=>typeof time!=='string'||time.length>30))return null;
   findings.push({id:finding.id,status:finding.status as PersonaVideoQualityFinding['status'],title:finding.title,detail:finding.detail,timecodes:timecodes as string[]});
  }
+ if(new Set(findings.map(finding=>finding.id)).size!==findings.length)return null;
  const evidence=record(quality.visualEvidence),frames=Array.isArray(evidence.frames)?evidence.frames:[];
+ if(quality.visualEvidence!==undefined&&(
+  typeof evidence.contactSheetPath!=='string'||!evidence.contactSheetPath.trim()||
+  evidence.contactSheetPath.length>1000||frames.length<1||frames.length>12))return null;
  const visualEvidence=typeof evidence.contactSheetPath==='string'&&evidence.contactSheetPath.length<=1000&&frames.length>0&&frames.length<=12?
   {contactSheetPath:evidence.contactSheetPath,frameCount:frames.length}:undefined;
  return {version:1,videoSha256:expectedSha,analyzedAt:quality.analyzedAt as string,
   warningCount:findings.filter(finding=>finding.status==='warning').length,
   humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings,...(visualEvidence?{visualEvidence}:{})};
+}
+/** Validate persisted quality summaries, including derived counts. */
+export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
+ const summary=record(value);
+ if(summary.version!==1||summary.videoSha256!==sha||
+  !Number.isSafeInteger(summary.warningCount)||!Number.isSafeInteger(summary.humanReviewCount))return false;
+ if(summary.visualEvidence!==undefined){
+  const visual=record(summary.visualEvidence);
+  if(typeof visual.contactSheetPath!=='string'||!visual.contactSheetPath.trim()||
+   visual.contactSheetPath.length>1000||!Number.isSafeInteger(visual.frameCount)||
+   !within(visual.frameCount,1,12))return false;
+ }
+ const normalized=parsePersonaVideoQuality({
+  version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+  publicationApproved:false,distributionAllowed:false,analyzedAt:summary.analyzedAt,
+  video:{sha256:sha},authorApproval:{approvedByAuthor:false,publicationApproved:false},
+  findings:summary.findings},sha);
+ return Boolean(normalized&&normalized.warningCount===summary.warningCount&&
+  normalized.humanReviewCount===summary.humanReviewCount);
+}
+export function isPersonaVideoQualityHistory(value:unknown,sha:string,current:PersonaVideoQualitySummary|undefined):boolean{
+ if(value===undefined)return true;
+ if(!Array.isArray(value)||value.length<1||value.length>12)return false;
+ let previousTimestamp=-Infinity;
+ return value.every(item=>{
+  if(!isPersonaVideoQualitySummary(item,sha))return false;
+  const timestamp=Date.parse(item.analyzedAt);
+  if(!Number.isFinite(timestamp)||timestamp<=previousTimestamp||
+    (current!==undefined&&timestamp>=Date.parse(current.analyzedAt)))return false;
+  previousTimestamp=timestamp;
+  return true;
+ });
 }
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);
@@ -61,6 +100,8 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   (review.decision==='approved-final-cut'||review.decision==='needs-revision')&&
   typeof review.reviewer==='string'&&review.reviewer.trim().length>=2&&review.reviewer.length<=100&&
   typeof review.notes==='string'&&review.notes.length<=3000&&typeof review.reviewedAt==='string'&&
+  Number.isFinite(Date.parse(review.reviewedAt as string))&&Number.isFinite(Date.parse(r.importedAt as string))&&
+  Date.parse(review.reviewedAt as string)>=Date.parse(r.importedAt as string)&&
   review.watchedEntireVideo===true&&review.videoSha256===r.finishedSha256&&
   review.publicationApproved===false&&
   PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof checks[k]==='boolean')&&
@@ -75,10 +116,10 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   typeof r.captionCount==='number'&&r.captionCount>0&&r.captionCount<=80&&
   within(color.brightness,-0.05,0.05)&&within(color.contrast,0.92,1.08)&&
   within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&cueValid&&
-  typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
+  typeof r.importedAt==='string'&&Number.isFinite(Date.parse(r.importedAt))&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
-  (r.quality===undefined||Boolean(parsePersonaVideoQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
-   analyzedAt:record(r.quality).analyzedAt,video:{sha256:record(r.quality).videoSha256},authorApproval:{approvedByAuthor:false,publicationApproved:false},findings:record(r.quality).findings},r.finishedSha256)))&&
+  (r.quality===undefined||isPersonaVideoQualitySummary(r.quality,r.finishedSha256 as string))&&
+  isPersonaVideoQualityHistory(r.qualityHistory,r.finishedSha256 as string,r.quality)&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
 }
 function isSha(value:unknown):value is string{return typeof value==='string'&&hash.test(value)}
@@ -118,8 +159,14 @@ export function inspectPersonaFinishedRenderImport(input:{
   !within(caption.cueCount,1,80))
   fail('Нет подтверждения этапа проверки и встраивания субтитров.');
  const qualityRequired=report.stages.includes('local-video-quality-analysis-written');
+ if(input.quality!==undefined&&!qualityRequired)
+  fail('Предоставлен video-quality.json, но FINISH-RESULT.json не подтверждает его создание.');
  const quality=qualityRequired?parsePersonaVideoQuality(input.quality,video.sha256.toLowerCase()):null;
- if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality))
+ const qualityVideo=record(record(input.quality).video);
+ if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality||
+  qualityVideo.bytes!==video.size||qualityVideo.width!==1080||qualityVideo.height!==1920||
+  qualityVideo.fps!==30||!within(qualityVideo.durationSec,0.1,900)||
+  Math.abs((qualityVideo.durationSec as number)-video.durationSec)>0.75))
   fail('Отчёт качества видео отсутствует, повреждён или относится к другому MP4.');
  if(!within(color.brightness,-0.05,0.05)||!within(color.contrast,0.92,1.08)||
    !within(color.saturation,0.88,1.12))
@@ -189,12 +236,40 @@ export function mergePersonaFinishedReimport(
   previous.captionsBurnedIn!==imported.captionsBurnedIn||
   previous.musicAdded!==imported.musicAdded||
   JSON.stringify(previous.color)!==JSON.stringify(imported.color)||
-  (previous.musicCue&&imported.musicCue&&
-   JSON.stringify(previous.musicCue)!==JSON.stringify(imported.musicCue)))
+  JSON.stringify(previous.musicCue??null)!==JSON.stringify(imported.musicCue??null))
   fail('Отчёты одного MP4 противоречат сохранённым параметрам финализации.');
+ if(previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
+  fail('Повторный импорт не должен заменять отчёт качества более старым анализом.');
+ if(previous.quality&&imported.quality){
+  const oldFindings=new Map(previous.quality.findings.map(item=>[item.id,item]));
+  if(imported.quality.findings.some(item=>{
+   const old=oldFindings.get(item.id);
+   return old&&(old.title!==item.title||old.detail!==item.detail||
+    JSON.stringify(old.timecodes)!==JSON.stringify(item.timecodes));
+  }))fail('Повторный импорт изменил содержание уже сохранённых пунктов QA.');
+ }
+ if(previous.quality?.visualEvidence&&!imported.quality?.visualEvidence&&imported.quality)
+  fail('Повторный импорт не должен удалять ранее сохранённые кадры для просмотра.');
+ if(previous.quality&&imported.quality){
+  const oldFlags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
+  const newFlags=imported.quality.findings;
+  if(oldFlags.some(item=>!newFlags.some(next=>next.id===item.id&&next.status===item.status)))
+   fail('Новый отчёт качества скрывает ранее сохранённые предупреждения.');
+ }
+ const qualityHistory=previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
+  ?[...(previous.qualityHistory??[]),previous.quality]
+  :previous.qualityHistory;
+ // Do not silently discard a SHA-bound QA report when the local comparison
+ // history is full. The importer leaves the current project untouched and
+ // tells the author to archive evidence before a later analysis can replace it.
+ if(qualityHistory&&qualityHistory.length>12)
+  fail('История технических измерений заполнена (12 предыдущих отчётов). Новый анализ не сохранён; экспортируйте или архивируйте старые отчёты отдельно, затем повторите импорт.');
  const merged:PersonaFinishedRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
+  ...(qualityHistory?.length?{qualityHistory}:{}),
   ...(imported.musicCue||previous.musicCue?{musicCue:imported.musicCue??previous.musicCue}:{}),
   ...(previous.authorReview?{authorReview:previous.authorReview}:{})
  };
@@ -217,6 +292,8 @@ export function makePersonaFinalAuthorReview(input:{
   typeof reviewedAt!=='string'||!reviewedAt.trim()||
   !PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof criteria?.[k]==='boolean'))
   fail('Заполните имя автора и все пункты художественной проверки.');
+ if(!Number.isFinite(Date.parse(reviewedAt))||Date.parse(reviewedAt)<Date.parse(finished.importedAt))
+  fail('Время художественной приёмки должно быть позже импорта MP4.');
  if(decision==='approved-final-cut'){
   if(!PERSONA_FINAL_REVIEW_KEYS.every(k=>criteria[k]))
    fail('Финальный монтаж нельзя принять с непроверенными художественными критериями.');

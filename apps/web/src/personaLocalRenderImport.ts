@@ -1,5 +1,5 @@
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
-import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
+import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,isPersonaVideoQualitySummary,isPersonaVideoQualityHistory,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
 
 export type PersonaLocalRenderRecord={
  version:1;kind:'persona-local-render-review-v1';projectId:string;briefIdeaId:string;briefSnapshot:string;
@@ -8,6 +8,7 @@ export type PersonaLocalRenderRecord={
  qaProvenance:'locally-imported-report-not-independently-attested';publicationApproved:false;
  finished?:PersonaFinishedRenderRecord;
  quality?:PersonaVideoQualitySummary;
+ qualityHistory?:PersonaVideoQualitySummary[];
 };
 /** Editorial approval is versioned by its own decision timestamp, not just by
  * the JSON contents of the brief. Reapproving an identical brief must NOT revive
@@ -61,15 +62,11 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  typeof v.briefFingerprintSha256==='string'&&hashPattern.test(v.briefFingerprintSha256)&&
  typeof v.mp4Sha256==='string'&&hashPattern.test(v.mp4Sha256)&&v.mp4Name==='draft-reel.mp4'&&
  typeof v.mp4Bytes==='number'&&Number.isSafeInteger(v.mp4Bytes)&&v.mp4Bytes>0&&typeof v.durationSec==='number'&&Number.isFinite(v.durationSec)&&v.durationSec>0&&
- v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&
+ v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&Number.isFinite(Date.parse(v.importedAt))&&
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
  v.qaProvenance==='locally-imported-report-not-independently-attested'&&
- (v.quality===undefined||Boolean(parsePersonaVideoQuality({
-  version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
-  publicationApproved:false,distributionAllowed:false,analyzedAt:obj(v.quality).analyzedAt,
-  video:{sha256:obj(v.quality).videoSha256},
-  authorApproval:{approvedByAuthor:false,publicationApproved:false},
-  findings:obj(v.quality).findings},v.mp4Sha256)))&&
+ (v.quality===undefined||isPersonaVideoQualitySummary(v.quality,v.mp4Sha256 as string))&&
+ isPersonaVideoQualityHistory(v.qualityHistory,v.mp4Sha256 as string,v.quality)&&
  (v.finished===undefined||Boolean(readPersonaFinishedRenderRecord(v.finished))&&
   readPersonaFinishedRenderRecord(v.finished)?.sourceDraftSha256===v.mp4Sha256&&
   readPersonaFinishedRenderRecord(v.finished)?.briefFingerprintSha256===v.briefFingerprintSha256)
@@ -96,8 +93,36 @@ export function mergePersonaDraftReimport(
   previous.mp4Bytes!==imported.mp4Bytes||
   Math.abs(previous.durationSec-imported.durationSec)>0.001)
   return imported;
+ if(previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
+  throw Error('Повторный импорт не должен заменять отчёт качества более старым анализом.');
+ if(previous.quality&&imported.quality){
+  const oldFindings=new Map(previous.quality.findings.map(item=>[item.id,item]));
+  if(imported.quality.findings.some(item=>{
+   const old=oldFindings.get(item.id);
+   return old&&(old.title!==item.title||old.detail!==item.detail||
+    JSON.stringify(old.timecodes)!==JSON.stringify(item.timecodes));
+  }))throw Error('Повторный импорт изменил содержание уже сохранённых пунктов QA.');
+ }
+ if(previous.quality?.visualEvidence&&!imported.quality?.visualEvidence&&imported.quality)
+  throw Error('Повторный импорт не должен удалять ранее сохранённые кадры для просмотра.');
+ if(previous.quality&&imported.quality){
+  const flags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
+  if(flags.some(item=>!imported.quality?.findings.some(next=>next.id===item.id&&next.status===item.status)))
+   throw Error('Повторный импорт черновика скрывает прежние предупреждения качества.');
+ }
+ const qualityHistory=previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
+  ?[...(previous.qualityHistory??[]),previous.quality]
+  :previous.qualityHistory;
+ // Keep the current report plus at most twelve earlier SHA-bound summaries.
+ // Refusing the next reimport is deliberate: trimming an old measurement here
+ // would silently destroy evidence the author may still need for comparison.
+ if(qualityHistory&&qualityHistory.length>12)
+  throw Error('История технических измерений заполнена (12 предыдущих отчётов). Новый анализ не сохранён; экспортируйте или архивируйте старые отчёты отдельно, затем повторите импорт.');
  const merged:PersonaLocalRenderRecord={
   ...imported,importedAt:previous.importedAt,
+  ...(qualityHistory?.length?{qualityHistory}:{}),
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
   ...(previous.finished?{finished:previous.finished}:{})
  };

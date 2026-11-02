@@ -19,6 +19,13 @@ function fixture(){
  return {projectId:'p1',brief,briefFingerprintSha256:fingerprint,result,qa,
   video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31,width:1080,height:1920},importedAt:'2026-11-01T12:00:00Z'};
 }
+describe('Persona persisted draft chronology',()=>{
+ it('rejects invalid import dates and keeps valid dates',()=>{
+  const record=inspectPersonaLocalRenderImport(fixture());
+  expect(readPersonaLocalRenderRecord(record)).not.toBeNull();
+  expect(readPersonaLocalRenderRecord({...record,importedAt:'invalid'})).toBeNull();
+ });
+});
 describe('Persona exact file bundles for both video intake steps',()=>{
  it('accepts exactly 3 required files with an optional video-quality.json',()=>{
   for(const kind of ['draft','finished'] as const){
@@ -154,6 +161,79 @@ describe('Persona local render evidence intake',()=>{
   expect(mergePersonaDraftReimport(old,otherProject)).toEqual(otherProject);
   const changedBrief={...original,briefFingerprintSha256:'f'.repeat(64)};
   expect(mergePersonaDraftReimport(old,changedBrief)).toEqual(changedBrief);
+ });
+ it('keeps draft QA warnings from disappearing on same-file refresh',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:1,humanReviewCount:0,findings:[{id:'black_frames',status:'warning' as const,
+    title:'Black frames',detail:'Check frames',timecodes:[]}]};
+  const old={...base,quality};
+  const newQuality={...quality,warningCount:0,findings:[{id:'black_frames',
+   status:'measured' as const,title:'Black frames',detail:'Check frames',timecodes:[]}]};
+  expect(()=>mergePersonaDraftReimport(old,{...base,quality:newQuality})).toThrow(/предупреждения/);
+  expect(mergePersonaDraftReimport(old,base).quality).toEqual(quality);
+ });
+ it('does not silently erase contact-sheet evidence on same-video refresh',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'Measured',timecodes:[]}],
+   visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
+  const old={...base,quality};
+  const newer={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',visualEvidence:undefined}};
+  expect(()=>mergePersonaDraftReimport(old,newer)).toThrow(/кадры/);
+  expect(mergePersonaDraftReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
+ });
+ it('rejects rewritten QA descriptions for the same finding ID',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Black frames',detail:'No black frames',timecodes:['00:00:05.000']}]};
+  const previous={...base,quality};
+  const rewritten={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',
+   findings:[{...quality.findings[0],detail:'Altered after review'}]}};
+  expect(()=>mergePersonaDraftReimport(previous,rewritten)).toThrow(/содержание/);
+ });
+ it('rejects older draft QA reports on reimport of the same video',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'Measured',timecodes:[]}]};
+  const newer={...base,quality};
+  const older={...base,quality:{...quality,analyzedAt:'2026-11-01T13:00:00Z'}};
+  expect(()=>mergePersonaDraftReimport(newer,older)).toThrow(/старым анализом/);
+  expect(mergePersonaDraftReimport(older,newer).quality?.analyzedAt).toBe(quality.analyzedAt);
+ });
+ it('keeps five successive draft measurements and validates history after JSON reload',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  let current=base;
+  for(let index=0;index<5;index++){
+   const analyzedAt=new Date(Date.parse('2026-11-01T14:00:00Z')+index*60000).toISOString();
+   const quality={version:1 as const,videoSha256:videoSha,analyzedAt,
+    warningCount:0,humanReviewCount:0,findings:[{id:'measurement_'+index,
+     status:'measured' as const,title:'Measurement',detail:'Result '+index,timecodes:[]}]};
+   current=mergePersonaDraftReimport(current,{...base,quality});
+  }
+  expect(current.qualityHistory).toHaveLength(4);
+  const restored=readPersonaLocalRenderRecord(JSON.parse(JSON.stringify(current)));
+  expect(restored?.qualityHistory?.map(item=>item.analyzedAt)).toEqual(current.qualityHistory?.map(item=>item.analyzedAt));
+  expect(readPersonaLocalRenderRecord({...current,mp4Sha256:'c'.repeat(64)})).toBeNull();
+  expect(readPersonaLocalRenderRecord({...current,qualityHistory:[...current.qualityHistory!].reverse()})).toBeNull();
+ });
+ it('keeps twelve prior measurements and explicitly refuses a fourteenth result without losing them',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  let current=base;
+  for(let index=0;index<13;index++){
+   const analyzedAt=new Date(Date.parse('2026-11-01T14:00:00Z')+index*60000).toISOString();
+   current=mergePersonaDraftReimport(current,{...base,quality:{version:1 as const,videoSha256:videoSha,analyzedAt,
+    warningCount:0,humanReviewCount:0,findings:[{id:'limit_'+index,status:'measured' as const,title:'Measurement',detail:'Result '+index,timecodes:[]}]}});
+  }
+  expect(current.qualityHistory).toHaveLength(12);
+  const preserved=JSON.stringify(current);
+  const next={...base,quality:{version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:13:00.000Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'limit_13',status:'measured' as const,title:'Measurement',detail:'Result 13',timecodes:[]}]}};
+  expect(()=>mergePersonaDraftReimport(current,next)).toThrow(/История технических измерений заполнена/);
+  expect(JSON.stringify(current)).toBe(preserved);
  });
  it('requires actual output and QA paths from the chosen runner directory',()=>{
   const a=fixture();a.result.output='D:\\another.mp4';
