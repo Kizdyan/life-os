@@ -155,3 +155,21 @@ test('non-AAC audio is rejected before an output folder is created',{skip:!avail
  await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/audio codec pcm_s16le is not supported/);
  await assert.rejects(access(out),{code:'ENOENT'});
 }));
+
+test('mixed AAC and PCM tracks are rejected even when AAC is the first audio stream',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'mixed-aac-pcm.mp4'),out=join(root,'no-output');
+ // Existing sample's audio input is mapped twice, encoded as AAC then PCM.
+ // The renderer copies 0:a?, so checking just the first stream is unsafe.
+ makeSample(source,['-map','0:v:0','-map','1:a:0','-map','1:a:0',
+  '-c:a:0','aac','-c:a:1','pcm_s16le']);
+ const probe=spawnSync('ffprobe',['-v','error','-select_streams','a',
+  '-show_entries','stream=codec_name','-of','json',source],{encoding:'utf8'});
+ assert.equal(probe.status,0,probe.stderr);
+ assert.deepEqual(JSON.parse(probe.stdout).streams.map(stream=>stream.codec_name),['aac','pcm_s16le']);
+ const before=await readFile(source);
+ await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),
+  /audio codec pcm_s16le is not supported/);
+ await assert.rejects(access(out),{code:'ENOENT'});
+ assert.deepEqual(await readFile(source),before,'rejected source must remain byte-identical');
+}));
+
