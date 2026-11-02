@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,rm,stat,access,open} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,rm,stat,access,open} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -37,6 +37,11 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
  assert.equal(result.variants.length,3);
  assert.equal(result.publicationApproved,false);
  assert.deepEqual(await readFile(source),before);
+ assert.equal(result.source.path,join(out,'original.mp4'));
+ assert.deepEqual(await readFile(result.source.path),before,'staged original must match input byte-for-byte');
+ assert.deepEqual((await readdir(out)).sort(),[
+  'COMPARISON.json','original.mp4','A-natural-clean.mp4','B-warm-cinematic.mp4','C-muted-filmic.mp4',
+ ].sort(),'all five browser-import files must be in one output folder');
  const saved=JSON.parse(await readFile(join(out,'COMPARISON.json'),'utf8'));
  assert.deepEqual(saved,result);
  assert.equal(new Set(result.variants.map(v=>v.sha256)).size,3);
@@ -72,6 +77,8 @@ test('CLI can render a complete comparison folder without editing the source',{s
  assert.match(run.stdout,/Created 3 verified color variants/);
  const manifest=JSON.parse(await readFile(join(out,'COMPARISON.json'),'utf8'));
  assert.equal(manifest.variants.length,3);
+ assert.equal(manifest.source.path,join(out,'original.mp4'));
+ assert.match(run.stdout,/Select all five files from the output folder/);
 }));
 
 test('rejects an oversized original before probing or creating a destination',()=>withTemp(async root=>{
@@ -80,4 +87,16 @@ test('rejects an oversized original before probing or creating a destination',()
  try{await handle.truncate(160*1024*1024+1)}finally{await handle.close()}
  await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/160 MB/);
  await assert.rejects(access(out),{code:'ENOENT'});
+}));
+
+test('original name collision cannot overwrite the Natural Clean render',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'A-natural-clean.mp4'),out=join(root,'collision-variants');
+ makeSample(source);
+ const before=await readFile(source);
+ const manifest=await createColorVariants({inputPath:source,outputDir:out});
+ assert.equal(manifest.source.path,join(out,'SOURCE-A-natural-clean.mp4'));
+ assert.deepEqual(await readFile(manifest.source.path),before);
+ assert.equal(manifest.variants[0].path,join(out,'A-natural-clean.mp4'));
+ assert.notEqual(manifest.variants[0].sha256,manifest.source.sha256);
+ assert.equal((await readdir(out)).length,5);
 }));
