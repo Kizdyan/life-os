@@ -7,7 +7,7 @@ import {
  readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,
 } from './personaColorComparison';
-import {createPersonaProject,loadPersonaProjects,savePersonaProject,type PersonaProjectStorage} from './personaProjectStore';
+import {createPersonaProject,loadPersonaProjects,savePersonaProject,selectPersonaProject,type PersonaProjectStorage} from './personaProjectStore';
 
 const stamp='2026-11-02T20:10:00.000Z';
 const hash=(letter:string)=>letter.repeat(64);
@@ -107,5 +107,33 @@ describe('Comparison Studio restored review',()=>{
   expect(markup).not.toContain('aria-label="Цветовой вариант для просмотра"');
   expect(markup).not.toContain('aria-label="Обработанное видео"');
   expect(markup).toMatch(/disabled=""[^>]*>Сохранить выбор:/);
+ });
+});
+
+describe('Comparison decisions stay within their source project',()=>{
+ it('does not transfer a saved color choice when another project is selected and saved',()=>{
+  const {manifest,files}=fixture();
+  const selected=choosePersonaColorVariant(
+   inspectPersonaColorComparisonManifest(manifest,files,stamp),
+   'warm-cinematic','Keep the warm grade','2026-11-02T21:00:00.000Z');
+  const data=new Map<string,string>();
+  const storage:PersonaProjectStorage={
+   getItem:key=>data.get(key)??null,
+   setItem:(key,value)=>{data.set(key,value)},
+   removeItem:key=>{data.delete(key)},
+  };
+  const first=createPersonaProject({id:'project-a',title:'A',contentType:'reel',sourceIdea:'A',now:stamp});
+  const second=createPersonaProject({id:'project-b',title:'B',contentType:'reel',sourceIdea:'B',now:stamp});
+  savePersonaProject(storage,first,first.id);
+  savePersonaProject(storage,second,second.id);
+  savePersonaProject(storage,{...first,revision:2,colorComparison:selected},first.id);
+  selectPersonaProject(storage,second.id);
+  savePersonaProject(storage,{...second,revision:2},second.id);
+  const loaded=loadPersonaProjects(storage,()=> 'unused');
+  expect(loaded.activeProjectId).toBe(second.id);
+  expect(loaded.projects.find(project=>project.id===first.id)?.colorComparison).toEqual(selected);
+  expect(loaded.projects.find(project=>project.id===second.id)?.colorComparison).toBeUndefined();
+  expect(()=>savePersonaProject(storage,{...second,revision:2,colorComparison:selected},second.id))
+   .toThrow('persona_project_stale_save');
  });
 });
