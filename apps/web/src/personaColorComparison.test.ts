@@ -40,7 +40,7 @@ describe('Persona color comparison import',()=>{
  });
  it('rejects duplicate, missing, extra and oversized files',()=>{
   const {manifest,files}=fixture();
-  expect(()=>inspectPersonaColorComparisonManifest(manifest,files.slice(0,3),stamp)).toThrow('four');
+  expect(()=>inspectPersonaColorComparisonManifest(manifest,files.slice(0,3),stamp)).toThrow('all three rendered MP4s');
   expect(()=>inspectPersonaColorComparisonManifest(manifest,[...files,files[1]],stamp)).toThrow('duplicate');
   expect(()=>inspectPersonaColorComparisonManifest(manifest,[...files.slice(0,2),{...files[2],size:161*1024*1024},files[3]],stamp)).toThrow('oversized');
  });
