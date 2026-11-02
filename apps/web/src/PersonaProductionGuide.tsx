@@ -164,7 +164,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    <p>Один производственный маршрут для «{projectTitle}»: тема, хук, точные реплики, кадры, свет, звук и монтажный замысел. Все правки сохраняются в этом проекте, а утверждение сценария и видео остаётся отдельным.</p>
    <div className="personaGuideNext"><strong>Твой следующий конкретный шаг</strong><p>{readiness.nextAction}</p>
     <div className="personaGuideReadiness" aria-label="Состояние производственных этапов">
-     {readiness.items.map(item=><div key={item.id}><span aria-hidden="true">{item.state==='done'?'✓':item.state==='manual'?'○':'·'}</span><span>{item.label}</span><small>{item.state==='done'?'Подтверждено':item.state==='manual'?'Решение автора':'Ещё не завершено'}</small></div>)}
+     {readiness.items.map(item=><div key={item.id}><span aria-hidden="true">{item.state==='done'?'✓':item.state==='manual'?'○':'·'}</span><span>{item.label}</span><small>{item.state==='done'?(item.id==='idea'||item.id==='setup'?'Отмечено автором':'Подтверждено в проекте'):item.state==='manual'?'Решение автора':'Ещё не завершено'}</small></div>)}
     </div>
    </div>
    <div className="personaGuideMeter"><span>Чек-лист: {guideProgress(plan)} из {guideChecks.length}</span><span>{unsaved?'Есть несохранённые правки':stored?'План сохранён в проекте':'Предложение · ещё не сохранено'}</span></div>
@@ -177,7 +177,7 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
    <p>Актуальность нельзя вывести из даты или количества просмотров чужого ролика. Тему нужно подкрепить источником, датой, механикой и собственной оригинальной интерпретацией.</p>
    {allowExample&&<aside className="personaGuideTrend" aria-label="Публичные сигналы формата">
     <strong>Почему стоит проверить формат «актёр + композитор» сейчас</strong>
-    <p><a href="https://later.com/blog/instagram-reels-trends/" target="_blank" rel="noreferrer">Later · архив форматов, обновлён 31 июля 2026</a>: пример от 29 мая 2026 «Don't post your work, post you working» предлагает показывать творческий процесс, а не только готовый результат. Для Persona это референс механики; не свидетельство нынешних охватов или того, что автор посмотрел конкретный ролик.</p>
+    <p><a href="https://later.com/blog/instagram-reels-trends/" target="_blank" rel="noreferrer">Later · обновление 30 октября 2026</a>: 23 октября отмечен формат «не ограничиваться одной нишей» — быстро показывать несколько интересов и сторон личности. Для Persona предлагаем собственную мини-сценку про актёра и композитора, а не копию ролика или чужого звука. Это референс механики, не прогноз охватов.</p>
     <p><a href="https://about.fb.com/news/2026/01/2026-ai-drives-performance/" target="_blank" rel="noreferrer">Meta · 28 января 2026</a>: сообщает о росте доли оригинального контента в Instagram-рекомендациях в США. Это контекст платформы, а не прогноз просмотров конкретного Reels.</p>
     <small>Это публичные источники, не лично просмотренные автором референсные видео; их даты и применимость нужно пересматривать перед съёмкой. Источники не сохраняются как «просмотренные» автоматически.</small>
    </aside>}
