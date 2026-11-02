@@ -173,6 +173,17 @@ describe('Persona local render evidence intake',()=>{
   expect(()=>mergePersonaDraftReimport(old,{...base,quality:newQuality})).toThrow(/предупреждения/);
   expect(mergePersonaDraftReimport(old,base).quality).toEqual(quality);
  });
+ it('does not silently erase contact-sheet evidence on same-video refresh',()=>{
+  const base=inspectPersonaLocalRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'Measured',timecodes:[]}],
+   visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
+  const old={...base,quality};
+  const newer={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',visualEvidence:undefined}};
+  expect(()=>mergePersonaDraftReimport(old,newer)).toThrow(/кадры/);
+  expect(mergePersonaDraftReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
+ });
  it('rejects older draft QA reports on reimport of the same video',()=>{
   const base=inspectPersonaLocalRenderImport(fixture());
   const quality={version:1 as const,videoSha256:videoSha,analyzedAt:'2026-11-01T14:00:00Z',
