@@ -14,6 +14,8 @@ export const guideChecks:[GuideCheck,string][]=[
  ['takes','Выбрал необходимые дубли и отдельно отметил удачные актёрские исполнения'],
  ['editReview','Проверил порядок склеек, паузы, титры, музыку и цвет до финального решения'],
 ];
+/** Readable delimiter for the optional director note in canonical shot.action. */
+const actingDirectionMarker='\nАктёрская задача режиссёра: ';
 export type GuideShotField='camera'|'lighting'|'performance'|'edit';
 export interface GuideShotNote{
  /** Fingerprint of exact source scene. If dialogue/timing changes, the note is stale until reconfirmed. */
@@ -256,7 +258,8 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
   angle:checkedNotes[i]?.camera||beat.framing+' · '+(beat.id.startsWith('A')?'Актёр обращён вправо или в камеру':'Композитор у клавиш, взгляд влево'),
   cameraMovement:'Камера на штативе, без движения',
   lighting:checkedNotes[i]?.lighting||beat.lighting,
-  action:beat.action+(checkedNotes[i]?.performance?'; актёрская задача: '+checkedNotes[i].performance:'')+'; исходник '+exampleActorComposerSourceFiles[beat.id],
+  action:beat.action+'; исходник '+exampleActorComposerSourceFiles[beat.id]+
+   (checkedNotes[i]?.performance?actingDirectionMarker+checkedNotes[i].performance:''),
  }));
  return {...base,hook:{...base.hook,firstSeconds:script[0].line,visual:exampleActorComposerBeats[0].action},
   script,shots,capture:{...base.capture,
@@ -289,7 +292,7 @@ export function applyPersonaGuideToBrief(
  const notes=scenes.map(scene=>guideShotNoteForScene(guide,scene));
  if(notes.some(entry=>entry.stale))
   throw new Error('Есть устаревшие режиссёрские указания. Сначала сверяйте их с новыми репликами и длительностями.');
- const actionMarker='\n[PERSONA_ACTING_DIRECTION] ';
+ const actionMarker=actingDirectionMarker;
  const shots=brief.shots.map((shot,index)=>{
   const note=notes[index].note;
   if(!note)return shot;
