@@ -3,7 +3,7 @@ import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
 import {PersonaLocalRenderReview} from './PersonaLocalRenderReview';
-import {readPersonaLocalRenderRecord,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {readPersonaLocalRenderRecord,isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {PersonaLocalProductionHandoff,assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
@@ -300,6 +300,12 @@ export default function PersonaFactory(){
     throw Error('Сценарий или редакторское решение изменились во время проверки видео.');
    if(!readPersonaLocalRenderRecord(record))
     throw Error('Импортированные сведения о видео не прошли проверку.');
+   if(!isPersonaDraftCurrentForApproval({
+    record,projectId:activeProjectId,briefSnapshot:JSON.stringify(savedBrief),
+    handoffAllowed:true,
+    approvalDecidedAt:savedPipeline.materials.editorialDecision?.decision==='approved'
+     ?savedPipeline.materials.editorialDecision.decidedAt:null,
+   }))throw Error('MP4 импортирован до текущего авторского утверждения Production Brief. Требуется повторный импорт файлов.');
    const previousRecord=readPersonaLocalRenderRecord(saved.processing);
    if(record.finished){
     if(!previousRecord||previousRecord.mp4Sha256!==record.mp4Sha256||
