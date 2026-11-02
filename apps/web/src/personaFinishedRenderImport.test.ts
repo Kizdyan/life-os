@@ -97,6 +97,11 @@ describe('Persona final local render and author review',()=>{
   delete (input.report as any).music.startSec;
   expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/музыкального/);
  });
+ it('rejects an undeclared final quality report instead of ignoring it',()=>{
+  const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
+  input.quality={version:1};
+  expect(()=>inspectPersonaFinishedRenderImport(input)).toThrow(/не подтверждает/);
+ });
  it('binds the local video-quality report to the exact finished MP4 without treating it as approval',()=>{
   const input=fixture() as ReturnType<typeof fixture>&{quality:unknown};
   input.report.stages.push('local-video-quality-analysis-written');
