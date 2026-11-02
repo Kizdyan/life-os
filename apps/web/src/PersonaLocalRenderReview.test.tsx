@@ -4,7 +4,7 @@ import {describe,expect,it} from 'vitest';
 import {PersonaLocalRenderReview} from './PersonaLocalRenderReview';
 import {actorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide} from './personaProductionGuide';
 import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
-import type {PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 
 const now='2026-11-02T12:00:00.000Z';
 const idea={id:'pilot-1',title:actorComposerPilot.title,angle:actorComposerPilot.angle,format:'reel' as const};
@@ -47,6 +47,32 @@ describe('Persona local render review protects revoked shoot approvals',()=>{
   expect(html).not.toContain('Файл принят для авторского просмотра');
   expect(html).not.toContain('Скачать настройки финализации');
   expect(html).not.toContain('Финишный Reels · художественная приёмка');
+ });
+ it('does not resurrect the same historical MP4 after the same brief is reapproved later',()=>{
+  const {approved,render,record}=fixture();
+  const cycle2={...approved,materials:{...approved.materials,
+   editorialDecision:{...approved.materials.editorialDecision!,decidedAt:'2026-11-02T12:10:00.000Z'}}};
+  const html=render(cycle2);
+  expect(html).toContain('Production Brief повторно утверждён после прежнего импорта MP4');
+  expect(html).not.toContain('Файл принят для авторского просмотра');
+  expect(html).not.toContain('Финишный Reels · художественная приёмка');
+  expect(isPersonaDraftCurrentForApproval({record,projectId:'p1',briefSnapshot:record.briefSnapshot,
+   handoffAllowed:true,approvalDecidedAt:'2026-11-02T12:10:00.000Z'})).toBe(false);
+  // An explicit new upload of the same bytes is a new evidence cycle.
+  expect(isPersonaDraftCurrentForApproval({record:{...record,importedAt:'2026-11-02T12:11:00.000Z'},
+   projectId:'p1',briefSnapshot:record.briefSnapshot,
+   handoffAllowed:true,approvalDecidedAt:'2026-11-02T12:10:00.000Z'})).toBe(true);
+ });
+ it('rejects missing/invalid approval dates and project mismatch fail-closed',()=>{
+  const {record}=fixture();
+  const base={record,projectId:'p1',briefSnapshot:record.briefSnapshot,handoffAllowed:true,
+   approvalDecidedAt:'2026-11-02T12:00:00.000Z'};
+  expect(isPersonaDraftCurrentForApproval(base)).toBe(true);
+  expect(isPersonaDraftCurrentForApproval({...base,approvalDecidedAt:null})).toBe(false);
+  expect(isPersonaDraftCurrentForApproval({...base,approvalDecidedAt:'not-a-date'})).toBe(false);
+  expect(isPersonaDraftCurrentForApproval({...base,record:{...record,importedAt:'bad-date'}})).toBe(false);
+  expect(isPersonaDraftCurrentForApproval({...base,projectId:'other-project'})).toBe(false);
+  expect(isPersonaDraftCurrentForApproval({...base,handoffAllowed:false})).toBe(false);
  });
  it('treats results from changed brief as obsolete even if the pipeline has a valid approval',()=>{
   const {approved,render,record}=fixture();
