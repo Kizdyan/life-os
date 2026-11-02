@@ -109,6 +109,32 @@ describe('Persona full preproduction guide',()=>{
   expect(output).toContain(a.camera);
   expect(output).toContain(b.edit);
  });
+ it('shows the current authored shot directions on the page instead of the conflicting default proposal',()=>{
+  const scene=productionGuideScenes(null)[0];
+  const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,{
+   camera:'МОЯ КАМЕРА · 1,5 м',lighting:'МОЙ СВЕТ · мягкая лампа',
+   performance:'МОЯ ИГРА · спокойная пауза',edit:'МОЯ СКЛЕЙКА · по вдоху',
+  },now);
+  const html=renderToString(<PersonaProductionGuide projectTitle={actorComposerPilot.title}
+   projectAngle={actorComposerPilot.angle} allowExample={true}
+   workspace={{version:1,research:[],analyses:[],ideas:[],preProductionGuide:guide}}
+   pipeline={null} onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(html).toContain('Авторские режиссёрские указания');
+  expect(html).toContain('МОЯ КАМЕРА · 1,5 м');
+  expect(html).toContain('МОЙ СВЕТ · мягкая лампа');
+  expect(html).toContain('МОЯ ИГРА · спокойная пауза');
+  expect(html).not.toContain('Штатив на уровне глаз, ориентир 0,9–1,3 м');
+  const brief=createActorComposerWorkingBrief(idea,guide);
+  const migrated=migrateActorComposerShotNotes(guide,brief,now);
+  const after=renderToString(<PersonaProductionGuide projectTitle={actorComposerPilot.title}
+   projectAngle={actorComposerPilot.angle} allowExample={true}
+   workspace={{version:1,research:[],analyses:[],ideas:[],preProductionGuide:migrated}}
+   pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
+  expect(after).toContain('МОЯ КАМЕРА · 1,5 м');
+  expect(after).toContain('МОЯ ИГРА · спокойная пауза');
+  expect(after).not.toContain('требует повторной проверки');
+ });
  it('does not auto-reconfirm notes that were already stale before applying a script template',()=>{
   const scene=productionGuideScenes(null)[0];
   const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,
