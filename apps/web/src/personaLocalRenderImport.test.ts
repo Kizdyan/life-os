@@ -17,7 +17,7 @@ function fixture(){
   distributionAllowed:false,events:['real_mp4_rendered','technical_qa_passed'],
   technicalChecks:{...evidence},timing:{status:'within-brief-tolerance'}};
  return {projectId:'p1',brief,briefFingerprintSha256:fingerprint,result,qa,
-  video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31},importedAt:'2026-11-01T12:00:00Z'};
+  video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31,width:1080,height:1920},importedAt:'2026-11-01T12:00:00Z'};
 }
 describe('Persona local render evidence intake',()=>{
  it('exports only a disabled human-review template bound to the rendered MP4',()=>{
@@ -50,6 +50,14 @@ describe('Persona local render evidence intake',()=>{
   expect(()=>inspectPersonaLocalRenderImport(b)).toThrow(/MP4/);
   const c=fixture();c.video.durationSec=35;
   expect(()=>inspectPersonaLocalRenderImport(c)).toThrow(/Длительность/);
+ });
+ it('rejects physical MP4 frame dimensions inconsistent with a valid-looking QA report',()=>{
+  const good=fixture();
+  expect(inspectPersonaLocalRenderImport(good).width).toBe(1080);
+  const width=fixture();width.video.width=720;
+  expect(()=>inspectPersonaLocalRenderImport(width)).toThrow(/Фактическое разрешение/);
+  const height=fixture();height.video.height=1080;
+  expect(()=>inspectPersonaLocalRenderImport(height)).toThrow(/Фактическое разрешение/);
  });
  it('refuses conflicting report evidence, fake technical pass, or premature publication',()=>{
   const a=fixture();a.result.technicalChecks.sha256='f'.repeat(64);
