@@ -93,12 +93,46 @@ try{
   .setInputFiles(fileSet(first));
  await waitForImport(page,'SHA-256 оригинала и трёх вариантов подтверждены');
  assert.equal(await comparison.locator('video').count(),2);
+ // Checking two <video> nodes alone does not prove Chrome can decode or play them.
+ // Exercise the native HTMLVideoElement pipeline on real FFmpeg-generated media.
+ for(const [index,label] of [[0,'original'],[1,'Natural Clean']]){
+  const player=comparison.locator('video').nth(index);
+  await player.evaluate(async video=>{
+   if(video.readyState<1)await new Promise((ok,fail)=>{
+    const timer=setTimeout(()=>fail(Error('video metadata timeout')),12000);
+    video.addEventListener('loadedmetadata',()=>{clearTimeout(timer);ok()},{once:true});
+    video.addEventListener('error',()=>{clearTimeout(timer);fail(Error('video decode error'))},{once:true});
+   });
+   if(video.videoWidth!==320||video.videoHeight!==568||!Number.isFinite(video.duration)||video.duration<1)
+    throw Error('unexpected real MP4 metadata');
+   video.muted=true;
+   await video.play();
+  });
+  await page.waitForFunction(index=>{
+   const video=document.querySelectorAll('.personaComparisonVideos video')[index];
+   return video instanceof HTMLVideoElement&&video.currentTime>=0.2;
+  },index,{timeout:12000});
+  await player.evaluate(video=>video.pause());
+  step('Chrome decoded and played '+label+' MP4');
+ }
  await comparison.getByRole('button',{name:'Warm Cinematic'}).click();
+ const warm=comparison.getByLabel('Обработанное видео');
+ await warm.evaluate(async video=>{
+  video.muted=true;
+  await video.play();
+ });
+ await page.waitForFunction(()=>{
+  const video=document.querySelector('.personaComparisonVideos video[aria-label="Обработанное видео"]');
+  return video instanceof HTMLVideoElement&&video.currentTime>=0.2;
+ },null,{timeout:12000});
+ await warm.evaluate(video=>video.pause());
+ step('Chrome played the selected Warm Cinematic MP4');
  await comparison.getByRole('textbox',{name:'Комментарий к выбору'})
   .fill('Тест: естественный оттенок кожи, без изменения лица');
  await comparison.getByRole('button',{name:/Сохранить выбор: Warm Cinematic/}).click();
  await waitForImport(page,'Авторский выбор сохранён в проекте');
  await comparison.getByText(/Автор выбрал Warm Cinematic/).waitFor();
+ await page.screenshot({path:join(artifacts,'desktop-warm-cinematic.png'),fullPage:true});
  step('Imported five SHA-verified files and saved Warm Cinematic through UI');
 
  await page.reload({waitUntil:'domcontentloaded'});
