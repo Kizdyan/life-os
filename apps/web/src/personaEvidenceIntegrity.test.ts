@@ -23,6 +23,14 @@ describe('Persona quality evidence integrity',()=>{
   expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
   expect(isPersonaVideoQualitySummary({...parsed,humanReviewCount:0},sha)).toBe(false);
  });
+ it('validates saved contact-sheet metadata without claiming image review',()=>{
+  const parsed=parsePersonaVideoQuality(report([finding]),sha);
+  const valid={...parsed,visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
+  expect(isPersonaVideoQualitySummary(valid,sha)).toBe(true);
+  expect(isPersonaVideoQualitySummary({...valid,visualEvidence:{...valid.visualEvidence,frameCount:0}},sha)).toBe(false);
+  expect(isPersonaVideoQualitySummary({...valid,visualEvidence:{...valid.visualEvidence,frameCount:13}},sha)).toBe(false);
+  expect(isPersonaVideoQualitySummary({...valid,visualEvidence:{...valid.visualEvidence,contactSheetPath:''}},sha)).toBe(false);
+ });
  it('rejects falsified QA counts',()=>{
   const parsed=parsePersonaVideoQuality(report([finding]),sha);
   expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
