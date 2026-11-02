@@ -9,7 +9,7 @@ import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './per
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
  createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,actorComposerShotDirections,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,reviseGuideField,getPersonaGuideReadiness,
- productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,
+ productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,migrateActorComposerShotNotes,
 } from './personaProductionGuide';
 
 const idea={id:'guide-1',title:'Актёр и композитор — колыбельная',angle:'Два срочных дела и комедийный музыкальный поворот',format:'reel' as const};
@@ -62,6 +62,61 @@ describe('Persona full preproduction guide',()=>{
   }};
   savePersonaProject(storage,nextProject,project.id);
   expect(loadPersonaProjects(storage,()=>project.id).projects[0].scenarioWorkspace?.preProductionGuide?.shotNotes?.[scene.id]?.camera).toBe(note.camera);
+ });
+ it('reconfirms edited scenes using the NEW fingerprint, even when the caller supplies the old record',()=>{
+  const scene=productionGuideScenes(null)[0];
+  const values={camera:'Ближе к лицу',lighting:'Боковой софтбокс',performance:'Пауза',
+   edit:'Жёсткая склейка'};
+  const original=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,values,now);
+  const rewritten={...scene,line:'Новая авторская реплика',seconds:4};
+  expect(guideShotNoteForScene(original,rewritten).stale).toBe(true);
+  const oldNote=original.shotNotes![scene.id];
+  const confirmed=updateGuideShotNote(original,rewritten,oldNote,now);
+  expect(confirmed.shotNotes![scene.id].sceneFingerprint).toBe(guideSceneFingerprint(rewritten));
+  expect(guideShotNoteForScene(confirmed,rewritten).stale).toBe(false);
+  expect(confirmed.shotNotes![scene.id].camera).toBe(values.camera);
+  expect(confirmed.shotNotes![scene.id].edit).toBe(values.edit);
+ });
+ it('transfers every customized shot from A/B pilot IDs to canonical brief scenes without losing editorial detail',()=>{
+  const first=productionGuideScenes(null)[0],second=productionGuideScenes(null)[1];
+  const a={camera:'Крупно · смартфон 1 м',lighting:'Мягкий свет из окна',
+   performance:'Взгляд в объектив',edit:'На последнем слоге склейка'};
+  const b={camera:'Средний план у клавиш',lighting:'Один тёплый прибор',
+   performance:'Сухая подача',edit:'Микропауза перед реакцией'};
+  let guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),first,a,now);
+  guide=updateGuideShotNote(guide,second,b,now);
+  const brief=createActorComposerWorkingBrief(idea,guide);
+  expect(brief.shots[0].angle).toBe(a.camera);
+  expect(brief.shots[0].lighting).toBe(a.lighting);
+  expect(brief.shots[0].action).toContain(a.performance);
+  expect(brief.postProduction.transitions).toContain(a.edit);
+  expect(brief.shots[1].angle).toBe(b.camera);
+  const migrated=migrateActorComposerShotNotes(guide,brief,now);
+  expect(validatePersonaProductionGuide(migrated)).toBe(true);
+  expect(migrated.shotNotes?.A01).toBeUndefined();
+  expect(migrated.shotNotes?.B01).toBeUndefined();
+  const scenes=productionGuideScenes(brief);
+  expect(guideShotNoteForScene(migrated,scenes[0]).stale).toBe(false);
+  expect(guideShotNoteForScene(migrated,scenes[0]).note?.camera).toBe(a.camera);
+  expect(guideShotNoteForScene(migrated,scenes[1]).note?.edit).toBe(b.edit);
+  expect(guideShotNoteForScene(migrated,{...scenes[0],line:'Обновлённый хук'}).stale).toBe(true);
+  const output=exportPersonaShootingSheet({
+   title:actorComposerPilot.title,angle:actorComposerPilot.angle,
+   guide:migrated,scenes:scenes.map(scene=>({
+    ...scene,...(guideShotNoteForScene(migrated,scene).note??{}),
+   })),sample:false,references:[],
+  });
+  expect(output).toContain(a.camera);
+  expect(output).toContain(b.edit);
+ });
+ it('does not auto-reconfirm notes that were already stale before applying a script template',()=>{
+  const scene=productionGuideScenes(null)[0];
+  const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,
+   {camera:'Камера',lighting:'Свет',performance:'Игра',edit:'Склейка'},now);
+  const stale={...guide,shotNotes:{...guide.shotNotes,
+   [scene.id]:{...guide.shotNotes![scene.id],sceneFingerprint:'previous-unreviewed-revision'}}};
+  const migrated=migrateActorComposerShotNotes(stale,createActorComposerWorkingBrief(idea,stale),now);
+  expect(guideShotNoteForScene(migrated,productionGuideScenes(createActorComposerWorkingBrief(idea,stale))[0]).stale).toBe(true);
  });
  it('rejects hostile or malformed per-shot records and renders editors on non-pilot scripts',()=>{
   const guide=createPersonaProductionGuide(now);
