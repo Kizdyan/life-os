@@ -162,11 +162,11 @@ try{
  // Keep the four genuine MP4s, but forge the source hash inside COMPARISON.json.
  // The UI must independently hash real file bytes and refuse the forged manifest.
  const fakeManifest={...first,source:{...first.source,sha256:'0'.repeat(64)}};
- await picker.setInputFiles([
-  ...fileSet(first).slice(0,4),
-  {name:'COMPARISON.json',mimeType:'application/json',
-   buffer:Buffer.from(JSON.stringify(fakeManifest))},
- ]);
+ const forgedFolder=join(root,'forged-manifest');
+ await mkdir(forgedFolder);
+ const forgedPath=join(forgedFolder,'COMPARISON.json');
+ await writeFile(forgedPath,JSON.stringify(fakeManifest));
+ await picker.setInputFiles([...fileSet(first).slice(0,4),forgedPath]);
  await waitForImport(page,'Импорт отклонён: Comparison Studio: original MP4 SHA-256 differs from manifest');
  await afterReload.getByText(/Автор выбрал Warm Cinematic/).waitFor();
  assert.equal(await afterReload.locator('video').count(),2);
