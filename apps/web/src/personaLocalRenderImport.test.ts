@@ -19,6 +19,13 @@ function fixture(){
  return {projectId:'p1',brief,briefFingerprintSha256:fingerprint,result,qa,
   video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31,width:1080,height:1920},importedAt:'2026-11-01T12:00:00Z'};
 }
+describe('Persona persisted draft chronology',()=>{
+ it('rejects invalid import dates and keeps valid dates',()=>{
+  const record=inspectPersonaLocalRenderImport(fixture());
+  expect(readPersonaLocalRenderRecord(record)).not.toBeNull();
+  expect(readPersonaLocalRenderRecord({...record,importedAt:'invalid'})).toBeNull();
+ });
+});
 describe('Persona exact file bundles for both video intake steps',()=>{
  it('accepts exactly 3 required files with an optional video-quality.json',()=>{
   for(const kind of ['draft','finished'] as const){
