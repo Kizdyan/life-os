@@ -1,0 +1,18 @@
+.personaColorComparison{margin:24px 0;padding:20px;border:1px solid var(--border,#d6d6dc);border-radius:16px;display:grid;gap:12px;min-width:0}
+.personaColorComparison h3{margin:0}
+.personaColorComparison p{margin:0;line-height:1.5;overflow-wrap:anywhere}
+.personaColorComparison details{max-width:100%;overflow-wrap:anywhere}
+.personaColorComparison details code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;margin:10px 0;background:rgba(128,128,128,.09);border-radius:8px}
+.personaComparisonPicker{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px dashed #7d8fa8;border-radius:10px}
+.personaComparisonPicker input{max-width:100%;font:inherit}
+.personaComparisonDetails{display:grid;gap:14px;min-width:0}
+.personaComparisonOptions{display:flex;gap:8px;flex-wrap:wrap}
+.personaComparisonOptions button{border:1px solid #8e96a6;background:transparent;color:inherit;border-radius:10px;padding:9px 12px;cursor:pointer}
+.personaComparisonOptions button.active{border:2px solid #3f74cc;font-weight:700}
+.personaComparisonVideos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.personaComparisonVideos>div{min-width:0;display:grid;gap:7px}
+.personaComparisonVideos video{width:100%;max-height:440px;aspect-ratio:9/16;object-fit:contain;background:#111;border-radius:8px}
+.personaComparisonDetails label{display:grid;gap:7px}
+.personaComparisonDetails textarea{width:100%;box-sizing:border-box;min-height:85px;font:inherit;border-radius:8px;padding:10px}
+.personaComparisonWarning{font-size:.9rem}
+@media(max-width:560px){.personaColorComparison{padding:12px}.personaComparisonVideos{grid-template-columns:minmax(0,1fr)}.personaComparisonVideos video{max-height:400px}}
