@@ -54,6 +54,12 @@ export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
  const summary=record(value);
  if(summary.version!==1||summary.videoSha256!==sha||
   !Number.isSafeInteger(summary.warningCount)||!Number.isSafeInteger(summary.humanReviewCount))return false;
+ if(summary.visualEvidence!==undefined){
+  const visual=record(summary.visualEvidence);
+  if(typeof visual.contactSheetPath!=='string'||!visual.contactSheetPath.trim()||
+   visual.contactSheetPath.length>1000||!Number.isSafeInteger(visual.frameCount)||
+   !within(visual.frameCount,1,12))return false;
+ }
  const normalized=parsePersonaVideoQuality({
   version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
   publicationApproved:false,distributionAllowed:false,analyzedAt:summary.analyzedAt,
