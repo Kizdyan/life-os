@@ -44,9 +44,12 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  const lastUrl=useRef<string|null>(null),generation=useRef(0);
  useEffect(()=>()=>{generation.current++;if(lastUrl.current)URL.revokeObjectURL(lastUrl.current)},[]);
  const brief=pipeline?.materials.productionBrief;
- const current=record&&brief&&record.projectId===projectId&&record.briefSnapshot===JSON.stringify(brief)?record:null;
- const isStale=Boolean(record&&!current);
  const handoff=pipeline?assessPersonaLocalHandoff(pipeline,productionInputDraftExists(resolvePersonaScenarioDraftStorage(),projectId)):null;
+ // Exact brief JSON alone does not confer shoot approval. A previously accepted
+ // MP4 is historical once its associated handoff is no longer authorized.
+ const matchesBrief=Boolean(record&&brief&&record.projectId===projectId&&record.briefSnapshot===JSON.stringify(brief));
+ const current=matchesBrief&&handoff?.allowed?record:null;
+ const isStale=Boolean(record&&!current);
  function downloadFinishTemplate(){
   if(!current){setMessage('Сначала импортируйте и проверьте MP4.');return}
   try{
@@ -99,7 +102,9 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
   {!handoff?.allowed&&<p role="status">{handoff?.reason??'Нет съёмочного брифа для Reels.'}</p>}
   {busy&&<p role="status">Проверяю совпадение файлов и контрольные суммы локально…</p>}
   {message&&<p role="status">{message}</p>}
-  {isStale&&<p role="alert">В проекте сохранён результат от другой версии сценария. Он не считается текущим; повторно запусти монтаж и импортируй новый результат.</p>}
+  {isStale&&<p role="alert">{matchesBrief
+    ?'Утверждение Production Brief больше не действует. Сохранённый MP4 остался в истории, но не считается текущим и не может быть повторно утверждён до новой проверки брифа и импорта.'
+    :'В проекте сохранён результат от другой версии сценария или брифа. Он не считается текущим; повторно запусти монтаж и импортируй новый результат.'}</p>}
   {current&&<div className="personaRenderReturnDetails">
    <b>Файл принят для авторского просмотра — публикация заблокирована</b>
    <p>Видео {current.durationSec.toFixed(2)} сек. · {current.width}×{current.height} · {current.fps} fps · {(current.mp4Bytes/1048576).toFixed(1)} МБ</p>
