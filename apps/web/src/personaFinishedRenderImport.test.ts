@@ -103,7 +103,7 @@ describe('Persona final local render and author review',()=>{
   (input.report as Record<string,unknown>).qualityPath='D:\\Persona\\finished\\video-quality.json';
   input.quality={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
    publicationApproved:false,distributionAllowed:false,analyzedAt:'2026-11-01T12:00:00.000Z',
-   video:{sha256:finishedSha,durationSec:31,width:1080,height:1920,fps:30},
+   video:{sha256:finishedSha,bytes:390000,durationSec:31,width:1080,height:1920,fps:30},
    findings:[{id:'black_frames',status:'measured',title:'Чёрные кадры',detail:'Нет',timecodes:[]}],
    authorApproval:{approvedByAuthor:false,publicationApproved:false}};
   const finished=inspectPersonaFinishedRenderImport(input);
