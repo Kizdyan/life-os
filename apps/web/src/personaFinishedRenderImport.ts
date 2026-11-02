@@ -131,8 +131,14 @@ export function inspectPersonaFinishedRenderImport(input:{
   !within(caption.cueCount,1,80))
   fail('Нет подтверждения этапа проверки и встраивания субтитров.');
  const qualityRequired=report.stages.includes('local-video-quality-analysis-written');
+ if(input.quality!==undefined&&!qualityRequired)
+  fail('Предоставлен video-quality.json, но FINISH-RESULT.json не подтверждает его создание.');
  const quality=qualityRequired?parsePersonaVideoQuality(input.quality,video.sha256.toLowerCase()):null;
- if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality))
+ const qualityVideo=record(record(input.quality).video);
+ if(qualityRequired&&(!fileName(report.qualityPath)||fileName(report.qualityPath)!=='video-quality.json'||!quality||
+  qualityVideo.bytes!==video.size||qualityVideo.width!==1080||qualityVideo.height!==1920||
+  qualityVideo.fps!==30||!within(qualityVideo.durationSec,0.1,900)||
+  Math.abs((qualityVideo.durationSec as number)-video.durationSec)>0.75))
   fail('Отчёт качества видео отсутствует, повреждён или относится к другому MP4.');
  if(!within(color.brightness,-0.05,0.05)||!within(color.contrast,0.92,1.08)||
    !within(color.saturation,0.88,1.12))
