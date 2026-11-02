@@ -173,6 +173,53 @@ describe('Persona full preproduction guide',()=>{
   expect(regenerated.materials.editorialDecision).toBeUndefined();
   expect(regenerated.statuses.READY_FOR_SHOOT).toBe('pending');
  });
+ it('does not duplicate acting directions when syncing a fresh pilot brief repeatedly',()=>{
+  const scene=productionGuideScenes(null)[0];
+  const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,{
+   camera:'Камера 1,2 м',lighting:'Свет справа',performance:'Пауза и взгляд',edit:'После паузы склейка',
+  },now);
+  const original=createActorComposerWorkingBrief(idea,guide);
+  const migrated=migrateActorComposerShotNotes(guide,original,now);
+  const once=applyPersonaGuideToBrief(migrated,original);
+  const twice=applyPersonaGuideToBrief(migrated,once);
+  expect(twice).toEqual(once);
+  expect(once.shots[0].action.split('Актёрская задача режиссёра:').length-1).toBe(1);
+  expect(once.shots[0].action).toContain('A01_actor_hook_take01.mp4');
+  expect(once.script).toEqual(original.script);
+ });
+ it('refuses to carry incomplete fields into an authoritative Production Brief',()=>{
+  const original=createActorComposerWorkingBrief(idea,createPersonaProductionGuide(now,'actor_composer'));
+  const emptyLocation=createPersonaProductionGuide(now,'actor_composer');
+  emptyLocation.fields.location=' ';
+  expect(()=>applyPersonaGuideToBrief(emptyLocation,original)).toThrow('Точное место');
+  const scene=productionGuideScenes(original)[0];
+  const shot=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,{
+   camera:'',lighting:'Свет',performance:'Игра',edit:'',
+  },now);
+  expect(()=>applyPersonaGuideToBrief(shot,original)).toThrow('кадр');
+ });
+ it('shows guide/brief sync as a next step and never marks stale shot plans approved',()=>{
+  const guide={...createPersonaProductionGuide(now),checks:{research:true}};
+  const state=getPersonaGuideReadiness({
+   hasScript:true,scriptApproved:true,hasCurrentBrief:false,briefApproved:false,
+   pendingBriefSync:true,guide,
+  });
+  expect(state.nextAction).toContain('Перенесите сохранённые режиссёрские решения');
+  expect(state.items.find(x=>x.id==='brief')?.state).toBe('pending');
+  const draft=buildPersonaProductionBrief({idea});
+  const unsynced=renderToString(<PersonaProductionGuide projectTitle={idea.title}
+   projectAngle={idea.angle} allowExample={false}
+   pipeline={importPersonaProductionBrief({brief:draft,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}} onApplyToBrief={()=>{}}/>);
+  expect(unsynced).toContain('Перенести решения в бриф');
+  const applied=applyPersonaGuideToBrief(createPersonaProductionGuide(now),draft);
+  const already=renderToString(<PersonaProductionGuide projectTitle={idea.title}
+   projectAngle={idea.angle} allowExample={false}
+   pipeline={importPersonaProductionBrief({brief:applied,selectedIdea:idea})}
+   onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}} onApplyToBrief={()=>{}}/>);
+  expect(already).toContain('уже совпадают с этим Production Brief');
+  expect(already).not.toContain('Перенести решения в бриф и сбросить прежнее утверждение');
+ });
  it('refuses stale per-scene notes instead of approving their old camera/lighting decisions',()=>{
   const scene=productionGuideScenes(null)[0];
   const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,{
