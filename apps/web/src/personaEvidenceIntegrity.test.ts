@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {parsePersonaVideoQuality,readPersonaFinishedRenderRecord} from './personaFinishedRenderImport';
+import {parsePersonaVideoQuality,isPersonaVideoQualitySummary} from './personaFinishedRenderImport';
 import {isPersonaDraftCurrentForApproval} from './personaLocalRenderImport';
 
 const sha='a'.repeat(64);
@@ -14,6 +14,11 @@ describe('Persona quality evidence integrity',()=>{
   expect(parsePersonaVideoQuality(report([finding,{...finding,status:'measured'}]),sha)).toBeNull();
   expect(parsePersonaVideoQuality(report([finding,{...finding}]),sha)).toBeNull();
   expect(parsePersonaVideoQuality(report([finding]),sha)?.warningCount).toBe(1);
+ });
+ it('rejects falsified QA counts',()=>{
+  const parsed=parsePersonaVideoQuality(report([finding]),sha);
+  expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
+  expect(isPersonaVideoQualitySummary({...parsed,warningCount:0},sha)).toBe(false);
  });
  it('never revives an old draft after a new approval decision',()=>{
   const record={projectId:'p1',briefSnapshot:'brief-v1',importedAt:'2026-11-02T12:00:00Z'} as Parameters<typeof isPersonaDraftCurrentForApproval>[0]['record'];
