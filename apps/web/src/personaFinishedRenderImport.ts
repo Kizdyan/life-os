@@ -74,7 +74,7 @@ export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
  return Boolean(normalized&&normalized.warningCount===summary.warningCount&&
   normalized.humanReviewCount===summary.humanReviewCount);
 }
-function isPersonaVideoQualityHistory(value:unknown,sha:string,current:PersonaVideoQualitySummary|undefined):boolean{
+export function isPersonaVideoQualityHistory(value:unknown,sha:string,current:PersonaVideoQualitySummary|undefined):boolean{
  if(value===undefined)return true;
  if(!Array.isArray(value)||value.length<1||value.length>12)return false;
  let previousTimestamp=-Infinity;
