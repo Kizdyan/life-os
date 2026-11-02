@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import PersonaFinishedRenderReview from './PersonaFinishedRenderReview';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
-import {inspectPersonaLocalRenderImport,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,isPersonaDraftCurrentForApproval,validatePersonaMediaImportFileNames,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {productionInputDraftExists} from './personaProductionInputJournal';
 import {resolvePersonaScenarioDraftStorage} from './personaScenarioDraftJournal';
 import './persona-local-render-review.css';
@@ -75,8 +75,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
   try{
    if(!handoff?.allowed||!brief)throw Error(handoff?.reason??'Сначала импортируйте и одобрите съёмочный бриф.');
    const selected=Array.from(files);
-   if(![3,4].includes(selected.length)||new Set(selected.map(file=>file.name)).size!==selected.length)
-    throw Error('Выберите RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json.');
+   validatePersonaMediaImportFileNames(selected.map(file=>file.name),'draft');
    const byName=new Map(selected.map(f=>[f.name,f]));
    const resultFile=byName.get('RESULT.json'),qaFile=byName.get('qa.json'),videoFile=byName.get('draft-reel.mp4'),qualityFile=byName.get('video-quality.json');
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов должны быть RESULT.json, qa.json и draft-reel.mp4.');
