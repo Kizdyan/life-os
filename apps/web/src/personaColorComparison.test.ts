@@ -102,6 +102,8 @@ describe('Comparison Studio restored review',()=>{
    projectId:'color-test',record:approved,onSave:()=>true,
   }));
   expect(markup).toContain('Автор выбрал Warm Cinematic');
+  expect(markup).toContain(String.raw`C:\Video\original.mp4`);
+  expect(markup).not.toContain(String.raw`C:\\Video\\original.mp4`);
   expect(markup).toContain('Natural skin tones');
   expect(markup).toContain('повторно выберите пять исходных файлов');
   expect(markup).not.toContain('aria-label="Цветовой вариант для просмотра"');
