@@ -94,6 +94,14 @@ export function mergePersonaDraftReimport(
  if(previous.quality&&imported.quality&&
   Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
   throw Error('Повторный импорт не должен заменять отчёт качества более старым анализом.');
+ if(previous.quality&&imported.quality){
+  const oldFindings=new Map(previous.quality.findings.map(item=>[item.id,item]));
+  if(imported.quality.findings.some(item=>{
+   const old=oldFindings.get(item.id);
+   return old&&(old.title!==item.title||old.detail!==item.detail||
+    JSON.stringify(old.timecodes)!==JSON.stringify(item.timecodes));
+  }))throw Error('Повторный импорт изменил содержание уже сохранённых пунктов QA.');
+ }
  if(previous.quality?.visualEvidence&&!imported.quality?.visualEvidence&&imported.quality)
   throw Error('Повторный импорт не должен удалять ранее сохранённые кадры для просмотра.');
  if(previous.quality&&imported.quality){
