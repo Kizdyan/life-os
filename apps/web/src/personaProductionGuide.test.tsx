@@ -419,7 +419,8 @@ describe('Persona full preproduction guide',()=>{
    pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
    onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
   expect(html).toContain('отличаются от Production Brief');
-  expect(html).toContain('НЕ обновляют съёмочный бриф автоматически');
+  expect(html).toContain('Изменения в редакторе плана не попадают в бриф автоматически.');
+  expect(html).toContain('Передача режиссёрских решений в Production Brief');
  });
  it('shows current approved brief instead of substituting the seven-shot sample',()=>{
   const guide=createPersonaProductionGuide(now);
