@@ -49,10 +49,23 @@ async function openComparison(page){
  return page.getByRole('region',{name:'Persona Comparison Studio'});
 }
 async function checkNoOverflow(page){
- const overflow=await page.evaluate(()=>({
-  client:document.documentElement.clientWidth,
-  scroll:document.documentElement.scrollWidth,
- }));
+ const overflow=await page.evaluate(()=>{
+  const client=document.documentElement.clientWidth;
+  return {
+   client,
+   scroll:document.documentElement.scrollWidth,
+   offenders:Array.from(document.querySelectorAll('body *')).map(element=>{
+    const box=element.getBoundingClientRect();
+    return {
+     node:element.tagName.toLowerCase(),
+     className:typeof element.className==='string'?element.className.slice(0,100):'',
+     right:Math.round(box.right),left:Math.round(box.left),
+     width:Math.round(box.width),
+    };
+   }).filter(box=>box.width>0&&box.right>client+2)
+    .sort((a,b)=>b.right-a.right).slice(0,12),
+  };
+ });
  assert.ok(overflow.scroll<=overflow.client+2,'horizontal overflow: '+JSON.stringify(overflow));
 }
 
@@ -114,8 +127,8 @@ try{
  step('Different source SHA invalidated the earlier author choice');
 
  await page.setViewportSize({width:390,height:844});
- await checkNoOverflow(page);
  await page.screenshot({path:join(artifacts,'mobile-comparison.png'),fullPage:true});
+ await checkNoOverflow(page);
  step('Mobile 390px comparison has no horizontal overflow');
 
  await afterReload.getByRole('button',{name:/Сохранить выбор: Natural Clean/}).click();
