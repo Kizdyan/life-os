@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import PersonaFinishedRenderReview from './PersonaFinishedRenderReview';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
-import {inspectPersonaLocalRenderImport,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {productionInputDraftExists} from './personaProductionInputJournal';
 import {resolvePersonaScenarioDraftStorage} from './personaScenarioDraftJournal';
 import './persona-local-render-review.css';
@@ -48,8 +48,14 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  // Exact brief JSON alone does not confer shoot approval. A previously accepted
  // MP4 is historical once its associated handoff is no longer authorized.
  const matchesBrief=Boolean(record&&brief&&record.projectId===projectId&&record.briefSnapshot===JSON.stringify(brief));
- const current=matchesBrief&&handoff?.allowed?record:null;
+ const approvalDecidedAt=pipeline?.materials.editorialDecision?.decision==='approved'
+  ?pipeline.materials.editorialDecision.decidedAt:null;
+ const current=record&&isPersonaDraftCurrentForApproval({
+  record,projectId,briefSnapshot:brief?JSON.stringify(brief):null,
+  handoffAllowed:Boolean(handoff?.allowed),approvalDecidedAt,
+ })?record:null;
  const isStale=Boolean(record&&!current);
+ const oldApprovalEpoch=Boolean(isStale&&matchesBrief&&handoff?.allowed);
  function downloadFinishTemplate(){
   if(!current){setMessage('Сначала импортируйте и проверьте MP4.');return}
   try{
@@ -102,9 +108,11 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
   {!handoff?.allowed&&<p role="status">{handoff?.reason??'Нет съёмочного брифа для Reels.'}</p>}
   {busy&&<p role="status">Проверяю совпадение файлов и контрольные суммы локально…</p>}
   {message&&<p role="status">{message}</p>}
-  {isStale&&<p role="alert">{matchesBrief
-    ?'Утверждение Production Brief больше не действует. Сохранённый MP4 остался в истории, но не считается текущим и не может быть повторно утверждён до новой проверки брифа и импорта.'
-    :'В проекте сохранён результат от другой версии сценария или брифа. Он не считается текущим; повторно запусти монтаж и импортируй новый результат.'}</p>}
+  {isStale&&<p role="alert">{oldApprovalEpoch
+    ?'Production Brief повторно утверждён после прежнего импорта MP4. Старое видео осталось в истории, но его художественное решение больше не считается действующим. Повторно предъявите файлы для проверки нового цикла.'
+    :matchesBrief
+     ?'Утверждение Production Brief больше не действует. Сохранённый MP4 остался в истории, но не считается текущим и не может быть повторно утверждён до новой проверки брифа и импорта.'
+     :'В проекте сохранён результат от другой версии сценария или брифа. Он не считается текущим; повторно запусти монтаж и импортируй новый результат.'}</p>
   {current&&<div className="personaRenderReturnDetails">
    <b>Файл принят для авторского просмотра — публикация заблокирована</b>
    <p>Видео {current.durationSec.toFixed(2)} сек. · {current.width}×{current.height} · {current.fps} fps · {(current.mp4Bytes/1048576).toFixed(1)} МБ</p>
