@@ -367,9 +367,9 @@ export interface PersonaGuideReadiness{
  * and never proves actual camera footage, review approval or publication. */
 export function getPersonaGuideReadiness(input:{
  hasScript:boolean;scriptApproved:boolean;hasCurrentBrief:boolean;
- briefApproved:boolean;guide:PersonaProductionGuide;
+ briefApproved:boolean;pendingBriefSync?:boolean;guide:PersonaProductionGuide;
 }):PersonaGuideReadiness{
- const {hasScript,scriptApproved,hasCurrentBrief,briefApproved,guide}=input;
+ const {hasScript,scriptApproved,hasCurrentBrief,briefApproved,guide,pendingBriefSync=false}=input;
  const setupKeys:GuideCheck[]=['set','lighting','sound'];
  const setupChecked=setupKeys.every(key=>guide.checks[key]===true);
  const items:PersonaGuideReadiness['items']=[
@@ -383,6 +383,7 @@ export function getPersonaGuideReadiness(input:{
  const nextAction=guide.checks.research!==true?'Сначала проверьте актуальность темы: добавьте датированные источники, уточните, что они доказывают, и отметьте проверку в чек-листе.'
   :!hasScript?'Составьте хук, развитие и финальную реплику во вкладке «Сценарий».'
   :!scriptApproved?'Проверьте и утвердите текущую редакцию реплик в сценарном редакторе.'
+  :pendingBriefSync?'Перенесите сохранённые режиссёрские решения из плана съёмки в Production Brief и пройдите QA заново.'
   :!hasCurrentBrief?'Создайте или обновите Production Brief с актуальной раскадровкой и репликами.'
   :!briefApproved?'Проверьте Production Brief и примите отдельное редакторское решение.'
   :!setupChecked?'Проверьте на месте камеру, свет и звук; отметьте три соответствующих пункта.'
