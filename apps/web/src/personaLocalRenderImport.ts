@@ -91,6 +91,9 @@ export function mergePersonaDraftReimport(
   previous.mp4Bytes!==imported.mp4Bytes||
   Math.abs(previous.durationSec-imported.durationSec)>0.001)
   return imported;
+ if(previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
+  throw Error('Повторный импорт не должен заменять отчёт качества более старым анализом.');
  if(previous.quality&&imported.quality){
   const flags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
   if(flags.some(item=>!imported.quality?.findings.some(next=>next.id===item.id&&next.status===item.status)))
