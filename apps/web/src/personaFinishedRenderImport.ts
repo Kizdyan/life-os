@@ -224,6 +224,8 @@ export function mergePersonaFinishedReimport(
  if(previous.quality&&imported.quality&&
   Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
   fail('Повторный импорт не должен заменять отчёт качества более старым анализом.');
+ if(previous.quality?.visualEvidence&&!imported.quality?.visualEvidence&&imported.quality)
+  fail('Повторный импорт не должен удалять ранее сохранённые кадры для просмотра.');
  if(previous.quality&&imported.quality){
   const oldFlags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
   const newFlags=imported.quality.findings;
