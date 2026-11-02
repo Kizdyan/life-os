@@ -23,6 +23,11 @@ describe('Persona quality evidence integrity',()=>{
   expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
   expect(isPersonaVideoQualitySummary({...parsed,humanReviewCount:0},sha)).toBe(false);
  });
+ it('rejects malformed raw contact-sheet claims instead of silently dropping them',()=>{
+  expect(parsePersonaVideoQuality({...report([finding]),visualEvidence:{contactSheetPath:'',frames:[{}]}},sha)).toBeNull();
+  expect(parsePersonaVideoQuality({...report([finding]),visualEvidence:{contactSheetPath:'sheet.jpg',frames:[]}},sha)).toBeNull();
+  expect(parsePersonaVideoQuality({...report([finding]),visualEvidence:{contactSheetPath:'sheet.jpg',frames:[{}]}},sha)?.visualEvidence?.frameCount).toBe(1);
+ });
  it('validates saved contact-sheet metadata without claiming image review',()=>{
   const parsed=parsePersonaVideoQuality(report([finding]),sha);
   const valid={...parsed,visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
