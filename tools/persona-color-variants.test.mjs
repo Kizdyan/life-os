@@ -5,6 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtemp,readFile,readdir,rm,stat,access,open,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createColorVariants} from './persona-color-variants.mjs';
 
@@ -79,6 +80,21 @@ test('CLI can render a complete comparison folder without editing the source',{s
  assert.equal(manifest.variants.length,3);
  assert.equal(manifest.source.path,join(out,'original.mp4'));
  assert.match(run.stdout,/Select all five files from the output folder/);
+}));
+
+test('CLI uses an explicitly provided FFmpeg directory when PATH has no FFmpeg',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'original.mp4'),out=join(root,'portable-cli-variants');
+ makeSample(source);
+ const script=fileURLToPath(new URL('./persona-color-variants.mjs',import.meta.url));
+ const locator=spawnSync(process.platform==='win32'?'where.exe':'which',['ffmpeg'],{encoding:'utf8'});
+ assert.equal(locator.status,0,locator.stderr);
+ const ffmpegDir=dirname(locator.stdout.trim().split(/\r?\n/)[0]);
+ const emptyPath=process.platform==='win32'?'C:\\Windows\\System32':'/usr/bin:/bin';
+ const run=spawnSync(process.execPath,[script,source,out,ffmpegDir],{
+  encoding:'utf8',timeout:120000,env:{...process.env,PATH:emptyPath},
+ });
+ assert.equal(run.status,0,run.stderr);
+ assert.match(run.stdout,/Created 3 verified color variants/);
 }));
 
 test('rejects an oversized original before probing or creating a destination',()=>withTemp(async root=>{

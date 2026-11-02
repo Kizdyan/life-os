@@ -51,7 +51,7 @@ async function preflight(input,environment){
   fail('rotation metadata detected; manual orientation review required');
  return video;
 }
-/** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> */
+/** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> [ffmpeg-dir] */
 export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
  if(typeof inputPath!=='string'||!inputPath.trim()||
   typeof outputDir!=='string'||!outputDir.trim())fail('inputPath and NEW outputDir required');
@@ -93,12 +93,12 @@ export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
  return result;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const [, ,inputPath,outputDir]=process.argv;
+ const [, ,inputPath,outputDir,ffmpegDir]=process.argv;
  if(!inputPath||!outputDir){
-  process.stderr.write('Usage: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir>\n');
+  process.stderr.write('Usage: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> [ffmpeg-dir]\n');
   process.exitCode=2;
  }else{
-  createColorVariants({inputPath,outputDir}).then(result=>{
+  createColorVariants({inputPath,outputDir,ffmpegDir}).then(result=>{
    process.stdout.write('Created '+result.variants.length+' verified color variants in '+resolve(outputDir)+'\n');
    process.stdout.write('Select all five files from the output folder in Persona: COMPARISON.json, staged original and three MP4 variants.\n');
   }).catch(error=>{process.stderr.write(String(error.message||error)+'\n');process.exitCode=1});
