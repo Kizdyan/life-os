@@ -194,6 +194,16 @@ describe('Persona final local render and author review',()=>{
   expect(()=>mergePersonaFinishedReimport(flagged,cleared)).toThrow(/предупреждения/);
   expect(mergePersonaFinishedReimport(flagged,previous).quality).toEqual(flagged.quality);
  });
+ it('rejects older final QA reports on the same MP4',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'No black frames',timecodes:[]}]};
+  const newer={...base,quality};
+  const older={...base,quality:{...quality,analyzedAt:'2026-11-01T13:00:00Z'}};
+  expect(()=>mergePersonaFinishedReimport(newer,older)).toThrow(/старым анализом/);
+  expect(mergePersonaFinishedReimport(older,newer).quality?.analyzedAt).toBe(quality.analyzedAt);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false
