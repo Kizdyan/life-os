@@ -50,7 +50,7 @@ export function productionBriefMatchesBeats(
 export function reconcilePersonaProductionWithScenario(
  pipeline:PersonaProductionPipeline|null,workspace:ScenarioWorkspace|undefined,
 ):PersonaProductionPipeline|null{
- if(!pipeline||!workspace?.script||productionBriefMatchesBeats(
+ if(!pipeline||!pipeline.materials.productionBrief||!workspace?.script||productionBriefMatchesBeats(
   pipeline.materials.productionBrief,workspace.script.currentRevision.beats))return pipeline;
  if(pipeline.stage==='QA'&&pipeline.statuses.QA==='needs_revision'&&
   !pipeline.materials.editorialDecision)return pipeline;
