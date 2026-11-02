@@ -138,3 +138,32 @@ describe('Comparison decisions stay within their source project',()=>{
    .toThrow('persona_project_stale_save');
  });
 });
+
+describe('Malformed optional comparison evidence must not erase other projects',()=>{
+ it('preserves the raw damaged record and all projects without quarantining the collection',()=>{
+  const {manifest,files}=fixture();
+  const valid=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const malformed={...valid,variants:valid.variants.map((variant,index)=>
+   index===0?{...variant,sha256:'invalid'}:variant)};
+  expect(readPersonaColorComparisonRecord(malformed)).toBeNull();
+  const data=new Map<string,string>();
+  const storage:PersonaProjectStorage={
+   getItem:key=>data.get(key)??null,
+   setItem:(key,value)=>{data.set(key,value)},
+   removeItem:key=>{data.delete(key)},
+  };
+  const damaged=createPersonaProject({id:'damaged-evidence',title:'Original project',contentType:'reel',sourceIdea:'Original',now:stamp});
+  const safe=createPersonaProject({id:'other-project',title:'Other project',contentType:'reel',sourceIdea:'Other',now:stamp});
+  savePersonaProject(storage,{...damaged,colorComparison:malformed as never},damaged.id);
+  savePersonaProject(storage,safe,safe.id);
+  let restored=loadPersonaProjects(storage,()=> 'unused');
+  expect(restored.projects.map(project=>project.id)).toEqual([damaged.id,safe.id]);
+  expect(restored.projects[0].colorComparison).toEqual(malformed);
+  expect(data.get('lifeos:persona:projects:v1:corrupt')).toBeUndefined();
+  savePersonaProject(storage,{...safe,revision:2,title:'Other updated'},safe.id);
+  restored=loadPersonaProjects(storage,()=> 'unused');
+  expect(restored.projects[0].colorComparison).toEqual(malformed);
+  expect(restored.projects[1].title).toBe('Other updated');
+  expect(data.get('lifeos:persona:projects:v1:corrupt')).toBeUndefined();
+ });
+});
