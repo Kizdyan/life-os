@@ -23,7 +23,7 @@ export function isPersonaDraftCurrentForApproval(input:{
  const imported=Date.parse(record.importedAt),approved=Date.parse(approvalDecidedAt);
  return Number.isFinite(imported)&&Number.isFinite(approved)&&imported>=approved;
 }
-type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number};
+type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number;width?:number;height?:number};
 /** Template is intentionally unapproved; the author must edit and review SRT. */
 export function buildPersonaFinishOptionsTemplate(record:PersonaLocalRenderRecord){
  if(!readPersonaLocalRenderRecord(record))throw Error('Invalid saved Persona render evidence');
@@ -132,6 +132,11 @@ export function inspectPersonaLocalRenderImport(input:{
    recorded.height!==evidence.height||recorded.fps!==evidence.fps||
    recorded.blackFrameCheckPassed!==true||recorded.audioCheckPassed!==true)
   fail('RESULT.json и qa.json содержат разные сведения об MP4.');
+ // HTMLVideoElement independently parses these dimensions from the selected file.
+ // FPS still comes from FFprobe evidence and is not independently measured here.
+ if((video.width!==undefined&&(video.width!==1080||video.width!==evidence.width))||
+    (video.height!==undefined&&(video.height!==1920||video.height!==evidence.height)))
+  fail('Фактическое разрешение выбранного MP4 отличается от QA-отчёта (требуется 1080×1920).');
  if(video.durationSec!==undefined&&(!Number.isFinite(video.durationSec)||Math.abs(video.durationSec-Number(evidence.durationSec))>0.75))
   fail('Длительность MP4 отличается от технического отчёта.');
  const timing=obj(result.timing);
