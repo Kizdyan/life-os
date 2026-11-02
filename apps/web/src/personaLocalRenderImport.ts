@@ -37,6 +37,22 @@ export function buildPersonaFinishOptionsTemplate(record:PersonaLocalRenderRecor
 const hashPattern=/^[a-f0-9]{64}$/i;
 const fail=(text:string):never=>{throw new Error(text)};
 const obj=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
+/** Avoid silently treating an unknown fourth JSON file as an optional
+ * video-quality report. The file picker is an exact evidence bundle. */
+export function validatePersonaMediaImportFileNames(
+ names:readonly string[],kind:'draft'|'finished',
+):void{
+ const required=kind==='draft'
+  ?['RESULT.json','qa.json','draft-reel.mp4']
+  :['FINISH-RESULT.json','finish-qa.json','finished-candidate.mp4'];
+ const allowed=new Set([...required,'video-quality.json']);
+ if(![3,4].includes(names.length)||new Set(names).size!==names.length)
+  fail('Выберите три обязательных файла без повторов и необязательный video-quality.json.');
+ const unknown=names.find(name=>!allowed.has(name));
+ if(unknown)fail('Неизвестный файл для проверки MP4: '+unknown+'. Выберите только файлы текущего результата монтажа.');
+ const missing=required.filter(name=>!names.includes(name));
+ if(missing.length)fail('Отсутствуют обязательные файлы: '+missing.join(', '));
+}
 const endWith=(text:unknown,name:string)=>typeof text==='string'&&text.split(/[\\/]/).at(-1)===name;
 export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRecord|null{
  const v=obj(value);
