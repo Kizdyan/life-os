@@ -42,6 +42,7 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.equal(quality.video.height,1920);
    assert.equal(quality.findings.find(x=>x.id==='decode_integrity')?.status,'measured');
    assert.equal(quality.findings.find(x=>x.id==='frame_rate_mode')?.status,'measured');
+   assert.match(quality.findings.find(x=>x.id==='frame_rate_mode')?.detail??'',/30\.000 fps/);
    assert.equal(quality.findings.find(x=>x.id==='rotation_metadata')?.measurement.rotationDegrees,0);
    assert.equal(quality.findings.find(x=>x.id==='hdr_transfer_risk')?.status,'not_measured');
    assert.ok(quality.findings.some(x=>x.id==='black_frames'&&x.status==='warning'));
