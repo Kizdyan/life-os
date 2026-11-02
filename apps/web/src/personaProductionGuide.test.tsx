@@ -295,10 +295,12 @@ describe('Persona full preproduction guide',()=>{
   expect(guideProgress(loaded.scenarioWorkspace!.preProductionGuide!)).toBe(2);
   expect(loaded.scenarioWorkspace?.preProductionGuide?.fields.location).toBe(guide.fields.location);
  });
- it('recognizes an existing brief-only script and requests editorial approval, not rewriting the hook',()=>{
+ it('recognizes an existing brief-only script after explicit topic research, without rewriting the hook',()=>{
   const brief=buildPersonaProductionBrief({idea});
+  const researched={...createPersonaProductionGuide(now),checks:{research:true}};
   const html=renderToString(<PersonaProductionGuide projectTitle={idea.title} projectAngle={idea.angle}
    allowExample={false} pipeline={importPersonaProductionBrief({brief,selectedIdea:idea})}
+   workspace={{version:1,research:[],analyses:[],ideas:[],preProductionGuide:researched}}
    onSave={()=>{}} onUseExample={()=>{}} onNavigate={()=>{}}/>);
   expect(html).not.toContain('Составьте хук, развитие и финальную реплику');
   expect(html).toContain('Проверьте и утвердите текущую редакцию реплик');
