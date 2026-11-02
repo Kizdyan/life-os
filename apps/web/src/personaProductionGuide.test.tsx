@@ -6,7 +6,7 @@ import {evaluatePersonaProductionBrief} from '../../../packages/core/src/persona
 import {importPersonaProductionBrief,revisePersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
 import {createScenarioScript,reviseScenarioScript,type ScenarioIdea} from '../../../packages/core/src/persona-scenario-intelligence';
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
-import {PersonaProductionGuide} from './PersonaProductionGuide';
+import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
 import {
  createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,actorComposerShotDirections,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,reviseGuideField,getPersonaGuideReadiness,
  productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,
