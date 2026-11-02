@@ -21,14 +21,15 @@ async function sha256(file:File):Promise<string>{
  const bytes=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
  return Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
 }
-async function durationOf(file:File):Promise<number>{
+async function videoMetadataOf(file:File):Promise<{durationSec:number;width:number;height:number}>{
  const url=URL.createObjectURL(file),video=document.createElement('video');
  video.preload='metadata';
  try{
-  return await new Promise<number>((ok,bad)=>{
+  return await new Promise<{durationSec:number;width:number;height:number}>((ok,bad)=>{
    const timer=window.setTimeout(()=>bad(Error('Нет метаданных MP4 за 12 секунд.')),12000);
    video.onloadedmetadata=()=>{window.clearTimeout(timer);
-    Number.isFinite(video.duration)&&video.duration>0?ok(video.duration):bad(Error('Невозможно определить длительность.'))};
+    Number.isFinite(video.duration)&&video.duration>0&&video.videoWidth>0&&video.videoHeight>0?
+     ok({durationSec:video.duration,width:video.videoWidth,height:video.videoHeight}):bad(Error('Невозможно определить длительность или разрешение MP4.'))};
    video.onerror=()=>{window.clearTimeout(timer);bad(Error('Браузер не может прочитать финальный MP4.'))};
    video.src=url;
   });
@@ -61,11 +62,11 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов из одной папки финализации должны совпадать.');
    if(videoFile.size<1024||videoFile.size>160*1024*1024)
     throw Error('Видео для локального импорта должно быть от 1 КБ до 160 МБ.');
-   const [report,qa,quality,fileSha,duration]=await Promise.all([
-    readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),sha256(videoFile),durationOf(videoFile)]);
+   const [report,qa,quality,fileSha,metadata]=await Promise.all([
+    readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),sha256(videoFile),videoMetadataOf(videoFile)]);
    if(run!==generation.current)return;
    const result=inspectPersonaFinishedRenderImport({draft,report,qa,quality,
-    video:{name:videoFile.name,size:videoFile.size,sha256:fileSha,durationSec:duration},
+    video:{name:videoFile.name,size:videoFile.size,sha256:fileSha,...metadata},
     importedAt:new Date().toISOString()});
    const merged=mergePersonaFinishedReimport(finished,result);
    if(!onSave({...draft,finished:merged}))
