@@ -22,7 +22,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState('');
  const [urls,setUrls]=useState<VideoUrls|null>(null);
- const [active,setActive]=useState<PersonaColorVariantId>('natural-clean');
+ const [active,setActive]=useState<PersonaColorVariantId>(record?.selectedVariantId??'natural-clean');
  const [comment,setComment]=useState(record?.comment??'');
  const sourcePlayer=useRef<HTMLVideoElement|null>(null);
  const variantPlayer=useRef<HTMLVideoElement|null>(null);
@@ -30,6 +30,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  const ownedUrls=useRef<string[]>([]);
  useEffect(()=>()=>{generation.current++;ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));ownedUrls.current=[]},[]);
  useEffect(()=>{setComment(record?.comment??'')},[record?.sourceSha256,record?.selectedVariantId,record?.comment]);
+ useEffect(()=>{setActive(record?.selectedVariantId??'natural-clean')},[record?.sourceSha256,record?.selectedVariantId]);
  useEffect(()=>{if(variantPlayer.current&&sourcePlayer.current){
   variantPlayer.current.currentTime=Math.min(sourcePlayer.current.currentTime,variantPlayer.current.duration||Infinity);
  }},[active,urls]);
