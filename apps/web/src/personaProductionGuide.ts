@@ -165,7 +165,11 @@ export function updateGuideShotNote(
  values:Pick<GuideShotNote,GuideShotField>,
  now:string,
 ):PersonaProductionGuide{
- const nextNote:GuideShotNote={sceneFingerprint:guideSceneFingerprint(scene),...values};
+ // Reconfirmation must not copy the stale source fingerprint back into the new note.
+ const nextNote:GuideShotNote={
+  sceneFingerprint:guideSceneFingerprint(scene),
+  camera:values.camera,lighting:values.lighting,performance:values.performance,edit:values.edit,
+ };
  const checks={...guide.checks};
  for(const key of ['set','lighting','takes','editReview'] as GuideCheck[])delete checks[key];
  return {...guide,shotNotes:{...guide.shotNotes,[scene.id]:nextNote},checks,updatedAt:now};
@@ -204,6 +208,35 @@ export function productionGuideScenes(brief:PersonaProductionBrief|null):Persona
   lighting:brief.shots[i].lighting,source:'brief' as const,
  }));
 }
+/** The opt-in example uses A01/B01 scene IDs, while the imported canonical
+ * Production Brief uses 1..7. Keep authored directions through the handoff;
+ * pre-existing stale notes remain stale rather than being auto-approved. */
+export function migrateActorComposerShotNotes(
+ guide:PersonaProductionGuide,brief:PersonaProductionBrief,now:string,
+):PersonaProductionGuide{
+ const source=guide.shotNotes;
+ if(!source||!Object.keys(source).length)return guide;
+ const targetScenes=productionGuideScenes(brief);
+ if(targetScenes.length!==exampleActorComposerBeats.length)return guide;
+ const remapped={...source};
+ let changed=false;
+ for(let i=0;i<exampleActorComposerBeats.length;i++){
+  const example=exampleActorComposerBeats[i],destination=targetScenes[i];
+  if(destination.line!==example.line||destination.seconds!==example.seconds||
+    destination.action!==example.action)continue;
+  const note=source[example.id];
+  if(!note||example.id===destination.id||Object.prototype.hasOwnProperty.call(remapped,destination.id))continue;
+  remapped[destination.id]={
+   ...note,
+   sceneFingerprint:note.sceneFingerprint===guideSceneFingerprint(example)
+    ?guideSceneFingerprint(destination):note.sceneFingerprint,
+  };
+  delete remapped[example.id];
+  changed=true;
+ }
+ return changed?{...guide,shotNotes:remapped,updatedAt:now}:guide;
+}
+
 /** Explicit click creates an editable, unapproved working candidate in the canonical
  * Scenario/Production Brief workflow; nothing is auto-approved or rendered. */
 export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide:PersonaProductionGuide):PersonaProductionBrief{
@@ -214,11 +247,16 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
  const framings:PersonaProductionBrief['shots'][number]['framing'][]=[
   'close-up','medium','medium','medium','close-up','medium','close-up'
  ];
+ const checkedNotes=exampleActorComposerBeats.map(beat=>{
+  const saved=guideShotNoteForScene(guide,beat);
+  return saved.stale?null:saved.note;
+ });
  const shots=exampleActorComposerBeats.map((beat,i)=>({
   order:i+1,durationSec:beat.seconds,framing:framings[i],
-  angle:beat.framing+' · '+(beat.id.startsWith('A')?'Актёр обращён вправо или в камеру':'Композитор у клавиш, взгляд влево'),
+  angle:checkedNotes[i]?.camera||beat.framing+' · '+(beat.id.startsWith('A')?'Актёр обращён вправо или в камеру':'Композитор у клавиш, взгляд влево'),
   cameraMovement:'Камера на штативе, без движения',
-  lighting:beat.lighting,action:beat.action+'; исходник '+exampleActorComposerSourceFiles[beat.id],
+  lighting:checkedNotes[i]?.lighting||beat.lighting,
+  action:beat.action+(checkedNotes[i]?.performance?'; актёрская задача: '+checkedNotes[i].performance:'')+'; исходник '+exampleActorComposerSourceFiles[beat.id],
  }));
  return {...base,hook:{...base.hook,firstSeconds:script[0].line,visual:exampleActorComposerBeats[0].action},
   script,shots,capture:{...base.capture,
@@ -228,7 +266,9 @@ export function createActorComposerWorkingBrief(idea:PersonaProductionIdea,guide
    audio:{recording:guide.fields.sound,processing:base.capture.audio.processing},
   },
   postProduction:{...base.postProduction,
-   transitions:guide.fields.editing,
+   transitions:[guide.fields.editing,
+    ...checkedNotes.flatMap((note,i)=>note?.edit?[`${exampleActorComposerBeats[i].id}: ${note.edit}`]:[]),
+   ].join('\n'),
    subtitles:{...base.postProduction.subtitles,instruction:guide.fields.captions},
    color:guide.fields.color},
   adaptations:Object.fromEntries(Object.entries(base.adaptations).map(([k,v])=>[k,{...v,durationSec:31}])) as PersonaProductionBrief['adaptations'],
