@@ -221,6 +221,9 @@ export function mergePersonaFinishedReimport(
   JSON.stringify(previous.color)!==JSON.stringify(imported.color)||
   JSON.stringify(previous.musicCue??null)!==JSON.stringify(imported.musicCue??null))
   fail('Отчёты одного MP4 противоречат сохранённым параметрам финализации.');
+ if(previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)<Date.parse(previous.quality.analyzedAt))
+  fail('Повторный импорт не должен заменять отчёт качества более старым анализом.');
  if(previous.quality&&imported.quality){
   const oldFlags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
   const newFlags=imported.quality.findings;
