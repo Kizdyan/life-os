@@ -191,6 +191,7 @@ export function mergePersonaFinishedReimport(
   JSON.stringify(previous.color)!==JSON.stringify(imported.color)||
   JSON.stringify(previous.musicCue??null)!==JSON.stringify(imported.musicCue??null))
   fail('Отчёты одного MP4 противоречат сохранённым параметрам финализации.');
+ if(previous.quality&&imported.quality&&previous.quality.warningCount>imported.quality.warningCount)fail('Предупреждения качества исчезли при повторном импорте.');
  const merged:PersonaFinishedRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
