@@ -32,7 +32,7 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
  const raw=Array.isArray(quality.findings)?quality.findings:[];
  if(quality.version!==1||quality.kind!=='persona-video-quality-v1'||quality.status!=='awaiting-author-review'||
    quality.publicationApproved!==false||quality.distributionAllowed!==false||
-   video.sha256!==expectedSha||typeof quality.analyzedAt!=='string'||!quality.analyzedAt.trim()||
+   video.sha256!==expectedSha||typeof quality.analyzedAt!=='string'||!Number.isFinite(Date.parse(quality.analyzedAt))||
    approval.approvedByAuthor!==false||approval.publicationApproved!==false||!raw.length||raw.length>80)return null;
  const findings:PersonaVideoQualityFinding[]=[];
  for(const item of raw){const finding=record(item),timecodes=Array.isArray(finding.timecodes)?finding.timecodes:[];
