@@ -9,6 +9,20 @@ export type PersonaLocalRenderRecord={
  finished?:PersonaFinishedRenderRecord;
  quality?:PersonaVideoQualitySummary;
 };
+/** Editorial approval is versioned by its own decision timestamp, not just by
+ * the JSON contents of the brief. Reapproving an identical brief must NOT revive
+ * an old MP4 and its former final-cut review without a new explicit import. */
+export function isPersonaDraftCurrentForApproval(input:{
+ record:PersonaLocalRenderRecord|null;
+ projectId:string;briefSnapshot:string|null;handoffAllowed:boolean;
+ approvalDecidedAt:string|null;
+}):boolean{
+ const {record,projectId,briefSnapshot,handoffAllowed,approvalDecidedAt}=input;
+ if(!record||!handoffAllowed||!briefSnapshot||!approvalDecidedAt||
+  record.projectId!==projectId||record.briefSnapshot!==briefSnapshot)return false;
+ const imported=Date.parse(record.importedAt),approved=Date.parse(approvalDecidedAt);
+ return Number.isFinite(imported)&&Number.isFinite(approved)&&imported>=approved;
+}
 type MediaFileInfo={name:string;size:number;sha256:string;durationSec?:number};
 /** Template is intentionally unapproved; the author must edit and review SRT. */
 export function buildPersonaFinishOptionsTemplate(record:PersonaLocalRenderRecord){
