@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,readdir,rm,stat,access,open} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,rm,stat,access,open,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -99,4 +99,21 @@ test('original name collision cannot overwrite the Natural Clean render',{skip:!
  assert.equal(manifest.variants[0].path,join(out,'A-natural-clean.mp4'));
  assert.notEqual(manifest.variants[0].sha256,manifest.source.sha256);
  assert.equal((await readdir(out)).length,5);
+}));
+
+test('embedded subtitle tracks are refused rather than silently stripped',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'source.mp4'),subtitles=join(root,'captions.srt');
+ const input=join(root,'with-subtitles.mp4'),out=join(root,'no-output');
+ makeSample(source);
+ await writeFile(subtitles,'1\n00:00:00,000 --> 00:00:00,850\nVisible caption\n');
+ const mux=spawnSync('ffmpeg',['-v','error','-i',source,'-f','srt','-i',subtitles,
+  '-map','0:v:0','-map','0:a?','-map','1:s:0',
+  '-c:v','copy','-c:a','copy','-c:s','mov_text',input],{encoding:'utf8'});
+ assert.equal(mux.status,0,mux.stderr);
+ const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type',
+  '-of','json',input],{encoding:'utf8'});
+ assert.equal(probe.status,0,probe.stderr);
+ assert.ok(JSON.parse(probe.stdout).streams.some(stream=>stream.codec_type==='subtitle'));
+ await assert.rejects(createColorVariants({inputPath:input,outputDir:out}),/embedded subtitles would be lost/);
+ await assert.rejects(access(out),{code:'ENOENT'});
 }));
