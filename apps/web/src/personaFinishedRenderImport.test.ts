@@ -165,6 +165,15 @@ describe('Persona final local render and author review',()=>{
   const inconsistent={...next,color:{brightness:0.01,contrast:1,saturation:1}};
   expect(()=>mergePersonaFinishedReimport(previous,inconsistent)).toThrow(/противоречат/);
  });
+ it('rejects same-file reimport when only one report contains a music cue',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const withCue={...previous,musicAdded:true,musicCue:{startSec:2,endSec:4,fadeInSec:0.1,fadeOutSec:0.1}};
+  const withoutCue={...previous,musicAdded:true};
+  expect(readPersonaFinishedRenderRecord(withCue)).not.toBeNull();
+  expect(readPersonaFinishedRenderRecord(withoutCue)).not.toBeNull();
+  expect(()=>mergePersonaFinishedReimport(withoutCue,withCue)).toThrow(/противоречат/);
+  expect(()=>mergePersonaFinishedReimport(withCue,withoutCue)).toThrow(/противоречат/);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false
