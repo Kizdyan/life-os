@@ -137,7 +137,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    {urls&&<button type="button" className="ghost" onClick={syncPlayers}>Синхронизировать по таймкоду оригинала</button>}
    <p className="personaComparisonWarning">Сравните кожу, очки, лицо, свет и детали вручную. SHA-256 подтверждает идентичность файлов, но не художественное качество.</p>
    <label>Комментарий к выбору
-    <textarea value={comment} maxLength={1000} onChange={event=>setComment(event.target.value)}
+    <textarea value={comment} maxLength={1000} disabled={!urls||busy} onChange={event=>setComment(event.target.value)}
      placeholder="Какой цвет понравился и что стоит исправить?"/>
    </label>
    <button type="button" className="primary" disabled={!urls||busy} onClick={saveChoice}>Сохранить выбор: {COLOR_VARIANT_PRESETS.find(p=>p.id===active)?.label}</button>
