@@ -3,13 +3,13 @@ import {describe,it,expect} from 'vitest';
 import {renderToString} from 'react-dom/server';
 import {buildPersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import {evaluatePersonaProductionBrief} from '../../../packages/core/src/persona-production-qa';
-import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
+import {importPersonaProductionBrief,revisePersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
 import {createScenarioScript,reviseScenarioScript,type ScenarioIdea} from '../../../packages/core/src/persona-scenario-intelligence';
 import {createPersonaProject,loadPersonaProjects,savePersonaProject} from './personaProjectStore';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
 import {
  createPersonaProductionGuide,createActorComposerWorkingBrief,exampleActorComposerSourceFiles,actorComposerShotDirections,isActorComposerPilot,actorComposerPilot,exportPersonaShootingSheet,guideProgress,reviseGuideField,getPersonaGuideReadiness,
- productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,migrateActorComposerShotNotes,
+ productionGuideScenes,validatePersonaProductionGuide,guideShotNoteForScene,guideSceneFingerprint,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,
 } from './personaProductionGuide';
 
 const idea={id:'guide-1',title:'Актёр и композитор — колыбельная',angle:'Два срочных дела и комедийный музыкальный поворот',format:'reel' as const};
@@ -134,6 +134,55 @@ describe('Persona full preproduction guide',()=>{
   expect(after).toContain('МОЯ КАМЕРА · 1,5 м');
   expect(after).toContain('МОЯ ИГРА · спокойная пауза');
   expect(after).not.toContain('требует повторной проверки');
+ });
+ it('explicitly transfers location, sound, color, acting and edit notes to the canonical brief without editing speech',()=>{
+  let guide=createPersonaProductionGuide(now,'actor_composer');
+  const scene=productionGuideScenes(null)[0];
+  const note={camera:'МОЯ КАМЕРА 1,2 м',lighting:'МОЙ МЯГКИЙ СВЕТ',
+   performance:'МОЯ АКТЁРСКАЯ ЗАДАЧА',edit:'МОЯ СКЛЕЙКА НА РЕАКЦИЮ'};
+  guide=updateGuideShotNote(guide,scene,note,now);
+  const original=createActorComposerWorkingBrief(idea,guide);
+  const migrated=migrateActorComposerShotNotes(guide,original,now);
+  const revised=applyPersonaGuideToBrief(migrated,original);
+  expect(revised.script).toEqual(original.script);
+  expect(revised.shots[0].durationSec).toBe(original.shots[0].durationSec);
+  expect(revised.shots[0].angle).toBe(note.camera);
+  expect(revised.shots[0].lighting).toBe(note.lighting);
+  expect(revised.shots[0].action).toContain(note.performance);
+  expect(revised.shots[0].action).toContain('A01_actor_hook_take01.mp4');
+  expect(revised.postProduction.transitions).toContain(note.edit);
+  expect(revised.capture.audio.recording).toBe(guide.fields.sound);
+  expect(revised.postProduction.color).toBe(guide.fields.color);
+  expect(applyPersonaGuideToBrief(migrated,revised)).toEqual(revised);
+  const qa=revisePersonaProductionBrief(importPersonaProductionBrief({brief:original,selectedIdea:idea}),revised);
+  expect(qa.stage).toBe('QA');
+  expect(qa.materials.editorialDecision).toBeUndefined();
+ });
+ it('revokes prior editorial approval when a human chooses to transfer modified shooting notes',()=>{
+  const guide=createPersonaProductionGuide(now,'actor_composer');
+  const brief=createActorComposerWorkingBrief(idea,guide);
+  const imported=importPersonaProductionBrief({brief,selectedIdea:idea});
+  const approved=recordPersonaEditorialDecision(imported,{
+   decision:'approved',editor:'Автор',comment:'Редакция проверена лично',factReviewCompleted:true,decidedAt:now,
+  });
+  expect(approved.stage).toBe('READY_FOR_SHOOT');
+  const changed={...guide,fields:{...guide.fields,location:'Новая проверенная локация'}};
+  const update=applyPersonaGuideToBrief(changed,brief);
+  const regenerated=revisePersonaProductionBrief(approved,update);
+  expect(regenerated.stage).toBe('QA');
+  expect(regenerated.materials.editorialDecision).toBeUndefined();
+  expect(regenerated.statuses.READY_FOR_SHOOT).toBe('pending');
+ });
+ it('refuses stale per-scene notes instead of approving their old camera/lighting decisions',()=>{
+  const scene=productionGuideScenes(null)[0];
+  const guide=updateGuideShotNote(createPersonaProductionGuide(now,'actor_composer'),scene,{
+   camera:'Old',lighting:'Old',performance:'Old',edit:'Old',
+  },now);
+  const brief=createActorComposerWorkingBrief(idea,guide);
+  const migrated=migrateActorComposerShotNotes(guide,brief,now);
+  const altered={...migrated,shotNotes:{...migrated.shotNotes,
+   '1':{...migrated.shotNotes!['1'],sceneFingerprint:'old-script-revision'}}};
+  expect(()=>applyPersonaGuideToBrief(altered,brief)).toThrow('устаревшие');
  });
  it('does not auto-reconfirm notes that were already stale before applying a script template',()=>{
   const scene=productionGuideScenes(null)[0];
