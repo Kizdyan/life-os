@@ -15,6 +15,14 @@ describe('Persona quality evidence integrity',()=>{
   expect(parsePersonaVideoQuality(report([finding,{...finding}]),sha)).toBeNull();
   expect(parsePersonaVideoQuality(report([finding]),sha)?.warningCount).toBe(1);
  });
+ it('rejects malformed analysis dates and inconsistent human review counts',()=>{
+  expect(parsePersonaVideoQuality({...report([finding]),analyzedAt:'not-a-date'},sha)).toBeNull();
+  const review={...finding,id:'manual_color',status:'needs_human_review'};
+  const parsed=parsePersonaVideoQuality(report([finding,review]),sha);
+  expect(parsed?.humanReviewCount).toBe(1);
+  expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
+  expect(isPersonaVideoQualitySummary({...parsed,humanReviewCount:0},sha)).toBe(false);
+ });
  it('rejects falsified QA counts',()=>{
   const parsed=parsePersonaVideoQuality(report([finding]),sha);
   expect(isPersonaVideoQualitySummary(parsed,sha)).toBe(true);
