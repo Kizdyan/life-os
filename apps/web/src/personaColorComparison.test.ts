@@ -106,6 +106,7 @@ describe('Comparison Studio restored review',()=>{
   expect(markup).toContain('повторно выберите пять исходных файлов');
   expect(markup).not.toContain('aria-label="Цветовой вариант для просмотра"');
   expect(markup).not.toContain('aria-label="Обработанное видео"');
+  expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*>/);
   expect(markup).toMatch(/disabled=""[^>]*>Сохранить выбор:/);
  });
 });
