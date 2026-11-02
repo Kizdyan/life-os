@@ -179,7 +179,7 @@ describe('Persona final local render and author review',()=>{
   const flagged={...previous,quality:{version:1 as const,videoSha256:finishedSha,
    analyzedAt:'2026-11-01T14:00:00Z',warningCount:1,humanReviewCount:0,
    findings:[{id:'audio_loudness',status:'warning' as const,title:'Audio',detail:'Review',timecodes:[]}]}};
-  const cleared={...flagged,quality:{...flagged.quality,warningCount:0,findings:[]}};
+  const cleared={...flagged,quality:{...flagged.quality,warningCount:0,findings:[{id:'audio_loudness',status:'measured' as const,title:'Audio',detail:'Review',timecodes:[]}]}};
   expect(()=>mergePersonaFinishedReimport(flagged,cleared)).toThrow(/предупреждения/);
   expect(mergePersonaFinishedReimport(flagged,previous).quality).toEqual(flagged.quality);
  });
