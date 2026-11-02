@@ -43,6 +43,9 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
  }
  if(new Set(findings.map(finding=>finding.id)).size!==findings.length)return null;
  const evidence=record(quality.visualEvidence),frames=Array.isArray(evidence.frames)?evidence.frames:[];
+ if(quality.visualEvidence!==undefined&&(
+  typeof evidence.contactSheetPath!=='string'||!evidence.contactSheetPath.trim()||
+  evidence.contactSheetPath.length>1000||frames.length<1||frames.length>12))return null;
  const visualEvidence=typeof evidence.contactSheetPath==='string'&&evidence.contactSheetPath.length<=1000&&frames.length>0&&frames.length<=12?
   {contactSheetPath:evidence.contactSheetPath,frameCount:frames.length}:undefined;
  return {version:1,videoSha256:expectedSha,analyzedAt:quality.analyzedAt as string,
