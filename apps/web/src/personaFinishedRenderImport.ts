@@ -75,6 +75,8 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   (review.decision==='approved-final-cut'||review.decision==='needs-revision')&&
   typeof review.reviewer==='string'&&review.reviewer.trim().length>=2&&review.reviewer.length<=100&&
   typeof review.notes==='string'&&review.notes.length<=3000&&typeof review.reviewedAt==='string'&&
+  Number.isFinite(Date.parse(review.reviewedAt as string))&&Number.isFinite(Date.parse(r.importedAt as string))&&
+  Date.parse(review.reviewedAt as string)>=Date.parse(r.importedAt as string)&&
   review.watchedEntireVideo===true&&review.videoSha256===r.finishedSha256&&
   review.publicationApproved===false&&
   PERSONA_FINAL_REVIEW_KEYS.every(k=>typeof checks[k]==='boolean')&&
