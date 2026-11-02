@@ -91,7 +91,7 @@ try{
  await page.reload({waitUntil:'domcontentloaded'});
  const afterReload=await openComparison(page);
  await afterReload.getByText(/Автор выбрал Warm Cinematic/).waitFor();
- await afterReload.getByText(/Тест: естественный оттенок кожи/).waitFor();
+ await afterReload.locator('p').filter({hasText:'Комментарий: Тест: естественный оттенок кожи'}).waitFor();
  assert.equal(await afterReload.locator('video').count(),0,'MP4s must not survive reload as browser assets');
  assert.equal(await afterReload.getByRole('button',{name:/Сохранить выбор/}).isDisabled(),true);
  assert.equal(await afterReload.getByRole('textbox',{name:'Комментарий к выбору'}).isDisabled(),true);
