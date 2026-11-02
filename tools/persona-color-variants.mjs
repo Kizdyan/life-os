@@ -55,8 +55,8 @@ export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
   typeof outputDir!=='string'||!outputDir.trim())fail('inputPath and NEW outputDir required');
  const input=resolve(inputPath),out=resolve(outputDir),environment=env(ffmpegDir);
  const sourceStat=await stat(input);
- if(!sourceStat.isFile()||sourceStat.size<1024||sourceStat.size>500*1024*1024)
-  fail('input must be an existing MP4 between 1 KB and 500 MB');
+ if(!sourceStat.isFile()||sourceStat.size<1024||sourceStat.size>160*1024*1024)
+  fail('input must be an existing MP4 between 1 KB and 160 MB (Persona browser import limit)');
  await preflight(input,environment);
  await access(out).then(()=>fail('outputDir already exists'),error=>{if(error.code!=='ENOENT')throw error});
  await mkdir(out);
@@ -68,7 +68,7 @@ export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
    '-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p',
    '-c:a','copy','-movflags','+faststart',outputPath],environment);
   const outputStat=await stat(outputPath);
-  if(outputStat.size<1024)fail('empty variant '+id);
+  if(outputStat.size<1024||outputStat.size>160*1024*1024)fail('variant '+id+' is outside Persona browser import limit (1 KB–160 MB)');
   variants.push({id,label,filter,path:outputPath,sha256:await sha(outputPath)});
  }
  const result={version:1,kind:'persona-color-variants-v1',status:'awaiting-author-comparison',
