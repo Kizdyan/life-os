@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, canNavigateFromPersonaGuide, registerPersonaExitFlush } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, canNavigateFromPersonaGuide, registerPersonaExitFlush } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
-import { createPersonaProject, type PersonaProjectCollection } from './personaProjectStore';
+import { createPersonaProject,applyPersonaProductionMilestone,savePersonaProject,loadPersonaProjects,type PersonaProjectCollection } from './personaProjectStore';
+import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
+import {createActorComposerWorkingBrief,createPersonaProductionGuide} from './personaProductionGuide';
+import {addImportedBriefScenario} from './personaBriefScenarioBridge';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
 const candidate={sourceTitle:'Один день между театром и музыкой',sourceAngle:'Две профессии одной историей',sourceFormat:'reel'};
@@ -24,6 +27,66 @@ describe('production approval must follow latest current dialogue',()=>{
   expect(productionBriefMatchesBeats(brief,current.map((beat,i)=>i===0?{...beat,line:'Новая реплика'}:beat))).toBe(false);
   expect(productionBriefMatchesBeats(brief,current.map((beat,i)=>i===0?{...beat,durationSec:beat.durationSec+1}:beat))).toBe(false);
   expect(productionBriefMatchesBeats(brief,[...current,{...current[0]}])).toBe(false);
+ });
+});
+describe('script revision revokes production authorization',()=>{
+ const idea={id:'revision-guard',title:'Актёр и композитор',angle:'Два дедлайна',format:'reel' as const};
+ const now='2026-11-02T12:00:00.000Z';
+ const production=()=>{
+  const brief=createActorComposerWorkingBrief(idea,createPersonaProductionGuide(now,'actor_composer'));
+  const qa=importPersonaProductionBrief({brief,selectedIdea:idea});
+  const approved=recordPersonaEditorialDecision(qa,{
+   decision:'approved',editor:'Автор',comment:'Проверено лично',factReviewCompleted:true,decidedAt:now,
+  });
+  const workspace=addImportedBriefScenario(undefined,brief,now);
+  return {brief,approved,workspace};
+ };
+ it('reopens QA and removes an older human approval after a spoken line changes',()=>{
+  const {brief,approved,workspace}=production();
+  expect(approved.stage).toBe('READY_FOR_SHOOT');
+  expect(approved.materials.editorialDecision?.decision).toBe('approved');
+  const changed={...workspace,script:{...workspace.script!,
+   currentRevision:{...workspace.script!.currentRevision,
+    beats:workspace.script!.currentRevision.beats.map((beat,i)=>
+     i===0?{...beat,line:'Совершенно новая первая реплика'}:beat)},
+  }};
+  const reconciled=reconcilePersonaProductionWithScenario(approved,changed);
+  expect(reconciled).not.toBe(approved);
+  expect(reconciled?.stage).toBe('QA');
+  expect(reconciled?.statuses.READY_FOR_SHOOT).toBe('pending');
+  expect(reconciled?.statuses.QA).toBe('needs_revision');
+  expect(reconciled?.materials.editorialDecision).toBeUndefined();
+  expect(reconciled?.materials.productionBrief?.script).toEqual(brief.script);
+  expect(reconciled?.materials.qa).toEqual(approved.materials.qa);
+  expect(reconcilePersonaProductionWithScenario(reconciled,changed)).toBe(reconciled);
+ });
+ it('does not touch signoff on research-only or unrelated workspace changes',()=>{
+  const {approved,workspace}=production();
+  expect(reconcilePersonaProductionWithScenario(approved,workspace)).toBe(approved);
+  expect(reconcilePersonaProductionWithScenario(approved,{...workspace,research:[]})).toBe(approved);
+  expect(reconcilePersonaProductionWithScenario(approved,undefined)).toBe(approved);
+ });
+ it('persists revised scenario and revoked shoot approval in the same project snapshot',()=>{
+  const {approved,workspace}=production();
+  const changed={...workspace,script:{...workspace.script!,
+   currentRevision:{...workspace.script!.currentRevision,
+    beats:workspace.script!.currentRevision.beats.map((beat,i)=>
+     i===0?{...beat,durationSec:beat.durationSec+1}:beat)},
+  }};
+  const reset=reconcilePersonaProductionWithScenario(approved,changed)!;
+  const storage=(()=>{const data=new Map<string,string>();return {
+   getItem:(key:string)=>data.get(key)??null,
+   setItem:(key:string,value:string)=>{data.set(key,value)},
+   removeItem:(key:string)=>data.delete(key),
+  }})();
+  const start=createPersonaProject({id:'revision-guard',title:idea.title,contentType:'reel',sourceIdea:idea.angle,now});
+  const project=applyPersonaProductionMilestone({...start,scenarioWorkspace:changed},reset,
+   {stage:'final_qa',resetQa:true});
+  savePersonaProject(storage,project,project.id);
+  const saved=loadPersonaProjects(storage,()=>project.id).projects[0];
+  expect(saved.scenarioWorkspace?.script?.currentRevision.beats[0].durationSec).toBe(changed.script.currentRevision.beats[0].durationSec);
+  expect((saved.shootingPlan as typeof approved).materials.editorialDecision).toBeUndefined();
+  expect((saved.shootingPlan as typeof approved).stage).toBe('QA');
  });
 });
 describe('brief import identity',()=>{
