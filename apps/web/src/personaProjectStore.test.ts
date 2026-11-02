@@ -119,6 +119,19 @@ describe('Persona project storage',()=>{
   expect(()=>savePersonaProject(storage,{...latest,title:'Same revision'})).toThrow('persona_project_stale_save');
   expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe('Latest tab');
  });
+ it('keeps other projects intact when a stale tab attempts to save',()=>{
+  const storage=memoryStorage();
+  const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'A',now:'2026-11-02T10:00:00Z'});
+  const b=createPersonaProject({id:'b',title:'B',contentType:'reel',sourceIdea:'B',now:'2026-11-02T10:00:00Z'});
+  savePersonaProject(storage,a);
+  savePersonaProject(storage,b);
+  savePersonaProject(storage,{...a,revision:2,title:'A revised'},'a');
+  expect(()=>savePersonaProject(storage,{...a,title:'A stale'},'a')).toThrow('persona_project_stale_save');
+  const restored=loadPersonaProjects(storage,()=> 'unused');
+  expect(restored.projects.find(p=>p.id==='a')?.title).toBe('A revised');
+  expect(restored.projects.find(p=>p.id==='b')?.title).toBe('B');
+  expect(restored.activeProjectId).toBe('a');
+ });
  it('rejects stale React saves from another tab without rewriting the latest version',()=>{
   const storage=memoryStorage();
   const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});
