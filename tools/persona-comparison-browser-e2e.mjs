@@ -151,6 +151,27 @@ try{
  assert.equal(await afterReload.locator('video').count(),2);
  step('Reimported the same five files, retained the SHA-bound choice and restored players');
 
+ // A rejected import must not erase a previously verified author choice or its players.
+ const picker=afterReload.getByLabel('Выбрать оригинал, три MP4 и COMPARISON.json');
+ await picker.setInputFiles(fileSet(first).slice(0,4));
+ await waitForImport(page,'Импорт отклонён: Выберите ровно пять файлов');
+ await afterReload.getByText(/Автор выбрал Warm Cinematic/).waitFor();
+ assert.equal(await afterReload.locator('video').count(),2);
+ step('Incomplete reimport was rejected without losing the saved decision');
+
+ // Keep the four genuine MP4s, but forge the source hash inside COMPARISON.json.
+ // The UI must independently hash real file bytes and refuse the forged manifest.
+ const fakeManifest={...first,source:{...first.source,sha256:'0'.repeat(64)}};
+ await picker.setInputFiles([
+  ...fileSet(first).slice(0,4),
+  {name:'COMPARISON.json',mimeType:'application/json',
+   buffer:Buffer.from(JSON.stringify(fakeManifest))},
+ ]);
+ await waitForImport(page,'Импорт отклонён: Comparison Studio: original MP4 SHA-256 differs from manifest');
+ await afterReload.getByText(/Автор выбрал Warm Cinematic/).waitFor();
+ assert.equal(await afterReload.locator('video').count(),2);
+ step('Forged SHA-256 manifest was rejected without clobbering author choice');
+
  await sourceMp4(second,880);
  const next=await createColorVariants({inputPath:second,outputDir:join(root,'comparison-2')});
  await afterReload.getByLabel('Выбрать оригинал, три MP4 и COMPARISON.json')
