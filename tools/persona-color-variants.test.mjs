@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,rm,stat,access} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,stat,access,open} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -59,4 +59,12 @@ test('CLI can render a complete comparison folder without editing the source',{s
  assert.match(run.stdout,/Created 3 verified color variants/);
  const manifest=JSON.parse(await readFile(join(out,'COMPARISON.json'),'utf8'));
  assert.equal(manifest.variants.length,3);
+}));
+
+test('rejects an oversized original before probing or creating a destination',()=>withTemp(async root=>{
+ const source=join(root,'oversized.mp4'),out=join(root,'no-output');
+ const handle=await open(source,'w');
+ try{await handle.truncate(160*1024*1024+1)}finally{await handle.close()}
+ await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/160 MB/);
+ await assert.rejects(access(out),{code:'ENOENT'});
 }));
