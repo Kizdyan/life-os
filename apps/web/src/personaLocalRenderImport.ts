@@ -1,5 +1,5 @@
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
-import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,isPersonaVideoQualitySummary,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
+import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,isPersonaVideoQualitySummary,isPersonaVideoQualityHistory,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
 
 export type PersonaLocalRenderRecord={
  version:1;kind:'persona-local-render-review-v1';projectId:string;briefIdeaId:string;briefSnapshot:string;
@@ -8,6 +8,7 @@ export type PersonaLocalRenderRecord={
  qaProvenance:'locally-imported-report-not-independently-attested';publicationApproved:false;
  finished?:PersonaFinishedRenderRecord;
  quality?:PersonaVideoQualitySummary;
+ qualityHistory?:PersonaVideoQualitySummary[];
 };
 /** Editorial approval is versioned by its own decision timestamp, not just by
  * the JSON contents of the brief. Reapproving an identical brief must NOT revive
@@ -65,6 +66,7 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
  v.qaProvenance==='locally-imported-report-not-independently-attested'&&
  (v.quality===undefined||isPersonaVideoQualitySummary(v.quality,v.mp4Sha256 as string))&&
+ isPersonaVideoQualityHistory(v.qualityHistory,v.mp4Sha256 as string,v.quality)&&
  (v.finished===undefined||Boolean(readPersonaFinishedRenderRecord(v.finished))&&
   readPersonaFinishedRenderRecord(v.finished)?.sourceDraftSha256===v.mp4Sha256&&
   readPersonaFinishedRenderRecord(v.finished)?.briefFingerprintSha256===v.briefFingerprintSha256)
@@ -109,8 +111,13 @@ export function mergePersonaDraftReimport(
   if(flags.some(item=>!imported.quality?.findings.some(next=>next.id===item.id&&next.status===item.status)))
    throw Error('Повторный импорт черновика скрывает прежние предупреждения качества.');
  }
+ const qualityHistory=previous.quality&&imported.quality&&
+  Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
+  ?[...(previous.qualityHistory??[]),previous.quality]
+  :previous.qualityHistory;
  const merged:PersonaLocalRenderRecord={
   ...imported,importedAt:previous.importedAt,
+  ...(qualityHistory?.length?{qualityHistory}:{}),
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
   ...(previous.finished?{finished:previous.finished}:{})
  };
