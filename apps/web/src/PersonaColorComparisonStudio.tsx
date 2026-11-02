@@ -124,12 +124,12 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
     'Ожидает решения автора'} · публикация не разрешена.</p>
    {current.selectedVariantId&&<p>Комментарий: {current.comment||'не указан'} · {current.decidedAt}</p>}
    {!urls&&<p>После перезагрузки решение сохраняется, но браузер не хранит MP4. Чтобы снова сравнить видео, повторно выберите пять исходных файлов.</p>}
-   <div className="personaComparisonOptions" role="group" aria-label="Цветовой вариант для просмотра">
+   {urls&&<div className="personaComparisonOptions" role="group" aria-label="Цветовой вариант для просмотра">
     {COLOR_VARIANT_PRESETS.map(preset=><button type="button" key={preset.id}
      aria-pressed={active===preset.id}
      className={active===preset.id?'active':''}
      onClick={()=>setActive(preset.id)}>{preset.label}</button>)}
-   </div>
+   </div>}
    {urls&&<div className="personaComparisonVideos">
     <div><b>Оригинал</b><video ref={sourcePlayer} controls preload="metadata" src={urls.source} aria-label="Оригинальное видео"/></div>
     <div><b>{COLOR_VARIANT_PRESETS.find(p=>p.id===active)?.label}</b><video key={active} ref={variantPlayer} controls preload="metadata" src={urls.variants[active]} aria-label="Обработанное видео"/></div>
