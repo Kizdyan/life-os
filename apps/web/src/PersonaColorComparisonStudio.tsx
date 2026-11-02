@@ -86,7 +86,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   }finally{if(generation.current===task)setBusy(false)}
  }
  function saveChoice(){
-  if(!record){setMessage('Сначала импортируйте подтверждённые файлы.');return;}
+  if(!record||!urls){setMessage('Сначала повторно подтвердите оригинал и три MP4 через импорт файлов. Сохранённое решение можно просмотреть без файлов, но нельзя изменить без проверки.');return;}
   try{
    const next=choosePersonaColorVariant(record,active,comment,new Date().toISOString());
    if(!onSave(next))throw Error('Не удалось сохранить решение в проекте.');
@@ -139,7 +139,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
     <textarea value={comment} maxLength={1000} onChange={event=>setComment(event.target.value)}
      placeholder="Какой цвет понравился и что стоит исправить?"/>
    </label>
-   <button type="button" className="primary" onClick={saveChoice}>Сохранить выбор: {COLOR_VARIANT_PRESETS.find(p=>p.id===active)?.label}</button>
+   <button type="button" className="primary" disabled={!urls||busy} onClick={saveChoice}>Сохранить выбор: {COLOR_VARIANT_PRESETS.find(p=>p.id===active)?.label}</button>
   </div>}
  </section>;
 }
