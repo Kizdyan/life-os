@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,readdir,rm,stat,access,open,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,readdir,rm,stat,access,open,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {dirname} from 'node:path';
@@ -89,12 +89,27 @@ test('CLI uses an explicitly provided FFmpeg directory when PATH has no FFmpeg',
  const locator=spawnSync(process.platform==='win32'?'where.exe':'which',['ffmpeg'],{encoding:'utf8'});
  assert.equal(locator.status,0,locator.stderr);
  const ffmpegDir=dirname(locator.stdout.trim().split(/\r?\n/)[0]);
- const emptyPath=process.platform==='win32'?'C:\\Windows\\System32':'/usr/bin:/bin';
+ // Deliberately remove every case variant of PATH. On Linux, /usr/bin and /bin
+ // commonly *contain* ffmpeg, so using them would make this a false-positive test.
+ const isolatedBin=join(root,'no-system-binaries');
+ await mkdir(isolatedBin);
+ const isolatedEnv=Object.fromEntries(
+  Object.entries(process.env).filter(([key])=>key.toLowerCase()!=='path'),
+ );
+ isolatedEnv.PATH=isolatedBin;
+ for(const binary of ['ffmpeg','ffprobe']){
+  const missing=spawnSync(binary,['-version'],{encoding:'utf8',env:isolatedEnv});
+  assert.equal(missing.error?.code,'ENOENT',
+   binary+' must genuinely be unavailable in the child PATH before this test');
+ }
  const run=spawnSync(process.execPath,[script,source,out,ffmpegDir],{
-  encoding:'utf8',timeout:120000,env:{...process.env,PATH:emptyPath},
+  encoding:'utf8',timeout:120000,env:isolatedEnv,
  });
  assert.equal(run.status,0,run.stderr);
  assert.match(run.stdout,/Created 3 verified color variants/);
+ const manifest=JSON.parse(await readFile(join(out,'COMPARISON.json'),'utf8'));
+ assert.equal(manifest.variants.length,3);
+ assert.equal((await readdir(out)).length,5);
 }));
 
 test('rejects an oversized original before probing or creating a destination',()=>withTemp(async root=>{
