@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Browser acceptance test for Comparison Studio V1.
- * Uses actual FFmpeg-generated MP4 files, the real React UI and a real Chrome.
+ * Uses actual FFmpeg-generated MP4 files and the real React UI in Chrome or WebKit.
  * No direct mutations of localStorage or React internals.
  *
  * Prerequisites: running Vite app and playwright-core (CI installs it transiently).
@@ -11,13 +11,16 @@ import {spawn} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {chromium} from 'playwright-core';
+import {chromium,webkit} from 'playwright-core';
 import {createColorVariants} from './persona-color-variants.mjs';
 
 const baseUrl=process.env.E2E_URL??'http://127.0.0.1:4173';
 const artifacts=resolve(process.env.E2E_ARTIFACTS??'artifacts/persona-comparison-e2e');
 const browserPath=process.env.CHROME_PATH||undefined;
-const summary={name:'persona-comparison-v1',browser:'Chrome',source:'real synthetic FFmpeg MP4',steps:[],passed:false,errors:[]};
+const browserKind=process.env.E2E_BROWSER??'chromium';
+if(browserKind!=='chromium'&&browserKind!=='webkit')throw Error('Unsupported E2E_BROWSER: '+browserKind);
+const browserLabel=browserKind==='webkit'?'WebKit (Linux; simulated mobile viewport)':'Chrome';
+const summary={name:'persona-comparison-v1',browser:browserLabel,source:'real synthetic FFmpeg MP4',steps:[],passed:false,errors:[]};
 function step(name){summary.steps.push(name);process.stdout.write('PASS '+name+'\n')}
 async function command(name,args){
  return await new Promise((done,fail)=>{
@@ -79,8 +82,12 @@ try{
  assert.equal(first.variants.length,3);
  step('FFmpeg created source, three actual MP4 variants and manifest');
 
- browser=await chromium.launch({headless:true,executablePath:browserPath,args:['--no-sandbox']});
- const context=await browser.newContext({viewport:{width:1280,height:860},acceptDownloads:false});
+ browser=browserKind==='webkit'
+  ?await webkit.launch({headless:true})
+  :await chromium.launch({headless:true,executablePath:browserPath,args:['--no-sandbox']});
+ const context=await browser.newContext(browserKind==='webkit'
+  ?{viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,acceptDownloads:false}
+  :{viewport:{width:1280,height:860},acceptDownloads:false});
  page=await context.newPage();
  page.on('pageerror',error=>summary.errors.push(error.message));
  await page.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
@@ -93,7 +100,7 @@ try{
   .setInputFiles(fileSet(first));
  await waitForImport(page,'SHA-256 оригинала и трёх вариантов подтверждены');
  assert.equal(await comparison.locator('video').count(),2);
- // Checking two <video> nodes alone does not prove Chrome can decode or play them.
+ // Checking two <video> nodes alone does not prove the browser can decode or play them.
  // Exercise the native HTMLVideoElement pipeline on real FFmpeg-generated media.
  for(const [index,label] of [[0,'original'],[1,'Natural Clean']]){
   const player=comparison.locator('video').nth(index);
@@ -113,7 +120,7 @@ try{
    return video instanceof HTMLVideoElement&&video.currentTime>=0.2;
   },index,{timeout:12000});
   await player.evaluate(video=>video.pause());
-  step('Chrome decoded and played '+label+' MP4');
+  step(browserLabel+' decoded and played '+label+' MP4');
  }
  await comparison.getByRole('button',{name:'Warm Cinematic'}).click();
  const warm=comparison.getByLabel('Обработанное видео');
@@ -126,7 +133,7 @@ try{
   return video instanceof HTMLVideoElement&&video.currentTime>=0.2;
  },null,{timeout:12000});
  await warm.evaluate(video=>video.pause());
- step('Chrome played the selected Warm Cinematic MP4');
+ step(browserLabel+' played the selected Warm Cinematic MP4');
  await comparison.getByRole('textbox',{name:'Комментарий к выбору'})
   .fill('Тест: естественный оттенок кожи, без изменения лица');
  await comparison.getByRole('button',{name:/Сохранить выбор: Warm Cinematic/}).click();
@@ -184,7 +191,7 @@ try{
  await page.setViewportSize({width:390,height:844});
  await page.screenshot({path:join(artifacts,'mobile-comparison.png'),fullPage:true});
  await checkNoOverflow(page);
- step('Mobile 390px comparison has no horizontal overflow');
+ step(browserLabel+' mobile 390px comparison has no horizontal overflow');
 
  await afterReload.getByRole('button',{name:/Сохранить выбор: Natural Clean/}).click();
  await waitForImport(page,'Авторский выбор сохранён в проекте');
@@ -193,7 +200,7 @@ try{
  await finalReview.getByText(/Автор выбрал Natural Clean/).waitFor();
  assert.equal(summary.errors.length,0,'Browser errors: '+summary.errors.join('; '));
  await page.screenshot({path:join(artifacts,'desktop-or-mobile-reviewed.png'),fullPage:true});
- step('Second source author choice survived reload; browser pageerror count is zero');
+ step(browserLabel+' restored the second source choice; browser pageerror count is zero');
 
  summary.passed=true;
 }catch(error){
