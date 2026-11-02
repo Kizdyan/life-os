@@ -42,7 +42,7 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
 }));
 test('HDR/BT.2020 input is rejected before creation of output directory',{skip:!available,timeout:120000},()=>withTemp(async root=>{
  const input=join(root,'hdr-marked.mp4'),out=join(root,'should-not-exist');
- makeSample(input,['-color_trc','smpte2084','-color_primaries','bt2020']);
+ makeSample(input,['-x264-params','colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc']);
  const probe=spawnSync('ffprobe',['-v','error','-select_streams','v:0','-show_entries',
   'stream=color_transfer,color_primaries','-of','json',input],{encoding:'utf8'});
  assert.equal(probe.status,0,probe.stderr);
