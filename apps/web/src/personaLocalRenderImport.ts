@@ -96,6 +96,11 @@ export function mergePersonaDraftReimport(
   previous.mp4Bytes!==imported.mp4Bytes||
   Math.abs(previous.durationSec-imported.durationSec)>0.001)
   return imported;
+ if(previous.quality&&imported.quality){
+  const flags=previous.quality.findings.filter(item=>item.status==='warning'||item.status==='needs_human_review');
+  if(flags.some(item=>!imported.quality?.findings.some(next=>next.id===item.id&&next.status===item.status)))
+   throw Error('Повторный импорт черновика скрывает прежние предупреждения качества.');
+ }
  const merged:PersonaLocalRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
