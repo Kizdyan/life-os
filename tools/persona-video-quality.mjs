@@ -129,7 +129,7 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
  const env=mediaEnv(ffmpegDir);
  const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
-  'format=duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries','-of','json',path],{env})).stdout);
+  'format=format_name,duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation','-of','json',path],{env})).stdout);
  const details=await stat(path);if(!details.isFile()||details.size<1024)fail('MP4 is missing or too small');
  const video=info.streams?.find(stream=>stream.codec_type==='video'),audio=info.streams?.find(stream=>stream.codec_type==='audio');
  if(!video)fail('video stream missing');
@@ -137,6 +137,24 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  if(!Number.isFinite(durationSec)||durationSec<=0||!Number.isFinite(fps))fail('FFprobe did not return duration or FPS');
  const findings=[];
  const colorMetadata={pixelFormat:video.pix_fmt??null,colorRange:video.color_range??null,colorSpace:video.color_space??null,transfer:video.color_transfer??null,primaries:video.color_primaries??null};
+ try{
+  // Decode every selected stream before trusting a quality report. This is a
+  // local FFmpeg measurement, not a claim that the visual content is good.
+  await run('ffmpeg',['-hide_banner','-nostdin','-v','error','-xerror','-i',path,'-map','0:v:0','-map','0:a?','-f','null','-'],{env,timeoutMs:Math.max(120000,Math.ceil(durationSec*8000))});
+  findings.push(finding('decode_integrity','measured','Полное декодирование','FFmpeg декодировал видео и доступную аудиодорожку без ошибок.',[],{method:'ffmpeg -v error -xerror full decode',units:'pass/fail',algorithmVersion:'v1',value:'pass',confidence:'measured'}));
+ }catch(error){
+  findings.push(finding('decode_integrity','warning','Полное декодирование','FFmpeg сообщил ошибку при полном декодировании. Не используйте этот файл для финального рендера до проверки контейнера.',[],{method:'ffmpeg -v error -xerror full decode',units:'pass/fail',algorithmVersion:'v1',value:'fail',confidence:'measured',limitation:String(error.message||error).slice(0,500)}));
+ }
+ const nominalFps=rational(video.r_frame_rate),avgFps=rational(video.avg_frame_rate);
+ if(Number.isFinite(nominalFps)&&Number.isFinite(avgFps)){
+  const delta=Math.abs(nominalFps-avgFps),variable=delta>0.01;
+  findings.push(finding('frame_rate_mode',variable?'warning':'measured','Режим частоты кадров',variable?'FFprobe сообщает разницу между nominal и average FPS; возможна переменная частота кадров, проверьте синхронизацию.':'FFprobe сообщает совпадающие nominal и average FPS; явного признака VFR в метаданных нет.',[],{method:'ffprobe r_frame_rate vs avg_frame_rate',units:'fps',algorithmVersion:'v1',nominalFps,averageFps:avgFps,deltaFps:delta,value:variable?'possible_vfr':'constant_rate_metadata',confidence:'measured',limitation:'Метаданные не исключают все варианты VFR.'}));
+ }else findings.push(finding('frame_rate_mode','not_measured','Режим частоты кадров','FFprobe не вернул сопоставимые nominal и average FPS.',[],{method:'ffprobe r_frame_rate vs avg_frame_rate',units:'fps',algorithmVersion:'v1',confidence:'not_measured'}));
+ const rawRotation=video.tags?.rotate??video.side_data_list?.find(item=>item&&item.rotation!==undefined)?.rotation;
+ const rotation=rawRotation===undefined?0:Number(rawRotation);
+ findings.push(finding('rotation_metadata',Number.isFinite(rotation)?'measured':'not_measured','Поворот кадра в метаданных',Number.isFinite(rotation)?(rotation?'В контейнере есть поворот '+rotation+'°. Проверьте ориентацию после рендера.':'FFprobe не сообщает поворот кадра.'):'FFprobe вернул неподдерживаемое значение поворота.',[],{method:'ffprobe stream tags/side data',units:'degrees',algorithmVersion:'v1',rotationDegrees:Number.isFinite(rotation)?rotation:null,confidence:Number.isFinite(rotation)?'measured':'not_measured'}));
+ const transfer=String(colorMetadata.transfer??'').toLowerCase(),hdrTransfer=['smpte2084','arib-std-b67'].includes(transfer);
+ findings.push(finding('hdr_transfer_risk',!transfer||transfer==='unknown'?'not_measured':hdrTransfer?'warning':'measured','HDR/SDR transfer characteristics',!transfer||transfer==='unknown'?'FFprobe не сообщил transfer characteristics; автоматический HDR→SDR tone mapping не применяется.':hdrTransfer?'Найден HDR transfer. Автоматическая HDR→SDR конвертация отключена; нужен отдельный согласованный pipeline.':'FFprobe сообщает не-HDR transfer; это не гарантирует художественную корректность цвета.',[],{method:'ffprobe color_transfer',units:'transfer characteristic',algorithmVersion:'v1',value:transfer||null,confidence:!transfer||transfer==='unknown'?'not_measured':'measured',...(hdrTransfer?{limitation:'No automatic tone mapping.'}:{})}));
  findings.push(finding('color_space_metadata',colorMetadata.pixelFormat?'measured':'not_measured','Параметры цветового пространства',colorMetadata.pixelFormat?'FFprobe сообщил параметры кодированного финального MP4; сравнение сцен выполняется только внутри этого общего пространства.':'FFprobe не сообщил pixel format; сравнение цветности ограничено.',[],{units:'FFmpeg stream metadata',method:'ffprobe',...colorMetadata}));
  const timeline=await trustedTimeline(timelinePath,path,durationSec,timelineSourceVideoPath&&resolve(timelineSourceVideoPath)),scenes=timeline.scenes;
  findings.push(scenes?finding('scene_timeline','measured','Достоверные границы сцен','Границы взяты из manifest существующего рендера, а не из анализа имён или Whisper.',scenes.map(scene=>timecode(scene.outputStartSec)),{scenes}):finding('scene_timeline','not_measured','Границы сцен','Анализ по сценам не выполнен: '+timeline.reason+'.'));
