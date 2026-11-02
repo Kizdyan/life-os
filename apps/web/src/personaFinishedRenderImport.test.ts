@@ -37,7 +37,7 @@ function fixture(){
    'reviewed-srt-burned-into-new-mp4',
    'real-ffmpeg-technical-qa-passed-no-publication']};
  return {draft,qa,report,video:{name:'finished-candidate.mp4',size:390000,
-  sha256:finishedSha,durationSec:31},importedAt:'2026-11-01T12:00:00.000Z'};
+  sha256:finishedSha,durationSec:31,width:1080,height:1920},importedAt:'2026-11-01T12:00:00.000Z'};
 }
 const allChecks:PersonaFinalReviewChecks={
  performance:true,framing:true,color:true,audio:true,captions:true,rhythm:true
@@ -63,6 +63,13 @@ describe('Persona final local render and author review',()=>{
   expect(()=>inspectPersonaFinishedRenderImport(swapped)).toThrow(/MP4/);
   const alteredDuration=fixture();alteredDuration.video.durationSec=39;
   expect(()=>inspectPersonaFinishedRenderImport(alteredDuration)).toThrow(/MP4/);
+ });
+ it('checks browser-parsed pixel dimensions instead of trusting local FFprobe reports alone',()=>{
+  expect(inspectPersonaFinishedRenderImport(fixture()).width).toBe(1080);
+  const width=fixture();width.video.width=720;
+  expect(()=>inspectPersonaFinishedRenderImport(width)).toThrow(/Фактическое разрешение/);
+  const height=fixture();height.video.height=1280;
+  expect(()=>inspectPersonaFinishedRenderImport(height)).toThrow(/Фактическое разрешение/);
  });
  it('rejects invented QA, unreviewed captions and unsafe music',()=>{
   const fakeQa=fixture();fakeQa.qa.evidence.blackFrameCheckPassed=false;
