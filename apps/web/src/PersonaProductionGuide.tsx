@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {
- createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,getPersonaGuideReadiness,guideShotNoteForScene,updateGuideShotNote,type GuideShotField,
+ createPersonaProductionGuide,exampleActorComposerBeats,actorComposerShotDirections,exampleActorComposerSourceFiles,exportPersonaShootingSheet,guideChecks,guideFieldLabels,guideProgress,productionGuideScenes,reviseGuideField,getPersonaGuideReadiness,guideShotNoteForScene,updateGuideShotNote,applyPersonaGuideToBrief,type GuideShotField,
  type PersonaProductionGuide,type GuideField,
 } from './personaProductionGuide';
 import './persona-production-guide.css';
@@ -14,6 +14,7 @@ type Props={
  workspace?:PersonaScenarioWorkspace;
  pipeline:PersonaProductionPipeline|null;
  onSave:(guide:PersonaProductionGuide)=>void;
+ onApplyToBrief?:(guide:PersonaProductionGuide)=>void;
  /** Synchronous signal for host navigation guard when a browser save fails. */
  onDirtyChange?:(dirty:boolean)=>void;
  onUseExample:(guide:PersonaProductionGuide)=>void;
@@ -26,7 +27,7 @@ const sections:{
  {id:'filming',title:'Где и как снимаем',intro:'Это конкретные стартовые предложения. Проверь помещение, свет и технику в реальности.',fields:['location','setArrangement','camera','keyLight','wardrobeProps','sound']},
  {id:'post',title:'Предварительный монтаж',intro:'Распиши сборку ДО съёмки, чтобы получить нужные реакции, паузы и детали.',fields:['editing','captions','color','safetyNotes']},
 ];
-export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,workspace,pipeline,onSave,onDirtyChange,onUseExample,onNavigate}:Props){
+export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,workspace,pipeline,onSave,onApplyToBrief,onDirtyChange,onUseExample,onNavigate}:Props){
  const stored=workspace?.preProductionGuide;
  const [draftPlan,setDraftPlan]=useState<PersonaProductionGuide>(()=>stored??createPersonaProductionGuide(new Date().toISOString(),allowExample?'actor_composer':'general'));
  const [unsaved,setUnsaved]=useState(false);
@@ -64,6 +65,13 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   id:String(i+1),seconds:beat.durationSec,line:beat.line,action:beat.action,framing:'План уточняется в Production Brief',
   lighting:'Уточнить свет и план после утверждения сценария',source:'scenario' as const,
  })):brief?productionGuideScenes(brief):example?productionGuideScenes(null):[];
+ const briefSync=(()=>{
+  if(!brief||scriptDiffersFromBrief)return {changed:false,error:scriptDiffersFromBrief?'Сценарий изменился после создания брифа. Сначала пересоберите бриф.':''};
+  try{
+   const merged=applyPersonaGuideToBrief(plan,brief);
+   return {changed:JSON.stringify(merged)!==JSON.stringify(brief),error:''};
+  }catch(error){return {changed:false,error:String((error as Error).message||error)}}
+ })();
  const showPilotDirections=allowExample&&scenes.length===exampleActorComposerBeats.length&&
   scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line&&
    scene.action===exampleActorComposerBeats[i].action&&
@@ -120,6 +128,16 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   const prior=guideShotNoteForScene(base,scene);
   if(!prior.note||!prior.stale)return;
   savePlan(updateGuideShotNote(base,scene,prior.note,new Date().toISOString()));
+ };
+ const syncBrief=()=>{
+  if(!brief||!onApplyToBrief||unsaved||briefSync.error||!briefSync.changed){
+   setNotice('Проверьте сохранение и актуальность сценария и съёмочных указаний перед переносом.');
+   return;
+  }
+  try{
+   onApplyToBrief(draftRef.current);
+   setNotice('План перенесён в Production Brief. Проверьте обновлённую структурную QA; прежнее авторское утверждение сброшено. Публикации не было.');
+  }catch(error){setNotice('Не удалось перенести план: '+String((error as Error).message||error))}
  };
  const discardFailedSave=()=>{
   const lastSaved=stored??createPersonaProductionGuide(new Date().toISOString(),allowExample?'actor_composer':'general');
@@ -280,7 +298,15 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
     </svg>
     <figcaption>Схема постановки, не фотография твоей комнаты. Фактическое расположение окна, розеток, клавиш и штатива нужно уточнить на месте.</figcaption>
    </figure>
-   {briefMismatchFields.length>0&&<p className="personaGuideWarn" role="status">Плановые заметки отличаются от Production Brief: {briefMismatchFields.join(', ')}. Эти поля НЕ обновляют съёмочный бриф автоматически. Перенесите изменения в редактор брифа и пройдите проверку заново.</p>}
+   {briefMismatchFields.length>0&&<p className="personaGuideWarn" role="status">Плановые заметки отличаются от Production Brief: {briefMismatchFields.join(', ')}. Изменения в редакторе плана не попадают в бриф автоматически.</p>}
+   {brief&&<div className="personaGuideBriefSync">
+    <strong>Передача режиссёрских решений в Production Brief</strong>
+    <p>Переносит локацию, свет, звук, костюм, титры, цвет и сохранённые указания по кадрам. Реплики и длительности не изменяются. После переноса прежнее утверждение снимается, требуется новая QA и решение автора.</p>
+    {briefSync.error?<p className="personaGuideWarn" role="alert">{briefSync.error}</p>:
+     !briefSync.changed?<p>Сохранённые решения уже совпадают с этим Production Brief.</p>:
+     <button type="button" className="primary" disabled={unsaved||!onApplyToBrief}
+      onClick={syncBrief}>Перенести решения в бриф и сбросить прежнее утверждение</button>}
+   </div>}
    {sections[1].fields.map(key=><label key={key}>{guideFieldLabels[key]}
     <textarea aria-label={guideFieldLabels[key]} value={plan.fields[key]} onChange={e=>edit(key,e.target.value)}/></label>)}
    <button type="button" className="ghost" onClick={()=>navigate('assets')}>Перейти к исходникам и дублям</button>
