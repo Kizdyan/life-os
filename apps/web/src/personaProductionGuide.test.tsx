@@ -209,17 +209,22 @@ describe('Persona full preproduction guide',()=>{
  it('guides each project to its next actual pending production decision, without claiming a real render',()=>{
   const guide=createPersonaProductionGuide(now);
   const noScript=getPersonaGuideReadiness({hasScript:false,scriptApproved:false,hasCurrentBrief:false,briefApproved:false,guide});
-  expect(noScript.nextAction).toContain('Составьте хук');
+  expect(noScript.nextAction).toContain('актуальность темы');
+  expect(noScript.items.find(x=>x.id==='idea')?.state).toBe('pending');
+  const researched={...guide,checks:{research:true}};
+  const afterResearch=getPersonaGuideReadiness({hasScript:false,scriptApproved:false,hasCurrentBrief:false,briefApproved:false,guide:researched});
+  expect(afterResearch.nextAction).toContain('Составьте хук');
+  expect(afterResearch.items.find(x=>x.id==='idea')?.state).toBe('done');
   expect(noScript.items.find(x=>x.id==='takes')?.state).toBe('manual');
   expect(noScript.items.find(x=>x.id==='edit')?.state).toBe('manual');
-  const approvedText=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:false,briefApproved:false,guide});
+  const approvedText=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:false,briefApproved:false,guide:researched});
   expect(approvedText.nextAction).toContain('Production Brief');
   expect(approvedText.items.find(x=>x.id==='script')?.state).toBe('done');
-  const briefPending=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:true,briefApproved:false,guide});
+  const briefPending=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:true,briefApproved:false,guide:researched});
   expect(briefPending.nextAction).toContain('редакторское решение');
-  const prep=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:true,briefApproved:true,guide});
+  const prep=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:true,briefApproved:true,guide:researched});
   expect(prep.nextAction).toContain('камеру, свет и звук');
-  const checked={...guide,checks:{set:true,lighting:true,sound:true}};
+  const checked={...researched,checks:{...researched.checks,set:true,lighting:true,sound:true}};
   const ready=getPersonaGuideReadiness({hasScript:true,scriptApproved:true,hasCurrentBrief:true,briefApproved:true,guide:checked});
   expect(ready.nextAction).toContain('реальные дубли');
   expect(ready.items.find(x=>x.id==='takes')?.state).not.toBe('done');
