@@ -21,14 +21,15 @@ async function briefHash(brief:unknown):Promise<string>{
  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(brief)));
  return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,'0')).join('');
 }
-async function videoDuration(file:File):Promise<number>{
+async function videoMetadata(file:File):Promise<{durationSec:number;width:number;height:number}>{
  const url=URL.createObjectURL(file),video=document.createElement('video');
  video.preload='metadata';
  try{
-  return await new Promise<number>((ok,bad)=>{
+  return await new Promise<{durationSec:number;width:number;height:number}>((ok,bad)=>{
    const timeout=window.setTimeout(()=>bad(Error('Браузер не прочитал метаданные видео за 12 секунд.')),12000);
    video.onloadedmetadata=()=>{window.clearTimeout(timeout);const duration=video.duration;
-    Number.isFinite(duration)&&duration>0?ok(duration):bad(Error('В MP4 отсутствует корректная длительность.'))};
+    Number.isFinite(duration)&&duration>0&&video.videoWidth>0&&video.videoHeight>0?
+     ok({durationSec:duration,width:video.videoWidth,height:video.videoHeight}):bad(Error('MP4 не содержит корректную длительность или размер кадра.'))};
    video.onerror=()=>{window.clearTimeout(timeout);bad(Error('Браузер не смог открыть MP4 для просмотра.'))};
    video.src=url;
   });
@@ -81,13 +82,13 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов должны быть RESULT.json, qa.json и draft-reel.mp4.');
    if(videoFile.size<1024||videoFile.size>160*1024*1024)throw Error('MP4 должен быть от 1 КБ до 160 МБ для безопасной проверки в браузере.');
    // Perform all checks client-side: neither reports nor media leave this device.
-   const [result,qa,quality,fingerprint,duration,sha256]=await Promise.all([
+   const [result,qa,quality,fingerprint,metadata,sha256]=await Promise.all([
     readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),
-    briefHash(brief),videoDuration(videoFile),fileHash(videoFile)]);
+    briefHash(brief),videoMetadata(videoFile),fileHash(videoFile)]);
    if(task!==generation.current)return;
    const imported=inspectPersonaLocalRenderImport({
     projectId,brief,briefFingerprintSha256:fingerprint,result,qa,quality,
-    video:{name:videoFile.name,size:videoFile.size,sha256,durationSec:duration},importedAt:new Date().toISOString(),
+    video:{name:videoFile.name,size:videoFile.size,sha256,...metadata},importedAt:new Date().toISOString(),
    });
    const merged=mergePersonaDraftReimport(current,imported);
    if(!onSave(merged))throw Error('Проект изменился в другой вкладке или хранилище недоступно. Результат не сохранён.');
