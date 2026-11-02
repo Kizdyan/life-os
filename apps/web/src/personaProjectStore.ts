@@ -1,6 +1,7 @@
 import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, ScenarioScript, ScenarioCreativeProfile } from '../../../packages/core/src/persona-scenario-intelligence';
 import type { FormatMemoryObservation } from '../../../packages/core/src/format-memory';
 import {validatePersonaProductionGuide,type PersonaProductionGuide} from './personaProductionGuide';
+import {readPersonaColorComparisonRecord,type PersonaColorComparisonRecord} from './personaColorComparison';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -17,6 +18,8 @@ export type PersonaProject={
  mediaAssets:unknown[];
  cloudAssetRefs:string[];
  processing:unknown|null;
+ /** Author-picked color comparison evidence; MP4 bytes remain outside project storage. */
+ colorComparison?:PersonaColorComparisonRecord;
  captions:unknown|null;
  socialCaptions:unknown|null;
  stage:PersonaProjectStage;
@@ -79,7 +82,7 @@ function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
 function isProject(value:unknown):value is PersonaProject{
  if(!value||typeof value!=='object')return false;
  const project=value as Partial<PersonaProject>;
- return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.scenarioWorkspace===undefined||isScenarioWorkspace(project.scenarioWorkspace));
+ return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.scenarioWorkspace===undefined||isScenarioWorkspace(project.scenarioWorkspace))&&(project.colorComparison===undefined||readPersonaColorComparisonRecord(project.colorComparison)!==null);
 }
 export function validatePersonaProjectCollection(value:unknown):PersonaProjectCollection{
  const parsed=value as Partial<PersonaProjectCollection>;
