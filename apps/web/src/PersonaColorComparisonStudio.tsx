@@ -99,7 +99,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   variant.currentTime=Math.min(src.currentTime,Number.isFinite(variant.duration)?variant.duration:src.currentTime);
  }
  const current=readPersonaColorComparisonRecord(record);
- return <section className="personaColorComparison" aria-label="Persona Comparison Studio">
+ return <section className="personaColorComparison" data-project-id={projectId} aria-label="Persona Comparison Studio">
   <h3>Comparison Studio · цветовые варианты</h3>
   <p>Обработка выполняется локально через FFmpeg. В браузере сравниваются реальные MP4, а не визуальные CSS-фильтры. Оригинал не перезаписывается.</p>
   <details>
