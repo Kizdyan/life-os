@@ -65,3 +65,54 @@ jobs:
             /tmp/persona-comparison-e2e/
             /tmp/persona-vite-e2e.log
           if-no-files-found: warn
+
+  webkit:
+    # WebKit (Linux) approximates Safari rendering, not real iOS Safari.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install repo and pinned Playwright dependency
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright-core@1.56.1
+      - name: Install WebKit, system codecs and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          node node_modules/playwright-core/cli.js install --with-deps webkit
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Start Persona localhost UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          (npm run web:dev -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/persona-vite-webkit.log 2>&1 &)
+          ready=0
+          for i in $(seq 1 45); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:4173/; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then cat /tmp/persona-vite-webkit.log; exit 1; fi
+      - name: Real WebKit mobile / FFmpeg acceptance
+        shell: bash
+        env:
+          E2E_BROWSER: webkit
+          E2E_URL: http://127.0.0.1:4173
+          E2E_ARTIFACTS: /tmp/persona-webkit-e2e
+        run: node tools/persona-comparison-browser-e2e.mjs
+      - name: Upload WebKit evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-comparison-webkit-e2e
+          path: |
+            /tmp/persona-webkit-e2e/
+            /tmp/persona-vite-webkit.log
+          if-no-files-found: warn
