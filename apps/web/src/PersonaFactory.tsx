@@ -9,7 +9,7 @@ import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import PersonaCloudPanel from './PersonaCloudPanel';
 import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 import {PersonaProductionGuide} from './PersonaProductionGuide';
-import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,migrateActorComposerShotNotes,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
+import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import {applyProductionInputField,productionBriefSnapshot,readProductionInputRaw,parseProductionInputDraft,saveProductionInputDraft,clearProductionInputDraft,productionInputDraftExists} from './personaProductionInputJournal';
@@ -368,6 +368,25 @@ export default function PersonaFactory(){
   const previous=scenarioWorkspace??{version:1 as const,research:[],analyses:[],ideas:[]};
   persistScenarioWorkspace({...previous,preProductionGuide:guide});
  }
+ /** The only route from the editable guide into the authoritative Production Brief:
+  * explicit user click, current script identity, structural QA and revoked approval. */
+ function transferGuideToBrief(guide:ProductionGuide){
+  if(!activeProjectId||!chosen||!production?.materials.productionBrief)
+   throw new Error('Сначала создайте Production Brief в этом проекте.');
+  if(guideDirty.current)throw new Error('Сначала сохраните изменения съёмочного плана.');
+  if(personaScenarioDraftExists(localStorage,activeProjectId)||
+   productionInputDraftExists(localStorage,activeProjectId))
+   throw new Error('Есть незавершённый черновик сценария или брифа. Сначала сохраните его.');
+  const original=production.materials.productionBrief;
+  if(!productionBriefMatchesBeats(original,scenarioWorkspace?.script?.currentRevision.beats))
+   throw new Error('Сценарий уже изменился: пересоберите Production Brief перед переносом съёмочных решений.');
+  const revised=applyPersonaGuideToBrief(guide,original);
+  if(JSON.stringify(original)===JSON.stringify(revised))return;
+  const next=revisePersonaProductionBrief(production,revised);
+  persistProductionMilestone(next,{stage:'final_qa'});
+  setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
+  setStatus('Съёмочные решения перенесены в Production Brief. Предыдущее утверждение сброшено; проверьте новую QA и утвердите бриф отдельно.');
+ }
  function applyGuideExample(guide:ProductionGuide){
   if(!activeProjectId||!chosen||chosen.format!=='reel'||!isActorComposerPilot(chosen))throw new Error('Пример доступен только для специально выбранного проекта «Актёр и композитор».');
   if(production||scenarioWorkspace?.script||draft)throw new Error('В проекте уже есть сценарий или съёмочный бриф. Пример не заменяет существующую редакцию.');
@@ -507,7 +526,7 @@ export default function PersonaFactory(){
   </>}
   {chosen&&activeProjectId&&workspaceStep==='guide'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaProductionGuide key={activeProjectId}
    projectTitle={chosen.title} projectAngle={chosen.angle} allowExample={chosen.format==='reel'&&!draft&&isActorComposerPilot(chosen)} workspace={scenarioWorkspace}
-   pipeline={production} onSave={persistGuide} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
+   pipeline={production} onSave={persistGuide} onApplyToBrief={transferGuideToBrief} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
    onNavigate={setWorkspaceStep}/>}
   {chosen&&!draft&&(workspaceStep==='idea'||workspaceStep==='assets')&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
   {chosen&&activeProjectId&&workspaceStep==='script'&&<PersonaScenarioWorkspace key={personaScenarioWorkspaceMountKey(activeProjectId,scenarioWorkspace)} project={projects.find(project=>project.id===activeProjectId)??createPersonaProject({id:activeProjectId,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,now:new Date().toISOString()})} workspace={scenarioWorkspace} creativeProfile={{priorities:['смысловые склейки','естественный голос','актёрские паузы'],constraints:['не менять внешность','не выдавать метаданные за просмотр','не копировать чужой сценарий']}} onChange={persistScenarioWorkspace} onCreateBrief={input=>createScenarioProductionBrief(input)}/>}
