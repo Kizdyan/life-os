@@ -1,7 +1,91 @@
 #!/usr/bin/env node
-import {spawn} from 'node:child_process';import {createHash} from 'node:crypto';import {createReadStream} from 'node:fs';import {access,mkdir,stat,writeFile} from 'node:fs/promises';import {join,resolve} from 'node:path';
-const fail=m=>{throw Error('Persona color variants: '+m)},sha=async p=>{const h=createHash('sha256');for await(const c of createReadStream(p))h.update(c);return h.digest('hex')};
-const presets=[['natural-clean','Natural Clean','eq=brightness=0:contrast=1.02:saturation=1'],['warm-cinematic','Warm Cinematic','eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02'],['muted-filmic','Muted Filmic','eq=brightness=-.005:contrast=1.05:saturation=.90']];
-const env=d=>{const e={...process.env},k=Object.keys(e).find(x=>x.toLowerCase()==='path')||'PATH';if(d)e[k]=resolve(d)+(process.platform==='win32'?';':':')+(e[k]||'');return e};
-const run=(b,a,e)=>new Promise((ok,bad)=>{const p=spawn(b,a,{shell:false,windowsHide:true,env:e,stdio:['ignore','ignore','pipe']});let s='';p.stderr.on('data',x=>s+=x);p.on('error',bad);p.on('close',c=>c?bad(Error(s)):ok())});
-export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){if(typeof inputPath!=='string'||typeof outputDir!=='string')fail('inputPath and NEW outputDir required');const input=resolve(inputPath),out=resolve(outputDir),e=env(ffmpegDir),st=await stat(input);if(!st.isFile()||st.size<1024)fail('input missing');await access(out).then(()=>fail('outputDir already exists'),x=>{if(x.code!=='ENOENT')throw x});await mkdir(out);const sourceSha256=await sha(input),variants=[];for(const [i,[id,label,filter]] of presets.entries()){const path=join(out,String.fromCharCode(65+i)+'-'+id+'.mp4');await run('ffmpeg',['-v','error','-n','-i',input,'-map','0:v:0','-map','0:a?','-vf',filter,'-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p','-c:a','copy','-movflags','+faststart',path],e);variants.push({id,label,filter,path,sha256:await sha(path)})}const result={version:1,kind:'persona-color-variants-v1',status:'awaiting-author-comparison',publicationApproved:false,source:{path:input,sha256:sourceSha256},variants,notice:'Local FFmpeg color-only previews; original and audio unchanged; no face, body, hands, glasses or crop transformation.'};await writeFile(join(out,'COMPARISON.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result}
+import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {createReadStream} from 'node:fs';
+import {access,mkdir,stat,writeFile} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+
+const presets=[
+ ['natural-clean','Natural Clean','eq=brightness=0:contrast=1.02:saturation=1'],
+ ['warm-cinematic','Warm Cinematic','eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02'],
+ ['muted-filmic','Muted Filmic','eq=brightness=-.005:contrast=1.05:saturation=.90'],
+];
+const fail=message=>{throw Error('Persona color variants: '+message)};
+async function sha(path){
+ const hash=createHash('sha256');
+ for await(const chunk of createReadStream(path))hash.update(chunk);
+ return hash.digest('hex');
+}
+function env(ffmpegDir){
+ const e={...process.env},key=Object.keys(e).find(k=>k.toLowerCase()==='path')||'PATH';
+ if(ffmpegDir)e[key]=resolve(ffmpegDir)+(process.platform==='win32'?';':':')+(e[key]||'');
+ return e;
+}
+function run(binary,args,environment,{captureStdout=false}={}){
+ return new Promise((ok,bad)=>{
+  const child=spawn(binary,args,{shell:false,windowsHide:true,env:environment,stdio:['ignore','pipe','pipe']});
+  let stderr='',stdout='';
+  const max=2*1024*1024;
+  child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-max)});
+  child.stdout.on('data',chunk=>{if(captureStdout)stdout+=chunk.toString();if(stdout.length>max){child.kill();bad(Error('ffprobe output too large'))}});
+  child.on('error',bad);
+  child.on('close',code=>code===0?ok(stdout):bad(Error(stderr||binary+' exited '+code)));
+ });
+}
+async function preflight(input,environment){
+ const stdout=await run('ffprobe',['-v','error','-show_streams','-of','json',input],environment,{captureStdout:true});
+ let data;
+ try{data=JSON.parse(stdout)}catch{fail('ffprobe did not return valid JSON')}
+ const video=data.streams?.find(stream=>stream.codec_type==='video');
+ if(!video)fail('no video stream');
+ const transfer=String(video.color_transfer||'unknown').toLowerCase();
+ const primaries=String(video.color_primaries||'unknown').toLowerCase();
+ if(transfer==='smpte2084'||transfer==='arib-std-b67'||primaries.startsWith('bt2020'))
+  fail('HDR or BT.2020 detected; automatic HDR-to-SDR transformation is prohibited');
+ const rotation=Number(video.tags?.rotate||0);
+ const sideRotation=video.side_data_list?.find(item=>Number.isFinite(Number(item.rotation)))?.rotation;
+ if(rotation!==0||(sideRotation!==undefined&&Number(sideRotation)!==0))
+  fail('rotation metadata detected; manual orientation review required');
+ return video;
+}
+/** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> */
+export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
+ if(typeof inputPath!=='string'||!inputPath.trim()||
+  typeof outputDir!=='string'||!outputDir.trim())fail('inputPath and NEW outputDir required');
+ const input=resolve(inputPath),out=resolve(outputDir),environment=env(ffmpegDir);
+ const sourceStat=await stat(input);
+ if(!sourceStat.isFile()||sourceStat.size<1024||sourceStat.size>500*1024*1024)
+  fail('input must be an existing MP4 between 1 KB and 500 MB');
+ await preflight(input,environment);
+ await access(out).then(()=>fail('outputDir already exists'),error=>{if(error.code!=='ENOENT')throw error});
+ await mkdir(out);
+ const sourceSha256=await sha(input);
+ const variants=[];
+ for(const [index,[id,label,filter]] of presets.entries()){
+  const outputPath=join(out,String.fromCharCode(65+index)+'-'+id+'.mp4');
+  await run('ffmpeg',['-v','error','-n','-i',input,'-map','0:v:0','-map','0:a?','-vf',filter,
+   '-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p',
+   '-c:a','copy','-movflags','+faststart',outputPath],environment);
+  const outputStat=await stat(outputPath);
+  if(outputStat.size<1024)fail('empty variant '+id);
+  variants.push({id,label,filter,path:outputPath,sha256:await sha(outputPath)});
+ }
+ const result={version:1,kind:'persona-color-variants-v1',status:'awaiting-author-comparison',
+  publicationApproved:false,source:{path:input,sha256:sourceSha256},variants,
+  notice:'Locally rendered SDR color variants only. Source and audio unchanged; no generative face or body edits.'};
+ await writeFile(join(out,'COMPARISON.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+ return result;
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+ const [, ,inputPath,outputDir]=process.argv;
+ if(!inputPath||!outputDir){
+  process.stderr.write('Usage: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir>\n');
+  process.exitCode=2;
+ }else{
+  createColorVariants({inputPath,outputDir}).then(result=>{
+   process.stdout.write('Created '+result.variants.length+' verified color variants in '+resolve(outputDir)+'\n');
+   process.stdout.write('Select COMPARISON.json, the original and all three MP4 files in Persona.\n');
+  }).catch(error=>{process.stderr.write(String(error.message||error)+'\n');process.exitCode=1});
+ }
+}
