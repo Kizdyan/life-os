@@ -18,10 +18,18 @@ function makeSample(output,extra=[]){
   ...extra,'-shortest',output],{encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
 }
+function decodedAudioHash(path){
+ const result=spawnSync('ffmpeg',['-v','error','-i',path,'-map','0:a:0',
+  '-f','hash','-hash','sha256','-'],{encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+ assert.match(result.stdout,/^SHA256=[a-f0-9]{64}\s*$/i);
+ return result.stdout.trim();
+}
 test('creates three SHA-bound, non-destructive color variants with unchanged audio',{skip:!available,timeout:120000},()=>withTemp(async root=>{
  const source=join(root,'original.mp4'),out=join(root,'variants');
  makeSample(source);
  const before=await readFile(source);
+ const sourceAudioSha256=decodedAudioHash(source);
  const result=await createColorVariants({inputPath:source,outputDir:out});
  assert.equal(result.variants.length,3);
  assert.equal(result.publicationApproved,false);
@@ -37,6 +45,7 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
   const streams=JSON.parse(probe.stdout).streams;
   assert.ok(streams.some(stream=>stream.codec_type==='video'&&stream.width===320&&stream.height===568));
   assert.ok(streams.some(stream=>stream.codec_type==='audio'));
+  assert.equal(decodedAudioHash(variant.path),sourceAudioSha256,'decoded audio must remain bit-identical');
  }
  await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/outputDir already exists/);
 }));
