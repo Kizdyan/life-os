@@ -174,6 +174,15 @@ describe('Persona final local render and author review',()=>{
   expect(()=>mergePersonaFinishedReimport(withoutCue,withCue)).toThrow(/противоречат/);
   expect(()=>mergePersonaFinishedReimport(withCue,withoutCue)).toThrow(/противоречат/);
  });
+ it('does not silently drop prior QA warnings on same-video reimport',()=>{
+  const previous=inspectPersonaFinishedRenderImport(fixture());
+  const flagged={...previous,quality:{version:1 as const,videoSha256:finishedSha,
+   analyzedAt:'2026-11-01T14:00:00Z',warningCount:1,humanReviewCount:0,
+   findings:[{id:'audio_loudness',status:'warning' as const,title:'Audio',detail:'Review',timecodes:[]}]}};
+  const cleared={...flagged,quality:{...flagged.quality,warningCount:0,findings:[]}};
+  expect(()=>mergePersonaFinishedReimport(flagged,cleared)).toThrow(/предупреждения/);
+  expect(mergePersonaFinishedReimport(flagged,previous).quality).toEqual(flagged.quality);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false
