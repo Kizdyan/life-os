@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {createReadStream} from 'node:fs';
-import {access,mkdir,stat,writeFile} from 'node:fs/promises';
-import {join,resolve} from 'node:path';
+import {createReadStream,constants as fsConstants} from 'node:fs';
+import {access,copyFile,mkdir,stat,writeFile} from 'node:fs/promises';
+import {basename,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const presets=[
@@ -54,6 +54,12 @@ export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
  if(typeof inputPath!=='string'||!inputPath.trim()||
   typeof outputDir!=='string'||!outputDir.trim())fail('inputPath and NEW outputDir required');
  const input=resolve(inputPath),out=resolve(outputDir),environment=env(ffmpegDir);
+ const sourceName=basename(input);
+ const renderedNames=presets.map((preset,index)=>String.fromCharCode(65+index)+'-'+preset[0]+'.mp4');
+ const stagedSourceName=renderedNames.some(name=>name.toLowerCase()===sourceName.toLowerCase())
+  ?'SOURCE-'+sourceName:sourceName;
+ if(!sourceName.toLowerCase().endsWith('.mp4')||stagedSourceName.length>220)
+  fail('original must be an MP4 with a supported file name (max 220 characters)');
  const sourceStat=await stat(input);
  if(!sourceStat.isFile()||sourceStat.size<1024||sourceStat.size>160*1024*1024)
   fail('input must be an existing MP4 between 1 KB and 160 MB (Persona browser import limit)');
@@ -71,8 +77,15 @@ export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
   if(outputStat.size<1024||outputStat.size>160*1024*1024)fail('variant '+id+' is outside Persona browser import limit (1 KB–160 MB)');
   variants.push({id,label,filter,path:outputPath,sha256:await sha(outputPath)});
  }
+ // A single browser file picker cannot select files from different folders.
+ // Stage an exact copy beside COMPARISON.json and the three renders, without
+ // modifying or deleting the original at inputPath.
+ const stagedSourcePath=join(out,stagedSourceName);
+ await copyFile(input,stagedSourcePath,fsConstants.COPYFILE_EXCL);
+ if(await sha(stagedSourcePath)!==sourceSha256)
+  fail('original changed while rendering; the staged copy no longer matches its SHA-256');
  const result={version:1,kind:'persona-color-variants-v1',status:'awaiting-author-comparison',
-  publicationApproved:false,source:{path:input,sha256:sourceSha256},variants,
+  publicationApproved:false,source:{path:stagedSourcePath,sha256:sourceSha256},variants,
   notice:'Locally rendered SDR color variants only. Source and audio unchanged; no generative face or body edits.'};
  await writeFile(join(out,'COMPARISON.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
  return result;
@@ -85,7 +98,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  }else{
   createColorVariants({inputPath,outputDir}).then(result=>{
    process.stdout.write('Created '+result.variants.length+' verified color variants in '+resolve(outputDir)+'\n');
-   process.stdout.write('Select COMPARISON.json, the original and all three MP4 files in Persona.\n');
+   process.stdout.write('Select all five files from the output folder in Persona: COMPARISON.json, staged original and three MP4 variants.\n');
   }).catch(error=>{process.stderr.write(String(error.message||error)+'\n');process.exitCode=1});
  }
 }
