@@ -194,6 +194,17 @@ describe('Persona final local render and author review',()=>{
   expect(()=>mergePersonaFinishedReimport(flagged,cleared)).toThrow(/предупреждения/);
   expect(mergePersonaFinishedReimport(flagged,previous).quality).toEqual(flagged.quality);
  });
+ it('does not silently erase contact-sheet evidence on same-video refresh',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Frames',detail:'Measured',timecodes:[]}],
+   visualEvidence:{contactSheetPath:'frames/contact-sheet.jpg',frameCount:7}};
+  const old={...base,quality};
+  const newer={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',visualEvidence:undefined}};
+  expect(()=>mergePersonaFinishedReimport(old,newer)).toThrow(/кадры/);
+  expect(mergePersonaFinishedReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
+ });
  it('rejects older final QA reports on the same MP4',()=>{
   const base=inspectPersonaFinishedRenderImport(fixture());
   const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
