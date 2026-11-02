@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import type {PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {validatePersonaMediaImportFileNames,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {advancePersonaPlaybackProof,emptyPersonaPlaybackProof} from './personaPlaybackProof';
 import {inspectPersonaFinishedRenderImport,mergePersonaFinishedReimport,makePersonaFinalAuthorReview,
  PERSONA_FINAL_REVIEW_KEYS,type PersonaFinalReviewChecks,type PersonaFinalAuthorReview} from './personaFinishedRenderImport';
@@ -56,7 +56,7 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
   try{
    if(!canImport)throw Error('Исходный съёмочный бриф больше не подтверждён.');
    const selected=Array.from(files),map=new Map(selected.map(f=>[f.name,f]));
-   if(![3,4].includes(selected.length)||map.size!==selected.length)throw Error('Нужны FINISH-RESULT.json, finish-qa.json, finished-candidate.mp4 и, если он создан, video-quality.json.');
+   validatePersonaMediaImportFileNames(selected.map(file=>file.name),'finished');
    const resultFile=map.get('FINISH-RESULT.json'),qaFile=map.get('finish-qa.json'),
     qualityFile=map.get('video-quality.json'),videoFile=map.get('finished-candidate.mp4');
    if(!resultFile||!qaFile||!videoFile)throw Error('Имена файлов из одной папки финализации должны совпадать.');
