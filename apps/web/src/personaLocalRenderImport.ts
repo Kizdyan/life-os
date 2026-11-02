@@ -1,5 +1,5 @@
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
-import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
+import {readPersonaFinishedRenderRecord,parsePersonaVideoQuality,isPersonaVideoQualitySummary,type PersonaFinishedRenderRecord,type PersonaVideoQualitySummary} from './personaFinishedRenderImport';
 
 export type PersonaLocalRenderRecord={
  version:1;kind:'persona-local-render-review-v1';projectId:string;briefIdeaId:string;briefSnapshot:string;
@@ -64,12 +64,7 @@ export function readPersonaLocalRenderRecord(value:unknown):PersonaLocalRenderRe
  v.width===1080&&v.height===1920&&v.fps===30&&typeof v.importedAt==='string'&&
  typeof v.timingStatus==='string'&&v.status==='awaiting-author-review'&&v.publicationApproved===false&&
  v.qaProvenance==='locally-imported-report-not-independently-attested'&&
- (v.quality===undefined||Boolean(parsePersonaVideoQuality({
-  version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
-  publicationApproved:false,distributionAllowed:false,analyzedAt:obj(v.quality).analyzedAt,
-  video:{sha256:obj(v.quality).videoSha256},
-  authorApproval:{approvedByAuthor:false,publicationApproved:false},
-  findings:obj(v.quality).findings},v.mp4Sha256)))&&
+ (v.quality===undefined||isPersonaVideoQualitySummary(v.quality,v.mp4Sha256 as string))&&
  (v.finished===undefined||Boolean(readPersonaFinishedRenderRecord(v.finished))&&
   readPersonaFinishedRenderRecord(v.finished)?.sourceDraftSha256===v.mp4Sha256&&
   readPersonaFinishedRenderRecord(v.finished)?.briefFingerprintSha256===v.briefFingerprintSha256)
