@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {mkdtemp,readFile,rm,stat,access,open} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -31,6 +32,8 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
  const before=await readFile(source);
  const sourceAudioSha256=decodedAudioHash(source);
  const result=await createColorVariants({inputPath:source,outputDir:out});
+ const checksum=bytes=>createHash('sha256').update(bytes).digest('hex');
+ assert.equal(result.source.sha256,checksum(before),'manifest must bind the exact source bytes');
  assert.equal(result.variants.length,3);
  assert.equal(result.publicationApproved,false);
  assert.deepEqual(await readFile(source),before);
@@ -39,6 +42,7 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
  assert.equal(new Set(result.variants.map(v=>v.sha256)).size,3);
  for(const variant of result.variants){
   assert.ok((await stat(variant.path)).size>1000);
+  assert.equal(variant.sha256,checksum(await readFile(variant.path)),'manifest must bind each rendered MP4');
   const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type,width,height',
    '-of','json',variant.path],{encoding:'utf8'});
   assert.equal(probe.status,0,probe.stderr);
