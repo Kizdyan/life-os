@@ -49,6 +49,19 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
   warningCount:findings.filter(finding=>finding.status==='warning').length,
   humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings,...(visualEvidence?{visualEvidence}:{})};
 }
+/** Validate persisted quality summaries, including derived counts. */
+export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
+ const summary=record(value);
+ if(summary.version!==1||summary.videoSha256!==sha||
+  !Number.isSafeInteger(summary.warningCount)||!Number.isSafeInteger(summary.humanReviewCount))return false;
+ const normalized=parsePersonaVideoQuality({
+  version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',
+  publicationApproved:false,distributionAllowed:false,analyzedAt:summary.analyzedAt,
+  video:{sha256:sha},authorApproval:{approvedByAuthor:false,publicationApproved:false},
+  findings:summary.findings},sha);
+ return Boolean(normalized&&normalized.warningCount===summary.warningCount&&
+  normalized.humanReviewCount===summary.humanReviewCount);
+}
 export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRenderRecord|null{
  const r=record(value),color=record(r.color);
  const checks=record(record(r.authorReview).criteria),review=record(r.authorReview),cue=record(r.musicCue);
@@ -78,8 +91,7 @@ export function readPersonaFinishedRenderRecord(value:unknown):PersonaFinishedRe
   within(color.saturation,0.88,1.12)&&typeof r.musicAdded==='boolean'&&cueValid&&
   typeof r.importedAt==='string'&&r.status==='awaiting-author-review'&&
   r.publicationApproved===false&&r.qaProvenance==='browser-sha256-matched-local-ffmpeg-report'&&
-  (r.quality===undefined||Boolean(parsePersonaVideoQuality({version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
-   analyzedAt:record(r.quality).analyzedAt,video:{sha256:record(r.quality).videoSha256},authorApproval:{approvedByAuthor:false,publicationApproved:false},findings:record(r.quality).findings},r.finishedSha256)))&&
+  (r.quality===undefined||isPersonaVideoQualitySummary(r.quality,r.finishedSha256 as string))&&
   reviewValid?r as PersonaFinishedRenderRecord:null;
 }
 function isSha(value:unknown):value is string{return typeof value==='string'&&hash.test(value)}
