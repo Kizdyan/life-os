@@ -189,8 +189,7 @@ export function mergePersonaFinishedReimport(
   previous.captionsBurnedIn!==imported.captionsBurnedIn||
   previous.musicAdded!==imported.musicAdded||
   JSON.stringify(previous.color)!==JSON.stringify(imported.color)||
-  (previous.musicCue&&imported.musicCue&&
-   JSON.stringify(previous.musicCue)!==JSON.stringify(imported.musicCue)))
+  JSON.stringify(previous.musicCue??null)!==JSON.stringify(imported.musicCue??null))
   fail('Отчёты одного MP4 противоречат сохранённым параметрам финализации.');
  const merged:PersonaFinishedRenderRecord={
   ...imported,importedAt:previous.importedAt,
