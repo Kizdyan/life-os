@@ -205,6 +205,16 @@ describe('Persona final local render and author review',()=>{
   expect(()=>mergePersonaFinishedReimport(old,newer)).toThrow(/кадры/);
   expect(mergePersonaFinishedReimport(old,base).quality?.visualEvidence).toEqual(quality.visualEvidence);
  });
+ it('rejects rewritten QA descriptions for the same finding ID',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'black_frames',status:'measured' as const,
+    title:'Black frames',detail:'No black frames',timecodes:['00:00:05.000']}]};
+  const previous={...base,quality};
+  const rewritten={...base,quality:{...quality,analyzedAt:'2026-11-01T15:00:00Z',
+   findings:[{...quality.findings[0],detail:'Altered after review'}]}};
+  expect(()=>mergePersonaFinishedReimport(previous,rewritten)).toThrow(/содержание/);
+ });
  it('rejects older final QA reports on the same MP4',()=>{
   const base=inspectPersonaFinishedRenderImport(fixture());
   const quality={version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:00:00Z',
