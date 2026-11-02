@@ -45,6 +45,20 @@ export function productionBriefMatchesBeats(
  return beats.every((beat,i)=>beat.line===brief.script[i]?.line&&
   beat.action===brief.script[i]?.action&&beat.durationSec===brief.script[i]?.durationSec);
 }
+/** A new saved script revision revokes any earlier human shoot approval without
+ * mutating the brief or losing revision history. */
+export function reconcilePersonaProductionWithScenario(
+ pipeline:PersonaProductionPipeline|null,workspace:ScenarioWorkspace|undefined,
+):PersonaProductionPipeline|null{
+ if(!pipeline||!workspace?.script||productionBriefMatchesBeats(
+  pipeline.materials.productionBrief,workspace.script.currentRevision.beats))return pipeline;
+ if(pipeline.stage==='QA'&&pipeline.statuses.QA==='needs_revision'&&
+  !pipeline.materials.editorialDecision)return pipeline;
+ const {editorialDecision:_supersededApproval,...materials}=pipeline.materials;
+ return {...pipeline,stage:'QA',
+  statuses:{...pipeline.statuses,QA:'needs_revision',READY_FOR_SHOOT:'pending'},
+  materials};
+}
 export function buildPersonaProductionWorkflow(idea:Idea):PersonaProductionPipeline{
  let pipeline=startPersonaProductionPipeline({idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format}});
  for(let step=0;step<4;step+=1)pipeline=advancePersonaProductionPipeline(pipeline);
@@ -218,7 +232,7 @@ export default function PersonaFactory(){
  const[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
  const[scenarioWorkspace,setScenarioWorkspace]=useState<ScenarioWorkspace|undefined>(()=>initialProject?.scenarioWorkspace);
  const[localRenderReview,setLocalRenderReview]=useState<PersonaLocalRenderRecord|null>(()=>readPersonaLocalRenderRecord(initialProject?.processing));
- const[h,setH]=useState<{title:string;status:string}[]>(()=>read(HISTORY,[]));const[ideas,setIdeas]=useState<Idea[]>(()=>localIdeas(h));const[chosen,setChosen]=useState<Idea|null>(()=>initialProject?projectIdea(initialProject):read('persona:active-idea:v1',null));const[draft,setDraft]=useState<Draft|null>(()=>initialProject?.script as Draft|null??read('persona:active-draft:v1',null));const[qa,setQa]=useState<QA|null>(()=>initialProject?.qa as QA|null??read('persona:active-qa:v1',null));const[stage,setStage]=useState<Stage>(()=>initialProject?projectStage(initialProject.stage):read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy');const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
+ const[h,setH]=useState<{title:string;status:string}[]>(()=>read(HISTORY,[]));const[ideas,setIdeas]=useState<Idea[]>(()=>localIdeas(h));const[chosen,setChosen]=useState<Idea|null>(()=>initialProject?projectIdea(initialProject):read('persona:active-idea:v1',null));const[draft,setDraft]=useState<Draft|null>(()=>initialProject?.script as Draft|null??read('persona:active-draft:v1',null));const[qa,setQa]=useState<QA|null>(()=>initialProject?.qa as QA|null??read('persona:active-qa:v1',null));const[stage,setStage]=useState<Stage>(()=>initialProject?projectStage(initialProject.stage):read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy');const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
  useEffect(()=>{save('persona:active-idea:v1',chosen)},[chosen]);
  useEffect(()=>{save('persona:active-draft:v1',draft)},[draft]);
  useEffect(()=>{save('persona:active-qa:v1',qa)},[qa]);
@@ -270,6 +284,7 @@ export default function PersonaFactory(){
    const savedBrief=savedPipeline?.materials?.productionBrief;
    if(live.activeProjectId!==activeProjectId||saved?.contentType!=='reel'||
     !savedBrief||JSON.stringify(savedBrief)!==record.briefSnapshot||
+    !productionBriefMatchesBeats(savedBrief,saved?.scenarioWorkspace?.script?.currentRevision.beats)||
     !savedPipeline||!assessPersonaLocalHandoff(savedPipeline,
      productionInputDraftExists(localStorage,activeProjectId)).allowed)
     throw Error('Сценарий или редакторское решение изменились во время проверки видео.');
@@ -291,9 +306,22 @@ export default function PersonaFactory(){
   }catch(error){setStatus('Не удалось сохранить импорт: '+String((error as Error).message||error));return false}
  }
  function persistScenarioWorkspace(next:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline){
-  if(!activeProjectId||!ideaForSave||!saveActiveProject(next,ideaForSave,importedProduction))
+  const reconciled=importedProduction??reconcilePersonaProductionWithScenario(production,next);
+  const revoked=Boolean(!importedProduction&&production&&reconciled!==production);
+  const milestone=revoked&&reconciled
+   ?{pipeline:reconciled,stage:'final_qa' as const,resetQa:true}
+   :undefined;
+  // One atomic project write: the revised script and revoked approval cannot be
+  // stored as independently saveable snapshots.
+  if(!activeProjectId||!ideaForSave||!saveActiveProject(next,ideaForSave,importedProduction,milestone))
    throw new Error('Не удалось записать версию сценария в хранилище проекта. Черновик сохранён отдельно.');
   setScenarioWorkspace(next);
+  if(revoked&&reconciled){
+   setProduction(reconciled);
+   setStage('final_qa');setQa(null);
+   setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);
+   setStatus('Сценарий изменился: прежнее утверждение съёмочного брифа отозвано. Бриф и история сохранены, но их нужно согласовать с текущими репликами и повторно пройти QA.');
+  }
  }
  /** Never present a production decision as saved before browser storage confirms it. */
  function persistProductionMilestone(next:PersonaProductionPipeline,options:Omit<ProductionMilestone,'pipeline'>={}){
@@ -348,7 +376,7 @@ export default function PersonaFactory(){
   const collection=selectPersonaProject(localStorage,project.id);
   const saved=selectedPersonaProjectSnapshot(collection,project.id);
   lastOwnSavedRevision.current={id:saved.id,revision:saved.revision};
-  setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(saved.shootingPlan as PersonaProductionPipeline|null);setScenarioWorkspace(saved.scenarioWorkspace);setLocalRenderReview(readPersonaLocalRenderRecord(saved.processing));setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(projectStage(saved.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(saved.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен из актуального локального снимка. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
+  setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(reconcilePersonaProductionWithScenario(saved.shootingPlan as PersonaProductionPipeline|null,saved.scenarioWorkspace));setScenarioWorkspace(saved.scenarioWorkspace);setLocalRenderReview(readPersonaLocalRenderRecord(saved.processing));setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(projectStage(saved.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(saved.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен из актуального локального снимка. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
   return true;
   }catch{setSaveState('error');setStatus('Переключение проекта остановлено: браузер не подтвердил сохранение.');return false}
  }
@@ -534,7 +562,7 @@ export default function PersonaFactory(){
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}
   {chosen&&workspaceStep==='edit'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaVideoTimeline key={activeProjectId??chosen.id} projectId={activeProjectId??chosen.id} initialTimeline={timeline} onTimelineChange={setTimeline}/>}
   {production&&(workspaceStep==='script'||workspaceStep==='review')&&<PersonaProductionBriefPanel key={activeProjectId??'legacy'} projectId={activeProjectId??'legacy'} pipeline={production} editor={productionEditor} comment={productionComment} factsChecked={productionFactsChecked} onEditorChange={setProductionEditor} onCommentChange={setProductionComment} onFactsCheckedChange={setProductionFactsChecked} onDecision={decideProduction} onRebuild={()=>createProductionBrief(chosen,production.input.idea.angle)} onAngleChange={updateProductionAngle} onBriefChange={reviseProductionBrief}/>}
-  {chosen?.format==='reel'&&activeProjectId&&(workspaceStep==='review'||workspaceStep==='export')&&<PersonaLocalRenderReview key={activeProjectId} projectId={activeProjectId} pipeline={production} record={localRenderReview} onSave={persistLocalRenderReview}/>}
+  {chosen?.format==='reel'&&activeProjectId&&(workspaceStep==='review'||workspaceStep==='export')&&<PersonaLocalRenderReview key={activeProjectId} projectId={activeProjectId} pipeline={reconcilePersonaProductionWithScenario(production,scenarioWorkspace)} record={localRenderReview} onSave={persistLocalRenderReview}/>}
   {chosen&&draft&&workspaceStep==='review'&&<div className={`draft ${styleClass(draft.style)}`}><div className="draftTop"><div><small>{engineMode==='ai'?'Сценарий реального ИИ':'Шаблонный черновик'} · Формальная проверка {qa?.score||0}/100</small><h3>{draft.title}</h3></div><span className={qa?.pass?'qaPass':'qaFail'}>{qa?.pass?'Форма проверена':'Есть замечания'}</span></div>{asset&&(assetIsVideo?<video className="assetPreview" src={asset} controls preload="metadata"/>:<img className="assetPreview" src={asset} alt="Исходник"/>)}<div className="slides">{draft.slides.map((s,i)=><article key={i} className="slide"><small>{s.eyebrow}</small><strong>{s.title}</strong><p>{s.body}</p><span>{i+1}/{draft.slides.length}</span></article>)}</div><div className="caption"><small>ТЕКСТ</small><p>{draft.caption}</p></div>{draft.assetInstruction&&<div className="caption"><small>ПЛАН СЪЁМКИ И МОНТАЖА (ИНСТРУКЦИЯ, НЕ ВЫПОЛНЕННЫЙ МОНТАЖ)</small><p>{draft.assetInstruction}</p></div>}<div className="feedback"><textarea value={feedback} onChange={e=>setFeedback(e.target.value)} placeholder="Говори или пиши обычным языком. Можно дать длинную команду из нескольких требований."/><button className={recording?'mic listening':'mic'} disabled={transcribing} onClick={recording?stopRecording:startRecording}>{transcribing?'…':recording?'■':'🎙️'}</button></div><div className="voiceHint">{recording?'Запись идёт до твоего нажатия. Паузы не останавливают её.':transcribing?'Распознаю весь файл целиком…':'🎙️ → говори сколько нужно → ■. Только после ■ начинается распознавание.'}</div>{status&&<div className="status">{status}</div>}<div className="actions"><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="ghost" disabled={!feedback.trim()||working||recording||transcribing} onClick={()=>void revise()}>{working?'Редактирую + проверяю…':'Исправить и проверить'}</button><button className="dangerGhost" onClick={rejectIdea}>Не публиковать</button><button className="primary" disabled={!qa?.pass||working} onClick={approve}>Утверждаю</button></div></div>}
   {chosen&&workspaceStep==='export'&&<section className="personaEmptyStage"><h3>Экспорт</h3><p>Проект и монтажный план сохранены на этом устройстве. Экспорт MP4 из браузера iPhone пока не реализован; активной кнопки экспорта нет.</p></section>}
   {chosen&&<nav className="personaWorkspaceFooter" aria-label="Переход между этапами"><button type="button" className="ghost" disabled={workspaceIndex===0} onClick={()=>moveWorkspace(-1)}>Назад</button><span>{projectSteps[workspaceIndex][1]}</span><button type="button" className="primary" disabled={workspaceIndex===projectSteps.length-1} onClick={()=>moveWorkspace(1)}>Продолжить</button></nav>}
