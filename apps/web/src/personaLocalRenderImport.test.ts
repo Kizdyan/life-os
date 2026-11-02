@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
-import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
+import {inspectPersonaLocalRenderImport,readPersonaLocalRenderRecord,mergePersonaDraftReimport,buildPersonaFinishOptionsTemplate,validatePersonaMediaImportFileNames,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 
 const brief=JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json',import.meta.url),'utf8'));
 const fingerprint='a'.repeat(64),videoSha='b'.repeat(64),bytes=800_000;
@@ -19,6 +19,21 @@ function fixture(){
  return {projectId:'p1',brief,briefFingerprintSha256:fingerprint,result,qa,
   video:{name:'draft-reel.mp4',size:bytes,sha256:videoSha,durationSec:31,width:1080,height:1920},importedAt:'2026-11-01T12:00:00Z'};
 }
+describe('Persona exact file bundles for both video intake steps',()=>{
+ it('accepts exactly 3 required files with an optional video-quality.json',()=>{
+  for(const kind of ['draft','finished'] as const){
+   const core=kind==='draft'
+    ?['RESULT.json','qa.json','draft-reel.mp4']
+    :['FINISH-RESULT.json','finish-qa.json','finished-candidate.mp4'];
+   expect(()=>validatePersonaMediaImportFileNames(core,kind)).not.toThrow();
+   expect(()=>validatePersonaMediaImportFileNames([...core,'video-quality.json'],kind)).not.toThrow();
+   expect(()=>validatePersonaMediaImportFileNames([...core,'other-report.json'],kind)).toThrow('Неизвестный файл');
+   expect(()=>validatePersonaMediaImportFileNames([...core,'video-quality.json','other-report.json'],kind)).toThrow();
+   expect(()=>validatePersonaMediaImportFileNames([...core.slice(0,2),core[1]],kind)).toThrow('без повторов');
+   expect(()=>validatePersonaMediaImportFileNames(core.slice(0,2),kind)).toThrow();
+  }
+ });
+});
 describe('Persona local render evidence intake',()=>{
  it('exports only a disabled human-review template bound to the rendered MP4',()=>{
   const record=inspectPersonaLocalRenderImport(fixture());
