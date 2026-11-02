@@ -60,6 +60,15 @@ describe('script revision revokes production authorization',()=>{
   expect(reconciled?.materials.qa).toEqual(approved.materials.qa);
   expect(reconcilePersonaProductionWithScenario(reconciled,changed)).toBe(reconciled);
  });
+ it('does not revoke a pipeline that has not created any Production Brief',()=>{
+  const {workspace}=production();
+  const draft={stage:'SCRIPT' as const,statuses:{
+   IDEA:'completed' as const,SCRIPT:'pending' as const,SHOT_LIST:'pending' as const,
+   PRODUCTION_BRIEF:'pending' as const,QA:'pending' as const,
+   READY_FOR_SHOOT:'pending' as const,
+  },input:{idea,sourceFacts:[]},qaAllowedFacts:[],materials:{}};
+  expect(reconcilePersonaProductionWithScenario(draft,workspace)).toBe(draft);
+ });
  it('does not touch signoff on research-only or unrelated workspace changes',()=>{
   const {approved,workspace}=production();
   expect(reconcilePersonaProductionWithScenario(approved,workspace)).toBe(approved);
