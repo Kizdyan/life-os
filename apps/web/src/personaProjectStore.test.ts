@@ -109,6 +109,16 @@ describe('Persona project storage',()=>{
   expect(resolvePersonaProjectSaveBase(storage,{...rendered,revision:knownOwnRevision}).title).toBe('Own synchronous edit');
   expect(()=>resolvePersonaProjectSaveBase(storage,rendered)).toThrow('persona_project_changed_since_open');
  });
+ it('rejects direct stale writes even when callers skip the save-base guard',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'stale-write',title:'First',contentType:'reel',sourceIdea:'Idea',now:'2026-11-02T10:00:00Z'});
+  savePersonaProject(storage,original);
+  const latest={...original,revision:2,title:'Latest tab'};
+  savePersonaProject(storage,latest);
+  expect(()=>savePersonaProject(storage,{...original,title:'Stale tab'})).toThrow('persona_project_stale_save');
+  expect(()=>savePersonaProject(storage,{...latest,title:'Same revision'})).toThrow('persona_project_stale_save');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe('Latest tab');
+ });
  it('rejects stale React saves from another tab without rewriting the latest version',()=>{
   const storage=memoryStorage();
   const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});
