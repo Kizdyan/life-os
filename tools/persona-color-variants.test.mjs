@@ -148,3 +148,10 @@ test('embedded subtitle tracks are refused rather than silently stripped',{skip:
  await assert.rejects(createColorVariants({inputPath:input,outputDir:out}),/embedded subtitles would be lost/);
  await assert.rejects(access(out),{code:'ENOENT'});
 }));
+
+test('non-AAC audio is rejected before an output folder is created',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'pcm-audio.mp4'),out=join(root,'no-output');
+ makeSample(source,['-c:a','pcm_s16le']);
+ await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/audio codec pcm_s16le is not supported/);
+ await assert.rejects(access(out),{code:'ENOENT'});
+}));

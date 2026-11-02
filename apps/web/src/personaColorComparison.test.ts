@@ -103,6 +103,7 @@ describe('Comparison Studio restored review',()=>{
   }));
   expect(markup).toContain('Автор выбрал Warm Cinematic');
   expect(markup).toContain(String.raw`C:\Video\original.mp4`);
+  expect(markup).toContain('[ffmpeg-dir]');
   expect(markup).not.toContain(String.raw`C:\\Video\\original.mp4`);
   expect(markup).toContain('Natural skin tones');
   expect(markup).toContain('повторно выберите пять исходных файлов');

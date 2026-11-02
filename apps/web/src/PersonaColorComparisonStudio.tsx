@@ -106,8 +106,8 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   <details>
    <summary>Как создать три варианта на компьютере</summary>
    <p>В корне Life OS запустите команду, указав полный путь к исходному MP4 и путь к новой папке результатов:</p>
-   <code>node tools/persona-color-variants.mjs "C:\Video\original.mp4" "C:\Video\persona-variants-01"</code>
-   <p>Рендерер создаст одну папку с пятью файлами: точной копией оригинала, COMPARISON.json и тремя вариантами MP4. Выберите все пять файлов из этой папки за один раз. Исходник по первоначальному пути не изменяется. Для нового рендера укажите новую папку назначения.</p>
+   <code>node tools/persona-color-variants.mjs "C:\Video\original.mp4" "C:\Video\persona-variants-01" [ffmpeg-dir]</code>
+   <p>Если FFmpeg не находится в PATH, третьим параметром укажите папку с ffmpeg.exe и ffprobe.exe. Рендерер создаст одну папку с пятью файлами: точной копией оригинала, COMPARISON.json и тремя вариантами MP4. Выберите все пять файлов из этой папки за один раз. Исходник по первоначальному пути не изменяется. Для нового рендера укажите новую папку назначения.</p>
    <p>HDR/PQ/HLG без корректного tone mapping не обрабатываются. Исходники остаются локальными.</p>
   </details>
   <label className="personaComparisonPicker">Импорт результатов сравнения

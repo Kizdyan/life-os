@@ -39,6 +39,9 @@ async function preflight(input,environment){
  try{data=JSON.parse(stdout)}catch{fail('ffprobe did not return valid JSON')}
  const video=data.streams?.find(stream=>stream.codec_type==='video');
  if(!video)fail('no video stream');
+ const audio=data.streams?.find(stream=>stream.codec_type==='audio');
+ if(audio&&String(audio.codec_name||'').toLowerCase()!=='aac')
+  fail('audio codec '+String(audio.codec_name||'unknown')+' is not supported for browser-safe color previews; export an AAC MP4 without changing the original');
  if(data.streams?.some(stream=>stream.codec_type==='subtitle'))
   fail('embedded subtitles would be lost during color rendering; use a subtitle-free source or an explicitly burnt-in copy');
  const transfer=String(video.color_transfer||'unknown').toLowerCase();
