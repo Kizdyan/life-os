@@ -237,6 +237,21 @@ describe('Persona final local render and author review',()=>{
   expect(merged.quality).toEqual(later.quality);
   expect(merged.qualityHistory).toEqual([first.quality]);
  });
+ it('keeps twelve prior final QA measurements and refuses the next one without altering the saved record',()=>{
+  const base=inspectPersonaFinishedRenderImport(fixture());
+  let current=base;
+  for(let index=0;index<13;index++){
+   const analyzedAt=new Date(Date.parse('2026-11-01T14:00:00Z')+index*60000).toISOString();
+   current=mergePersonaFinishedReimport(current,{...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt,
+    warningCount:0,humanReviewCount:0,findings:[{id:'limit_'+index,status:'measured' as const,title:'Measurement',detail:'Result '+index,timecodes:[]}]}});
+  }
+  expect(current.qualityHistory).toHaveLength(12);
+  const preserved=JSON.stringify(current);
+  const next={...base,quality:{version:1 as const,videoSha256:finishedSha,analyzedAt:'2026-11-01T14:13:00.000Z',
+   warningCount:0,humanReviewCount:0,findings:[{id:'limit_13',status:'measured' as const,title:'Measurement',detail:'Result 13',timecodes:[]}]}};
+  expect(()=>mergePersonaFinishedReimport(current,next)).toThrow(/История технических измерений заполнена/);
+  expect(JSON.stringify(current)).toBe(preserved);
+ });
  it('renders the final import and human checks with no browser globals on server',()=>{
   const html=renderToString(React.createElement(PersonaFinishedRenderReview,{
    draft,onSave:()=>false,canImport:false

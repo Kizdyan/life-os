@@ -115,6 +115,11 @@ export function mergePersonaDraftReimport(
   Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
   ?[...(previous.qualityHistory??[]),previous.quality]
   :previous.qualityHistory;
+ // Keep the current report plus at most twelve earlier SHA-bound summaries.
+ // Refusing the next reimport is deliberate: trimming an old measurement here
+ // would silently destroy evidence the author may still need for comparison.
+ if(qualityHistory&&qualityHistory.length>12)
+  throw Error('История технических измерений заполнена (12 предыдущих отчётов). Новый анализ не сохранён; экспортируйте или архивируйте старые отчёты отдельно, затем повторите импорт.');
  const merged:PersonaLocalRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(qualityHistory?.length?{qualityHistory}:{}),

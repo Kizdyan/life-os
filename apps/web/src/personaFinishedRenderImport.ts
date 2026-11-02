@@ -261,6 +261,11 @@ export function mergePersonaFinishedReimport(
   Date.parse(imported.quality.analyzedAt)>Date.parse(previous.quality.analyzedAt)
   ?[...(previous.qualityHistory??[]),previous.quality]
   :previous.qualityHistory;
+ // Do not silently discard a SHA-bound QA report when the local comparison
+ // history is full. The importer leaves the current project untouched and
+ // tells the author to archive evidence before a later analysis can replace it.
+ if(qualityHistory&&qualityHistory.length>12)
+  fail('История технических измерений заполнена (12 предыдущих отчётов). Новый анализ не сохранён; экспортируйте или архивируйте старые отчёты отдельно, затем повторите импорт.');
  const merged:PersonaFinishedRenderRecord={
   ...imported,importedAt:previous.importedAt,
   ...(imported.quality||previous.quality?{quality:imported.quality??previous.quality}:{}),
