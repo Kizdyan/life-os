@@ -65,7 +65,9 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
   lighting:'Уточнить свет и план после утверждения сценария',source:'scenario' as const,
  })):brief?productionGuideScenes(brief):example?productionGuideScenes(null):[];
  const showPilotDirections=allowExample&&scenes.length===exampleActorComposerBeats.length&&
-  scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line);
+  scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line&&
+   scene.action===exampleActorComposerBeats[i].action&&
+   scene.seconds===exampleActorComposerBeats[i].seconds);
  const readiness=getPersonaGuideReadiness({
   hasScript:Boolean(scriptBeats?.length||brief?.script.length),
   scriptApproved:approvedScript||Boolean(!scriptBeats?.length&&brief&&pipeline?.materials.editorialDecision?.decision==='approved'),
@@ -239,11 +241,19 @@ export function PersonaProductionGuide({projectTitle,projectAngle,allowExample,w
        <small>Это режиссёрские заметки. Они не меняют утверждённый Production Brief и не запускают монтаж.</small>
       </details>;
      })()}
-     {showPilotDirections&&actorComposerShotDirections[exampleActorComposerBeats[index].id]&&<div className="personaGuideDirection">
-      <p><b><span aria-hidden="true">▣</span> Камера:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].camera}</p>
-      <p><b>Игра:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].performance}</p>
-      <p><b>Монтаж:</b> {actorComposerShotDirections[exampleActorComposerBeats[index].id].edit}</p>
-     </div>}
+     {(()=>{
+      const saved=guideShotNoteForScene(plan,scene);
+      const authored=saved.note&&!saved.stale?saved.note:null;
+      const preset=showPilotDirections?actorComposerShotDirections[exampleActorComposerBeats[index].id]:null;
+      const visible=authored??preset;
+      return visible&&<div className="personaGuideDirection">
+       <small>{authored?'Авторские режиссёрские указания':'Рабочее предложение · проверь на площадке'}</small>
+       <p><b><span aria-hidden="true">▣</span> Камера:</b> {visible.camera}</p>
+       {authored&&<p><b>Свет:</b> {authored.lighting}</p>}
+       <p><b>Игра:</b> {visible.performance}</p>
+       <p><b>Монтаж:</b> {visible.edit}</p>
+      </div>;
+     })()}
     </div>)}
    </div>
    <p><b>Предполагаемая длительность:</b> {totalSeconds} секунд. Точная речь, таймкоды, интонации и паузы проверяются по реальным дублям.</p>
