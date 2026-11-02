@@ -41,6 +41,7 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
     timecodes.some(time=>typeof time!=='string'||time.length>30))return null;
   findings.push({id:finding.id,status:finding.status as PersonaVideoQualityFinding['status'],title:finding.title,detail:finding.detail,timecodes:timecodes as string[]});
  }
+ if(new Set(findings.map(finding=>finding.id)).size!==findings.length)return null;
  const evidence=record(quality.visualEvidence),frames=Array.isArray(evidence.frames)?evidence.frames:[];
  const visualEvidence=typeof evidence.contactSheetPath==='string'&&evidence.contactSheetPath.length<=1000&&frames.length>0&&frames.length<=12?
   {contactSheetPath:evidence.contactSheetPath,frameCount:frames.length}:undefined;
