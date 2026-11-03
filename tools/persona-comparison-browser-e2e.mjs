@@ -108,6 +108,7 @@ try{
  await waitForImport(page,'Технический QC загружен');
  await comparison.locator('[aria-label="Технический QC"]').getByText(/Технический QC: PASS/).waitFor();
  assert.equal(await comparison.locator('[aria-label="Технический QC"] li').count(),3);
+ await comparison.getByText(/анализ мерцания \(12 кадр\/с\): выполнен/).first().waitFor();
  step('Browser imported and displayed SHA-bound technical QC without artistic approval');
  assert.equal(await comparison.locator('video').count(),2);
  // Checking two <video> nodes alone does not prove the browser can decode or play them.
