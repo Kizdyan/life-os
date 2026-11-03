@@ -1,0 +1,73 @@
+import React from 'react';
+import {describe,expect,it} from 'vitest';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {PersonaShootNow} from './PersonaShootNow';
+import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootProgressKey,shootTimecode} from './personaShootNow';
+import {exampleActorComposerBeats} from './personaProductionGuide';
+import type {PersonaScenarioWorkspace} from './personaProjectStore';
+
+const preset={
+ title:'Актёр и композитор',
+ workspace:undefined,pipeline:null,allowPilot:true,
+} as const;
+
+describe('Persona direct filming experience',()=>{
+ it('shows a real seven-scene shoot-ready EXAMPLE with lines, camera, acting and montage cues',()=>{
+  const plan=buildPersonaShootPlan(preset);
+  expect(plan.status).toBe('example');
+  expect(plan.scenes).toHaveLength(7);
+  expect(plan.scenes.map(s=>s.line)).toEqual(exampleActorComposerBeats.map(s=>s.line));
+  expect(plan.scenes[0].line).toBe('Я актёр. И ещё пишу музыку.');
+  expect(plan.scenes[0].camera).toContain('Штатив');
+  expect(plan.scenes[6].performance).toContain('панчлайн');
+  expect(plan.scenes[0].sourceFileName).toContain('A01');
+  expect(plan.scenes.reduce((sum,s)=>sum+s.seconds,0)).toBe(31);
+  expect(shootTimecode(plan,6)).toBe('00:27');
+  const html=renderToStaticMarkup(<PersonaShootNow projectId="test-pilot" plan={plan}
+   onOpenScript={()=>{}} onSavePilot={()=>{}}/>);
+  expect(html).toContain('Вот что снимать прямо сейчас');
+  expect(html).toContain('СКАЖИ В КАДРЕ');
+  expect(html).toContain('Я актёр. И ещё пишу музыку.');
+  expect(html).toContain('Как поставить камеру');
+  expect(html).toContain('Сохранить эти 7 сцен');
+  expect(html).toContain('Публикация не разрешена автоматически');
+ });
+ it('does not pretend an unknown project has invented scenes',()=>{
+  const plan=buildPersonaShootPlan({...preset,title:'Собственный Reels',allowPilot:false});
+  expect(plan.status).toBe('draft');
+  expect(plan.scenes).toHaveLength(0);
+  const html=renderToStaticMarkup(<PersonaShootNow projectId="empty" plan={plan} onOpenScript={()=>{}}/>);
+  expect(html).toContain('пока нет реплик и кадров');
+  expect(html).not.toContain('Я актёр. И ещё пишу музыку.');
+  expect(html).toContain('Составить сценарий и кадры');
+ });
+ it('never substitutes sample dialogue after author edits a scene',()=>{
+  const script={currentRevisionId:'revision-x',currentRevision:{
+   beats:[{order:1,durationSec:4,line:'Моя собственная новая реплика',action:'Повернуть голову'}],
+  }} as unknown as PersonaScenarioWorkspace['script'];
+  const plan=buildPersonaShootPlan({...preset,
+   workspace:{version:1,research:[],analyses:[],ideas:[],script} as PersonaScenarioWorkspace,
+  });
+  expect(plan.status).toBe('draft');
+  expect(plan.scenes).toHaveLength(1);
+  expect(plan.scenes[0].line).toBe('Моя собственная новая реплика');
+  expect(plan.scenes[0].camera).not.toContain('ориентир 0,9');
+  expect(plan.scenes[0].sourceFileName).toBeUndefined();
+ });
+ it('tracks take completion only in this project and invalidates on changed script',()=>{
+  const plan=buildPersonaShootPlan(preset);
+  const marked=markShootTake(plan,null,'A01',true,'2026-11-03T15:00:00.000Z');
+  expect(marked.completedIds).toEqual(['A01']);
+  expect(readShootProgress(marked,plan)).toEqual(marked);
+  const more=markShootTake(plan,marked,'B01',true,'2026-11-03T15:01:00.000Z');
+  expect(more.completedIds).toEqual(['A01','B01']);
+  expect(markShootTake(plan,more,'A01',false,'2026-11-03T15:02:00.000Z').completedIds)
+   .toEqual(['B01']);
+  expect(readShootProgress(marked,{...plan,scenes:plan.scenes.map((s,i)=>
+   i===0?{...s,line:'New beat'}:s)})).toBeNull();
+  expect(()=>markShootTake(plan,marked,'unknown',true,'2026-11-03T15:00:00.000Z')).toThrow();
+  expect(shootProgressKey('first')).not.toBe(shootProgressKey('second'));
+  expect(makeShootSheet(plan)).toContain('Камера: Штатив');
+  expect(makeShootSheet(plan)).toContain('РАБОЧИЙ ПЛАН');
+ });
+});
