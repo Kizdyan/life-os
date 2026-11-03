@@ -1,0 +1,9 @@
+{
+  "servers": [
+    {
+      "id": "local-ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "model": "qwen3:4b-instruct"
+    }
+  ]
+}
