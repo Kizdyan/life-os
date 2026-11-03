@@ -127,7 +127,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   if(!record){setMessage('Нет сохранённого материала для экспорта.');return;}
   try{
    const brief=createPersonaColorReviewBrief(record,new Date().toISOString());
-   const blob=new Blob([JSON.stringify(brief,null,2)+'\\n'],{type:'application/json'});
+   const blob=new Blob([JSON.stringify(brief,null,2)+'\n'],{type:'application/json'});
    const url=URL.createObjectURL(blob);
    const link=document.createElement('a');
    link.href=url;
