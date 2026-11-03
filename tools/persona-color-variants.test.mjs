@@ -59,6 +59,15 @@ test('creates three SHA-bound, non-destructive color variants with unchanged aud
  }
  await assert.rejects(createColorVariants({inputPath:source,outputDir:out}),/outputDir already exists/);
 }));
+test('records restrained neutral and warm color formulas for author comparison',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const source=join(root,'original.mp4'),out=join(root,'variants');
+ makeSample(source);
+ const result=await createColorVariants({inputPath:source,outputDir:out});
+ assert.equal(result.variants.find(variant=>variant.id==='natural-clean')?.filter,
+  'colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015');
+ assert.equal(result.variants.find(variant=>variant.id==='warm-cinematic')?.filter,
+  'colorbalance=rm=.006:gm=.002:bm=-.004:rh=.002:gh=.001:bh=-.001,eq=brightness=.003:contrast=1.035:saturation=1.01:gamma=1.008');
+}));
 test('HDR/BT.2020 input is rejected before creation of output directory',{skip:!available,timeout:120000},()=>withTemp(async root=>{
  const input=join(root,'hdr-marked.mp4'),out=join(root,'should-not-exist');
  makeSample(input,['-x264-params','colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc']);

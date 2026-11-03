@@ -7,8 +7,8 @@ import {basename,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const presets=[
- ['natural-clean','Natural Clean','eq=brightness=0:contrast=1.02:saturation=1'],
- ['warm-cinematic','Warm Cinematic','eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02'],
+ ['natural-clean','Natural Clean','colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015'],
+ ['warm-cinematic','Warm Cinematic','colorbalance=rm=.006:gm=.002:bm=-.004:rh=.002:gh=.001:bh=-.001,eq=brightness=.003:contrast=1.035:saturation=1.01:gamma=1.008'],
  ['muted-filmic','Muted Filmic','eq=brightness=-.005:contrast=1.05:saturation=.90'],
 ];
 const fail=message=>{throw Error('Persona color variants: '+message)};

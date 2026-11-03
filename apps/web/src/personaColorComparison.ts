@@ -1,8 +1,16 @@
 /** Local-only proof for Persona color comparison. MP4 bytes are never persisted here. */
 export const COLOR_VARIANT_PRESETS=[
- {id:'natural-clean',label:'Natural Clean',fileName:'A-natural-clean.mp4',filter:'eq=brightness=0:contrast=1.02:saturation=1'},
- {id:'warm-cinematic',label:'Warm Cinematic',fileName:'B-warm-cinematic.mp4',filter:'eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02'},
+ {id:'natural-clean',label:'Natural Clean',fileName:'A-natural-clean.mp4',filter:'colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015'},
+ {id:'warm-cinematic',label:'Warm Cinematic',fileName:'B-warm-cinematic.mp4',filter:'colorbalance=rm=.006:gm=.002:bm=-.004:rh=.002:gh=.001:bh=-.001,eq=brightness=.003:contrast=1.035:saturation=1.01:gamma=1.008'},
  {id:'muted-filmic',label:'Muted Filmic',fileName:'C-muted-filmic.mp4',filter:'eq=brightness=-.005:contrast=1.05:saturation=.90'},
+] as const;
+// V1 comparison evidence binds the exact FFmpeg formula. Keep the two
+// superseded formulas readable so an existing author decision is never
+// treated as damaged merely because later local renders became more neutral.
+const LEGACY_COLOR_VARIANT_FILTERS=[
+ 'eq=brightness=0:contrast=1.02:saturation=1',
+ 'eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02',
+ 'eq=brightness=-.005:contrast=1.05:saturation=.90',
 ] as const;
 export type PersonaColorVariantId=typeof COLOR_VARIANT_PRESETS[number]['id'];
 type Variant={id:PersonaColorVariantId;label:string;fileName:string;filter:string;sha256:string};
@@ -27,6 +35,9 @@ function timestamp(value:unknown):value is string{
  return typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 }
 const fail=(message:string):never=>{throw Error('Comparison Studio: '+message)};
+function knownPresetFilter(index:number,value:unknown):value is string{
+ return typeof value==='string'&&(value===COLOR_VARIANT_PRESETS[index]?.filter||value===LEGACY_COLOR_VARIANT_FILTERS[index]);
+}
 export function readPersonaColorComparisonRecord(value:unknown):PersonaColorComparisonRecord|null{
  if(!object(value)||value.version!==1||value.kind!=='persona-color-comparison-review-v1'||
   typeof value.sourceFileName!=='string'||value.sourceFileName.length<1||value.sourceFileName.length>220||
@@ -37,7 +48,7 @@ export function readPersonaColorComparisonRecord(value:unknown):PersonaColorComp
  for(const [i,preset] of COLOR_VARIANT_PRESETS.entries()){
   const variant=value.variants[i];
   if(!object(variant)||variant.id!==preset.id||variant.label!==preset.label||
-   variant.fileName!==preset.fileName||variant.filter!==preset.filter||
+   variant.fileName!==preset.fileName||!knownPresetFilter(i,variant.filter)||
    typeof variant.sha256!=='string'||!SHA.test(variant.sha256)||shaSet.has(variant.sha256))return null;
   shaSet.add(variant.sha256);
  }
@@ -75,13 +86,13 @@ export function inspectPersonaColorComparisonManifest(
  for(const [index,preset] of COLOR_VARIANT_PRESETS.entries()){
   const entry=manifest.variants[index];
   if(!object(entry)||entry.id!==preset.id||entry.label!==preset.label||
-    entry.filter!==preset.filter||typeof entry.path!=='string'||
+    !knownPresetFilter(index,entry.filter)||typeof entry.path!=='string'||
     basename(entry.path)!==preset.fileName||typeof entry.sha256!=='string'||!SHA.test(entry.sha256))
     fail('unexpected preset or variant metadata');
   const file=selected.get(preset.fileName);
   if(!file||file.sha256!==entry.sha256||unique.has(file.sha256))fail('variant missing, changed or duplicated: '+preset.id);
   unique.add(file.sha256);
-  variants.push({...preset,sha256:file.sha256});
+  variants.push({...preset,filter:entry.filter,sha256:file.sha256});
  }
  const result:PersonaColorComparisonRecord={
   version:1,kind:'persona-color-comparison-review-v1',sourceFileName:sourceName,

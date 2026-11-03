@@ -36,6 +36,20 @@ describe('Persona color comparison import',()=>{
   expect(JSON.stringify(record)).not.toContain('C:');
   expect(readPersonaColorComparisonRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
  });
+ it('accepts the refined filters while preserving verified legacy comparison metadata',()=>{
+  const {manifest,files}=fixture();
+  const refined=structuredClone(manifest);
+  refined.variants[0].filter='colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015';
+  refined.variants[1].filter='colorbalance=rm=.006:gm=.002:bm=-.004:rh=.002:gh=.001:bh=-.001,eq=brightness=.003:contrast=1.035:saturation=1.01:gamma=1.008';
+  const refinedRecord=inspectPersonaColorComparisonManifest(refined,files,stamp);
+  expect(refinedRecord.variants.map(variant=>variant.filter)).toEqual(refined.variants.map(variant=>variant.filter));
+  const legacy=structuredClone(manifest);
+  legacy.variants[0].filter='eq=brightness=0:contrast=1.02:saturation=1';
+  legacy.variants[1].filter='eq=brightness=.01:contrast=1.04:saturation=1.03,colorbalance=rs=.02:gs=.01:bs=-.02';
+  const legacyRecord=inspectPersonaColorComparisonManifest(legacy,files,stamp);
+  expect(legacyRecord.variants.map(variant=>variant.filter)).toEqual(legacy.variants.map(variant=>variant.filter));
+  expect(readPersonaColorComparisonRecord(legacyRecord)).toEqual(legacyRecord);
+ });
  it('rejects forged source hash and a modified rendered MP4',()=>{
   const {manifest,files}=fixture();
   expect(()=>inspectPersonaColorComparisonManifest(manifest,[{...files[0],sha256:hash('f')},...files.slice(1)],stamp)).toThrow('original MP4 SHA');
