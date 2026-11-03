@@ -83,10 +83,9 @@ async function modelProposal(request:Request,provider:{provider:'ollama'|'gatewa
    });
   }catch{fail('director_gateway_unavailable')}
  }
- if(!response)fail('director_model_unavailable');
- if(!response.ok)fail(provider.provider==='ollama'?'director_ollama_error':'director_gateway_error');
+ if(!response?.ok)fail(provider.provider==='ollama'?'director_ollama_error':'director_gateway_error');
  let data:any;
- try{data=await response.json()}catch{fail('director_model_invalid_response')}
+ try{data=await response!.json()}catch{fail('director_model_invalid_response')}
  const result=provider.provider==='ollama'?data?.message?.content:data?.choices?.[0]?.message?.content;
  if(typeof result!=='string'||!result.trim())fail('director_model_empty_result');
  return extractJson(result);
