@@ -538,7 +538,12 @@ export default function PersonaFactory(){
      performance:scene.performance,edit:scene.edit},now);
    }
    const next=addImportedBriefScenario({...base,preProductionGuide:aiGuide},brief,now);
-   persistScenarioWorkspace(next,newIdea,pipeline);
+   if(!next.script?.currentRevisionId)throw Error('Нельзя сохранить происхождение ИИ-сценария без версии.');
+   const generatedWorkspace:ScenarioWorkspace={...next,directorGeneration:{
+    version:1,provider:proposal.provider,model:proposal.model,variation,
+    revisionId:next.script.currentRevisionId,createdAt:proposal.createdAt,
+   }};
+   persistScenarioWorkspace(generatedWorkspace,newIdea,pipeline);
    setChosen(newIdea);setProduction(pipeline);setDraft(null);setQa(null);
    setProductionFactsChecked(false);setWorkspaceStep('guide');setStage('final_qa');
    save('persona:director-hooks:v1',[...previousHooks,proposal.hook,proposal.scenes[0].line].slice(-12));
