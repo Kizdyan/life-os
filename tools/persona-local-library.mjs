@@ -55,7 +55,7 @@ async function probe(path,kind,{ffprobe='ffprobe'}={}){
 function sampleTimes(kind,duration){
  if(kind==='image')return [0];
  if(kind==='video'&&safeNum(duration,.2,86400)){
-  const points=duration<4?[duration/2]:[duration*.12,duration*.5,duration*.88];
+  const points=duration<1.5?[duration/2]:[duration*.12,duration*.5,duration*.88];
   return [...new Set(points.map(t=>Math.max(0,Math.min(duration-.1,t)).toFixed(2)))].map(Number);
  }
  return [];
