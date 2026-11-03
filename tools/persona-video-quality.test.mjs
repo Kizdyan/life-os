@@ -2,9 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 
 const media=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
@@ -70,5 +71,15 @@ test('real local MP4 quality report binds measured issues to SHA-256 and never a
    assert.ok(quality.findings.some(x=>x.id==='subtitle_overlap'&&x.status==='warning'));
    assert.ok(quality.findings.some(x=>x.id==='acting'&&x.status==='needs_human_review'));
    assert.deepEqual(JSON.parse(await readFile(reportPath,'utf8')),quality);
+   const evidenceEntries=await readdir(root);
+   await assert.rejects(analyzePersonaVideoQuality({videoPath:movie,outputPath:reportPath,ffmpegDir:ffmpegBin}),/output already exists/);
+   assert.deepEqual(await readdir(root),evidenceEntries,'existing analysis evidence must not be touched by a duplicate output path');
+   const cliReport=join(root,'video-quality-cli.json');
+   const script=fileURLToPath(new URL('./persona-video-quality.mjs',import.meta.url));
+   const cli=spawnSync(process.execPath,[script,movie,'-',String(2),cliReport,ffmpegBin],{
+    encoding:'utf8',timeout:120000,env:{...process.env,[pathKey]:'C:\\persona-no-ffmpeg-on-path'},
+   });
+   assert.equal(cli.status,0,cli.stderr);
+   assert.equal(JSON.parse(await readFile(cliReport,'utf8')).video.sha256,movieSha);
   }finally{await rm(root,{recursive:true,force:true})}
  });
