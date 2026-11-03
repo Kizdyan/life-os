@@ -38,6 +38,18 @@ test('exact ASR text is still UNVERIFIED speech and never a render authorization
  assert.equal(report.beats[1].automaticallyAccepted,false);
  assert.equal(report.renderAllowed,false);
 });
+test('ASR segment/token conflict is visible in diagnostics and never authorizes a render',()=>{
+ const report=buildAsrRecoveryReport(brief,[{
+  id:'B04_token_conflict',parseError:null,
+  segments:[{text:'Это колыбельная.',startSec:.2,endSec:1.8,
+   timing:'segment',transcriptConflict:true}],
+ }]);
+ assert.equal(report.beats[1].diagnosticStatus,'ASR_TOKEN_SEGMENT_CONFLICT_NEEDS_LISTENING');
+ assert.equal(report.beats[1].reportedCandidates[0].tokenSegmentConflict,true);
+ assert.equal(report.beats[1].reportedCandidates[0].exactNormalizedMatch,true);
+ assert.equal(report.beats[1].automaticallyAccepted,false);
+ assert.equal(report.renderAllowed,false);
+});
 test('missing transcripts never become invented words',()=>{
  const report=buildAsrRecoveryReport(brief,[{
   id:'B04_take01',segments:[],parseError:'WHISPER_FILE_MISSING',

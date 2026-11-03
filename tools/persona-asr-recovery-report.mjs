@@ -58,6 +58,7 @@ function bestWindows(line,source){
     sourceId:source.id,heardByAsr:observed,startSec:Number(start.toFixed(3)),
     endSec:Number(end.toFixed(3)),
     timing:group.every(f=>f.timing==='word')?'word':'segment',
+    tokenSegmentConflict:group.some(f=>f.transcriptConflict===true),
     similarity:sim,exactNormalizedMatch:normalize(line)===normalize(observed),
    });
   }
@@ -90,6 +91,7 @@ export function buildAsrRecoveryReport(brief,sources){
    }));
   const best=windows[0];
   const diagnosticStatus=!best?'NO_USABLE_ASR_TEXT':
+   best.tokenSegmentConflict?'ASR_TOKEN_SEGMENT_CONFLICT_NEEDS_LISTENING':
    best.exactNormalizedMatch?'ASR_TEXT_MATCHES_SCRIPT_UNVERIFIED':
     best.similarity>=0.78?'ASR_NEAR_MISS_NEEDS_LISTENING':
     'ASR_TEXT_DISAGREES_WITH_SCRIPT';
@@ -153,6 +155,8 @@ export async function createAsrRecoveryReport({analysisPath,briefPath,outputDir}
    lines.push('Whisper ['+c.sourceId+'] '+c.startSec+'–'+c.endSec+' с: '+c.heardByAsr,
     'Похожесть текста (не уверенность в речи): '+c.similarity+
     '; границы: '+c.timing,'');
+   if(c.tokenSegmentConflict)
+    lines.push('Внимание: текст сегмента и его токены Whisper ПРОТИВОРЕЧАТ друг другу; автоматический выбор запрещён.','');
    if(c.diff.alignment==='position-only'&&c.diff.differingPositions.length){
     for(const change of c.diff.differingPositions)
      lines.push('  Слово '+change.position+': ожидалось «'+change.expected+

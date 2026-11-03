@@ -70,6 +70,9 @@ export function parseWhisperJson(value,durationSec){
       fail('ASR spoken segment lacks time offsets');
     const candidates=useWordTiming?audible:[seg];
     const timing=useWordTiming?'word':'segment';
+    // A disagreement between segment text and token text is ambiguous speech
+    // evidence, not a transcript that can be automatically selected.
+    const transcriptConflict=Boolean(textDisagrees);
     const grouped=[];
     for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
@@ -83,7 +86,8 @@ export function parseWhisperJson(value,durationSec){
         const last=grouped[grouped.length-1];
         last.text+=text;
         last.endSec=end;
-      }else grouped.push({startSec:start,endSec:end,text,timing});
+      }else grouped.push({startSec:start,endSec:end,text,timing,
+        ...(transcriptConflict?{transcriptConflict:true}:{})});
     }
     raw.push(...grouped);
   }
@@ -104,6 +108,9 @@ export function rankDialogueCandidates(line,sourceId,segments){
     for(let j=i+1;j<=Math.min(segments.length,i+24);j++){
       const duration=segments[j-1].endSec-segments[i].startSec;
       if(duration>12)break;
+      // Even when the segment string exactly matches the script, a conflicting
+      // token transcript must go to human Recovery Review, never auto-cut.
+      if(segments.slice(i,j).some(part=>part.transcriptConflict===true))continue;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
       // Bag-of-words scoring alone can falsely match "Это колыбельная"

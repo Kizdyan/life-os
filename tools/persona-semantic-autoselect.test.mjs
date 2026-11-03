@@ -72,6 +72,7 @@ test('complete Whisper segment text wins when fully timed tokens omit a spoken w
  }]},3);
  assert.deepEqual(segments,[{
   startSec:.3,endSec:1.8,text:'И у нас есть проблема.',timing:'segment',
+  transcriptConflict:true,
  }],'A truncated token list cannot silently remove «у» from the original segment');
 });
 test('non-monotonic token offsets never masquerade as reliable word timing',()=>{
@@ -151,6 +152,26 @@ test('B04 wrong vowel or grammatical ending is a strict ASR mismatch, not an app
  }
 });
 
+test('B04 segment/token disagreement always requires real-audio review',()=>{
+ const original={transcription:[{
+  text:' Это колыбельная.',offsets:{from:200,to:1800},
+  tokens:[
+   {text:' Эта',offsets:{from:200,to:700}},
+   {text:' колыбельная.',offsets:{from:700,to:1800}}
+  ]
+ }]};
+ const segments=parseWhisperJson(original,3);
+ assert.deepEqual(segments,[{
+  startSec:.2,endSec:1.8,text:'Это колыбельная.',timing:'segment',
+  transcriptConflict:true
+ }]);
+ const expected={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.'}],
+  shots:[{order:1,durationSec:3,action:'Произнести точную фразу'}]};
+ const source={id:'B04_conflicting_asr',durationSec:3,segments};
+ assert.throws(()=>createEditorialPlan(expected,[source]),/Manual review required/);
+ assert.deepEqual(createEditorialPlan(expected,[source],{mode:'preview'}).missingBeats,[1]);
+});
 test('B04 cannot be selected from words scattered across a different spoken phrase',()=>{
  const wanted={version:1,sourceFormat:'reel',
   script:[{order:1,line:'Это колыбельная.',durationSec:3}],
