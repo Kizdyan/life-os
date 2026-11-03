@@ -194,6 +194,33 @@ export function addPersonaColorReviewNote(
 }
 
 
+/** Portable, content-free instruction artifact for a future V3 iteration.
+ *  No binary media, local directory, browser URLs, or publication authorization.
+ */
+export function createPersonaColorReviewBrief(
+ current:PersonaColorComparisonRecord,exportedAt:string,
+):{
+ version:1;kind:'persona-color-review-brief-v1';exportedAt:string;
+ publicationApproved:false;artisticStatus:'awaiting-author-review'|'preferred-variant'|'rejected-all';
+ source:{fileName:string;sha256:string};variants:Array<{id:PersonaColorVariantId;label:string;sha256:string;filter:string}>;
+ decision:{selectedVariantId:PersonaColorVariantId|null;rejectedAll:boolean;comment:string|null;decidedAt:string|null};
+ observations:PersonaColorReviewNote[];constraints:{noGenerativeFaceEdits:true;doNotOverwriteV2:true;authorApprovalRequired:true};
+}{
+ if(!readPersonaColorComparisonRecord(current)||!timestamp(exportedAt))fail('invalid review brief evidence');
+ return {
+  version:1,kind:'persona-color-review-brief-v1',exportedAt,publicationApproved:false,
+  artisticStatus:current.rejectedAll?'rejected-all':
+   current.selectedVariantId?'preferred-variant':'awaiting-author-review',
+  source:{fileName:current.sourceFileName,sha256:current.sourceSha256},
+  variants:current.variants.map(({id,label,sha256,filter})=>({id,label,sha256,filter})),
+  decision:{selectedVariantId:current.selectedVariantId??null,rejectedAll:current.rejectedAll===true,
+   comment:current.comment??null,decidedAt:current.decidedAt??null},
+  observations:(current.reviewNotes??[]).map(note=>({...note})),
+  constraints:{noGenerativeFaceEdits:true,doNotOverwriteV2:true,authorApprovalRequired:true},
+ };
+}
+
+
 /** Untrusted local QC is displayed only after it matches all four verified MP4 hashes. */
 export type PersonaComparisonQcSummary={
  technicalStatus:'pass'|'fail';
