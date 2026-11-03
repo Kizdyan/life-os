@@ -14,6 +14,16 @@ const LEGACY_COLOR_VARIANT_FILTERS=[
 ] as const;
 export type PersonaColorVariantId=typeof COLOR_VARIANT_PRESETS[number]['id'];
 type Variant={id:PersonaColorVariantId;label:string;fileName:string;filter:string;sha256:string};
+export type PersonaColorReviewCategory='skin'|'glasses'|'lighting'|'detail'|'motion'|'audio'|'other';
+export type PersonaColorReviewAssessment='good'|'issue';
+export type PersonaColorReviewNote={
+ variantId:PersonaColorVariantId;atSec:number;category:PersonaColorReviewCategory;
+ assessment:PersonaColorReviewAssessment;note:string;createdAt:string;
+};
+type PersonaColorDecisionHistoryEntry={
+ selectedVariantId?:PersonaColorVariantId;rejectedAll?:true;comment:string;decidedAt:string;
+};
+const REVIEW_CATEGORIES=['skin','glasses','lighting','detail','motion','audio','other'] as const;
 export type PersonaColorComparisonRecord={
  version:1;
  kind:'persona-color-comparison-review-v1';
@@ -22,9 +32,11 @@ export type PersonaColorComparisonRecord={
  variants:Variant[];
  importedAt:string;
  selectedVariantId?:PersonaColorVariantId;
+ rejectedAll?:true;
  comment?:string;
  decidedAt?:string;
- decisionHistory?:Array<{selectedVariantId:PersonaColorVariantId;comment:string;decidedAt:string}>;
+ decisionHistory?:PersonaColorDecisionHistoryEntry[];
+ reviewNotes?:PersonaColorReviewNote[];
 };
 export type ComparisonFileEvidence={name:string;sha256:string;size:number};
 const SHA=/^[a-f0-9]{64}$/;
@@ -54,14 +66,33 @@ export function readPersonaColorComparisonRecord(value:unknown):PersonaColorComp
   shaSet.add(variant.sha256);
  }
  const hasSelection=value.selectedVariantId!==undefined;
- if(hasSelection&&(!COLOR_VARIANT_PRESETS.some(preset=>preset.id===value.selectedVariantId)||
-  typeof value.comment!=='string'||value.comment.length>1000||!timestamp(value.decidedAt)))return null;
- if(!hasSelection&&(value.comment!==undefined||value.decidedAt!==undefined))return null;
+ const rejected=value.rejectedAll===true;
+ if(value.rejectedAll!==undefined&&!rejected)return null;
+ if(hasSelection&&rejected)return null;
+ if(hasSelection&&!COLOR_VARIANT_PRESETS.some(preset=>preset.id===value.selectedVariantId))return null;
+ if((hasSelection||rejected)&&
+  (typeof value.comment!=='string'||value.comment.length>1000||
+   (rejected&&!value.comment.trim())||!timestamp(value.decidedAt)))return null;
+ if(!hasSelection&&!rejected&&(value.comment!==undefined||value.decidedAt!==undefined))return null;
  if(value.decisionHistory!==undefined){
   if(!Array.isArray(value.decisionHistory)||value.decisionHistory.length>20)return null;
   for(const item of value.decisionHistory){
-   if(!object(item)||!COLOR_VARIANT_PRESETS.some(p=>p.id===item.selectedVariantId)||
-    typeof item.comment!=='string'||item.comment.length>1000||!timestamp(item.decidedAt))return null;
+   if(!object(item))return null;
+   const chosen=COLOR_VARIANT_PRESETS.some(p=>p.id===item.selectedVariantId),declined=item.rejectedAll===true;
+   if(chosen===declined||(item.rejectedAll!==undefined&&!declined)||
+    typeof item.comment!=='string'||item.comment.length>1000||
+    (declined&&!item.comment.trim())||!timestamp(item.decidedAt))return null;
+  }
+ }
+ if(value.reviewNotes!==undefined){
+  if(!Array.isArray(value.reviewNotes)||value.reviewNotes.length>30)return null;
+  for(const item of value.reviewNotes){
+   if(!object(item)||!COLOR_VARIANT_PRESETS.some(p=>p.id===item.variantId)||
+    typeof item.atSec!=='number'||!Number.isFinite(item.atSec)||
+    item.atSec<0||item.atSec>21600||!REVIEW_CATEGORIES.some(c=>c===item.category)||
+    (item.assessment!=='good'&&item.assessment!=='issue')||
+    typeof item.note!=='string'||!item.note.trim()||item.note.length>300||
+    !timestamp(item.createdAt))return null;
   }
  }
  return value as PersonaColorComparisonRecord;
@@ -121,8 +152,44 @@ export function choosePersonaColorVariant(
  const legacyPrevious=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
   ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
  const decisionHistory=[...(current.decisionHistory??legacyPrevious),{selectedVariantId:id,comment,decidedAt}].slice(-20);
- const next={...current,selectedVariantId:id,comment,decidedAt,decisionHistory};
+ const {rejectedAll:_previousRejection,...withoutRejection}=current;
+ const next={...withoutRejection,selectedVariantId:id,comment,decidedAt,decisionHistory};
  if(!readPersonaColorComparisonRecord(next))fail('invalid saved author decision');
+ return next;
+}
+
+
+/** Explicit rejection of ALL grades (not publication approval); a concrete reason is mandatory. */
+export function rejectPersonaColorVariants(
+ current:PersonaColorComparisonRecord,comment:string,decidedAt:string,
+):PersonaColorComparisonRecord{
+ if(!readPersonaColorComparisonRecord(current)||typeof comment!=='string'||!comment.trim()||
+  comment.length>1000||!timestamp(decidedAt))fail('rejection requires a concrete author comment and timestamp');
+ const legacyPrevious:PersonaColorDecisionHistoryEntry[]=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
+  ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
+ const decisionHistory:PersonaColorDecisionHistoryEntry[]=[
+  ...(current.decisionHistory??legacyPrevious),{rejectedAll:true,comment,decidedAt},
+ ].slice(-20);
+ const {selectedVariantId:_previousChoice,...withoutChoice}=current;
+ const next:PersonaColorComparisonRecord={...withoutChoice,rejectedAll:true,comment,decidedAt,decisionHistory};
+ if(!readPersonaColorComparisonRecord(next))fail('invalid saved rejection');
+ return next;
+}
+/** Evidence-bound author notes; a note never implies grade acceptance. */
+export function addPersonaColorReviewNote(
+ current:PersonaColorComparisonRecord,variantId:PersonaColorVariantId,atSec:number,
+ category:PersonaColorReviewCategory,assessment:PersonaColorReviewAssessment,note:string,createdAt:string,
+):PersonaColorComparisonRecord{
+ if(!readPersonaColorComparisonRecord(current)||!COLOR_VARIANT_PRESETS.some(v=>v.id===variantId)||
+  !Number.isFinite(atSec)||atSec<0||atSec>21600||
+  !REVIEW_CATEGORIES.some(c=>c===category)||(assessment!=='good'&&assessment!=='issue')||
+  typeof note!=='string'||!note.trim()||note.length>300||!timestamp(createdAt))
+  fail('invalid evidence-bound author observation');
+ const reviewNotes=[...(current.reviewNotes??[]),{
+  variantId,atSec:Math.round(atSec*1000)/1000,category,assessment,note:note.trim(),createdAt,
+ }].slice(-30);
+ const next:PersonaColorComparisonRecord={...current,reviewNotes};
+ if(!readPersonaColorComparisonRecord(next))fail('invalid saved author observation');
  return next;
 }
 
