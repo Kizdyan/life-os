@@ -7,6 +7,35 @@ function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
  return {getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value)},removeItem:key=>{data.delete(key)}};
 }
 
+describe('Persona AI director provenance persistence',()=>{
+ it('preserves provider/model/revision on reload and refuses fabricated metadata',()=>{
+  const original=createPersonaProject({
+   id:'ai-provenance',title:'AI Scene',contentType:'reel',
+   sourceIdea:'Actor & composer scene',now:'2026-11-03T14:00:00.000Z',
+  });
+  const workspace={
+   version:1 as const,research:[],analyses:[],ideas:[],
+   directorGeneration:{
+    version:1 as const,provider:'ollama' as const,model:'qwen3:4b-instruct',
+    variation:'unexpected' as const,revisionId:'revision-ai-001',
+    createdAt:'2026-11-03T14:00:00.000Z',
+   },
+  };
+  const stored={...original,scenarioWorkspace:workspace};
+  const data=new Map<string,string>();
+  const storage:PersonaProjectStorage={
+   getItem:key=>data.get(key)??null,
+   setItem:(key,value)=>{data.set(key,value)},
+   removeItem:key=>{data.delete(key)},
+  };
+  savePersonaProject(storage,stored,stored.id);
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace?.directorGeneration)
+   .toEqual(workspace.directorGeneration);
+  const invalid={...workspace,directorGeneration:{...workspace.directorGeneration,model:''}};
+  expect(()=>savePersonaProject(storage,{...original,revision:2,scenarioWorkspace:invalid},original.id)).toThrow();
+ });
+});
+
 describe('Persona project storage',()=>{
  it('persists an editorial approval before the browser can reload',()=>{
   const storage=memoryStorage();

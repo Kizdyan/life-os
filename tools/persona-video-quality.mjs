@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
-import {dirname,join,resolve} from 'node:path';
+import {basename,dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const fail=message=>{throw Error('Persona video quality: '+message)};
@@ -79,7 +79,8 @@ async function scan(path,args,env){
 }
 async function visualEvidence({videoPath,durationSec,outputPath,env,scenes=[]}){
  if(!outputPath)return null;
- const root=join(dirname(resolve(outputPath)),'visual-evidence');
+ const reportName=basename(resolve(outputPath)).replace(/\.[^.]+$/,'');
+ const root=join(dirname(resolve(outputPath)),'visual-evidence-'+reportName);
  await mkdir(root,{recursive:false});
  const moments=scenes.length?scenes.map(scene=>({atSec:(scene.outputStartSec+scene.outputEndSec)/2,scene})): 
   [0,Math.max(0,durationSec/2),Math.max(0,durationSec-.05)].map(atSec=>({atSec,scene:null}));
@@ -127,6 +128,8 @@ function distribution(values){
 
 export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir,timelinePath,timelineSourceVideoPath}={}){
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
+ const output=typeof outputPath==='string'&&outputPath.trim()?resolve(outputPath):null;
+ if(output)await access(output).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});
  const env=mediaEnv(ffmpegDir);
  const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
   'format=format_name,duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation','-of','json',path],{env})).stdout);
@@ -259,15 +262,16 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  }
  findings.push(finding('acting','needs_human_review','Актёрская игра и реакции','Автоматический анализ не оценивает игру, мимику, естественность пауз или выразительность монтажа. Просмотрите указанные проблемные таймкоды.',[]));
  findings.push(finding('identity_preservation','needs_human_review','Лицо, очки, руки и клавиши','FFprobe/FFmpeg не доказывают сохранность внешности и геометрии. Убедитесь визуально, что финализация не изменила лицо, очки, руки или инструмент.',[]));
- const evidence=await visualEvidence({videoPath:path,durationSec,outputPath,env,scenes:scenes??[]});
+ const evidence=await visualEvidence({videoPath:path,durationSec,outputPath:output,env,scenes:scenes??[]});
  const report={version:1,kind:'persona-video-quality-v1',status:'awaiting-author-review',publicationApproved:false,distributionAllowed:false,
   analyzedAt:new Date().toISOString(),video:{path,sha256:await hash(path),bytes:details.size,durationSec,width:video.width,height:video.height,fps,codec:video.codec_name,bitrate:Number(video.bit_rate||info.format?.bit_rate)||null,audioCodec:audio?.codec_name??null,...colorMetadata},
   findings,...(evidence?{visualEvidence:evidence}:{}),authorApproval:{approvedByAuthor:false,publicationApproved:false},
   caveat:'Measured findings are local FFmpeg/FFprobe evidence for this exact SHA-256. They do not approve artistic quality, identity preservation, music suitability, or publication.'};
- if(outputPath){const out=resolve(outputPath);await access(out).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});await writeFile(out,JSON.stringify(report,null,2)+'\n',{flag:'wx'});}
+ if(output)await writeFile(output,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
  return report;
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
- const [videoPath,subtitlePath,expectedDuration,outputPath,ffmpegDir]=process.argv.slice(2);
+ const [videoPath,subtitleArgument,expectedDuration,outputPath,ffmpegDir]=process.argv.slice(2);
+ const subtitlePath=subtitleArgument==='-'?undefined:subtitleArgument;
  analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec:expectedDuration===undefined?undefined:Number(expectedDuration),outputPath,ffmpegDir}).then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1});
 }

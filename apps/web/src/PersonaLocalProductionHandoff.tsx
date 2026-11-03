@@ -10,11 +10,11 @@ export function assessPersonaLocalHandoff(pipeline:PersonaProductionPipeline,has
  const brief=pipeline.materials.productionBrief??null;
  if(hasUnsavedDraft)return {allowed:false,reason:'Сначала сохраните незавершённую правку брифа.',brief};
  if(!brief||!pipeline.materials.qa)return {allowed:false,reason:'Сначала создайте и проверьте съёмочный бриф.',brief};
- if(brief.sourceFormat!=='reel')return {allowed:false,reason:'Семисценный локальный маршрут предназначен для Reels.',brief};
- if(brief.script.length!==7||brief.shots.length!==7||
+ if(brief.sourceFormat!=='reel')return {allowed:false,reason:'Локальный AI-монтаж предназначен для Reels.',brief};
+ if(brief.script.length<2||brief.script.length>30||brief.shots.length!==brief.script.length||
     brief.script.some((beat,index)=>beat.order!==index+1||!beat.line.trim()||!Number.isFinite(beat.durationSec)||beat.durationSec<=0)||
     brief.shots.some((shot,index)=>shot.order!==index+1))
-  return {allowed:false,reason:'Для первого Reels нужен проверенный бриф ровно из семи сцен.',brief};
+  return {allowed:false,reason:'Нужен согласованный сценарий с 2–30 сценами и раскадровкой.',brief};
  if(pipeline.input.idea.title!==brief.sourceTitle||pipeline.input.idea.angle!==brief.sourceAngle||
     pipeline.input.idea.format!==brief.sourceFormat||pipeline.input.idea.id!==brief.ideaId)
   return {allowed:false,reason:'Идея изменилась после создания брифа. Пересоберите и проверьте его.',brief};
@@ -44,15 +44,15 @@ export function PersonaLocalProductionHandoff({pipeline,projectId,hasUnsavedDraf
  }
  return <section className="personaLocalHandoff" aria-label="Передача в локальный монтаж">
   <h4>Передать Reels в локальный монтаж</h4>
-  <p>Без облачной загрузки оригиналов. Скачивается ровно сохранённый семисценный бриф, который понимает существующий Media Engine.</p>
+  <p>Без облачной загрузки оригиналов. Скачивается утверждённый автором Production Brief с настоящими репликами и кадрами. Его использует локальный Whisper + Ollama + FFmpeg.</p>
   <p role="status">{handoff.reason}</p>
   <button type="button" className="ghost" disabled={!handoff.allowed} onClick={downloadBrief}>Скачать JSON для локального монтажа</button>
   {message&&<p role="status">{message}</p>}
   <details>
-   <summary>Как собрать первый черновик на Windows</summary>
-   <p>Сохраните JSON на компьютере. Поместите отснятые дубли в отдельную папку с именами сцен A01, B01, A02, B02, A03, B03, A04. Из корня Life OS запустите:</p>
-   <pre>{'npm run media:first-reel:draft -- "<ПАПКА_ДУБЛЕЙ>" "<СКАЧАННЫЙ_БРИФ.json>" "<НОВАЯ_ПАПКА_РЕЗУЛЬТАТА>" "<WHISPER_CLI.exe>" "<МУЛЬТИЯЗЫЧНАЯ_МОДЕЛЬ.bin>"'}</pre>
-   <p>Потребуются локальные FFmpeg, FFprobe и Whisper. При успешном запуске смотрите draft-reel.mp4, qa.json и RESULT.json. Если речь не распознана, runner создаст пакет ручной проверки вместо выдуманного результата.</p>
+   <summary>Как получить реальный MP4 из дублей на Windows (ИИ + FFmpeg)</summary>
+   <p>Сохраните JSON и реальные дубли в папке. Для семисценного пилота используйте A01/B01/...; для новых сценариев — S01_take01.mp4, S02_take01.mp4 и далее. Из корня Life OS запустите:</p>
+   <pre>{'npm run media:ai:reel -- --takes "<ПАПКА_ДУБЛЕЙ>" --brief "<БРИФ.json>" --out "<НОВАЯ_ПАПКА_РЕЗУЛЬТАТА>" --whisper-cli "<WHISPER_CLI.exe>" --whisper-model "<MULTILINGUAL_GGML.bin>" --ollama-model "qwen3:4b-instruct" --variation cinematic'}</pre>
+   <p>Требуются установленные FFmpeg/FFprobe, Whisper.cpp с мультиязычной моделью и запущенная Ollama с указанной моделью. При успехе откройте ai-edited-reel.mp4, RESULT.json, ai-edited-qa.json, ai-color-options и draft-reel.mp4. ИИ выбирает только реальные подтверждённые фрагменты распознанной речи, затем FFmpeg делает MP4 и цветовые варианты. Если модель или ASR недоступны, получите ошибку или пакет восстановления вместо фиктивного видео. Цветовой вариант выбирается по сценарию, а не по несуществующему анализу лица.</p>
   </details>
   <p className="briefEditNotice">Это передача данных, а не запуск монтажа из браузера. Черновик, субтитры и технический QA не равны художественному утверждению или разрешению на публикацию.</p>
  </section>;

@@ -3,6 +3,8 @@ import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
 import {PersonaLocalRenderReview} from './PersonaLocalRenderReview';
+import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
+import {hasAuthoredPersonaColorReview,readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,type PersonaColorComparisonRecord} from './personaColorComparison';
 import {readPersonaLocalRenderRecord,isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {PersonaLocalProductionHandoff,assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
@@ -12,7 +14,10 @@ import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 // The explicit extension keeps Vite on Windows from resolving this view import
 // to the data module.
 import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
-import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
+import {PersonaShootNow} from './PersonaShootNow.tsx';
+import {personaDirectorToBrief,readPersonaDirectorProposal} from '../../../packages/core/src/persona-director-model';
+import {buildPersonaShootPlan} from './personaShootNow';
+import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import {applyProductionInputField,productionBriefSnapshot,readProductionInputRaw,parseProductionInputDraft,saveProductionInputDraft,clearProductionInputDraft,productionInputDraftExists} from './personaProductionInputJournal';
@@ -235,6 +240,7 @@ export default function PersonaFactory(){
  const[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
  const[scenarioWorkspace,setScenarioWorkspace]=useState<ScenarioWorkspace|undefined>(()=>initialProject?.scenarioWorkspace);
  const[localRenderReview,setLocalRenderReview]=useState<PersonaLocalRenderRecord|null>(()=>readPersonaLocalRenderRecord(initialProject?.processing));
+ const[colorComparison,setColorComparison]=useState<PersonaColorComparisonRecord|null>(()=>readPersonaColorComparisonRecord(initialProject?.colorComparison));
  const[h,setH]=useState<{title:string;status:string}[]>(()=>read(HISTORY,[]));const[ideas,setIdeas]=useState<Idea[]>(()=>localIdeas(h));const[chosen,setChosen]=useState<Idea|null>(()=>initialProject?projectIdea(initialProject):read('persona:active-idea:v1',null));const[draft,setDraft]=useState<Draft|null>(()=>initialProject?.script as Draft|null??read('persona:active-draft:v1',null));const[qa,setQa]=useState<QA|null>(()=>initialProject?.qa as QA|null??read('persona:active-qa:v1',null));const[stage,setStage]=useState<Stage>(()=>{
   if(initialProject){
    const savedPipeline=initialProject.shootingPlan as PersonaProductionPipeline|null;
@@ -242,7 +248,7 @@ export default function PersonaFactory(){
     ?'final_qa':projectStage(initialProject.stage);
   }
   return read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy';
- });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
+ });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[directorWorking,setDirectorWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
  useEffect(()=>{save('persona:active-idea:v1',chosen)},[chosen]);
  useEffect(()=>{save('persona:active-draft:v1',draft)},[draft]);
  useEffect(()=>{save('persona:active-qa:v1',qa)},[qa]);
@@ -257,7 +263,7 @@ export default function PersonaFactory(){
   }
   setScreen(screenFromHash());
  };window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[activeProjectId]);
- function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone,localRenderOverride?:PersonaLocalRenderRecord){
+ function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone,localRenderOverride?:PersonaLocalRenderRecord,colorComparisonOverride?:PersonaColorComparisonRecord){
   if(!activeProjectId||!ideaForSave)return;
   try{
    const rendered=projects.find(project=>project.id===activeProjectId);
@@ -268,7 +274,7 @@ export default function PersonaFactory(){
     ?lastOwnSavedRevision.current.revision:rendered.revision;
    const previous=resolvePersonaProjectSaveBase(localStorage,{...rendered,revision:expectedRevision});
    const now=new Date().toISOString();
-   const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:localRenderOverride??previous.processing,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+   const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
    const next=importedProduction&&nextScenarioWorkspace
     ?applyPersonaImportedProductionBrief(candidate,importedProduction,nextScenarioWorkspace)
     :milestone?applyPersonaProductionMilestone(candidate,milestone.pipeline,
@@ -320,6 +326,29 @@ export default function PersonaFactory(){
    setLocalRenderReview(record);
    return true;
   }catch(error){setStatus('Не удалось сохранить импорт: '+String((error as Error).message||error));return false}
+ }
+ function persistColorComparison(next:PersonaColorComparisonRecord):boolean{
+  if(!activeProjectId||!chosen||!readPersonaColorComparisonRecord(next))return false;
+  try{
+   const live=loadPersonaProjects(localStorage,newProjectId);
+   const saved=live.projects.find(project=>project.id===activeProjectId);
+   if(live.activeProjectId!==activeProjectId||!saved||saved.contentType!=='reel')
+    throw Error('Был открыт другой проект или выбран неподходящий формат.');
+   const previous=readPersonaColorComparisonRecord(saved.colorComparison);
+   if(saved.colorComparison!==undefined&&!previous)
+    throw Error('Сохранённая запись Comparison Studio повреждена. Исходные данные сохранены в проекте; заменять их новым импортом нельзя до восстановления или резервного копирования.');
+   // Every authored artistic decision, rejection, historical choice or timestamped
+   // observation must match this project's exact previously verified MP4 hashes.
+   // A new unrelated source can only be imported without inherited author review.
+   if(hasAuthoredPersonaColorReview(next)&&(!previous||!samePersonaColorComparisonEvidence(previous,next)))
+    throw Error('Нельзя сохранить художественную оценку, отказ или заметки от другого MP4. Импортируйте файлы заново.');
+   if(!saveActiveProject(undefined,chosen,undefined,undefined,undefined,next))return false;
+   setColorComparison(next);
+   return true;
+  }catch(error){
+   setStatus('Comparison Studio: '+String((error as Error).message||error));
+   return false;
+  }
  }
  function persistScenarioWorkspace(next:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline){
   const reconciled=importedProduction??reconcilePersonaProductionWithScenario(production,next);
@@ -381,7 +410,7 @@ export default function PersonaFactory(){
   try{
   const now=new Date().toISOString();const project=createPersonaProject({id:newProjectId(),title:idea.title,contentType:idea.format,sourceIdea:idea.angle,now});const collection=savePersonaProject(localStorage,project,project.id);
   lastOwnSavedRevision.current={id:project.id,revision:project.revision};
-  setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(null);setChosen({...idea,id:project.id});setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep(idea.format==='photo'||idea.format==='carousel'?'assets':'guide');setStage(idea.format==='photo'?'needs_assets':'strategy');setStatus('Новый проект создан и сохранён локально.');setShowBank(false);resetLocalAsset();setMediaProbe(null);
+  setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(null);setChosen({...idea,id:project.id});setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setColorComparison(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep(idea.format==='photo'||idea.format==='carousel'?'assets':'guide');setStage(idea.format==='photo'?'needs_assets':'strategy');setStatus('Новый проект создан и сохранён локально.');setShowBank(false);resetLocalAsset();setMediaProbe(null);
   return true;
   }catch{setSaveState('error');setStatus('Создание проекта не удалось: браузер не подтвердил сохранение. Текущий проект сохранён.');return false}
  }
@@ -392,7 +421,7 @@ export default function PersonaFactory(){
   const collection=selectPersonaProject(localStorage,project.id);
   const saved=selectedPersonaProjectSnapshot(collection,project.id);
   lastOwnSavedRevision.current={id:saved.id,revision:saved.revision};
-  setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(reconcilePersonaProductionWithScenario(saved.shootingPlan as PersonaProductionPipeline|null,saved.scenarioWorkspace));setScenarioWorkspace(saved.scenarioWorkspace);setLocalRenderReview(readPersonaLocalRenderRecord(saved.processing));setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(
+  setProjects(collection.projects);setActiveProjectId(saved.id);setTimeline(saved.timeline as PersonaTimelineSettings|null);setChosen(projectIdea(saved));setDraft(saved.script as Draft|null);setQa(saved.qa as QA|null);setProduction(reconcilePersonaProductionWithScenario(saved.shootingPlan as PersonaProductionPipeline|null,saved.scenarioWorkspace));setScenarioWorkspace(saved.scenarioWorkspace);setLocalRenderReview(readPersonaLocalRenderRecord(saved.processing));setColorComparison(readPersonaColorComparisonRecord(saved.colorComparison));setWorkspaceStep(workspaceStepFrom(saved.lastOpenStep,saved.contentType));setStage(
     reconcilePersonaProductionWithScenario(saved.shootingPlan as PersonaProductionPipeline|null,saved.scenarioWorkspace)!==(saved.shootingPlan as PersonaProductionPipeline|null)
      ?'final_qa':projectStage(saved.stage));setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);resetLocalAsset();setMediaProbe(saved.mediaAssets[0] as MediaProbe|null);setStatus('Проект восстановлен из актуального локального снимка. Исходные File не сохраняются в браузере без отдельной загрузки в облако.');setShowBank(false);
   return true;
@@ -402,13 +431,29 @@ export default function PersonaFactory(){
   if(!canLeaveGuide())return false;
   if(activeProjectId&&chosen&&!saveActiveProject())return false;
   try{
-  const collection=selectPersonaProject(localStorage,null);lastOwnSavedRevision.current=null;setProjects(collection.projects);setActiveProjectId(null);setTimeline(null);setChosen(null);setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('strategy');resetLocalAsset();setMediaProbe(null);setStatus('Выберите формат или идею для нового проекта. Существующие проекты сохранены.');
+  const collection=selectPersonaProject(localStorage,null);lastOwnSavedRevision.current=null;setProjects(collection.projects);setActiveProjectId(null);setTimeline(null);setChosen(null);setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setColorComparison(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setStage('strategy');resetLocalAsset();setMediaProbe(null);setStatus('Выберите формат или идею для нового проекта. Существующие проекты сохранены.');
   return true;
   }catch{setSaveState('error');setStatus('Новый проект не открыт: браузер не подтвердил сохранение.');return false}
  }
  function navigate(next:PersonaScreen){if(next!==screen&&!canLeaveGuide())return;const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
  function createQuickProject(format:PersonaContentType){const labels:Record<PersonaContentType,string>={reel:'Новый Reels',short:'Новый Shorts',story:'Новая история',photo:'Новое фото',carousel:'Новая карусель'};if(select({id:newProjectId(),title:labels[format],angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'}))window.setTimeout(()=>navigate('project'),0)}
  function continueProject(project:PersonaProject){if(openProject(project))window.setTimeout(()=>navigate('project'),0)}
+ function startPilotShoot(){
+  const saved=projects.find(project=>project.contentType==='reel'&&
+   isActorComposerPilot({title:project.title,angle:project.sourceIdea}));
+  if(saved){
+   if(openProject(saved)){
+    setWorkspaceStep('guide');
+    window.setTimeout(()=>{window.location.hash='#persona/project/'+saved.id},0);
+   }
+   return;
+  }
+  const id=newProjectId();
+  if(select({id,title:actorComposerPilot.title,angle:actorComposerPilot.angle,
+    format:'reel',score:0,source:'editorial-pilot'}))
+   window.setTimeout(()=>{window.location.hash='#persona/project/'+id},0);
+ }
+
  function persistGuide(guide:ProductionGuide){
   if(!activeProjectId||!chosen)throw new Error('Сначала откройте проект');
   const previous=scenarioWorkspace??{version:1 as const,research:[],analyses:[],ideas:[]};
@@ -450,6 +495,89 @@ export default function PersonaFactory(){
   setProductionEditor('');setProductionComment('');
   setWorkspaceStep('script');setStage('final_qa');
   setStatus('Семь сцен сохранены как НЕУТВЕРЖДЁННЫЙ сценарий. Проверьте реплики, свет, кадры и факты перед редакторским решением.');
+ }
+ async function generateShootWithAi(variation:'unexpected'|'humor'|'cinematic'|'intimate'){
+  if(!chosen||!activeProjectId||directorWorking)return;
+  if(!['reel','short','story'].includes(chosen.format)){
+   setStatus('Нейросетевой режиссёр поддерживает пока только короткие видео.');return;
+  }
+  if(production||scenarioWorkspace?.script||draft){
+   setStatus('В этом проекте уже есть сценарий. Для новой независимой идеи создайте отдельный проект; прежние версии не перезаписываем.');return;
+  }
+  const projectId=activeProjectId,idea=chosen;
+  try{
+   const before=loadPersonaProjects(localStorage,newProjectId);
+   const initial=before.projects.find(item=>item.id===projectId);
+   if(!initial)throw Error('Исходный проект не найден.');
+   assertPersonaAsyncImportTarget(before,projectId,initial.revision);
+   if(personaScenarioDraftExists(localStorage,projectId)||productionInputDraftExists(localStorage,projectId))
+    throw Error('Сначала сохраните незавершённый черновик проекта.');
+   setDirectorWorking(true);
+   setStatus('Запрашиваю реальную нейросеть. Без успешного ответа модельного провайдера сценарий не появится.');
+   const previousHooks=read<string[]>('persona:director-hooks:v1',[]);
+   const response=await fetch('/api/persona-director',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format},
+     variation,history:[...h.map(item=>item.title),...previousHooks].slice(-12),
+     creativePreferences:{
+      priorities:(scenarioWorkspace?.creativeProfile?.priorities??[]).slice(0,5).map(v=>v.slice(0,180)),
+      constraints:(scenarioWorkspace?.creativeProfile?.constraints??[]).slice(0,5).map(v=>v.slice(0,180)),
+     },
+     avoidFailures:(scenarioWorkspace?.editorialFeedback??[]).slice(-4).map(v=>v.comment.slice(0,180)),
+     seed:newProjectId()}),
+   });
+   const raw:unknown=await response.json().catch(()=>null);
+   if(!response.ok)throw Error(typeof raw==='object'&&raw!==null&&'error' in raw?
+    String((raw as {error:unknown}).error):'director_unavailable');
+   const proposal=readPersonaDirectorProposal(raw,idea.id);
+   if(!proposal)throw Error('Нейросеть вернула недостоверную или неполную раскадровку.');
+   assertPersonaAsyncImportTarget(loadPersonaProjects(localStorage,newProjectId),projectId,initial.revision);
+   if(personaScenarioDraftExists(localStorage,projectId)||productionInputDraftExists(localStorage,projectId))
+    throw Error('За время генерации появился несохранённый черновик. Импорт отменён.');
+   const newIdea={...idea,title:proposal.title};
+   const brief=personaDirectorToBrief(
+    {id:newIdea.id,title:newIdea.title,angle:newIdea.angle,format:newIdea.format},proposal);
+   const pipeline=importPersonaProductionBrief({
+    brief,selectedIdea:{id:newIdea.id,title:newIdea.title,angle:newIdea.angle,format:newIdea.format},
+   });
+   const base=scenarioWorkspace??{version:1 as const,research:[],analyses:[],ideas:[]};
+   const now=new Date().toISOString();
+   const guide=base.preProductionGuide??
+    createPersonaProductionGuide(now,isActorComposerPilot(idea)?'actor_composer':'general');
+   let aiGuide:ProductionGuide={
+    ...guide,fields:base.preProductionGuide?guide.fields:{
+     ...guide.fields,location:proposal.setup.location,camera:proposal.setup.camera,
+     keyLight:proposal.setup.lighting,sound:proposal.setup.sound,
+     wardrobeProps:proposal.setup.wardrobe,setArrangement:proposal.setup.arrangement,
+     editing:proposal.editingIntent,color:proposal.colorIntent,
+    },
+   };
+   for(const [i,scene] of proposal.scenes.entries()){
+    aiGuide=updateGuideShotNote(aiGuide,{
+     id:String(i+1),seconds:scene.durationSec,line:scene.line.trim(),action:scene.action.trim(),
+    },{camera:scene.camera,lighting:scene.lighting,
+     performance:scene.performance,edit:scene.edit},now);
+   }
+   const next=addImportedBriefScenario({...base,preProductionGuide:aiGuide},brief,now);
+   if(!next.script?.currentRevisionId)throw Error('Нельзя сохранить происхождение ИИ-сценария без версии.');
+   const generatedWorkspace:ScenarioWorkspace={...next,directorGeneration:{
+    version:1,provider:proposal.provider,model:proposal.model,variation,
+    revisionId:next.script.currentRevisionId,createdAt:proposal.createdAt,
+   }};
+   persistScenarioWorkspace(generatedWorkspace,newIdea,pipeline);
+   setChosen(newIdea);setProduction(pipeline);setDraft(null);setQa(null);
+   setProductionFactsChecked(false);setWorkspaceStep('guide');setStage('final_qa');
+   save('persona:director-hooks:v1',[...previousHooks,proposal.hook,proposal.scenes[0].line].slice(-12));
+   setStatus('Реальная модель '+proposal.model+' создала '+proposal.scenes.length+
+    ' новых кадров. Реплики и режиссёрские указания сохранены как НЕУТВЕРЖДЁННЫЙ сценарий. Монтаж и съёмка не выполнены.');
+  }catch(error){
+   const code=String((error as Error)?.message||'director_unavailable');
+   setStatus(code==='director_model_not_configured'
+    ?'Реальная нейросеть не подключена. Для Windows настройте локальный Ollama в Persona Director; шаблон вместо неё не выдаётся.'
+    :code==='director_ollama_unavailable'
+    ?'Ollama не ответила. Проверьте, запущена ли локальная модель; сценарий не создан.'
+    :'Нейросетевой сценарий не создан: '+code);
+  }finally{setDirectorWorking(false)}
  }
  function createProductionBrief(idea=chosen,angle?:string){
   if(!idea)return;
@@ -547,7 +675,13 @@ export default function PersonaFactory(){
  function rejectIdea(){if(chosen)remember(chosen,'rejected');setChosen(null);setDraft(null);setQa(null);setProduction(null);setStage('strategy')}
  const projectSteps=workspaceStepsFor(chosen?.format);const workspaceIndex=Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
  function moveWorkspace(direction:-1|1){const next=projectSteps[workspaceIndex+direction];if(next&&canLeaveGuide())setWorkspaceStep(next[0])}
- if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><div className="personaHomeActions"><button className="primary" onClick={()=>createQuickProject('reel')}>Создать Reels</button><button onClick={()=>{if(select({id:newProjectId(),title:actorComposerPilot.title,angle:actorComposerPilot.angle,format:'reel',score:0,source:'editorial-pilot'}))window.setTimeout(()=>navigate('project'),0)}}>Начать по сценарию: актёр + музыка</button><button onClick={()=>createQuickProject('photo')}>Обработать фото</button><button onClick={()=>createQuickProject('carousel')}>Создать карусель</button></div><section className="personaHomeContinue"><h3>Продолжить последний проект</h3>{projects.find(project=>project.id===activeProjectId)?<button className="projectCard" onClick={()=>continueProject(projects.find(project=>project.id===activeProjectId)!)}><b>{projects.find(project=>project.id===activeProjectId)!.title}</b><span>{contentTypeLabel(projects.find(project=>project.id===activeProjectId)!.contentType)} · {stageLabel(projectStage(projects.find(project=>project.id===activeProjectId)!.stage))}</span></button>:<button disabled>Продолжить последний проект</button>}<button className="ghost" onClick={()=>navigate('projects')}>Мои проекты</button></section><DataPortability/></section>;
+ if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><section className="personaTodayShoot" aria-label="Что снять сегодня">
+  <small>СЕГОДНЯ · 31 СЕКУНДА · 7 КАДРОВ</small>
+  <h3>Сними короткую сцену: актёр + композитор</h3>
+  <p><b>Первая реплика:</b> «Я актёр. И ещё пишу музыку.» Две роли, телефон на штативе, одна комната. Дальше — точные реплики, кадры, свет, игра и монтаж.</p>
+  <button type="button" className="primary" onClick={startPilotShoot}>Показать 7 кадров и начать съёмку</button>
+  <small>Рабочий пример, не утверждённая публикация. Старые проекты и сценарии сохраняются.</small>
+ </section><div className="personaHomeActions"><button className="primary" onClick={()=>createQuickProject('reel')}>Создать Reels</button><button className="primary" onClick={startPilotShoot}>Открыть съёмку: актёр + композитор · 7 кадров</button><button onClick={()=>createQuickProject('photo')}>Обработать фото</button><button onClick={()=>createQuickProject('carousel')}>Создать карусель</button></div><section className="personaHomeContinue"><h3>Продолжить последний проект</h3>{projects.find(project=>project.id===activeProjectId)?<button className="projectCard" onClick={()=>continueProject(projects.find(project=>project.id===activeProjectId)!)}><b>{projects.find(project=>project.id===activeProjectId)!.title}</b><span>{contentTypeLabel(projects.find(project=>project.id===activeProjectId)!.contentType)} · {stageLabel(projectStage(projects.find(project=>project.id===activeProjectId)!.stage))}</span></button>:<button disabled>Продолжить последний проект</button>}<button className="ghost" onClick={()=>navigate('projects')}>Мои проекты</button></section><DataPortability/></section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList"><header className="pfHead"><div><button className="backButton" onClick={()=>navigate('home')}>← Persona</button><h2>Мои проекты</h2><p>{projects.length?'Выберите материал, чтобы продолжить.':'Здесь появятся ваши материалы.'}</p></div><button className="primary" onClick={()=>navigate('home')}>Новый проект</button></header><div className="projectRows">{projects.map(project=><article key={project.id}><div><b>{project.title}</b><span>{contentTypeLabel(project.contentType)} · {stageLabel(projectStage(project.stage))} · сохранён {new Date(project.updatedAt).toLocaleDateString('ru-RU')}</span></div><button onClick={()=>continueProject(project)}>Открыть</button></article>)}</div></section>;
  return <section className="personaFactoryV2">
   <header className="pfHead personaProjectHead"><div><button className="backButton" onClick={()=>navigate('projects')}>← Мои проекты</button><h2>{chosen?.title||'Новый проект'}</h2><p>{contentTypeLabel(chosen?.format as PersonaContentType|undefined)} · {stageLabel(stage)} · {saveState==='saved'?'Сохранено на этом устройстве':saveState==='saving'?'Сохранение…':'Сохранение не удалось'}</p></div><button className="ghost" onClick={()=>navigate('home')}>Persona</button></header>
@@ -571,6 +705,19 @@ export default function PersonaFactory(){
    {visibleIdeas[0]&&<div className="todayIdea"><small>ЛОКАЛЬНЫЙ ПРИОРИТЕТ · {visibleIdeas[0].score}/100</small><h3>{visibleIdeas[0].title}</h3><p>{visibleIdeas[0].angle}</p><div className="ideaReason">Почему сейчас: {visibleIdeas[0].reason||'баланс интереса, процесса и личного голоса.'}</div><div className="actions"><button className="primary" disabled={working} onClick={()=>void generate(visibleIdeas[0])}>{working?'Собираю…':'Собрать материал'}</button><button className="ghost" onClick={()=>setShowBank(v=>!v)}>{showBank?'Скрыть банк':`Посмотреть банк · ${visibleIdeas.length}`}</button></div></div>}
    {showBank&&<div className="ideaBank"><div className="bankTop"><b>Банк идей</b><span>Использованные и отклонённые темы сюда не возвращаются.</span></div>{visibleIdeas.map((idea,i)=><article className="ideaRow" key={idea.id}><button className="ideaSelect" onClick={()=>select(idea)}><small>{String(i+1).padStart(2,'0')} · {idea.format.toUpperCase()} · {idea.score}/100</small><strong>{idea.title}</strong><span>{idea.angle}</span></button><button className="later" onClick={()=>remember(idea,'later')}>На потом</button><button className="reject" onClick={()=>remember(idea,'rejected')}>Неинтересно</button></article>)}</div>}
   </>}
+  {chosen&&activeProjectId&&workspaceStep==='guide'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&
+   <PersonaShootNow key={'shoot-now:'+activeProjectId} projectId={activeProjectId}
+    plan={buildPersonaShootPlan({title:chosen.title,workspace:scenarioWorkspace,pipeline:production,
+     allowPilot:chosen.format==='reel'&&isActorComposerPilot(chosen)})}
+    onOpenScript={()=>setWorkspaceStep('script')}
+    onOpenEdit={()=>setWorkspaceStep('edit')}
+    onSavePilot={chosen.format==='reel'&&isActorComposerPilot(chosen)&&!production&&!scenarioWorkspace?.script&&!draft
+     ?()=>applyGuideExample(scenarioWorkspace?.preProductionGuide??createPersonaProductionGuide(new Date().toISOString(),'actor_composer')):undefined}
+    onGenerateAi={!production&&!scenarioWorkspace?.script&&!draft?variation=>{void generateShootWithAi(variation)}:undefined}
+    aiBusy={directorWorking}
+    generation={scenarioWorkspace?.directorGeneration}
+    generationCurrent={Boolean(scenarioWorkspace?.directorGeneration&&
+     scenarioWorkspace.directorGeneration.revisionId===scenarioWorkspace.script?.currentRevisionId)}/>}
   {chosen&&activeProjectId&&workspaceStep==='guide'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaProductionGuide key={`production-guide:${activeProjectId}`}
    projectTitle={chosen.title} projectAngle={chosen.angle} allowExample={chosen.format==='reel'&&!draft&&isActorComposerPilot(chosen)} workspace={scenarioWorkspace}
    pipeline={production} onSave={persistGuide} onApplyToBrief={transferGuideToBrief} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
@@ -581,6 +728,8 @@ export default function PersonaFactory(){
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}
   {chosen&&workspaceStep==='edit'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaVideoTimeline key={`video-timeline:${activeProjectId??chosen.id}`} projectId={activeProjectId??chosen.id} initialTimeline={timeline} onTimelineChange={setTimeline}/>}
   {production&&(workspaceStep==='script'||workspaceStep==='review')&&<PersonaProductionBriefPanel key={`production-brief:${activeProjectId??'legacy'}`} projectId={activeProjectId??'legacy'} pipeline={production} editor={productionEditor} comment={productionComment} factsChecked={productionFactsChecked} onEditorChange={setProductionEditor} onCommentChange={setProductionComment} onFactsCheckedChange={setProductionFactsChecked} onDecision={decideProduction} onRebuild={()=>createProductionBrief(chosen,production.input.idea.angle)} onAngleChange={updateProductionAngle} onBriefChange={reviseProductionBrief}/>}
+  {chosen?.format==='reel'&&activeProjectId&&(workspaceStep==='edit'||workspaceStep==='review')&&projects.some(project=>project.id===activeProjectId&&project.colorComparison!==undefined&&!readPersonaColorComparisonRecord(project.colorComparison))&&<p role="alert" className="personaComparisonWarning">Запись цветовой обработки повреждена. Остальные проекты доступны, исходные данные сохранены. Перед новым импортом восстановите или сохраните резервную копию.</p>}
+   {chosen?.format==='reel'&&activeProjectId&&(workspaceStep==='edit'||workspaceStep==='review')&&<PersonaColorComparisonStudio key={'color-comparison:'+activeProjectId} projectId={activeProjectId} record={colorComparison} onSave={persistColorComparison}/>}
   {chosen?.format==='reel'&&activeProjectId&&(workspaceStep==='review'||workspaceStep==='export')&&<PersonaLocalRenderReview key={`local-render-review:${activeProjectId}`} projectId={activeProjectId} pipeline={reconcilePersonaProductionWithScenario(production,scenarioWorkspace)} record={localRenderReview} onSave={persistLocalRenderReview}/>}
   {chosen&&draft&&workspaceStep==='review'&&<div className={`draft ${styleClass(draft.style)}`}><div className="draftTop"><div><small>{engineMode==='ai'?'Сценарий реального ИИ':'Шаблонный черновик'} · Формальная проверка {qa?.score||0}/100</small><h3>{draft.title}</h3></div><span className={qa?.pass?'qaPass':'qaFail'}>{qa?.pass?'Форма проверена':'Есть замечания'}</span></div>{asset&&(assetIsVideo?<video className="assetPreview" src={asset} controls preload="metadata"/>:<img className="assetPreview" src={asset} alt="Исходник"/>)}<div className="slides">{draft.slides.map((s,i)=><article key={i} className="slide"><small>{s.eyebrow}</small><strong>{s.title}</strong><p>{s.body}</p><span>{i+1}/{draft.slides.length}</span></article>)}</div><div className="caption"><small>ТЕКСТ</small><p>{draft.caption}</p></div>{draft.assetInstruction&&<div className="caption"><small>ПЛАН СЪЁМКИ И МОНТАЖА (ИНСТРУКЦИЯ, НЕ ВЫПОЛНЕННЫЙ МОНТАЖ)</small><p>{draft.assetInstruction}</p></div>}<div className="feedback"><textarea value={feedback} onChange={e=>setFeedback(e.target.value)} placeholder="Говори или пиши обычным языком. Можно дать длинную команду из нескольких требований."/><button className={recording?'mic listening':'mic'} disabled={transcribing} onClick={recording?stopRecording:startRecording}>{transcribing?'…':recording?'■':'🎙️'}</button></div><div className="voiceHint">{recording?'Запись идёт до твоего нажатия. Паузы не останавливают её.':transcribing?'Распознаю весь файл целиком…':'🎙️ → говори сколько нужно → ■. Только после ■ начинается распознавание.'}</div>{status&&<div className="status">{status}</div>}<div className="actions"><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="ghost" disabled={!feedback.trim()||working||recording||transcribing} onClick={()=>void revise()}>{working?'Редактирую + проверяю…':'Исправить и проверить'}</button><button className="dangerGhost" onClick={rejectIdea}>Не публиковать</button><button className="primary" disabled={!qa?.pass||working} onClick={approve}>Утверждаю</button></div></div>}
   {chosen&&workspaceStep==='export'&&<section className="personaEmptyStage"><h3>Экспорт</h3><p>Проект и монтажный план сохранены на этом устройстве. Экспорт MP4 из браузера iPhone пока не реализован; активной кнопки экспорта нет.</p></section>}

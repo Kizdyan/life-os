@@ -40,7 +40,8 @@ describe('Persona local production handoff',()=>{
  it('renders on the server without window and does not pretend to launch local FFmpeg',()=>{
   const html=renderToString(React.createElement(PersonaLocalProductionHandoff,{projectId:'test-project',pipeline:approved(),hasUnsavedDraft:false}));
   expect(html).toContain('Скачать JSON для локального монтажа');
-  expect(html).toContain('npm run media:first-reel:draft');
+  expect(html).toContain('npm run media:ai:reel');
+  expect(html).toContain('ai-edited-reel.mp4');
   expect(html).toContain('не запуск монтажа');
   const blocked=renderToString(React.createElement(PersonaLocalProductionHandoff,{projectId:'test-project',pipeline:pending(),hasUnsavedDraft:false}));
   expect(blocked).toContain('disabled');

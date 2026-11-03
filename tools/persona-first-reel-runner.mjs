@@ -2,7 +2,8 @@
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { access,copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import {constants as fsConstants} from 'node:fs';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
 import {initReview} from './persona-creative-review.mjs';
@@ -10,8 +11,11 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
+import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
+import {createColorVariants} from './persona-color-variants.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
 import { makeManifest } from './persona-delivery-source-folder.mjs';
+import {createGenericTakeManifest,isGenericTakeFolder} from './persona-generic-takes.mjs';
 
 const fail = m => {throw Error(m)};
 const exists = async p => stat(p).then(()=>true,()=>false);
@@ -126,7 +130,7 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
  ].join('\n'),{flag:'wx'});
  return recoveryResult;
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe}={}){
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts}={}){
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
  if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
@@ -170,11 +174,21 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   let sourcesManifest=input;
   let sourceSelection={kind:'manifest',path:input};
   if(selectedFolder){
-   const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
-   sourcesManifest=intake.manifest;
-   sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
-    report:intake.report,layout:intake.layout};
-   events.push('selected_folder_manifest_created');
+   if(await isGenericTakeFolder(selectedFolder)){
+    const intake=await createGenericTakeManifest({
+     folderPath:selectedFolder,manifestPath:join(root,'sources.generic.json'),
+    });
+    sourcesManifest=intake.manifest;
+    sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+     layout:intake.layout,count:intake.count,notice:intake.note};
+    events.push('variable_scene_sources_manifest_created');
+   }else{
+    const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
+    sourcesManifest=intake.manifest;
+    sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+     report:intake.report,layout:intake.layout};
+    events.push('selected_folder_manifest_created');
+   }
   }else if(new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase())){
    sourcesManifest=join(root,'sources.generated.json');
    await writeFile(sourcesManifest,JSON.stringify({version:1,sources:[{id:'single',path:input}]},null,2)+'\n',{flag:'wx'});
@@ -196,9 +210,25 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
    throw Error('No confidently matched dialogue remains; manual Recovery Review required');
   }
   events.push('dialogue_cuts_proposed');
-  const assembled=await assemble(decisions.decisions,join(root,'timeline.json'));
+  let chosenDecisionPath=decisions.decisions;
+  let aiEditorial=null;
+  if(aiEditorModel!==null){
+   if(typeof aiEditorModel!=='string'||!aiEditorModel.trim())fail('Invalid Ollama editor model');
+   const currentDecision=JSON.parse(await readFile(decisions.decisions,'utf8'));
+   const selected=await aiEditorialSelector({
+    decisions:currentDecision,brief:requestedBrief,model:aiEditorModel,variation:aiVariation,
+   });
+   if(!selected?.aiEditorial||selected.aiEditorial.provider!=='ollama'||
+    !Array.isArray(selected.choices)||selected.choices.length!==requestedBrief.script.length)
+    fail('AI selector did not return a verified complete choice sequence');
+   chosenDecisionPath=join(root,'decisions.ai.json');
+   await writeFile(chosenDecisionPath,JSON.stringify(selected,null,2)+'\n',{flag:'wx'});
+   aiEditorial=selected.aiEditorial;
+   events.push('real_local_ollama_selected_cut_candidates');
+  }
+  const assembled=await assemble(chosenDecisionPath,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
-  const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,decisionsPath:decisions.decisions,outputDir:root});
+  const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,decisionsPath:chosenDecisionPath,outputDir:root});
   events.push('reviewable_subtitle_sidecars_written');
   const output=join(root,'draft-reel.mp4');
   await call(process.execPath,[rendererPath,assembled.project,output]);
@@ -210,10 +240,32 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('technical_qa_passed');
   const timing=assessFirstReelTiming(requestedBrief,qa);
   if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
-  const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:decisions.decisions,
+  let aiFinishedVideo=null,aiColorPackage=null,aiFinishedQaPath=null;
+  if(aiEditorial){
+   // Actual FFmpeg output in a NEW package. The model chose a direction from
+   // the script, but did NOT visually inspect any frame or prove skin neutrality.
+   const colorPackage=await createColorVariants({
+    inputPath:output,outputDir:join(root,'ai-color-options'),ffmpegDir,
+   });
+   const selected=colorPackage.variants.find(item=>item.id===aiEditorial.look);
+   if(!selected)fail('Ollama requested an unavailable safe color grade');
+   const finished=join(root,'ai-edited-reel.mp4');
+   await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
+   const finishedQa=join(root,'ai-edited-qa.json');
+   await call(process.execPath,[verifierPath,finished,'persona-ai-reel','reel',finishedQa]);
+   const checked=JSON.parse(await readFile(finishedQa,'utf8'));
+   validateDraftQa(checked,finished);
+   aiFinishedVideo=finished;
+   aiColorPackage=join(root,'ai-color-options','COMPARISON.json');
+   aiFinishedQaPath=finishedQa;
+   events.push('real_ffmpeg_color_applied_to_edited_mp4');
+   events.push('ai_selected_color_mp4_technical_qa_passed');
+  }
+  const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
+    aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
     subtitleDraft,timing,
-    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
+    warning:'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;
@@ -232,8 +284,8 @@ export function firstReelCliExitCode(result){
   typeof result?.output==='string'&&result.output.endsWith('draft-reel.mp4')?0:2;
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
- const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode]=process.argv.slice(2);
- runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict'})
+ const [sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode,aiEditorModel,aiVariation]=process.argv.slice(2);
+ runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode:mode??'strict',aiEditorModel:aiEditorModel??null,aiVariation:aiVariation??'cinematic'})
   .then(result=>{
    console.log(JSON.stringify(result,null,2));
    const code=firstReelCliExitCode(result);
