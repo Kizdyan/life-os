@@ -355,6 +355,8 @@ test('7-beat simulated Whisper: strict and preview preserve six confident beats,
    assert.equal(status.publicationApproved,false);
    const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
    assert.equal(decisions.mode,'preview');
+   assert.equal(decisions.recoveryRequired,true);
+   assert.equal(decisions.publicationApproved,false);
    assert.equal(decisions.choices.length,6);
    assert.deepEqual(decisions.missingBeats,[7]);
    const pack=JSON.parse(await readFile(
