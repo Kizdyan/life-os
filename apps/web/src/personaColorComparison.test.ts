@@ -4,7 +4,7 @@ import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
 import {describe,expect,it} from 'vitest';
 import {
  COLOR_VARIANT_PRESETS,choosePersonaColorVariant,inspectPersonaColorComparisonManifest,
- readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,
+ readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,
 } from './personaColorComparison';
 import {createPersonaProject,loadPersonaProjects,savePersonaProject,selectPersonaProject,type PersonaProjectStorage} from './personaProjectStore';
@@ -182,5 +182,31 @@ describe('Malformed optional comparison evidence must not erase other projects',
   expect(restored.projects[0].colorComparison).toEqual(malformed);
   expect(restored.projects[1].title).toBe('Other updated');
   expect(data.get('lifeos:persona:projects:v1:corrupt')).toBeUndefined();
+ });
+});
+
+
+describe('Persona QC report admission',()=>{
+ it('accepts only an unapproved QC report tied to all four imported MP4 hashes',()=>{
+  const {manifest,files}=fixture();
+  const record=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const qc={
+   version:1,kind:'persona-comparison-quality-v1',sourceSha256:record.sourceSha256,
+   publicationApproved:false,artisticStatus:'awaiting-author-review',technicalStatus:'pass',
+   original:{sha256:record.sourceSha256},
+   variants:COLOR_VARIANT_PRESETS.map((preset,index)=>({
+    id:preset.id,fileName:preset.fileName,sha256:record.variants[index].sha256,
+    technicalStatus:'pass',technicalMismatches:[],
+    additionalSampledJumps:[{atSec:4.25,delta:53,kind:'luma_jumps'}],
+   })),
+  };
+  const loaded=readPersonaComparisonQcSummary(qc,record);
+  expect(loaded?.technicalStatus).toBe('pass');
+  expect(loaded?.variants[0].jumpTimesSec).toEqual([4.25]);
+  expect(readPersonaComparisonQcSummary({...qc,publicationApproved:true},record)).toBeNull();
+  expect(readPersonaComparisonQcSummary({...qc,sourceSha256:hash('f')},record)).toBeNull();
+  expect(readPersonaComparisonQcSummary({...qc,variants:[{...qc.variants[0],sha256:hash('f')},...qc.variants.slice(1)]},record)).toBeNull();
+  expect(readPersonaComparisonQcSummary({...qc,variants:[qc.variants[1],qc.variants[0],qc.variants[2]]},record)).toBeNull();
+  expect(readPersonaComparisonQcSummary({...qc,variants:[{...qc.variants[0],additionalSampledJumps:[{atSec:Infinity,kind:'luma_jumps'}]},...qc.variants.slice(1)]},record)).toBeNull();
  });
 });
