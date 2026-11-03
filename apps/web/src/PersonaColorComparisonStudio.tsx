@@ -137,6 +137,12 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
     'Автор выбрал '+COLOR_VARIANT_PRESETS.find(p=>p.id===current.selectedVariantId)?.label:
     'Ожидает решения автора'} · публикация не разрешена.</p>
    {current.selectedVariantId&&<p>Комментарий: {current.comment||'не указан'} · {current.decidedAt}</p>}
+   {Boolean(current.decisionHistory?.length)&&<details>
+    <summary>История художественных решений ({current.decisionHistory?.length})</summary>
+    <ol>{current.decisionHistory?.slice(-5).reverse().map((entry,index)=><li key={entry.decidedAt+'-'+index}>
+     {entry.decidedAt} · {COLOR_VARIANT_PRESETS.find(p=>p.id===entry.selectedVariantId)?.label} · {entry.comment||'без комментария'}
+    </li>)}</ol>
+   </details>}
    {!urls&&<p>После перезагрузки решение сохраняется, но браузер не хранит MP4. Чтобы снова сравнить видео, повторно выберите пять исходных файлов.</p>}
    {urls&&<label className="personaComparisonPicker">Импорт отчёта Video Quality Lab (необязательно)
     <input type="file" accept=".json,application/json" aria-label="Выбрать технический QC-отчёт"
