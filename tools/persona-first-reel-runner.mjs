@@ -129,7 +129,18 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
  await mkdir(kit,{recursive:false});
  const packPath=join(kit,'candidate-pack.json'),selectionPath=join(kit,'selection.json');
  const prepared=await prepare({analysisPath:analysis,briefPath:brief,decisionsPath,packPath,selectionPath});
- const previews=await generatePreviews({packPath,evidencePath:analysis,outputDir:join(kit,'previews')});
+ // Actual ASR word differences are rendered next to B04's playback, without
+ // granting edit approval. A failed diagnosis must NOT break Recovery Review.
+ let asrDiagnostics=null,asrDiagnosticError=null,diagnosticData=null;
+ try{
+  asrDiagnostics=await createAsrRecoveryReport({analysisPath:analysis,
+   briefPath:brief,outputDir:dir});
+  diagnosticData=JSON.parse(await readFile(asrDiagnostics.jsonPath,'utf8'));
+ }catch(e){
+  asrDiagnosticError=String(e?.message??e).slice(0,400);
+ }
+ const previews=await generatePreviews({packPath,evidencePath:analysis,
+  outputDir:join(kit,'previews'),diagnostics:diagnosticData});
  const creative=await initReview(packPath,resolve(home,'../docs/persona-creative-profile-v1.json'),join(kit,'creative-review.template.json'));
  const kitStatus={version:1,kind:'persona-review-kit-v1',status:'ready-for-human-selection',
   recovery:true,publicationApproved:false,
@@ -137,14 +148,6 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
   creativeQaTemplate:creative.reviewPath,previewCount:previews.previewCount,
   missingBeats:previews.missingBeats};
  await writeFile(join(kit,'KIT.json'),JSON.stringify(kitStatus,null,2)+'\n',{flag:'wx'});
- // ASR diagnosis must NEVER compromise the existing human Recovery Review.
- let asrDiagnostics=null,asrDiagnosticError=null;
- try{
-  asrDiagnostics=await createAsrRecoveryReport({analysisPath:analysis,
-   briefPath:brief,outputDir:dir});
- }catch(e){
-  asrDiagnosticError=String(e?.message??e).slice(0,400);
- }
  const recoveryResult={version:1,kind:'persona-asr-recovery-v1',status:'needs-manual-transcript-review',
   publicationApproved:false,distributionAllowed:false,
   analysisPath:analysis,briefPath:brief,decisionsPath,reviewKit:kit,
