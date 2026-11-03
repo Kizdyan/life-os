@@ -10,6 +10,7 @@ on:
       - "tools/persona-color-variants.mjs"
       - "tools/persona-comparison-quality.mjs"
       - "tools/persona-comparison-quality.test.mjs"
+      - "tools/persona-comparison-review.mjs"
       - "tools/persona-comparison-temporal.mjs"
       - "tools/persona-comparison-temporal.test.mjs"
       - "tools/persona-video-quality.mjs"
