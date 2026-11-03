@@ -14,7 +14,7 @@ import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 // The explicit extension keeps Vite on Windows from resolving this view import
 // to the data module.
 import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
-import {PersonaShootNow} from './PersonaShootNow';
+import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {personaDirectorToBrief,readPersonaDirectorProposal} from '../../../packages/core/src/persona-director-model';
 import {buildPersonaShootPlan} from './personaShootNow';
 import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
