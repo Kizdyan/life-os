@@ -24,3 +24,11 @@
 .personaComparisonReviewTimes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;min-width:0}
 .personaComparisonReviewTimes button{font:inherit;font-size:.85rem;border:1px solid var(--border,#9ca6b1);border-radius:8px;background:transparent;color:inherit;padding:6px 9px;cursor:pointer;max-width:100%}
 .personaComparisonReviewTimes button:focus-visible{outline:2px solid #3f74cc;outline-offset:2px}
+
+.personaComparisonDecisionActions{display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+.personaComparisonDecisionActions button{max-width:100%;white-space:normal}
+.personaComparisonNoteControls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px;min-width:0;margin:10px 0}
+.personaComparisonNoteControls select{max-width:100%;width:100%;min-width:0;padding:7px;font:inherit;border-radius:8px;background:var(--surface,#fff);color:inherit;border:1px solid var(--border,#999)}
+.personaComparisonDetails details label{display:grid;gap:7px;margin:8px 0}
+.personaComparisonDetails details textarea{box-sizing:border-box;max-width:100%;width:100%}
+.personaComparisonDetails li button{display:inline-block;margin:5px 0 5px 8px}
