@@ -678,6 +678,7 @@ export default function PersonaFactory(){
     plan={buildPersonaShootPlan({title:chosen.title,workspace:scenarioWorkspace,pipeline:production,
      allowPilot:chosen.format==='reel'&&isActorComposerPilot(chosen)})}
     onOpenScript={()=>setWorkspaceStep('script')}
+    onOpenEdit={()=>setWorkspaceStep('edit')}
     onSavePilot={chosen.format==='reel'&&isActorComposerPilot(chosen)&&!production&&!scenarioWorkspace?.script&&!draft
      ?()=>applyGuideExample(scenarioWorkspace?.preProductionGuide??createPersonaProductionGuide(new Date().toISOString(),'actor_composer')):undefined}
     onGenerateAi={!production&&!scenarioWorkspace?.script&&!draft?variation=>{void generateShootWithAi(variation)}:undefined}
