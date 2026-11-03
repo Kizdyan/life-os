@@ -39,6 +39,10 @@ test('comparison QC inspects real four-file FFmpeg render, writes paired frames 
    assert.equal(variant.technicalStatus,'pass');
    assert.ok(variant.statistics);
    assert.ok(Array.isArray(variant.additionalSampledJumps));
+   assert.equal(variant.temporalFlicker.status,'measured','FFmpeg temporal filter must return real timestamp samples');
+   assert.equal(variant.temporalFlicker.sampleRate,12);
+   assert.ok(variant.temporalFlicker.alignedSamples>=10);
+   assert.ok(Array.isArray(variant.temporalFlicker.candidates));
   }
   assert.ok(qc.visualEvidence.frames.length>=3);
   for(const frame of qc.visualEvidence.frames){
