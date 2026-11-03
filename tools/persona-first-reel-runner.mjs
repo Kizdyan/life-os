@@ -15,6 +15,7 @@ import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
 import {createColorVariants} from './persona-color-variants.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
 import { makeManifest } from './persona-delivery-source-folder.mjs';
+import {createGenericTakeManifest,isGenericTakeFolder} from './persona-generic-takes.mjs';
 
 const fail = m => {throw Error(m)};
 const exists = async p => stat(p).then(()=>true,()=>false);
@@ -173,11 +174,21 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   let sourcesManifest=input;
   let sourceSelection={kind:'manifest',path:input};
   if(selectedFolder){
-   const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
-   sourcesManifest=intake.manifest;
-   sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
-    report:intake.report,layout:intake.layout};
-   events.push('selected_folder_manifest_created');
+   if(await isGenericTakeFolder(selectedFolder)){
+    const intake=await createGenericTakeManifest({
+     folderPath:selectedFolder,manifestPath:join(root,'sources.generic.json'),
+    });
+    sourcesManifest=intake.manifest;
+    sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+     layout:intake.layout,count:intake.count,notice:intake.note};
+    events.push('variable_scene_sources_manifest_created');
+   }else{
+    const intake=await makeManifest({sourceFolder:selectedFolder,outputFolder:join(root,'intake')});
+    sourcesManifest=intake.manifest;
+    sourceSelection={kind:'selected-folder',path:selectedFolder,manifest:intake.manifest,
+     report:intake.report,layout:intake.layout};
+    events.push('selected_folder_manifest_created');
+   }
   }else if(new Set(['.mp4','.mov','.mkv','.webm','.m4v']).has(extname(input).toLowerCase())){
    sourcesManifest=join(root,'sources.generated.json');
    await writeFile(sourcesManifest,JSON.stringify({version:1,sources:[{id:'single',path:input}]},null,2)+'\n',{flag:'wx'});
