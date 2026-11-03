@@ -372,6 +372,11 @@ test('7-beat simulated Whisper: strict and preview preserve six confident beats,
    const report=await readFile(join(draft,'RECOVERY-RESULT.md'),'utf8');
    assert.match(report,/Сохранены неподтверждённые ASR-кандидаты: 6 из 7/);
    assert.match(report,/Сцены, требующие отдельной проверки: 7/);
+   const reviewPage=await readFile(status.reviewHtml,'utf8');
+   assert.match(reviewPage,/Почему остановился автоматический монтаж/);
+   assert.match(reviewPage,/Эта колыбельная/);
+   assert.match(reviewPage,/Слово 1: сценарий «это», Whisper «эта»/);
+   assert.match(reviewPage,/не является разрешением|Публикация не разрешена/i);
    await assert.rejects(stat(join(draft,'draft-reel.mp4')),/ENOENT/);
   }
  }finally{await rm(root,{recursive:true,force:true})}
