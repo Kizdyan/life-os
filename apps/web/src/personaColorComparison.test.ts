@@ -3,7 +3,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
 import {describe,expect,it} from 'vitest';
 import {
- COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
+ COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,createPersonaColorReviewBrief,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
  readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,
 } from './personaColorComparison';
@@ -275,6 +275,42 @@ describe('explicit author rejection and timecoded artistic observations',()=>{
   expect(markup).toContain('No suitable grade');
   expect(markup).toContain('Отклонены все варианты');
   expect(markup).toMatch(/disabled=""[^>]*>Отклонить все три обработки/);
+ });
+});
+
+
+describe('portable offline artistic review brief',()=>{
+ it('exports only SHA-bound decision and notes, not MP4s, paths or publication permission',()=>{
+  const {manifest,files}=fixture();
+  const imported=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const noted=addPersonaColorReviewNote(imported,'natural-clean',34.925,'skin','issue',
+   'Please fix yellow-green skin cast',stamp);
+  const rejected=rejectPersonaColorVariants(noted,'Not cinematic enough','2026-11-02T21:00:00.000Z');
+  const brief=createPersonaColorReviewBrief(rejected,'2026-11-03T12:00:00.000Z');
+  expect(brief.kind).toBe('persona-color-review-brief-v1');
+  expect(brief.artisticStatus).toBe('rejected-all');
+  expect(brief.publicationApproved).toBe(false);
+  expect(brief.decision.rejectedAll).toBe(true);
+  expect(brief.decision.selectedVariantId).toBeNull();
+  expect(brief.observations[0].atSec).toBe(34.925);
+  expect(brief.observations[0].category).toBe('skin');
+  expect(brief.variants.map(v=>v.sha256)).toEqual(rejected.variants.map(v=>v.sha256));
+  expect(brief.source.sha256).toBe(rejected.sourceSha256);
+  expect(brief.constraints).toEqual({
+   noGenerativeFaceEdits:true,doNotOverwriteV2:true,authorApprovalRequired:true,
+  });
+  const json=JSON.stringify(brief);
+  expect(json).not.toContain('C:');
+  expect(json).not.toContain('MOV');
+  expect(json).not.toContain('objectUrl');
+  expect(()=>createPersonaColorReviewBrief(rejected,'invalid')).toThrow();
+  const old=choosePersonaColorVariant(imported,'warm-cinematic','looks good','2026-11-02T21:00:00.000Z');
+  const selected=createPersonaColorReviewBrief(old,stamp);
+  expect(selected.artisticStatus).toBe('preferred-variant');
+  expect(selected.publicationApproved).toBe(false);
+  expect(selected.decision.selectedVariantId).toBe('warm-cinematic');
+  const pending=createPersonaColorReviewBrief(imported,stamp);
+  expect(pending.artisticStatus).toBe('awaiting-author-review');
  });
 });
 
