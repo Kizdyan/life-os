@@ -11,6 +11,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
+import {createAsrRecoveryReport} from './persona-asr-recovery-report.mjs';
 import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
 import {createColorVariants} from './persona-color-variants.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
@@ -113,9 +114,20 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
   creativeQaTemplate:creative.reviewPath,previewCount:previews.previewCount,
   missingBeats:previews.missingBeats};
  await writeFile(join(kit,'KIT.json'),JSON.stringify(kitStatus,null,2)+'\n',{flag:'wx'});
+ // ASR diagnosis must NEVER compromise the existing human Recovery Review.
+ let asrDiagnostics=null,asrDiagnosticError=null;
+ try{
+  asrDiagnostics=await createAsrRecoveryReport({analysisPath:analysis,
+   briefPath:brief,outputDir:dir});
+ }catch(e){
+  asrDiagnosticError=String(e?.message??e).slice(0,400);
+ }
  const recoveryResult={version:1,kind:'persona-asr-recovery-v1',status:'needs-manual-transcript-review',
   publicationApproved:false,distributionAllowed:false,
   analysisPath:analysis,briefPath:brief,decisionsPath,reviewKit:kit,
+  asrDiagnostics:asrDiagnostics?.jsonPath??null,
+  asrDiagnosticsMarkdown:asrDiagnostics?.markdownPath??null,
+  asrDiagnosticsError:asrDiagnosticError,
   reviewHtml:previews.reviewHtml,missingBeats,reason:String(reason??'ASR did not match the script').slice(0,2000),
   next:'Open reviewHtml, compare playable local videos, manually confirm source, time bounds and transcript. Save selection.reviewed.json; run media:review:render to resume without repeating Whisper.'};
  await writeFile(join(dir,'RECOVERY-RESULT.json'),JSON.stringify(recoveryResult,null,2)+'\n',{flag:'wx'});
@@ -125,6 +137,9 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
   'Автоматическое распознавание или подбор реплики не завершились: '+recoveryResult.reason,'',
   'Откройте локальную страницу: '+previews.reviewHtml,
   'Посмотрите исходники; для пропущенных сцен укажите источник, начальное время, длительность и реально услышанный текст.',
+  ...(asrDiagnostics?['','Фактическое сравнение Whisper со сценарием: '+asrDiagnostics.markdownPath,
+   'Близость текста НЕ доказывает, что реплика была произнесена правильно.'] :
+   asrDiagnosticError?['','Диагностика недоступна: '+asrDiagnosticError]:[]),
   'Сохраните selection.reviewed.json и выполните media:review:render с новым каталогом результата.',
   'Whisper-файлы и исходные видеозаписи сохранены. При отсутствии аудио сцену требуется переснять.',''
  ].join('\n'),{flag:'wx'});
