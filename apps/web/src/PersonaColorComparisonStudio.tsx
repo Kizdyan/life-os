@@ -147,10 +147,17 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   }catch(error){setMessage('Отклонение не сохранено: '+readableError(error))}
  }
  function saveObservation(){
-  const video=sourcePlayer.current;
-  if(!record||!urls||!video){setMessage('Для наблюдений сначала импортируйте пять файлов.');return;}
+  const processedVideo=variantPlayer.current;
+  if(!record||!urls||!processedVideo){setMessage('Для наблюдений сначала импортируйте пять файлов.');return;}
   try{
-   const next=addPersonaColorReviewNote(record,active,video.currentTime,noteCategory,
+   const time=processedVideo.currentTime;
+   if(!Number.isFinite(time))throw Error('Невозможно определить таймкод обработанного видео.');
+   if(sourcePlayer.current){
+    sourcePlayer.current.pause();
+    sourcePlayer.current.currentTime=Math.min(time,Number.isFinite(sourcePlayer.current.duration)?sourcePlayer.current.duration:time);
+   }
+   processedVideo.pause();
+   const next=addPersonaColorReviewNote(record,active,time,noteCategory,
     noteAssessment,noteText,new Date().toISOString());
    if(!onSave(next))throw Error('Не удалось сохранить наблюдение в проекте.');
    setNoteText('');
@@ -258,7 +265,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    <p className="personaComparisonWarning">Сравните кожу, очки, лицо, свет и детали вручную. SHA-256 подтверждает идентичность файлов, но не художественное качество.</p>
    {urls&&<details>
     <summary>Зафиксировать замечание по текущему кадру</summary>
-    <p>Таймкод берётся из оригинала. Заметка относится только к этому исходнику и выбранной обработке.</p>
+    <p>Таймкод берётся из обработанного видео. При сохранении оригинал синхронизируется с этим кадром; замечание относится только к данному пресету и проверенным SHA-256.</p>
     <div className="personaComparisonNoteControls">
      <label>Аспект оценки
       <select aria-label="Аспект художественной оценки" value={noteCategory}
