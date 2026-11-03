@@ -17,3 +17,6 @@
 .personaComparisonDetails textarea{width:100%;box-sizing:border-box;min-height:85px;font:inherit;border-radius:8px;padding:10px}
 .personaComparisonWarning{font-size:.9rem}
 @media(max-width:560px){.personaColorComparison{padding:12px}.personaComparisonVideos{grid-template-columns:minmax(0,1fr)}.personaComparisonVideos video{max-height:400px}}
+
+.personaComparisonDetails li{overflow-wrap:anywhere;word-break:normal}
+.personaComparisonDetails ul,.personaComparisonDetails ol{max-width:100%;min-width:0;padding-inline-start:22px}
