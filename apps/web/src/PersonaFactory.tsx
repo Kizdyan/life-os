@@ -438,6 +438,22 @@ export default function PersonaFactory(){
  function navigate(next:PersonaScreen){if(next!==screen&&!canLeaveGuide())return;const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
  function createQuickProject(format:PersonaContentType){const labels:Record<PersonaContentType,string>={reel:'Новый Reels',short:'Новый Shorts',story:'Новая история',photo:'Новое фото',carousel:'Новая карусель'};if(select({id:newProjectId(),title:labels[format],angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'}))window.setTimeout(()=>navigate('project'),0)}
  function continueProject(project:PersonaProject){if(openProject(project))window.setTimeout(()=>navigate('project'),0)}
+ function startPilotShoot(){
+  const saved=projects.find(project=>project.contentType==='reel'&&
+   isActorComposerPilot({title:project.title,angle:project.sourceIdea}));
+  if(saved){
+   if(openProject(saved)){
+    setWorkspaceStep('guide');
+    window.setTimeout(()=>{window.location.hash='#persona/project/'+saved.id},0);
+   }
+   return;
+  }
+  const id=newProjectId();
+  if(select({id,title:actorComposerPilot.title,angle:actorComposerPilot.angle,
+    format:'reel',score:0,source:'editorial-pilot'}))
+   window.setTimeout(()=>{window.location.hash='#persona/project/'+id},0);
+ }
+
  function persistGuide(guide:ProductionGuide){
   if(!activeProjectId||!chosen)throw new Error('Сначала откройте проект');
   const previous=scenarioWorkspace??{version:1 as const,research:[],analyses:[],ideas:[]};
@@ -654,7 +670,13 @@ export default function PersonaFactory(){
  function rejectIdea(){if(chosen)remember(chosen,'rejected');setChosen(null);setDraft(null);setQa(null);setProduction(null);setStage('strategy')}
  const projectSteps=workspaceStepsFor(chosen?.format);const workspaceIndex=Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
  function moveWorkspace(direction:-1|1){const next=projectSteps[workspaceIndex+direction];if(next&&canLeaveGuide())setWorkspaceStep(next[0])}
- if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><div className="personaHomeActions"><button className="primary" onClick={()=>createQuickProject('reel')}>Создать Reels</button><button className="primary" onClick={()=>{if(select({id:newProjectId(),title:actorComposerPilot.title,angle:actorComposerPilot.angle,format:'reel',score:0,source:'editorial-pilot'}))window.setTimeout(()=>navigate('project'),0)}}>Снять сегодня: актёр + композитор · 7 кадров</button><button onClick={()=>createQuickProject('photo')}>Обработать фото</button><button onClick={()=>createQuickProject('carousel')}>Создать карусель</button></div><section className="personaHomeContinue"><h3>Продолжить последний проект</h3>{projects.find(project=>project.id===activeProjectId)?<button className="projectCard" onClick={()=>continueProject(projects.find(project=>project.id===activeProjectId)!)}><b>{projects.find(project=>project.id===activeProjectId)!.title}</b><span>{contentTypeLabel(projects.find(project=>project.id===activeProjectId)!.contentType)} · {stageLabel(projectStage(projects.find(project=>project.id===activeProjectId)!.stage))}</span></button>:<button disabled>Продолжить последний проект</button>}<button className="ghost" onClick={()=>navigate('projects')}>Мои проекты</button></section><DataPortability/></section>;
+ if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><section className="personaTodayShoot" aria-label="Что снять сегодня">
+  <small>СЕГОДНЯ · 31 СЕКУНДА · 7 КАДРОВ</small>
+  <h3>Сними короткую сцену: актёр + композитор</h3>
+  <p><b>Первая реплика:</b> «Я актёр. И ещё пишу музыку.» Две роли, телефон на штативе, одна комната. Дальше — точные реплики, кадры, свет, игра и монтаж.</p>
+  <button type="button" className="primary" onClick={startPilotShoot}>Показать 7 кадров и начать съёмку</button>
+  <small>Рабочий пример, не утверждённая публикация. Старые проекты и сценарии сохраняются.</small>
+ </section><div className="personaHomeActions"><button className="primary" onClick={()=>createQuickProject('reel')}>Создать новый Reels с нейросетью</button><button className="primary" onClick={startPilotShoot}>Открыть съёмку: актёр + композитор · 7 кадров</button><button onClick={()=>createQuickProject('photo')}>Обработать фото</button><button onClick={()=>createQuickProject('carousel')}>Создать карусель</button></div><section className="personaHomeContinue"><h3>Продолжить последний проект</h3>{projects.find(project=>project.id===activeProjectId)?<button className="projectCard" onClick={()=>continueProject(projects.find(project=>project.id===activeProjectId)!)}><b>{projects.find(project=>project.id===activeProjectId)!.title}</b><span>{contentTypeLabel(projects.find(project=>project.id===activeProjectId)!.contentType)} · {stageLabel(projectStage(projects.find(project=>project.id===activeProjectId)!.stage))}</span></button>:<button disabled>Продолжить последний проект</button>}<button className="ghost" onClick={()=>navigate('projects')}>Мои проекты</button></section><DataPortability/></section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList"><header className="pfHead"><div><button className="backButton" onClick={()=>navigate('home')}>← Persona</button><h2>Мои проекты</h2><p>{projects.length?'Выберите материал, чтобы продолжить.':'Здесь появятся ваши материалы.'}</p></div><button className="primary" onClick={()=>navigate('home')}>Новый проект</button></header><div className="projectRows">{projects.map(project=><article key={project.id}><div><b>{project.title}</b><span>{contentTypeLabel(project.contentType)} · {stageLabel(projectStage(project.stage))} · сохранён {new Date(project.updatedAt).toLocaleDateString('ru-RU')}</span></div><button onClick={()=>continueProject(project)}>Открыть</button></article>)}</div></section>;
  return <section className="personaFactoryV2">
   <header className="pfHead personaProjectHead"><div><button className="backButton" onClick={()=>navigate('projects')}>← Мои проекты</button><h2>{chosen?.title||'Новый проект'}</h2><p>{contentTypeLabel(chosen?.format as PersonaContentType|undefined)} · {stageLabel(stage)} · {saveState==='saved'?'Сохранено на этом устройстве':saveState==='saving'?'Сохранение…':'Сохранение не удалось'}</p></div><button className="ghost" onClick={()=>navigate('home')}>Persona</button></header>
@@ -687,7 +709,10 @@ export default function PersonaFactory(){
     onSavePilot={chosen.format==='reel'&&isActorComposerPilot(chosen)&&!production&&!scenarioWorkspace?.script&&!draft
      ?()=>applyGuideExample(scenarioWorkspace?.preProductionGuide??createPersonaProductionGuide(new Date().toISOString(),'actor_composer')):undefined}
     onGenerateAi={!production&&!scenarioWorkspace?.script&&!draft?variation=>{void generateShootWithAi(variation)}:undefined}
-    aiBusy={directorWorking}/>}
+    aiBusy={directorWorking}
+    generation={scenarioWorkspace?.directorGeneration}
+    generationCurrent={Boolean(scenarioWorkspace?.directorGeneration&&
+     scenarioWorkspace.directorGeneration.revisionId===scenarioWorkspace.script?.currentRevisionId)}/>}
   {chosen&&activeProjectId&&workspaceStep==='guide'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaProductionGuide key={`production-guide:${activeProjectId}`}
    projectTitle={chosen.title} projectAngle={chosen.angle} allowExample={chosen.format==='reel'&&!draft&&isActorComposerPilot(chosen)} workspace={scenarioWorkspace}
    pipeline={production} onSave={persistGuide} onApplyToBrief={transferGuideToBrief} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
