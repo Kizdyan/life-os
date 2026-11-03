@@ -193,6 +193,15 @@ try{
 
  // A PASS must never force approval: author can attach a problem to a
  // timestamp, reject every grade with a reason, and keep it after reload.
+ // Deliberately desync the players: an annotation for Warm Cinematic must
+ // use the grade frame actually being reviewed, never the original's old time.
+ const gradedForNote=afterReload.getByLabel('Обработанное видео');
+ await gradedForNote.evaluate(video=>{video.pause();video.currentTime=1.1});
+ await page.waitForFunction(()=>{
+  const video=document.querySelector('video[aria-label="Обработанное видео"]');
+  return video instanceof HTMLVideoElement&&!video.seeking&&Math.abs(video.currentTime-1.1)<0.07;
+ },null,{timeout:12000});
+ await afterReload.getByLabel('Оригинальное видео').evaluate(video=>{video.pause();video.currentTime=0.1});
  await afterReload.getByText('Зафиксировать замечание по текущему кадру').click();
  await afterReload.getByRole('textbox',{name:'Комментарий к кадру'}).fill('Skin cast around the opening frame');
  await afterReload.getByRole('button',{name:'Сохранить наблюдение на текущем таймкоде'}).click();
@@ -217,6 +226,13 @@ try{
  assert.equal(exportedBrief.decision.rejectedAll,true);
  assert.equal(exportedBrief.observations.length,1);
  assert.equal(exportedBrief.observations[0].category,'skin');
+
+ assert.ok(Math.abs(exportedBrief.observations[0].atSec-1.1)<0.07,
+  'timestamp must come from the graded player despite original player being out of sync');
+ const pairedOriginalTime=await afterReload.getByLabel('Оригинальное видео').evaluate(video=>video.currentTime);
+ assert.ok(Math.abs(pairedOriginalTime-exportedBrief.observations[0].atSec)<0.07,
+  'original player must be synchronized to the captured graded timestamp');
+
  assert.equal(exportedBrief.source.sha256,first.source.sha256);
  assert.equal(exportedBrief.variants[0].sha256,first.variants[0].sha256);
  assert.equal(JSON.stringify(exportedBrief).includes(root),false,'review brief must not leak local source path');
