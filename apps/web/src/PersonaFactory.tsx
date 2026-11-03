@@ -334,8 +334,9 @@ export default function PersonaFactory(){
    const previous=readPersonaColorComparisonRecord(saved.colorComparison);
    if(saved.colorComparison!==undefined&&!previous)
     throw Error('Сохранённая запись Comparison Studio повреждена. Исходные данные сохранены в проекте; заменять их новым импортом нельзя до восстановления или резервного копирования.');
-   // A selected variant can only be saved against the evidence already committed
-   // to this same project. New imports must start without an inherited decision.
+   // Every authored artistic decision, rejection, historical choice or timestamped
+   // observation must match this project's exact previously verified MP4 hashes.
+   // A new unrelated source can only be imported without inherited author review.
    if(hasAuthoredPersonaColorReview(next)&&(!previous||!samePersonaColorComparisonEvidence(previous,next)))
     throw Error('Нельзя сохранить художественную оценку, отказ или заметки от другого MP4. Импортируйте файлы заново.');
    if(!saveActiveProject(undefined,chosen,undefined,undefined,undefined,next))return false;
