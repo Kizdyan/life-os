@@ -109,7 +109,13 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
    preview.choices.length+preview.missingBeats.length!==allBeats.length)
    fail('Untrusted partial ASR decision packet');
   retainedAsrChoices=preview.choices.length;
-  missingBeats=preview.missingBeats.length?preview.missingBeats:allBeats;
+  missingBeats=preview.missingBeats;
+  // A preview packet must be unambiguously marked as recovery-only even
+  // when most or all individual speech candidates were found.
+  await writeFile(decisionsPath,JSON.stringify({...preview,
+   recoveryRequired:true,publicationApproved:false,
+   notice:'Preserved ASR candidates await human review. This is NOT a complete production render or publication approval.'
+  },null,2)+'\n');
  }catch(e){
   previewError=String(e?.message??e).slice(0,400);
   if(await exists(decisionsPath))throw Error('Incomplete preview decision file: '+previewError);
