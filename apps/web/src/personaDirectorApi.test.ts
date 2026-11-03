@@ -36,9 +36,9 @@ describe('Persona Director API real-model gate',()=>{
    const data=JSON.parse(String(options?.body));
    expect(data.model).toBe('mock-local-model');
    expect(data.messages[0].role).toBe('system');
-   const input=JSON.parse(data.messages[1].content);
-   expect(input.creativePreferences.priorities).toEqual(['Небанальный юмор']);
-   expect(input.avoidFailures).toEqual(['Без повторов прошлой шутки']);
+   const modelInput=JSON.parse(data.messages[1].content);
+   expect(modelInput.creativePreferences.priorities).toEqual(['Небанальный юмор']);
+   expect(modelInput.avoidFailures).toEqual(['Без повторов прошлой шутки']);
    called=true;
    return new Response(JSON.stringify({message:{content:JSON.stringify({
     title:'Музыкальная сцена с поворотом',hook:'Музыка изменила роль',
