@@ -6,6 +6,7 @@ import {mkdtemp,mkdir,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {canonicalBrief,createShootSheet,packagePersonaFlow,preparePersonaFlow,validateDirector,validateIdeas,validateModelServers} from './persona-flow.mjs';
+import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
 
 const ideas={ideas:[
  {title:'Актёр vs композитор: две концовки',angle:'Один и тот же диалог звучит то как мелодрама, то как триллер.',hook:'А что, если музыка соврала?'},
@@ -98,27 +99,25 @@ test('a nonexistent LLM cannot produce a fake idea or screenplay',async()=>{
  }finally{await rm(root,{recursive:true,force:true})}
 });
 const ffmpegReady=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
-test('delivery package copies a REAL synthetic MP4, validates technical QA SHA and refuses forged/missing files',{skip:!ffmpegReady},async()=>{
+test('delivery package copies a REAL synthetic MP4, validates ffprobe/FFmpeg QA SHA and refuses forged/missing files',{skip:!ffmpegReady},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-package-'));
  try{
   const source=join(root,'render');await mkdir(source);
   const mp4=join(source,'ai-edited-reel.mp4');
   const command=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y',
-   '-f','lavfi','-i','testsrc2=size=320x568:rate=30:duration=1',
+   '-f','lavfi','-i','testsrc2=size=1080x1920:rate=30:duration=1',
    '-f','lavfi','-i','sine=frequency=460:sample_rate=48000:duration=1',
    '-c:v','libx264','-threads','2','-preset','ultrafast','-pix_fmt','yuv420p',
    '-c:a','aac','-shortest',mp4],{encoding:'utf8',timeout:30000});
   assert.equal(command.status,0,command.stderr);
   const sha=createHash('sha256').update(await readFile(mp4)).digest('hex');
   const size=(await stat(mp4)).size;
-  // A QA fixture exercises fail-closed manifest validation; it does not claim
-  // that the synthetic MP4 is an artistically/technically approved user reel.
-  const qa={evidence:{path:resolve(mp4),fileExists:true,probeVerified:true,bytes:size,
-   sha256:sha,durationSec:1,width:1080,height:1920,fps:30,
-   videoCodec:'h264',audioCodec:'aac',blackFrameCheckPassed:true,audioCheckPassed:true},
-   handoff:{passed:false,status:'blocked',errors:['author approval required'],
-    assets:[{passed:true}]},distribution:null};
-  await writeFile(join(source,'ai-edited-qa.json'),JSON.stringify(qa));
+  // Actual FFprobe + FFmpeg black/silence QA against this synthetic file, not caller-supplied PASS flags.
+  const qaPath=join(source,'ai-edited-qa.json');
+  const qa=await verifyLocalPersonaRender({path:mp4,contentId:'synthetic-fixture',
+   format:'reel',authorApproved:false,outputPath:qaPath});
+  assert.equal(qa.evidence.sha256,sha);
+  assert.deepEqual(qa.handoff.errors,['author approval required']);
   await writeFile(join(source,'RESULT.json'),JSON.stringify({
    status:'awaiting-author-review',distributionAllowed:false,
    aiFinishedVideo:mp4,aiFinishedQaPath:join(source,'ai-edited-qa.json'),
