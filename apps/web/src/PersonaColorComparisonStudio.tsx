@@ -108,6 +108,18 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    setMessage('Авторский выбор сохранён в проекте. Это не разрешение публикации.');
   }catch(error){setMessage('Решение не сохранено: '+readableError(error))}
  }
+ function jumpToQcMoment(atSec:number,variantId:PersonaColorVariantId){
+  const original=sourcePlayer.current,graded=variantPlayer.current;
+  if(!urls||!original)return;
+  const target=Math.max(0,Math.min(atSec,Number.isFinite(original.duration)?original.duration:atSec));
+  original.pause();
+  original.currentTime=target;
+  if(graded){
+   graded.pause();
+   if(active===variantId)graded.currentTime=Math.min(target,Number.isFinite(graded.duration)?graded.duration:target);
+  }
+  setActive(variantId); // variant mount effect syncs the other player after switch.
+ }
  function syncPlayers(){
   const src=sourcePlayer.current,variant=variantPlayer.current;
   if(!src||!variant)return;
@@ -153,9 +165,16 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
     <ul>{quality.variants.map(item=><li key={item.id}>
      {COLOR_VARIANT_PRESETS.find(p=>p.id===item.id)?.label}: {item.technicalStatus.toUpperCase()}
      {item.problems.length>0?' · '+item.problems.join(', '):''}
-     {item.jumpTimesSec.length>0?' · дополнительные скачки в '+item.jumpTimesSec.map(sec=>sec.toFixed(2)+' с').join(', '):''}
+     {item.jumpTimesSec.length>0?' · возможные скачки (4 кадр/с): '+item.jumpTimesSec.map(sec=>sec.toFixed(2)+' с').join(', '):''}
+     {item.temporalStatus&&' · анализ мерцания (12 кадр/с): '+(item.temporalStatus==='measured'?'выполнен':'нет данных')}
+     {item.temporalJumpTimesSec.length>0&&<div className="personaComparisonReviewTimes" aria-label={'Подозрительные моменты '+item.id}>
+      {item.temporalJumpTimesSec.map((sec,index)=><button type="button" key={index}
+       onClick={()=>jumpToQcMoment(sec,item.id)}>
+       Проверить {sec.toFixed(2)} с
+      </button>)}
+     </div>}
     </li>)}</ul>
-    <p>Скачки обнаружены по редким пробам и требуют проверки в движении. Сам отчёт не разрешает публикацию.</p>
+    <p>Склейки и движение могут вызвать ложные предупреждения. Проверка 12 кадр/с не исключает быстрое мерцание. Нажмите на таймкод и сравните оригинал с обработкой. Отчёт не разрешает публикацию.</p>
    </div>}
    {urls&&<div className="personaComparisonOptions" role="group" aria-label="Цветовой вариант для просмотра">
     {COLOR_VARIANT_PRESETS.map(preset=><button type="button" key={preset.id}
