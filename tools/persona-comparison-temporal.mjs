@@ -103,3 +103,16 @@ export function compareTemporalLuma(reference,candidate,{sampleRate=12}={}){
   candidates:grouped.sort((a,b)=>b.amplitude-a.amplitude).slice(0,20),
   limitation:'Review candidates only; samples do not prove a grading error and can miss flicker above the sampling Nyquist limit.'};
 }
+
+
+/** Suppress candidate jumps at strong changes already present in the original. */
+export function hasSourceTransitionNear(samples,atSec,{windowSec=0.18,minLumaDelta=12}={}){
+ if(!Array.isArray(samples)||!Number.isFinite(atSec))return false;
+ for(let i=1;i<samples.length;i++){
+  const previous=samples[i-1],current=samples[i];
+  if(!Number.isFinite(previous?.atSec)||!Number.isFinite(current?.atSec)||
+   !Number.isFinite(previous?.y)||!Number.isFinite(current?.y))continue;
+  if(Math.abs(current.atSec-atSec)<=windowSec&&Math.abs(current.y-previous.y)>=minLumaDelta)return true;
+ }
+ return false;
+}
