@@ -16,7 +16,7 @@ test('Russian transcription matching normalizes ё, rejects unrelated phrases',(
  assert.equal(overlap('Пишу музыку','Варю суп и ем картошку'),0);
 });
 test('Whisper JSON parser reads timestamped tokens and rejects invalid offsets',()=>{
- const result=parseWhisperJson({transcription:[{text:' entire speech',offsets:{from:0,to:2500},tokens:[
+ const result=parseWhisperJson({transcription:[{text:' Я актёр пишу музыку',offsets:{from:0,to:2500},tokens:[
   {text:' Я',offsets:{from:0,to:150}},
   {text:' актёр',offsets:{from:200,to:700}},
   {text:' пишу',offsets:{from:900,to:1300}},
@@ -44,9 +44,24 @@ test('whisper.cpp JSON-full falls back to segment offsets when token offsets are
   tokens:[{text:' Я',id:1,p:.9},{text:' актёр',id:2,p:.9},{text:' музыку',id:3,p:.9}]
  }]};
  const segments=parseWhisperJson(data,4);
- assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.',timing:'segment'}]);
+ assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.',
+  timing:'segment',transcriptConflict:true}]);
+ // A partially missing token transcript must be available for listening, not
+ // automatically treated as identical to the script.
+ assert.throws(()=>chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
+   {id:'incomplete-tokens',durationSec:4,segments}
+ ]),/Manual review required/);
+ // Timestamp-free tokens with the full SAME text can safely retain a segment-
+ // timed provisional candidate (the timing remains coarse).
+ const consistent=parseWhisperJson({transcription:[{
+  text:' Я актёр. И ещё пишу музыку.',offsets:{from:500,to:2800},
+  tokens:[{text:' Я'},{text:' актёр.'},{text:' И'},{text:' ещё'},
+   {text:' пишу'},{text:' музыку.'}]
+ }]},4);
+ assert.equal(consistent[0].transcriptConflict,undefined);
+ assert.equal(consistent[0].timing,'segment');
  const matched=chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
-   {id:'take-real-json',durationSec:4,segments}
+   {id:'take-real-json',durationSec:4,segments:consistent}
  ]);
  assert.equal(matched[0].sourceId,'take-real-json');
  assert.ok(matched[0].durationSec>2);
@@ -59,6 +74,130 @@ test('mixed token timestamps cannot silently truncate spoken segment',()=>{
  const parts=parseWhisperJson(data,3);
  assert.equal(parts.length,1);
  assert.match(parts[0].text,/проблема/);
+});
+test('complete Whisper segment text wins when fully timed tokens omit a spoken word',()=>{
+ const segments=parseWhisperJson({transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:1800},
+  tokens:[
+   {text:' И',offsets:{from:300,to:400}},
+   {text:' нас',offsets:{from:420,to:650}},
+   {text:' есть',offsets:{from:660,to:900}},
+   {text:' проблема.',offsets:{from:920,to:1700}}
+  ]
+ }]},3);
+ assert.deepEqual(segments,[{
+  startSec:.3,endSec:1.8,text:'И у нас есть проблема.',timing:'segment',
+  transcriptConflict:true,
+ }],'A truncated token list cannot silently remove «у» from the original segment');
+});
+test('non-monotonic token offsets never masquerade as reliable word timing',()=>{
+ const segments=parseWhisperJson({transcription:[{
+  text:' Я актёр.',offsets:{from:200,to:1200},
+  tokens:[
+   {text:' Я',offsets:{from:500,to:800}},
+   {text:' актёр',offsets:{from:300,to:1000}}
+  ]
+ }]},2);
+ assert.deepEqual(segments,[{
+  startSec:.2,endSec:1.2,text:'Я актёр.',timing:'segment',
+ }]);
+});
+test('spoken untimed Whisper token without segment offsets fails instead of disappearing',()=>{
+ const source={transcription:[
+  {text:' Я актёр.',offsets:{from:0,to:600}},
+  {text:' И у нас есть проблема.',tokens:[
+   {text:' И',offsets:{from:700,to:850}},
+   {text:' у',offsets:{from:850,to:850}},
+   {text:' нас',offsets:{from:850,to:1050}}
+  ]}
+ ]};
+ assert.throws(()=>parseWhisperJson(source,2),/untimed speech has no complete segment text and offsets/);
+});
+test('zero-duration audible Whisper token preserves the complete Russian phrase with honest segment timing',()=>{
+ const source={transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:2100},
+  tokens:[
+   {text:' И',offsets:{from:300,to:430}},
+   {text:' у',offsets:{from:430,to:430}},
+   {text:' нас',offsets:{from:430,to:720}},
+   {text:' есть',offsets:{from:740,to:1100}},
+   {text:' проблема.',offsets:{from:1110,to:2100}},
+  ],
+ }]};
+ const parts=parseWhisperJson(source,3);
+ assert.deepEqual(parts,[{
+  startSec:.3,endSec:2.1,text:'И у нас есть проблема.',timing:'segment',
+ }]);
+ const exact=chooseForBrief({script:[{order:1,line:'И у нас есть проблема.'}]},[
+  {id:'real-whisper-full-b01',durationSec:3,segments:parts},
+ ]);
+ assert.equal(exact[0].sourceId,'real-whisper-full-b01');
+ assert.equal(exact[0].speechBoundaryConfidence,'segment');
+ assert.deepEqual(exact[0].captionWords.map(w=>w.text),['И у нас есть проблема.']);
+ const music={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'И у нас есть проблема.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Затем играет оригинальную музыку после реплики'}]};
+ assert.throws(()=>createEditorialPlan(music,[{
+  id:'real-whisper-full-b01',durationSec:3,segments:parts,
+ }]),/Manual review required/,'Coarse timing must not fake a post-speech music boundary');
+});
+test('zero-duration token with malformed end timestamp must not conceal corrupted evidence',()=>{
+ const invalid={transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:2100},
+  tokens:[
+   {text:' И',offsets:{from:300,to:430}},
+   {text:' у',offsets:{from:430,to:200}},
+  ],
+ }]};
+ assert.throws(()=>parseWhisperJson(invalid,3),/ASR token time offsets outside source/);
+});
+test('B04 wrong vowel or grammatical ending is a strict ASR mismatch, not an approved take',()=>{
+ const wanted={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Герой произносит финальную реплику'}]};
+ for(const reported of ['Эта колыбельная.','Это колыбельное.']){
+  const segments=parseWhisperJson(whisper([[reported,.2,1.9]]),3);
+  assert.throws(()=>createEditorialPlan(wanted,[{
+   id:'B04_tts-mismatch',durationSec:3,segments,
+  }]),/Manual review required/);
+  const preview=createEditorialPlan(wanted,[{
+   id:'B04_tts-mismatch',durationSec:3,segments,
+  }],{mode:'preview'});
+  assert.deepEqual(preview.missingBeats,[1]);
+ }
+});
+
+test('B04 segment/token disagreement always requires real-audio review',()=>{
+ const original={transcription:[{
+  text:' Это колыбельная.',offsets:{from:200,to:1800},
+  tokens:[
+   {text:' Эта',offsets:{from:200,to:700}},
+   {text:' колыбельная.',offsets:{from:700,to:1800}}
+  ]
+ }]};
+ const segments=parseWhisperJson(original,3);
+ assert.deepEqual(segments,[{
+  startSec:.2,endSec:1.8,text:'Это колыбельная.',timing:'segment',
+  transcriptConflict:true
+ }]);
+ const expected={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.'}],
+  shots:[{order:1,durationSec:3,action:'Произнести точную фразу'}]};
+ const source={id:'B04_conflicting_asr',durationSec:3,segments};
+ assert.throws(()=>createEditorialPlan(expected,[source]),/Manual review required/);
+ assert.deepEqual(createEditorialPlan(expected,[source],{mode:'preview'}).missingBeats,[1]);
+});
+test('B04 cannot be selected from words scattered across a different spoken phrase',()=>{
+ const wanted={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Герой произносит финальную реплику'}]};
+ const transcript='Эта колыбельная. Это совсем другое.';
+ const fragments=parseWhisperJson(whisper([[transcript,.2,2]]),3);
+ const source={id:'B04_wrong_extra_text',durationSec:3,segments:fragments};
+ assert.throws(()=>createEditorialPlan(wanted,[source]),/Manual review required/);
+ const preview=createEditorialPlan(wanted,[source],{mode:'preview'});
+ assert.deepEqual(preview.missingBeats,[1]);
+ assert.equal(preview.choices.length,0);
 });
 test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
  const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[

@@ -34,10 +34,45 @@ export function parseWhisperJson(value,durationSec){
     const audible=tokens?.filter(t=>typeof t?.text==='string' &&
       t.text.trim() && !/^<\|.*\|>$/.test(t.text.trim()) &&
       !/^\[[^\]]+\]$/.test(t.text.trim())) ?? [];
+    // Whisper JSON-full can contain an AUDIBLE zero-duration subword, e.g.
+    // " И" (300-430), " у" (430-430), " нас" (430-600).
+    // Discarding " у" silently turns the real text into "И нас"; merging the
+    // next subword may instead invent "Инас". Either can corrupt subtitles,
+    // timing evidence and strict line matching.
+    //
+    // If ANY audible token lacks a positive-duration timestamp, keep the
+    // authoritative complete segment text and its actual segment offsets.
+    // The lost word boundary is preserved, but timing is explicitly marked
+    // 'segment' (never misreported as word-accurate). Post-speech music
+    // boundaries therefore still require manual Recovery Review.
+    const hasBrokenTime=audible.some(t=>t.offsets &&
+      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to) &&
+      (t.offsets.from<0 || t.offsets.to<t.offsets.from ||
+       t.offsets.to/1000>durationSec+0.1));
+    if(hasBrokenTime)fail('ASR token time offsets outside source');
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
-      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
-    const candidates=allTokensTimed?audible:[seg];
-    const timing=allTokensTimed?'word':'segment';
+      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to) &&
+      t.offsets.to>t.offsets.from);
+    // Even positive token timestamps are not reliable when Whisper omitted
+    // spoken text from its token list or returned non-monotonic word offsets.
+    // Both cases need a truthful full-segment transcript and coarse timing.
+    const tokenText=audible.map(t=>t.text).join('');
+    const textDisagrees=audible.length>0 && typeof seg?.text==='string' &&
+      seg.text.trim() && normalize(tokenText).join(' ')!==normalize(seg.text).join(' ');
+    const ordered=allTokensTimed && audible.every((t,i)=>i===0 ||
+      (t.offsets.from>=audible[i-1].offsets.from &&
+       t.offsets.to>=audible[i-1].offsets.to));
+    const useWordTiming=allTokensTimed && ordered && !textDisagrees;
+    if(!useWordTiming && audible.length &&
+       (typeof seg?.text!=='string'||!seg.text.trim()||!seg.offsets))
+      fail('ASR untimed speech has no complete segment text and offsets');
+    if(!useWordTiming && typeof seg?.text==='string' && seg.text.trim() && !seg.offsets)
+      fail('ASR spoken segment lacks time offsets');
+    const candidates=useWordTiming?audible:[seg];
+    const timing=useWordTiming?'word':'segment';
+    // A disagreement between segment text and token text is ambiguous speech
+    // evidence, not a transcript that can be automatically selected.
+    const transcriptConflict=Boolean(textDisagrees);
     const grouped=[];
     for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
@@ -47,11 +82,12 @@ export function parseWhisperJson(value,durationSec){
       if(!text || /^\[[^\]]+\]$/.test(text) || end<=start)continue;
       // Full JSON token strings often split ONE Russian word into subwords.
       // Absence of a leading space means continuation, not a new word.
-      if(allTokensTimed && grouped.length && !/^\s/u.test(token.text)){
+      if(useWordTiming && grouped.length && !/^\s/u.test(token.text)){
         const last=grouped[grouped.length-1];
         last.text+=text;
         last.endSec=end;
-      }else grouped.push({startSec:start,endSec:end,text,timing});
+      }else grouped.push({startSec:start,endSec:end,text,timing,
+        ...(transcriptConflict?{transcriptConflict:true}:{})});
     }
     raw.push(...grouped);
   }
@@ -72,8 +108,19 @@ export function rankDialogueCandidates(line,sourceId,segments){
     for(let j=i+1;j<=Math.min(segments.length,i+24);j++){
       const duration=segments[j-1].endSec-segments[i].startSec;
       if(duration>12)break;
+      // Even when the segment string exactly matches the script, a conflicting
+      // token transcript must go to human Recovery Review, never auto-cut.
+      if(segments.slice(i,j).some(part=>part.transcriptConflict===true))continue;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
+      // Bag-of-words scoring alone can falsely match "Это колыбельная"
+      // inside "Эта колыбельная. Это совсем другое." because both words
+      // appear somewhere. Short scripted lines require exact word order and
+      // adjacency before they can become even a provisional ASR candidate.
+      const expectedWords=normalize(line),heardWords=normalize(text);
+      if(expectedWords.length<=3 &&
+         !heardWords.some((_,k)=>expectedWords.every((w,j)=>heardWords[k+j]===w)))
+        continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;
       results.push({sourceId,startSec,endSec,speechEndSec:segments[j-1].endSec,

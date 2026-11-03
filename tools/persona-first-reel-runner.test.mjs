@@ -233,6 +233,13 @@ test('Whisper failure automatically produces playable Recovery Review and manual
   assert.equal(status.publicationApproved,false);
   assert.equal(status.distributionAllowed,false);
   assert.match(status.reason,/Whisper/);
+  assert.match(status.asrDiagnostics,/ASR-DIAGNOSTICS\.json$/);
+  const diagnostic=JSON.parse(await readFile(status.asrDiagnostics,'utf8'));
+  assert.equal(diagnostic.renderAllowed,false);
+  assert.equal(diagnostic.publicationApproved,false);
+  assert.equal(diagnostic.beats.length,2);
+  assert.ok(diagnostic.beats.every(b=>b.diagnosticStatus==='NO_USABLE_ASR_TEXT'));
+  assert.ok((await readFile(status.asrDiagnosticsMarkdown,'utf8')).includes('не утверждена'));
   const kit=join(draft,'editorial-review-kit'),pack=JSON.parse(await readFile(join(kit,'candidate-pack.json'),'utf8'));
   assert.equal(pack.beats.length,2);
   assert.ok(pack.beats.every(x=>x.candidates.length===0&&x.recovery.availableSources.length===2));
@@ -294,9 +301,134 @@ test('zero-choice Preview automatically opens Recovery instead of requiring a fi
   assert.equal(result.status,'needs-manual-transcript-review');
   assert.equal(result.distributionAllowed,false);
   assert.ok((await stat(join(draft,'editorial-review-kit','previews','review.html'))).size>0);
+  const diagnostics=JSON.parse(await readFile(join(draft,'ASR-DIAGNOSTICS.json'),'utf8'));
+  assert.equal(diagnostics.beats.length,2);
+  assert.equal(diagnostics.publicationApproved,false);
+  assert.ok(diagnostics.sourceFiles.every(s=>s.hasUsableTranscript===false));
   await assert.rejects(()=>stat(join(draft,'draft-reel.mp4')),/ENOENT/);
   const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
   assert.equal(decisions.recoveryRequired,true);
   assert.equal(decisions.choices.length,0);
  }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('7-beat simulated Whisper: strict and preview preserve six confident beats, isolate B04, and never render incomplete MP4',
+ {skip:!mediaTools,timeout:180000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-seven-beat-recovery-'));
+ try{
+  const video=join(root,'seven.mp4'),sources=join(root,'sources.json');
+  const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
+   '-f','lavfi','-i','testsrc2=s=240x320:r=10',
+   '-f','lavfi','-i','sine=frequency=500:sample_rate=48000',
+   '-t','16','-c:v','mpeg4','-c:a','aac','-shortest',video],
+   {encoding:'utf8',timeout:40000});
+  assert.equal(result.status,0,result.stderr);
+  const expected=['Сцена номер один.','Сцена номер два.','Сцена номер три.',
+   'Сцена номер четыре.','Сцена номер пять.','Сцена номер шесть.',
+   'Это колыбельная.'];
+  const spoken=[...expected.slice(0,6),'Эта колыбельная.'];
+  const briefPath=join(root,'brief.json'),model=join(root,'model.bin');
+  await mk(sources,{version:1,sources:[{id:'seven',path:video}]});
+  await mk(briefPath,{version:1,sourceFormat:'reel',
+   script:expected.map((line,i)=>({order:i+1,line,durationSec:2})),
+   shots:expected.map((_,i)=>({order:i+1,action:'Сказать текст точно по сценарию'}))});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  const transcribeStep=async analysisPath=>{
+   const evidence=JSON.parse(await readFile(analysisPath,'utf8'));
+   assert.equal(evidence.sources.length,1);
+   await mk(join(root,currentMode,'evidence','seven-whisper.json'),{
+    transcription:spoken.map((text,i)=>({
+     text:' '+text,offsets:{from:300+i*2000,to:1650+i*2000},
+    })),
+   });
+   return {status:'synthetic-test-only-transcript',notActualWhisper:true};
+  };
+  let currentMode;
+  for(const mode of ['strict','preview']){
+   currentMode=mode;const draft=join(root,mode);
+   const status=await runFirstReel({sources,brief:briefPath,outputDir:draft,
+    whisperCli:process.execPath,whisperModel:model,mode,transcribeStep});
+   assert.equal(status.status,'needs-manual-transcript-review');
+   assert.equal(status.retainedAsrChoices,6);
+   assert.deepEqual(status.missingBeats,[7]);
+   assert.equal(status.distributionAllowed,false);
+   assert.equal(status.publicationApproved,false);
+   const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
+   assert.equal(decisions.mode,'preview');
+   assert.equal(decisions.recoveryRequired,true);
+   assert.equal(decisions.publicationApproved,false);
+   assert.equal(decisions.choices.length,6);
+   assert.deepEqual(decisions.missingBeats,[7]);
+   const pack=JSON.parse(await readFile(
+    join(draft,'editorial-review-kit','candidate-pack.json'),'utf8'));
+   assert.equal(pack.beats.length,7);
+   assert.equal(pack.beats.filter(x=>x.candidates.length>0).length,6);
+   assert.equal(pack.beats[6].needsRecording,true);
+   assert.ok(pack.beats.slice(0,6).every(x=>x.defaultCandidateId!==null));
+   const diagnosis=JSON.parse(await readFile(status.asrDiagnostics,'utf8'));
+   assert.equal(diagnosis.beats[6].diagnosticStatus,'ASR_NEAR_MISS_NEEDS_LISTENING');
+   assert.equal(diagnosis.beats[6].reportedCandidates[0].heardByAsr,'Эта колыбельная.');
+   assert.equal(diagnosis.renderAllowed,false);
+   const report=await readFile(join(draft,'RECOVERY-RESULT.md'),'utf8');
+   assert.match(report,/Сохранены неподтверждённые ASR-кандидаты: 6 из 7/);
+   assert.match(report,/Сцены, требующие отдельной проверки: 7/);
+   const reviewPage=await readFile(status.reviewHtml,'utf8');
+   assert.match(reviewPage,/Почему остановился автоматический монтаж/);
+   assert.match(reviewPage,/Эта колыбельная/);
+   assert.match(reviewPage,/Слово 1: сценарий «это», Whisper «эта»/);
+   assert.match(reviewPage,/не является разрешением|Публикация не разрешена/i);
+   await assert.rejects(stat(join(draft,'draft-reel.mp4')),/ENOENT/);
+   if(mode==='strict'){
+    // Synthetic acceptance wiring ONLY. No human or Russian speech was
+    // involved: the sine-wave video does not prove B04 was actually spoken.
+    // This tests the existing explicit-review continuation into real FFmpeg.
+    const evidence=JSON.parse(await readFile(join(draft,'evidence','analysis.json'),'utf8'));
+    const sourceHash=evidence.sources[0].sha256;
+    const originalHash=createHash('sha256').update(await readFile(video)).digest('hex');
+    assert.equal(sourceHash,originalHash);
+    const selectionPath=join(root,'synthetic-reviewed.json');
+    await mk(selectionPath,{
+     version:1,kind:'persona-editorial-selection-v1',
+     status:'human-reviewed-not-published',
+     selections:pack.beats.map((beat,i)=>i<6?{
+      beat:i+1,candidateId:beat.defaultCandidateId,reviewed:true,
+      reason:'Synthetic test-only selection of verified ASR candidate',
+      rejected:[],
+     }:{
+      beat:7,candidateId:null,reviewed:true,
+      reason:'Synthetic test-only manual selection of missing scene',
+      rejected:[],
+      recovery:{kind:'persona-manual-segment-v1',
+       transcriptSource:'manual-review',sourceId:'seven',
+       sourceSha256:sourceHash,startSec:12.3,durationSec:1.4,
+       transcript:'Это колыбельная.',confirmed:true,
+       reason:'Synthetic test-only explicit recovery; not actual Russian speech'},
+     }),
+    });
+    const reviewed=await renderReviewedReel({draftDir:draft,
+     selectionPath,outputDir:join(root,'reviewed-seven')});
+    assert.equal(reviewed.status,'awaiting-author-review');
+    assert.equal(reviewed.recoveredFromAsr,true);
+    assert.equal(reviewed.distributionAllowed,false);
+    assert.equal(reviewed.publicationApproved,false);
+    assert.equal(reviewed.originalDraft,null);
+    assert.ok((await stat(reviewed.output)).size>1000);
+    const qa=JSON.parse(await readFile(reviewed.qaPath,'utf8'));
+    assert.equal(qa.evidence.videoCodec,'h264');
+    assert.equal(qa.evidence.audioCodec,'aac');
+    assert.equal(qa.evidence.probeVerified,true);
+    assert.equal(qa.handoff.passed,false,'Real publication requires author approval');
+    assert.deepEqual(qa.handoff.errors,['author approval required']);
+    const decisionsAfter=JSON.parse(await readFile(reviewed.decisionsPath,'utf8'));
+    assert.equal(decisionsAfter.choices.length,7);
+    assert.equal(decisionsAfter.choices[6].transcriptSource,'manual-review');
+    assert.equal(decisionsAfter.choices[6].manualTranscriptReview,true);
+    assert.equal(decisionsAfter.missingBeats.length,0);
+    const decoded=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-i',
+     reviewed.output,'-f','null','-'],{encoding:'utf8',timeout:40000});
+    assert.equal(decoded.status,0,decoded.stderr);
+    assert.equal(createHash('sha256').update(await readFile(video)).digest('hex'),originalHash);
+   }
+  }
+ }finally{await rm(root,{recursive:true,force:true})}
 });
