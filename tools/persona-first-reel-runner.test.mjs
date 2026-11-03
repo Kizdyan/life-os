@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runFirstReel, validateDraftQa, validateFirstReelMode, assessFirstReelTiming, firstReelCliExitCode } from './persona-first-reel-runner.mjs';
 import {renderReviewedReel} from './persona-reviewed-render.mjs';
+import {applyAiEditorialSelection} from './persona-ai-editorial.mjs';
 const mediaTools=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
 test('two-shot live speech brief matches only the first two beats of the full Reel',async()=>{
@@ -91,6 +92,30 @@ writeFileSync(process.argv[5],JSON.stringify({evidence,handoff:{passed:false,sta
  assert.match(await readFile(result.subtitleDraft.srtPath,'utf8'),/Я актёр/);
  assert.equal(result.distributionAllowed,false);
  assert.ok((await stat(result.output)).size>1000);
+ const aiRender=await runFirstReel({
+  sources,brief,outputDir:join(d,'ai-finished'),whisperCli:exe,whisperModel:model,
+  rendererPath:renderer,verifierPath:verifier,aiEditorModel:'mock-local-ollama',
+  aiVariation:'humor',aiEditorialSelector:async({decisions,model:usedModel,variation})=>{
+   assert.equal(usedModel,'mock-local-ollama');
+   assert.equal(variation,'humor');
+   const reply={
+    choices:decisions.candidates.map(row=>({beat:row.beat,candidateId:row.alternatives[0].candidateId})),
+    creativeIntent:'Смысловые склейки по репликам, нейтральная цветовая палитра',
+    look:'natural-clean',
+   };
+   const selected=applyAiEditorialSelection(decisions,reply);
+   return {...selected,aiEditorial:{...selected.aiEditorial,model:usedModel,variation}};
+  },
+ });
+ assert.equal(aiRender.status,'awaiting-author-review');
+ assert.equal(aiRender.aiEditorial.provider,'ollama');
+ assert.equal(aiRender.aiEditorial.look,'natural-clean');
+ assert.ok(aiRender.events.includes('real_local_ollama_selected_cut_candidates'));
+ assert.ok(aiRender.events.includes('real_ffmpeg_color_applied_to_edited_mp4'));
+ assert.ok((await stat(aiRender.aiFinishedVideo)).size>1000);
+ assert.ok((await stat(aiRender.aiFinishedQaPath)).size>100);
+ assert.equal(JSON.parse(await readFile(aiRender.aiColorPackage,'utf8')).variants.length,3);
+ assert.equal(aiRender.distributionAllowed,false);
  for(let i=0;i<videos.length;i++)assert.deepEqual(await readFile(videos[i]),originals[i]);
  await assert.rejects(()=>runFirstReel({sources,brief,outputDir:join(d,'finished'),whisperCli:exe,whisperModel:model,rendererPath:renderer,verifierPath:verifier}),/EEXIST/);
  }finally{await rm(d,{recursive:true,force:true})}
