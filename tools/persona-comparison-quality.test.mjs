@@ -65,6 +65,9 @@ test('comparison QC inspects real four-file FFmpeg render, writes paired frames 
   const injection=renderPersonaReviewHtml({...reviewQc,original:{...reviewQc.original,fileName:'<script>alert(1)</script>'}},review.reviewDir);
   assert.doesNotMatch(injection,/<script>/);
   assert.match(injection,/&lt;script&gt;/);
+  assert.throws(()=>renderPersonaReviewHtml({
+   ...reviewQc,visualEvidence:{...reviewQc.visualEvidence,directory:join(root,'comparison-qc-frames')},
+  },review.reviewDir),/evidence filename escapes/,'HTML cannot link outside its private review folder');
   assert.equal(digest(await readFile(source)),before,'one-command review must not alter original');
 
   assert.equal(digest(await readFile(source)),before,'original source must stay byte-identical');
