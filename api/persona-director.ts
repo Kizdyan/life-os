@@ -59,7 +59,7 @@ async function modelProposal(request:Request,provider:{provider:'ollama'|'gatewa
  const payload=JSON.stringify(input);
  if(payload.length>6000)fail('director_input_too_large');
  const prompt={role:'user',content:payload};
- let response:Response;
+ let response:Response|undefined;
  if(provider.provider==='ollama'){
   try{
    response=await fetch('http://127.0.0.1:11434/api/chat',{
@@ -83,6 +83,7 @@ async function modelProposal(request:Request,provider:{provider:'ollama'|'gatewa
    });
   }catch{fail('director_gateway_unavailable')}
  }
+ if(!response)fail('director_model_unavailable');
  if(!response.ok)fail(provider.provider==='ollama'?'director_ollama_error':'director_gateway_error');
  let data:any;
  try{data=await response.json()}catch{fail('director_model_invalid_response')}
