@@ -68,7 +68,7 @@ function moments(durationSec,hotspots){
 async function pairFrame(source,graded,time,path,environment){
  await run(['-hide_banner','-nostdin','-loglevel','error','-ss',String(time),'-i',source,
   '-ss',String(time),'-i',graded,'-filter_complex',
-  '[0:v]scale=360:-2:flags=lanczos,setsar=1[left];[1:v]scale=360:-2:flags=lanczos,setsar=1[right];[left][right]hstack=inputs=2[out]',
+  '[0:v]scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2,setsar=1[left];[1:v]scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2,setsar=1[right];[left][right]hstack=inputs=2[out]',
   '-map','[out]','-frames:v','1','-q:v','3','-y',path],environment);
 }
 export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,ffmpegDir}={}){
