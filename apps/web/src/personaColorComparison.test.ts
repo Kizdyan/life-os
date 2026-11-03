@@ -74,6 +74,15 @@ describe('Persona color comparison import',()=>{
   const chosen=choosePersonaColorVariant(initial,'warm-cinematic','Best skin tone','2026-11-02T21:00:00.000Z');
   expect(chosen.selectedVariantId).toBe('warm-cinematic');
   expect(chosen.comment).toBe('Best skin tone');
+  expect(chosen.decisionHistory?.map(item=>item.selectedVariantId)).toEqual(['warm-cinematic']);
+  const revised=choosePersonaColorVariant(chosen,'natural-clean','Neutral skin','2026-11-02T21:05:00.000Z');
+  expect(revised.decisionHistory?.map(item=>item.selectedVariantId)).toEqual(['warm-cinematic','natural-clean']);
+  expect(chosen.selectedVariantId).toBe('warm-cinematic');
+  expect(readPersonaColorComparisonRecord({...revised,decisionHistory:[{selectedVariantId:'fake',comment:'?',decidedAt:stamp}]})).toBeNull();
+  const oldRecord={...chosen,decisionHistory:undefined};
+  expect(readPersonaColorComparisonRecord(oldRecord)).toEqual(oldRecord);
+  expect(choosePersonaColorVariant(oldRecord,'muted-filmic','Legacy upgrade','2026-11-02T21:10:00.000Z')
+   .decisionHistory?.map(item=>item.selectedVariantId)).toEqual(['warm-cinematic','muted-filmic']);
   expect(initial.selectedVariantId).toBeUndefined();
   expect(readPersonaColorComparisonRecord({...chosen,selectedVariantId:'other'})).toBeNull();
   expect(readPersonaColorComparisonRecord({...chosen,comment:'x'.repeat(1001)})).toBeNull();
