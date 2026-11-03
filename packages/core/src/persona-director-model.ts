@@ -43,7 +43,7 @@ export function readPersonaDirectorProposal(value:unknown,ideaId:string):Persona
  let total=0;
  const unique=new Set<string>();
  for(const shot of value.scenes){
-  if(!obj(shot)||!Number.isInteger(shot.durationSec)||shot.durationSec<2||shot.durationSec>12||
+  if(!obj(shot)||typeof shot.durationSec!=='number'||!Number.isInteger(shot.durationSec)||shot.durationSec<2||shot.durationSec>12||
    !text(shot.line,2,180)||!text(shot.action,6,320)||
    !['close-up','medium','detail'].includes(String(shot.framing))||
    !text(shot.camera,5,450)||!text(shot.lighting,5,450)||
