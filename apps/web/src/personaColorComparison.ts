@@ -114,3 +114,39 @@ export function choosePersonaColorVariant(
  if(!readPersonaColorComparisonRecord(next))fail('invalid saved author decision');
  return next;
 }
+
+
+/** Untrusted local QC is displayed only after it matches all four verified MP4 hashes. */
+export type PersonaComparisonQcSummary={
+ technicalStatus:'pass'|'fail';
+ variants:Array<{id:PersonaColorVariantId;technicalStatus:'pass'|'fail';problems:string[];jumpTimesSec:number[]}>;
+};
+export function readPersonaComparisonQcSummary(value:unknown,record:PersonaColorComparisonRecord):PersonaComparisonQcSummary|null{
+ if(!readPersonaColorComparisonRecord(record)||!object(value)||value.kind!=='persona-comparison-quality-v1'||
+  value.version!==1||value.publicationApproved!==false||value.artisticStatus!=='awaiting-author-review'||
+  value.sourceSha256!==record.sourceSha256||!object(value.original)||
+  value.original.sha256!==record.sourceSha256||
+  (value.technicalStatus!=='pass'&&value.technicalStatus!=='fail')||
+  !Array.isArray(value.variants)||value.variants.length!==3)return null;
+ const rows:PersonaComparisonQcSummary['variants']=[];
+ for(const [index,preset] of COLOR_VARIANT_PRESETS.entries()){
+  const item=value.variants[index];
+  if(!object(item)||item.id!==preset.id||item.fileName!==preset.fileName||
+   item.sha256!==record.variants[index]?.sha256||
+   (item.technicalStatus!=='pass'&&item.technicalStatus!=='fail')||
+   !Array.isArray(item.technicalMismatches)||
+   item.technicalMismatches.length>30||item.technicalMismatches.some(x=>typeof x!=='string'||x.length>100)||
+   !Array.isArray(item.additionalSampledJumps)||
+   item.additionalSampledJumps.length>10000)return null;
+  const times:number[]=[];
+  for(const event of item.additionalSampledJumps){
+   if(!object(event)||typeof event.atSec!=='number'||!Number.isFinite(event.atSec)||
+    event.atSec<0||event.atSec>21600||
+    (event.kind!=='luma_jumps'&&event.kind!=='chroma_jumps'))return null;
+   if(times.length<5)times.push(event.atSec);
+  }
+  rows.push({id:preset.id,technicalStatus:item.technicalStatus,
+   problems:item.technicalMismatches,jumpTimesSec:times});
+ }
+ return {technicalStatus:value.technicalStatus,variants:rows};
+}
