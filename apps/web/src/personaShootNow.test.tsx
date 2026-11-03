@@ -68,7 +68,8 @@ describe('Persona direct filming experience',()=>{
   expect(plan.scenes).toHaveLength(1);
   expect(plan.scenes[0].line).toBe('Моя собственная новая реплика');
   expect(plan.scenes[0].camera).not.toContain('ориентир 0,9');
-  expect(plan.scenes[0].sourceFileName).toBeUndefined();
+  expect(plan.scenes[0].sourceFileName).toBe('S01_take01.mp4');
+  expect(plan.scenes[0].sourceFileName).not.toContain('A01');
  });
  it('tracks take completion only in this project and invalidates on changed script',()=>{
   const plan=buildPersonaShootPlan(preset);
