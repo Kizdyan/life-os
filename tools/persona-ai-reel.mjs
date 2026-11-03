@@ -41,7 +41,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   const result=await runFirstReel(args);
   process.stdout.write(JSON.stringify({
    status:result.status,
-   video:result.output??null,
+   video:result.aiFinishedVideo??null,
+   sourceDraft:result.output??null,
+   comparisonPackage:result.aiColorPackage??null,
+   qa:result.aiFinishedQaPath??null,
    aiEditorial:result.aiEditorial??null,
    review:result.status==='awaiting-author-review'?'MP4 rendered, NOT published. Open draft-reel.mp4 and QA.':
     'No completed MP4; inspect RECOVERY-RESULT.md and real evidence before retry.',
