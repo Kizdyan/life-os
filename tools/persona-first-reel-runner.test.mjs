@@ -233,6 +233,13 @@ test('Whisper failure automatically produces playable Recovery Review and manual
   assert.equal(status.publicationApproved,false);
   assert.equal(status.distributionAllowed,false);
   assert.match(status.reason,/Whisper/);
+  assert.match(status.asrDiagnostics,/ASR-DIAGNOSTICS\.json$/);
+  const diagnostic=JSON.parse(await readFile(status.asrDiagnostics,'utf8'));
+  assert.equal(diagnostic.renderAllowed,false);
+  assert.equal(diagnostic.publicationApproved,false);
+  assert.equal(diagnostic.beats.length,2);
+  assert.ok(diagnostic.beats.every(b=>b.diagnosticStatus==='NO_USABLE_ASR_TEXT'));
+  assert.ok((await readFile(status.asrDiagnosticsMarkdown,'utf8')).includes('не утверждена'));
   const kit=join(draft,'editorial-review-kit'),pack=JSON.parse(await readFile(join(kit,'candidate-pack.json'),'utf8'));
   assert.equal(pack.beats.length,2);
   assert.ok(pack.beats.every(x=>x.candidates.length===0&&x.recovery.availableSources.length===2));
@@ -294,6 +301,10 @@ test('zero-choice Preview automatically opens Recovery instead of requiring a fi
   assert.equal(result.status,'needs-manual-transcript-review');
   assert.equal(result.distributionAllowed,false);
   assert.ok((await stat(join(draft,'editorial-review-kit','previews','review.html'))).size>0);
+  const diagnostics=JSON.parse(await readFile(join(draft,'ASR-DIAGNOSTICS.json'),'utf8'));
+  assert.equal(diagnostics.beats.length,2);
+  assert.equal(diagnostics.publicationApproved,false);
+  assert.ok(diagnostics.sourceFiles.every(s=>s.hasUsableTranscript===false));
   await assert.rejects(()=>stat(join(draft,'draft-reel.mp4')),/ENOENT/);
   const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
   assert.equal(decisions.recoveryRequired,true);
