@@ -16,7 +16,7 @@ test('Russian transcription matching normalizes ё, rejects unrelated phrases',(
  assert.equal(overlap('Пишу музыку','Варю суп и ем картошку'),0);
 });
 test('Whisper JSON parser reads timestamped tokens and rejects invalid offsets',()=>{
- const result=parseWhisperJson({transcription:[{text:' entire speech',offsets:{from:0,to:2500},tokens:[
+ const result=parseWhisperJson({transcription:[{text:' Я актёр пишу музыку',offsets:{from:0,to:2500},tokens:[
   {text:' Я',offsets:{from:0,to:150}},
   {text:' актёр',offsets:{from:200,to:700}},
   {text:' пишу',offsets:{from:900,to:1300}},
@@ -59,6 +59,43 @@ test('mixed token timestamps cannot silently truncate spoken segment',()=>{
  const parts=parseWhisperJson(data,3);
  assert.equal(parts.length,1);
  assert.match(parts[0].text,/проблема/);
+});
+test('complete Whisper segment text wins when fully timed tokens omit a spoken word',()=>{
+ const segments=parseWhisperJson({transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:1800},
+  tokens:[
+   {text:' И',offsets:{from:300,to:400}},
+   {text:' нас',offsets:{from:420,to:650}},
+   {text:' есть',offsets:{from:660,to:900}},
+   {text:' проблема.',offsets:{from:920,to:1700}}
+  ]
+ }]},3);
+ assert.deepEqual(segments,[{
+  startSec:.3,endSec:1.8,text:'И у нас есть проблема.',timing:'segment',
+ }],'A truncated token list cannot silently remove «у» from the original segment');
+});
+test('non-monotonic token offsets never masquerade as reliable word timing',()=>{
+ const segments=parseWhisperJson({transcription:[{
+  text:' Я актёр.',offsets:{from:200,to:1200},
+  tokens:[
+   {text:' Я',offsets:{from:500,to:800}},
+   {text:' актёр',offsets:{from:300,to:1000}}
+  ]
+ }]},2);
+ assert.deepEqual(segments,[{
+  startSec:.2,endSec:1.2,text:'Я актёр.',timing:'segment',
+ }]);
+});
+test('spoken untimed Whisper token without segment offsets fails instead of disappearing',()=>{
+ const source={transcription:[
+  {text:' Я актёр.',offsets:{from:0,to:600}},
+  {text:' И у нас есть проблема.',tokens:[
+   {text:' И',offsets:{from:700,to:850}},
+   {text:' у',offsets:{from:850,to:850}},
+   {text:' нас',offsets:{from:850,to:1050}}
+  ]}
+ ]};
+ assert.throws(()=>parseWhisperJson(source,2),/untimed speech has no complete segment text and offsets/);
 });
 test('zero-duration audible Whisper token preserves the complete Russian phrase with honest segment timing',()=>{
  const source={transcription:[{
@@ -114,6 +151,18 @@ test('B04 wrong vowel or grammatical ending is a strict ASR mismatch, not an app
  }
 });
 
+test('B04 cannot be selected from words scattered across a different spoken phrase',()=>{
+ const wanted={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Герой произносит финальную реплику'}]};
+ const transcript='Эта колыбельная. Это совсем другое.';
+ const fragments=parseWhisperJson(whisper([[transcript,.2,2]]),3);
+ const source={id:'B04_wrong_extra_text',durationSec:3,segments:fragments};
+ assert.throws(()=>createEditorialPlan(wanted,[source]),/Manual review required/);
+ const preview=createEditorialPlan(wanted,[source],{mode:'preview'});
+ assert.deepEqual(preview.missingBeats,[1]);
+ assert.equal(preview.choices.length,0);
+});
 test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
  const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[
   {text:' Компо',offsets:{from:0,to:400}},
