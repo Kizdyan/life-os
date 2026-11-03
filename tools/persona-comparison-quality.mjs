@@ -10,7 +10,7 @@ import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
-import {compareTemporalLuma,sampleTemporalLuma} from './persona-comparison-temporal.mjs';
+import {compareTemporalLuma,hasSourceTransitionNear,sampleTemporalLuma} from './persona-comparison-temporal.mjs';
 
 const variants=[
  {id:'natural-clean',fileName:'A-natural-clean.mp4'},
@@ -140,6 +140,7 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
    note:'8-bit YUV means of sampled frames; these values do not measure skin tone or artistic quality.'
   }:null;
   const hotspots=[...newJumps(original,report,'luma_jumps'),...newJumps(original,report,'chroma_jumps')]
+   .filter(event=>!hasSourceTransitionNear(temporal[0].samples,event.atSec))
    .sort((a,b)=>a.atSec-b.atSec);
   const temporalFlicker=temporal[0].samples&&temporal[i].samples
    ?compareTemporalLuma(temporal[0].samples,temporal[i].samples)
