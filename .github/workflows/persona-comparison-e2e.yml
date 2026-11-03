@@ -10,6 +10,8 @@ on:
       - "tools/persona-color-variants.mjs"
       - "tools/persona-comparison-quality.mjs"
       - "tools/persona-comparison-quality.test.mjs"
+      - "tools/persona-comparison-temporal.mjs"
+      - "tools/persona-comparison-temporal.test.mjs"
       - "tools/persona-video-quality.mjs"
       - "tools/persona-comparison-browser-e2e.mjs"
       - ".github/workflows/persona-comparison-e2e.yml"
@@ -42,7 +44,7 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
       - name: Original-vs-grade quality regression (real FFmpeg)
-        run: node --test tools/persona-comparison-quality.test.mjs
+        run: node --test tools/persona-comparison-quality.test.mjs tools/persona-comparison-temporal.test.mjs
       - name: Start Persona web UI
         shell: bash
         run: |
