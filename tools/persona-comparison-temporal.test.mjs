@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareTemporalLuma} from './persona-comparison-temporal.mjs';
+import {compareTemporalLuma,hasSourceTransitionNear} from './persona-comparison-temporal.mjs';
 
 const series=(values,shift=0)=>values.map((y,i)=>({atSec:i/12+shift,y}));
 
@@ -40,4 +40,13 @@ test('misaligned timestamps and invalid samples cannot produce confident analysi
  const report=compareTemporalLuma(source,outOfSync);
  assert.equal(report.status,'not_measured');
  assert.deepEqual(report.candidates,[]);
+});
+
+
+test('original exposure cuts suppress legacy grade-only hotspot warnings',()=>{
+ const source=series([100,100,100,100,160,160,160,160]);
+ assert.equal(hasSourceTransitionNear(source,4/12),true);
+ assert.equal(hasSourceTransitionNear(source,0),false);
+ assert.equal(hasSourceTransitionNear(source,7/12),false);
+ assert.equal(hasSourceTransitionNear([],0.3),false);
 });
