@@ -161,8 +161,9 @@ export function readPersonaComparisonQcSummary(value:unknown,record:PersonaColor
   if(item.temporalFlicker!==undefined){
    const temporal=item.temporalFlicker;
    if(!object(temporal)||(temporal.status!=='measured'&&temporal.status!=='not_measured')||
-    temporal.sampleRate!==12||!Number.isInteger(temporal.alignedSamples)||
-    temporal.alignedSamples<0||!Number.isFinite(temporal.coverage)||
+    temporal.sampleRate!==12||typeof temporal.alignedSamples!=='number'||
+    !Number.isInteger(temporal.alignedSamples)||temporal.alignedSamples<0||
+    typeof temporal.coverage!=='number'||!Number.isFinite(temporal.coverage)||
     temporal.coverage<0||temporal.coverage>1||
     !Array.isArray(temporal.candidates)||temporal.candidates.length>20)return null;
    temporalStatus=temporal.status;
