@@ -130,7 +130,7 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
   }:null;
   const hotspots=[...newJumps(original,report,'luma_jumps'),...newJumps(original,report,'chroma_jumps')]
    .sort((a,b)=>a.atSec-b.atSec);
-  results.push({id:item.id,fileName:item.fileName,technicalStatus:mismatches.length?'fail':'pass',
+  results.push({id:item.id,fileName:item.fileName,sha256:item.sha256,technicalStatus:mismatches.length?'fail':'pass',
    technicalMismatches:mismatches,statistics:stats,additionalSampledJumps:hotspots,
    artisticStatus:'awaiting-author-review'});
  }
@@ -150,12 +150,13 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
   }
   frames.push({atSec:time,timecode:clock(time),pairs:files});
  }
+ const sourceDecodeOk=finding(original,'decode_integrity')?.measurement?.value==='pass';
  const report={
   version:1,kind:'persona-comparison-quality-v1',sourceSha256:all[0].sha256,
   createdAt:new Date().toISOString(),publicationApproved:false,
-  technicalStatus:results.some(x=>x.technicalStatus==='fail')?'fail':'pass',
+  technicalStatus:!sourceDecodeOk||results.some(x=>x.technicalStatus==='fail')?'fail':'pass',
   artisticStatus:'awaiting-author-review',
-  original:{fileName:all[0].fileName,width:base.width,height:base.height,fps:base.fps,durationSec:base.durationSec,
+  original:{fileName:all[0].fileName,sha256:all[0].sha256,decodeIntegrity:sourceDecodeOk?'pass':'fail',width:base.width,height:base.height,fps:base.fps,durationSec:base.durationSec,
    note:'Native source geometry is preserved; 1080x1920 is not assumed.'},
   variants:results,
   visualEvidence:{directory:evidenceDir,frames,labels:'Each JPEG: ORIGINAL left, variant right.'},
