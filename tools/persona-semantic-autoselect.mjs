@@ -53,8 +53,23 @@ export function parseWhisperJson(value,durationSec){
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
       Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to) &&
       t.offsets.to>t.offsets.from);
-    const candidates=allTokensTimed?audible:[seg];
-    const timing=allTokensTimed?'word':'segment';
+    // Even positive token timestamps are not reliable when Whisper omitted
+    // spoken text from its token list or returned non-monotonic word offsets.
+    // Both cases need a truthful full-segment transcript and coarse timing.
+    const tokenText=audible.map(t=>t.text).join('');
+    const textDisagrees=audible.length>0 && typeof seg?.text==='string' &&
+      seg.text.trim() && normalize(tokenText).join(' ')!==normalize(seg.text).join(' ');
+    const ordered=allTokensTimed && audible.every((t,i)=>i===0 ||
+      (t.offsets.from>=audible[i-1].offsets.from &&
+       t.offsets.to>=audible[i-1].offsets.to));
+    const useWordTiming=allTokensTimed && ordered && !textDisagrees;
+    if(!useWordTiming && audible.length &&
+       (typeof seg?.text!=='string'||!seg.text.trim()||!seg.offsets))
+      fail('ASR untimed speech has no complete segment text and offsets');
+    if(!useWordTiming && typeof seg?.text==='string' && seg.text.trim() && !seg.offsets)
+      fail('ASR spoken segment lacks time offsets');
+    const candidates=useWordTiming?audible:[seg];
+    const timing=useWordTiming?'word':'segment';
     const grouped=[];
     for(const token of candidates){
       if(!token?.offsets||typeof token.text!=='string')continue;
@@ -64,7 +79,7 @@ export function parseWhisperJson(value,durationSec){
       if(!text || /^\[[^\]]+\]$/.test(text) || end<=start)continue;
       // Full JSON token strings often split ONE Russian word into subwords.
       // Absence of a leading space means continuation, not a new word.
-      if(allTokensTimed && grouped.length && !/^\s/u.test(token.text)){
+      if(useWordTiming && grouped.length && !/^\s/u.test(token.text)){
         const last=grouped[grouped.length-1];
         last.text+=text;
         last.endSec=end;
@@ -91,6 +106,14 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(duration>12)break;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
+      // Bag-of-words scoring alone can falsely match "Это колыбельная"
+      // inside "Эта колыбельная. Это совсем другое." because both words
+      // appear somewhere. Short scripted lines require exact word order and
+      // adjacency before they can become even a provisional ASR candidate.
+      const expectedWords=normalize(line),heardWords=normalize(text);
+      if(expectedWords.length<=3 &&
+         !heardWords.some((_,k)=>expectedWords.every((w,j)=>heardWords[k+j]===w)))
+        continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;
       results.push({sourceId,startSec,endSec,speechEndSec:segments[j-1].endSec,
