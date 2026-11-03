@@ -93,6 +93,33 @@ try{
  const context=await browser.newContext(browserKind==='webkit'
   ?{viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,acceptDownloads:true}
   :{viewport:{width:1280,height:860},acceptDownloads:true});
+ // Independent shoot-first journey: a real seven-shot plan appears without
+ // requiring video color QC, and manual take marks survive reload.
+ const shootContext=await browser.newContext({viewport:{width:390,height:844}});
+ try{
+  const shootPage=await shootContext.newPage();
+  shootPage.on('pageerror',error=>summary.errors.push('shoot-first: '+error.message));
+  await shootPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
+  await shootPage.getByRole('button',{name:/Снять сегодня: актёр \+ композитор · 7 кадров/}).click();
+  const board=shootPage.getByRole('region',{name:'Снять ролик сейчас'});
+  await board.waitFor({state:'visible',timeout:15000});
+  await board.getByText('Я актёр. И ещё пишу музыку.').waitFor();
+  await board.getByText(/Как поставить камеру/).waitFor();
+  assert.match(await board.textContent(),/31 сек\. · 7 кадров/);
+  await board.getByRole('checkbox',{name:'Я записал хотя бы один дубль этого кадра'}).check();
+  await board.getByText('1 из 7 отмечено тобой').waitFor();
+  await checkNoOverflow(shootPage);
+  await shootPage.screenshot({path:join(artifacts,'shoot-now-mobile.png'),fullPage:true});
+  await shootPage.reload({waitUntil:'domcontentloaded'});
+  const restored=shootPage.getByRole('region',{name:'Снять ролик сейчас'});
+  await restored.getByText('1 из 7 отмечено тобой').waitFor();
+  assert.equal(await restored.getByRole('checkbox',{name:'Я записал хотя бы один дубль этого кадра'}).isChecked(),true);
+  await restored.getByRole('button',{name:'Следующий кадр'}).click();
+  await restored.getByText('И у нас есть проблема.').waitFor();
+  await restored.getByRole('button',{name:'Сохранить эти 7 сцен в сценарии проекта'}).click();
+  await shootPage.getByRole('status').filter({hasText:'Семь сцен сохранены как НЕУТВЕРЖДЁННЫЙ сценарий'}).waitFor();
+  step(browserLabel+' opens a concrete seven-shot film board, persists take marks and saves a draft');
+ }finally{await shootContext.close()}
  page=await context.newPage();
  page.on('pageerror',error=>summary.errors.push(error.message));
  await page.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
