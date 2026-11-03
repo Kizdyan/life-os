@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {
- COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
+ COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,createPersonaColorReviewBrief,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
  readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,type PersonaColorComparisonRecord,type PersonaColorVariantId,type PersonaComparisonQcSummary,
  type PersonaColorReviewCategory,type PersonaColorReviewAssessment,
@@ -123,6 +123,21 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    setMessage('Авторский выбор сохранён в проекте. Это не разрешение публикации.');
   }catch(error){setMessage('Решение не сохранено: '+readableError(error))}
  }
+ function downloadReviewBrief(){
+  if(!record){setMessage('Нет сохранённого материала для экспорта.');return;}
+  try{
+   const brief=createPersonaColorReviewBrief(record,new Date().toISOString());
+   const blob=new Blob([JSON.stringify(brief,null,2)+'\\n'],{type:'application/json'});
+   const url=URL.createObjectURL(blob);
+   const link=document.createElement('a');
+   link.href=url;
+   link.download='PERSONA-REVIEW-'+record.sourceSha256.slice(0,12)+'.json';
+   link.style.display='none';
+   document.body.appendChild(link);
+   try{link.click()}finally{link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),3000)}
+   setMessage('Review Brief подготовлен для локального сохранения. Видео не экспортируется.');
+  }catch(error){setMessage('Не удалось экспортировать замечания: '+readableError(error))}
+ }
  function rejectAll(){
   if(!record||!urls){setMessage('Сначала подтвердите все пять файлов сравнительного пакета.');return;}
   try{
@@ -196,6 +211,10 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
      {entry.decidedAt} · {entry.rejectedAll?'Отклонены все варианты':COLOR_VARIANT_PRESETS.find(p=>p.id===entry.selectedVariantId)?.label} · {entry.comment||'без комментария'}
     </li>)}</ol>
    </details>}
+   {(Boolean(current.reviewNotes?.length)||current.rejectedAll||Boolean(current.selectedVariantId))&&
+    <button type="button" className="ghost" onClick={downloadReviewBrief}>
+     Скачать художественные замечания для Codex (JSON)
+    </button>}
    {Boolean(current.reviewNotes?.length)&&<details>
     <summary>Замечания по кадрам ({current.reviewNotes?.length})</summary>
     <ol>{current.reviewNotes?.slice(-10).reverse().map((note,index)=><li key={note.createdAt+'-'+index}>
