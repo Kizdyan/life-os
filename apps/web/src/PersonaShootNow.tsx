@@ -6,14 +6,17 @@ import {
 import './persona-shoot-now.css';
 
 export function PersonaShootNow({
- projectId,plan,onOpenScript,onSavePilot,
+ projectId,plan,onOpenScript,onSavePilot,onGenerateAi,aiBusy=false,
 }:{
  projectId:string;
  plan:PersonaShootPlan;
  onOpenScript:()=>void;
  onSavePilot?:()=>void;
+ onGenerateAi?:(variation:'unexpected'|'humor'|'cinematic'|'intimate')=>void;
+ aiBusy?:boolean;
 }){
  const [currentIndex,setCurrentIndex]=useState(0);
+ const [variation,setVariation]=useState<'unexpected'|'humor'|'cinematic'|'intimate'>('unexpected');
  const [saved,setSaved]=useState<PersonaShootProgress|null>(()=>{
   try{return readShootProgress(JSON.parse(localStorage.getItem(shootProgressKey(projectId))||'null'),plan)}
   catch{return null}
@@ -60,6 +63,25 @@ export function PersonaShootNow({
    </div>
    <span className="personaShootNowTime">{totalDuration} сек. · {plan.scenes.length} кадров</span>
   </header>
+  {onGenerateAi&&<div className="personaShootNowAi">
+   <strong>Написать другой сценарий настоящей нейросетью</strong>
+   <p>ИИ создаёт новые реплики и съёмочные кадры, а не выдаёт старый шаблон.
+    Модель должна быть подключена локально через Ollama или в тестовом AI Gateway.
+    Если она недоступна, мы покажем ошибку — подмены шаблоном не будет.</p>
+   <div>
+    <label>Тип истории
+     <select aria-label="Тип новой истории" value={variation} onChange={event=>setVariation(event.target.value as typeof variation)}>
+      <option value="unexpected">Неожиданный поворот</option>
+      <option value="humor">Комедийный диалог</option>
+      <option value="cinematic">Киносцена</option>
+      <option value="intimate">Личное наблюдение</option>
+     </select>
+    </label>
+    <button type="button" disabled={aiBusy} onClick={()=>onGenerateAi(variation)}>
+     {aiBusy?'Нейросеть пишет сценарий…':'Создать новый сценарий ИИ'}
+    </button>
+   </div>
+  </div>}
   {!plan.scenes.length?<div className="personaShootNowEmpty">
    <p>У этого проекта пока нет реплик и кадров. Не будем выдавать общий шаблон за готовый съёмочный сценарий.</p>
    <button type="button" onClick={onOpenScript}>Составить сценарий и кадры</button>
