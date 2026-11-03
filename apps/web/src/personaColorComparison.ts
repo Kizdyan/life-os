@@ -130,7 +130,7 @@ export function choosePersonaColorVariant(
 /** Untrusted local QC is displayed only after it matches all four verified MP4 hashes. */
 export type PersonaComparisonQcSummary={
  technicalStatus:'pass'|'fail';
- variants:Array<{id:PersonaColorVariantId;technicalStatus:'pass'|'fail';problems:string[];jumpTimesSec:number[]}>;
+ variants:Array<{id:PersonaColorVariantId;technicalStatus:'pass'|'fail';problems:string[];jumpTimesSec:number[];temporalStatus?:'measured'|'not_measured';temporalJumpTimesSec:number[]}>;
 };
 export function readPersonaComparisonQcSummary(value:unknown,record:PersonaColorComparisonRecord):PersonaComparisonQcSummary|null{
  if(!readPersonaColorComparisonRecord(record)||!object(value)||value.kind!=='persona-comparison-quality-v1'||
@@ -156,8 +156,27 @@ export function readPersonaComparisonQcSummary(value:unknown,record:PersonaColor
     (event.kind!=='luma_jumps'&&event.kind!=='chroma_jumps'))return null;
    if(times.length<5)times.push(event.atSec);
   }
+  const temporalJumpTimesSec:number[]=[];
+  let temporalStatus:'measured'|'not_measured'|undefined;
+  if(item.temporalFlicker!==undefined){
+   const temporal=item.temporalFlicker;
+   if(!object(temporal)||(temporal.status!=='measured'&&temporal.status!=='not_measured')||
+    temporal.sampleRate!==12||!Number.isInteger(temporal.alignedSamples)||
+    temporal.alignedSamples<0||!Number.isFinite(temporal.coverage)||
+    temporal.coverage<0||temporal.coverage>1||
+    !Array.isArray(temporal.candidates)||temporal.candidates.length>20)return null;
+   temporalStatus=temporal.status;
+   for(const candidate of temporal.candidates){
+    if(!object(candidate)||candidate.kind!=='potential_temporal_flicker'||
+     typeof candidate.atSec!=='number'||!Number.isFinite(candidate.atSec)||
+     candidate.atSec<0||candidate.atSec>21600||
+     typeof candidate.amplitude!=='number'||!Number.isFinite(candidate.amplitude)||
+     candidate.amplitude<0||candidate.amplitude>255)return null;
+    if(temporalJumpTimesSec.length<5)temporalJumpTimesSec.push(candidate.atSec);
+   }
+  }
   rows.push({id:preset.id,technicalStatus:item.technicalStatus,
-   problems:item.technicalMismatches,jumpTimesSec:times});
+   problems:item.technicalMismatches,jumpTimesSec:times,temporalStatus,temporalJumpTimesSec});
  }
  return {technicalStatus:value.technicalStatus,variants:rows};
 }
