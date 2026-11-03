@@ -6,11 +6,12 @@ import {
 import './persona-shoot-now.css';
 
 export function PersonaShootNow({
- projectId,plan,onOpenScript,onSavePilot,onGenerateAi,aiBusy=false,
+ projectId,plan,onOpenScript,onOpenEdit,onSavePilot,onGenerateAi,aiBusy=false,
 }:{
  projectId:string;
  plan:PersonaShootPlan;
  onOpenScript:()=>void;
+ onOpenEdit?:()=>void;
  onSavePilot?:()=>void;
  onGenerateAi?:(variation:'unexpected'|'humor'|'cinematic'|'intimate')=>void;
  aiBusy?:boolean;
@@ -149,6 +150,9 @@ export function PersonaShootNow({
     <div className="personaShootNowActions">
      {onSavePilot&&plan.status==='example'&&<button type="button" className="primary" onClick={onSavePilot}>
       Сохранить эти 7 сцен в сценарии проекта
+     </button>}
+     {onOpenEdit&&<button type="button" className="primary" onClick={onOpenEdit}>
+      Открыть реальные дубли в монтаже
      </button>}
      <button type="button" className="secondary" onClick={downloadSheet}>Скачать весь съёмочный лист</button>
      <button type="button" className="secondary" onClick={onOpenScript}>Проверить / изменить сценарий</button>
