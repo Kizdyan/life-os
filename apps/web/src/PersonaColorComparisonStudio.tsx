@@ -1,8 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {
  COLOR_VARIANT_PRESETS,choosePersonaColorVariant,inspectPersonaColorComparisonManifest,
- readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,
- type ComparisonFileEvidence,type PersonaColorComparisonRecord,type PersonaColorVariantId,
+ readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
+ type ComparisonFileEvidence,type PersonaColorComparisonRecord,type PersonaColorVariantId,type PersonaComparisonQcSummary,
 } from './personaColorComparison';
 import './persona-color-comparison.css';
 
@@ -24,6 +24,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  const [urls,setUrls]=useState<VideoUrls|null>(null);
  const [active,setActive]=useState<PersonaColorVariantId>(record?.selectedVariantId??'natural-clean');
  const [comment,setComment]=useState(record?.comment??'');
+ const [quality,setQuality]=useState<PersonaComparisonQcSummary|null>(null);
  const sourcePlayer=useRef<HTMLVideoElement|null>(null);
  const variantPlayer=useRef<HTMLVideoElement|null>(null);
  const generation=useRef(0);
@@ -31,6 +32,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  useEffect(()=>()=>{generation.current++;ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));ownedUrls.current=[]},[]);
  useEffect(()=>{setComment(record?.comment??'')},[record?.sourceSha256,record?.selectedVariantId,record?.comment]);
  useEffect(()=>{setActive(record?.selectedVariantId??'natural-clean')},[record?.sourceSha256,record?.selectedVariantId]);
+ useEffect(()=>{setQuality(null)},[projectId,record?.sourceSha256]);
  useEffect(()=>{if(variantPlayer.current&&sourcePlayer.current){
   variantPlayer.current.currentTime=Math.min(sourcePlayer.current.currentTime,variantPlayer.current.duration||Infinity);
  }},[active,urls]);
@@ -77,6 +79,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));
    ownedUrls.current=nextOwned;
    setUrls(nextUrls);
+   setQuality(null);
    setActive(next.selectedVariantId??'natural-clean');
    setComment(next.comment??'');
    setMessage(keepDecision
@@ -85,6 +88,17 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
   }catch(error){
    if(generation.current===task)setMessage('Импорт отклонён: '+readableError(error));
   }finally{if(generation.current===task)setBusy(false)}
+ }
+ async function importQc(file:File|undefined){
+  if(!file||!record||!urls){setMessage('Сначала импортируйте исходный пакет из пяти файлов.');return;}
+  if(file.size>5000000){setMessage('QC-отчёт слишком велик (максимум 5 МБ).');return;}
+  try{
+   const data:unknown=JSON.parse(await file.text());
+   const summary=readPersonaComparisonQcSummary(data,record);
+   if(!summary)throw Error('QC не соответствует SHA-256 текущего оригинала и трёх обработок либо имеет неправильную структуру.');
+   setQuality(summary);
+   setMessage('Технический QC загружен. Это не художественное одобрение.');
+  }catch(error){setQuality(null);setMessage('QC отклонён: '+readableError(error));}
  }
  function saveChoice(){
   if(!record||!urls){setMessage('Сначала повторно подтвердите оригинал и три MP4 через импорт файлов. Сохранённое решение можно просмотреть без файлов, но нельзя изменить без проверки.');return;}
@@ -124,6 +138,19 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
     'Ожидает решения автора'} · публикация не разрешена.</p>
    {current.selectedVariantId&&<p>Комментарий: {current.comment||'не указан'} · {current.decidedAt}</p>}
    {!urls&&<p>После перезагрузки решение сохраняется, но браузер не хранит MP4. Чтобы снова сравнить видео, повторно выберите пять исходных файлов.</p>}
+   {urls&&<label className="personaComparisonPicker">Импорт отчёта Video Quality Lab (необязательно)
+    <input type="file" accept=".json,application/json" aria-label="Выбрать технический QC-отчёт"
+     onChange={event=>{void importQc(event.currentTarget.files?.[0]);event.currentTarget.value=''}}/>
+   </label>}
+   {quality&&<div className="personaComparisonDetails" aria-label="Технический QC">
+    <p><b>Технический QC:</b> {quality.technicalStatus==='pass'?'PASS':'FAIL'}. Художественная приёмка не проведена.</p>
+    <ul>{quality.variants.map(item=><li key={item.id}>
+     {COLOR_VARIANT_PRESETS.find(p=>p.id===item.id)?.label}: {item.technicalStatus.toUpperCase()}
+     {item.problems.length>0?' · '+item.problems.join(', '):''}
+     {item.jumpTimesSec.length>0?' · дополнительные скачки в '+item.jumpTimesSec.map(sec=>sec.toFixed(2)+' с').join(', '):''}
+    </li>)}</ul>
+    <p>Скачки обнаружены по редким пробам и требуют проверки в движении. Сам отчёт не разрешает публикацию.</p>
+   </div>}
    {urls&&<div className="personaComparisonOptions" role="group" aria-label="Цветовой вариант для просмотра">
     {COLOR_VARIANT_PRESETS.map(preset=><button type="button" key={preset.id}
      aria-pressed={active===preset.id}
