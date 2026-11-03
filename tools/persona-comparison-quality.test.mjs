@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createColorVariants} from './persona-color-variants.mjs';
 import {inspectPersonaComparisonPackage} from './persona-comparison-quality.mjs';
+import {createPersonaReviewPackage,renderPersonaReviewHtml} from './persona-comparison-review.mjs';
 
 const media=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const digest=buffer=>createHash('sha256').update(buffer).digest('hex');
@@ -50,6 +51,21 @@ test('comparison QC inspects real four-file FFmpeg render, writes paired frames 
    for(const pair of frame.pairs)assert.ok((await stat(join(qc.visualEvidence.directory,pair.filename))).size>1000);
   }
   assert.deepEqual(JSON.parse(await readFile(reportPath,'utf8')),qc);
+  const review=await createPersonaReviewPackage({comparisonDir:folder});
+  assert.equal(review.technicalStatus,'pass');
+  assert.equal(review.artisticStatus,'awaiting-author-review');
+  assert.equal(review.publicationApproved,false);
+  const html=await readFile(review.htmlPath,'utf8');
+  assert.match(html,/Художественная приёмка: ОЖИДАЕТ АВТОРА/);
+  assert.match(html,/Публикация: ЗАПРЕЩЕНА/);
+  assert.match(html,/pair-01-natural-clean\.jpg/);
+  assert.doesNotMatch(html,/https?:\/\//);
+  assert.doesNotMatch(html,/C:\\Users\\/);
+  const injection=renderPersonaReviewHtml({...qc,original:{...qc.original,fileName:'<script>alert(1)</script>'}},review.reviewDir);
+  assert.doesNotMatch(injection,/<script>/);
+  assert.match(injection,/&lt;script&gt;/);
+  assert.equal(digest(await readFile(source)),before,'one-command review must not alter original');
+
   assert.equal(digest(await readFile(source)),before,'original source must stay byte-identical');
   const entries=await readdir(root);
   await assert.rejects(inspectPersonaComparisonPackage({comparisonDir:folder,outputPath:reportPath}),/already exists/);
