@@ -212,6 +212,21 @@ describe('Persona QC report admission',()=>{
   const loaded=readPersonaComparisonQcSummary(qc,record);
   expect(loaded?.technicalStatus).toBe('pass');
   expect(loaded?.variants[0].jumpTimesSec).toEqual([4.25]);
+
+  const withTemporal={
+   ...qc,variants:qc.variants.map(variant=>({
+    ...variant,temporalFlicker:{
+     status:'measured',sampleRate:12,alignedSamples:20,coverage:1,
+     candidates:[{atSec:1.25,amplitude:16.5,events:5,kind:'potential_temporal_flicker'}],
+    },
+   })),
+  };
+  expect(readPersonaComparisonQcSummary(withTemporal,record)?.variants[0].temporalJumpTimesSec).toEqual([1.25]);
+  expect(readPersonaComparisonQcSummary({...withTemporal,variants:[
+   {...withTemporal.variants[0],temporalFlicker:{...withTemporal.variants[0].temporalFlicker,candidates:[{atSec:Infinity,amplitude:16,kind:'potential_temporal_flicker'}]}},
+   ...withTemporal.variants.slice(1),
+  ]},record)).toBeNull();
+
   expect(readPersonaComparisonQcSummary({...qc,publicationApproved:true},record)).toBeNull();
   expect(readPersonaComparisonQcSummary({...qc,sourceSha256:hash('f')},record)).toBeNull();
   expect(readPersonaComparisonQcSummary({...qc,variants:[{...qc.variants[0],sha256:hash('f')},...qc.variants.slice(1)]},record)).toBeNull();
