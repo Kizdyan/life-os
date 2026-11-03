@@ -4,7 +4,7 @@ import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
 import {PersonaLocalRenderReview} from './PersonaLocalRenderReview';
 import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
-import {readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,type PersonaColorComparisonRecord} from './personaColorComparison';
+import {hasAuthoredPersonaColorReview,readPersonaColorComparisonRecord,samePersonaColorComparisonEvidence,type PersonaColorComparisonRecord} from './personaColorComparison';
 import {readPersonaLocalRenderRecord,isPersonaDraftCurrentForApproval,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {PersonaLocalProductionHandoff,assessPersonaLocalHandoff} from './PersonaLocalProductionHandoff';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
@@ -336,8 +336,8 @@ export default function PersonaFactory(){
     throw Error('Сохранённая запись Comparison Studio повреждена. Исходные данные сохранены в проекте; заменять их новым импортом нельзя до восстановления или резервного копирования.');
    // A selected variant can only be saved against the evidence already committed
    // to this same project. New imports must start without an inherited decision.
-   if(next.selectedVariantId&&(!previous||!samePersonaColorComparisonEvidence(previous,next)))
-    throw Error('Нельзя сохранить решение от другого MP4. Импортируйте файлы заново.');
+   if(hasAuthoredPersonaColorReview(next)&&(!previous||!samePersonaColorComparisonEvidence(previous,next)))
+    throw Error('Нельзя сохранить художественную оценку, отказ или заметки от другого MP4. Импортируйте файлы заново.');
    if(!saveActiveProject(undefined,chosen,undefined,undefined,undefined,next))return false;
    setColorComparison(next);
    return true;
