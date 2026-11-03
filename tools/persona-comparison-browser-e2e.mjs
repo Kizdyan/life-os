@@ -13,6 +13,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,webkit} from 'playwright-core';
 import {createColorVariants} from './persona-color-variants.mjs';
+import {inspectPersonaComparisonPackage} from './persona-comparison-quality.mjs';
 
 const baseUrl=process.env.E2E_URL??'http://127.0.0.1:4173';
 const artifacts=resolve(process.env.E2E_ARTIFACTS??'artifacts/persona-comparison-e2e');
@@ -80,7 +81,11 @@ try{
  await sourceMp4(original,440);
  const first=await createColorVariants({inputPath:original,outputDir:join(root,'comparison-1')});
  assert.equal(first.variants.length,3);
- step('FFmpeg created source, three actual MP4 variants and manifest');
+ const qcPath=join(root,'comparison-qc.json');
+ const qc=await inspectPersonaComparisonPackage({comparisonDir:join(root,'comparison-1'),outputPath:qcPath});
+ assert.equal(qc.technicalStatus,'pass');
+ assert.equal(qc.publicationApproved,false);
+ step('FFmpeg created source, three actual MP4 variants, manifest and original-vs-grade QC');
 
  browser=browserKind==='webkit'
   ?await webkit.launch({headless:true})
@@ -99,6 +104,11 @@ try{
  await comparison.getByLabel('Выбрать оригинал, три MP4 и COMPARISON.json')
   .setInputFiles(fileSet(first));
  await waitForImport(page,'SHA-256 оригинала и трёх вариантов подтверждены');
+ await comparison.getByLabel('Выбрать технический QC-отчёт').setInputFiles(qcPath);
+ await waitForImport(page,'Технический QC загружен');
+ await comparison.locator('[aria-label="Технический QC"]').getByText(/Технический QC: PASS/).waitFor();
+ assert.equal(await comparison.locator('[aria-label="Технический QC"] li').count(),3);
+ step('Browser imported and displayed SHA-bound technical QC without artistic approval');
  assert.equal(await comparison.locator('video').count(),2);
  // Checking two <video> nodes alone does not prove the browser can decode or play them.
  // Exercise the native HTMLVideoElement pipeline on real FFmpeg-generated media.
@@ -139,6 +149,7 @@ try{
  await comparison.getByRole('button',{name:/Сохранить выбор: Warm Cinematic/}).click();
  await waitForImport(page,'Авторский выбор сохранён в проекте');
  await comparison.getByText(/Автор выбрал Warm Cinematic/).waitFor();
+ await comparison.getByText(/История художественных решений \(1\)/).waitFor();
  await page.screenshot({path:join(artifacts,'desktop-warm-cinematic.png'),fullPage:true});
  step('Imported five SHA-verified files and saved Warm Cinematic through UI');
 
