@@ -128,18 +128,21 @@ export async function judgePersonaIdeas({
    fail('Creator profile must be a JSON object');
   profileSha256=hash(profileRaw);
  }
- // Independent first pass: do not send any competing verdict to any judge.
- const firstPass=await Promise.all(reviewers.map(async reviewer=>{
+ // Serial execution avoids loading multiple large Ollama models into limited Windows RAM.
+ // Independent first pass still contains NO peer verdicts.
+ const firstPass=[];
+ for(const reviewer of reviewers){
   const result=await modelJSON({servers:[reviewer.server],fetchImpl,
    system:reviewSystem(reviewer.role),
    payload:{theme:proposal.theme,style:proposal.style,ideas,
     creatorProfile:profile,evidenceLimits:{
      instagramInsights:false,liveTrends:false,actualVideoViewed:false}}});
-  return {role:reviewer.role,provider:result.provider,
-   verdicts:validateVerdicts(result.data,ideas)};
- }));
- // Real second pass; each judge receives its OWN verdicts and the other model(s)' verdicts.
- const secondPass=await Promise.all(reviewers.map(async (reviewer,i)=>{
+  firstPass.push({role:reviewer.role,provider:result.provider,
+   verdicts:validateVerdicts(result.data,ideas)});
+ }
+ // Real second pass; every judge sees saved peer opinions, not fabricated consensus.
+ const secondPass=[];
+ for(const [i,reviewer] of reviewers.entries()){
   const own=firstPass[i],peers=firstPass.filter((_,j)=>j!==i);
   if(peers.length<1)fail('Cannot cross-examine without a second model');
   const result=await modelJSON({servers:[reviewer.server],fetchImpl,system:CROSS_SYSTEM,
@@ -147,9 +150,9 @@ export async function judgePersonaIdeas({
     independentPeerVerdicts:peers.map(p=>({
      role:p.role,provider:p.provider,verdicts:p.verdicts})),
     evidenceLimits:{instagramInsights:false,liveTrends:false,actualVideoViewed:false}}});
-  return {role:reviewer.role,provider:result.provider,
-   responses:validateCrossReview(result.data,ideas)};
- }));
+  secondPass.push({role:reviewer.role,provider:result.provider,
+   responses:validateCrossReview(result.data,ideas)});
+ }
  const summary=buildJurySummary(ideas,firstPass,secondPass);
  const report={version:1,kind:'persona-independent-idea-jury-v1',
   status:'AWAITING_AUTHOR_IDEA_SELECTION',
