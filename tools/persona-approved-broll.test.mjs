@@ -115,7 +115,7 @@ test('real FFmpeg: author-reviewed archive inserted between speech beats, sound 
   assert.equal(rendered.clipCount,3);
   assert.ok((await stat(rendered.output)).size>1000);
   const timeline=JSON.parse(await readFile(rendered.project,'utf8'));
-  assert.deepEqual(timeline.clips.map(c=>c.path),f.assets);
+  assert.deepEqual(timeline.clips.map(c=>c.path),[f.assets[0],f.assets[2],f.assets[1]]);
   assert.equal(timeline.clips[1].muteSourceAudio,true);
   assert.equal(timeline.clips[1].brollAfterBeat,1);
   const review=JSON.parse(await readFile(rendered.subtitleReview,'utf8'));
