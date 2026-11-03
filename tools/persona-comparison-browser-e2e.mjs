@@ -191,15 +191,38 @@ try{
  assert.equal(await afterReload.locator('video').count(),2);
  step('Forged SHA-256 manifest was rejected without clobbering author choice');
 
+ // A PASS must never force approval: author can attach a problem to a
+ // timestamp, reject every grade with a reason, and keep it after reload.
+ await afterReload.getByText('Зафиксировать замечание по текущему кадру').click();
+ await afterReload.getByRole('textbox',{name:'Комментарий к кадру'}).fill('Skin cast around the opening frame');
+ await afterReload.getByRole('button',{name:'Сохранить наблюдение на текущем таймкоде'}).click();
+ await waitForImport(page,'Замечание по кадру сохранено');
+ await afterReload.getByText(/Замечания по кадрам \(1\)/).waitFor();
+ await afterReload.getByRole('textbox',{name:'Комментарий к выбору'})
+  .fill('All three grades need more natural skin tones');
+ await afterReload.getByRole('button',{name:'Отклонить все три обработки'}).click();
+ await waitForImport(page,'Все три варианта отклонены автором');
+ await afterReload.getByText(/Автор отклонил все три обработки/).waitFor();
+ step('Author independently rejected all grades with a reason despite technical PASS');
+
+ await page.reload({waitUntil:'domcontentloaded'});
+ const rejectedReload=await openComparison(page);
+ await rejectedReload.getByText(/Автор отклонил все три обработки/).waitFor();
+ await rejectedReload.getByText(/Замечания по кадрам \(1\)/).waitFor();
+ assert.equal(await rejectedReload.locator('video').count(),0);
+ step('Reload persisted both rejection and timecoded note without persisting media bytes');
+
  await sourceMp4(second,880);
  const next=await createColorVariants({inputPath:second,outputDir:join(root,'comparison-2')});
- await afterReload.getByLabel('Выбрать оригинал, три MP4 и COMPARISON.json')
+ await rejectedReload.getByLabel('Выбрать оригинал, три MP4 и COMPARISON.json')
   .setInputFiles(fileSet(next));
  await waitForImport(page,'SHA-256 оригинала и трёх вариантов подтверждены');
- await afterReload.getByText(/Ожидает решения автора/).waitFor();
- assert.equal(await afterReload.locator('[aria-label="Технический QC"]').count(),0,
+ await rejectedReload.getByText(/Ожидает решения автора/).waitFor();
+ assert.equal(await rejectedReload.getByText(/Автор отклонил все три обработки/).count(),0);
+ assert.equal(await rejectedReload.getByText(/Замечания по кадрам \(1\)/).count(),0);
+ assert.equal(await rejectedReload.locator('[aria-label="Технический QC"]').count(),0,
   'QC imported for the previous SHA must disappear when a different media package is imported');
- assert.equal(await afterReload.getByText(/Автор выбрал Warm Cinematic/).count(),0);
+ assert.equal(await rejectedReload.getByText(/Автор выбрал Warm Cinematic/).count(),0);
  step('Different source SHA invalidated the earlier author choice');
 
  await page.setViewportSize({width:390,height:844});
@@ -207,7 +230,7 @@ try{
  await checkNoOverflow(page);
  step(browserLabel+' mobile 390px comparison has no horizontal overflow');
 
- await afterReload.getByRole('button',{name:/Сохранить выбор: Natural Clean/}).click();
+ await rejectedReload.getByRole('button',{name:/Сохранить выбор: Natural Clean/}).click();
  await waitForImport(page,'Авторский выбор сохранён в проекте');
  await page.reload({waitUntil:'domcontentloaded'});
  const finalReview=await openComparison(page);
