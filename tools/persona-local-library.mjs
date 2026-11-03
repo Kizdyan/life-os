@@ -163,8 +163,10 @@ export function searchCatalog(catalog,query,{limit=12}={}){
    assetId:a.id,sourcePath:a.sourcePath,sha256:a.sha256,kind:a.kind,
    ...row,score,matchedTerms:overlaps,
   }));
- }).sort((a,b)=>b.score-a.score||a.sourcePath.localeCompare(b.sourcePath)||
-  (a.startSec??0)-(b.startSec??0)).slice(0,Math.max(1,Math.min(100,limit)));
+ }).sort((a,b)=>b.score-a.score||
+  Number(b.startSec!==null)-Number(a.startSec!==null)||
+  a.sourcePath.localeCompare(b.sourcePath)||(a.startSec??0)-(b.startSec??0))
+  .slice(0,Math.max(1,Math.min(100,limit)));
 }
 export async function scanLibrary({
  inbox,catalogDir,visionModel,ollamaUrl,ffmpeg='ffmpeg',ffprobe='ffprobe',
