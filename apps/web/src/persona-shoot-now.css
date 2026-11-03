@@ -48,3 +48,6 @@
 .personaShootNowAi select{width:100%;padding:10px;border-radius:10px;border:1px solid #cfc9be;font:inherit;background:#fff;color:#222}
 .personaShootNowAi button{min-height:44px;border:0;border-radius:12px;background:#171717;color:#fff;padding:10px 14px;font:inherit;font-weight:700;cursor:pointer}
 .personaShootNowAi button:disabled{opacity:.5;cursor:not-allowed}
+
+.personaShootNowProvenance{margin:0;padding:11px 13px;border-left:3px solid #81735e;border-radius:7px;background:#f4f2ed;color:#3f3930;font-size:13px;line-height:1.55}
+.personaShootNowAiConnection{font-weight:650;overflow-wrap:anywhere}
