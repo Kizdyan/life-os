@@ -11,8 +11,8 @@
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {access,copyFile,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
-import {basename,dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {runFirstReel,validateDraftQa} from './persona-first-reel-runner.mjs';
 
 const fail=message=>{throw Error('Persona flow: '+message)};
@@ -224,7 +224,7 @@ const usage=[
  '  npm run persona:flow -- render "<PLAN_DIR>" "<TAKES_DIR>" "<NEW_RENDER_DIR>" "<WHISPER_CLI>" "<WHISPER_MODEL>" "<OLLAMA_MODEL>" [variation] [ffmpeg-bin]',
  '  npm run persona:flow -- package "<RESULT.json>" "<NEW_PACKAGE_DIR>" [caption text]',
 ].join('\n');
-if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1]).replace(/\\/g,'/')).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  const [cmd,...args]=process.argv.slice(2);
  try{
   let result;
