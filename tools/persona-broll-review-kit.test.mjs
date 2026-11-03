@@ -59,7 +59,7 @@ test('review page escapes untrusted filenames and cannot auto-approve publicatio
  assert.doesNotMatch(html,/<script>alert\(1\)<\/script>/);
  assert.match(html,/connect-src &#39;none&#39;/);
  assert.match(html,/value="skip" checked/);
- assert.match(html,/approvedForEdit:false/);
+ assert.match(html,/"approvedForEdit":false/);
  assert.match(html,/publicationApproved:false/);
  assert.match(html,/id="watched-1"/);
  assert.match(html,/id="rights-1"/);
@@ -77,11 +77,8 @@ test('refuses missing candidate, refuses changed indexed source before creating 
   await assert.rejects(prepareBrollReviewKit({...f.paths,outputDir:join(root,'empty')}),
    /No valid local video/);
   await assert.rejects(stat(join(root,'empty')),/ENOENT/);
-  const g=await inputFixture(join(root,'second')).catch(async e=>{
-   // The fixture root must exist to test a separate indexed source.
-   await mkdir(join(root,'second'));
-   return inputFixture(join(root,'second'));
-  });
+  await mkdir(join(root,'second'));
+  const g=await inputFixture(join(root,'second'));
   await writeFile(g.source,Buffer.from('modified-after-index'));
   await assert.rejects(prepareBrollReviewKit({...g.paths,outputDir:join(root,'tampered')}),
    /changed|Original SHA|Original moved/i);
