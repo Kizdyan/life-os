@@ -44,9 +44,24 @@ test('whisper.cpp JSON-full falls back to segment offsets when token offsets are
   tokens:[{text:' Я',id:1,p:.9},{text:' актёр',id:2,p:.9},{text:' музыку',id:3,p:.9}]
  }]};
  const segments=parseWhisperJson(data,4);
- assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.',timing:'segment'}]);
+ assert.deepEqual(segments,[{startSec:.5,endSec:2.8,text:'Я актёр. И ещё пишу музыку.',
+  timing:'segment',transcriptConflict:true}]);
+ // A partially missing token transcript must be available for listening, not
+ // automatically treated as identical to the script.
+ assert.throws(()=>chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
+   {id:'incomplete-tokens',durationSec:4,segments}
+ ]),/Manual review required/);
+ // Timestamp-free tokens with the full SAME text can safely retain a segment-
+ // timed provisional candidate (the timing remains coarse).
+ const consistent=parseWhisperJson({transcription:[{
+  text:' Я актёр. И ещё пишу музыку.',offsets:{from:500,to:2800},
+  tokens:[{text:' Я'},{text:' актёр.'},{text:' И'},{text:' ещё'},
+   {text:' пишу'},{text:' музыку.'}]
+ }]},4);
+ assert.equal(consistent[0].transcriptConflict,undefined);
+ assert.equal(consistent[0].timing,'segment');
  const matched=chooseForBrief({script:[{order:1,line:'Я актёр. И ещё пишу музыку.'}]},[
-   {id:'take-real-json',durationSec:4,segments}
+   {id:'take-real-json',durationSec:4,segments:consistent}
  ]);
  assert.equal(matched[0].sourceId,'take-real-json');
  assert.ok(matched[0].durationSec>2);
