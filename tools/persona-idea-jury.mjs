@@ -161,7 +161,7 @@ export async function judgePersonaIdeas({
    role:x.role,model:x.server.model,serverId:x.server.id})),
   independence:{differentModelIds:true,firstPassBlindToPeers:true,
    secondPassCrossExamination:true,localOnly:true},
-  evidenceLimits:{instagramInsights:'NOT_CONNECTED',liveTrends:'NOT_VERIFIED',
+  evidenceLimits:{instagramInsights:'NOT_SUPPLIED_TO_JURY',liveTrends:'NOT_VERIFIED',
    userFootage:'NOT_EVALUATED'},
   firstPass,secondPass,ideas:summary,
   publicationApproved:false,selectionApproved:false,
