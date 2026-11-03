@@ -28,17 +28,19 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  const sourcePlayer=useRef<HTMLVideoElement|null>(null);
  const variantPlayer=useRef<HTMLVideoElement|null>(null);
  const generation=useRef(0);
+ const qcGeneration=useRef(0);
  const ownedUrls=useRef<string[]>([]);
- useEffect(()=>()=>{generation.current++;ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));ownedUrls.current=[]},[]);
+ useEffect(()=>()=>{generation.current++;qcGeneration.current++;ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));ownedUrls.current=[]},[]);
  useEffect(()=>{setComment(record?.comment??'')},[record?.sourceSha256,record?.selectedVariantId,record?.comment]);
  useEffect(()=>{setActive(record?.selectedVariantId??'natural-clean')},[record?.sourceSha256,record?.selectedVariantId]);
- useEffect(()=>{setQuality(null)},[projectId,record?.sourceSha256]);
+ useEffect(()=>{qcGeneration.current++;setQuality(null)},[projectId,record?.sourceSha256]);
  useEffect(()=>{if(variantPlayer.current&&sourcePlayer.current){
   variantPlayer.current.currentTime=Math.min(sourcePlayer.current.currentTime,variantPlayer.current.duration||Infinity);
  }},[active,urls]);
  async function importFiles(fileList:FileList|null){
   if(!fileList||busy)return;
   const task=++generation.current;
+  qcGeneration.current++;
   setBusy(true);setMessage('Проверяю пять файлов и их SHA-256…');
   try{
    const files=Array.from(fileList);
@@ -91,14 +93,22 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
  }
  async function importQc(file:File|undefined){
   if(!file||!record||!urls){setMessage('Сначала импортируйте исходный пакет из пяти файлов.');return;}
-  if(file.size>5000000){setMessage('QC-отчёт слишком велик (максимум 5 МБ).');return;}
+  const task=++qcGeneration.current;
+  const mediaTask=generation.current;
+  if(file.size>5000000){setQuality(null);setMessage('QC-отчёт слишком велик (максимум 5 МБ).');return;}
   try{
    const data:unknown=JSON.parse(await file.text());
+   if(qcGeneration.current!==task||generation.current!==mediaTask)return;
    const summary=readPersonaComparisonQcSummary(data,record);
    if(!summary)throw Error('QC не соответствует SHA-256 текущего оригинала и трёх обработок либо имеет неправильную структуру.');
    setQuality(summary);
    setMessage('Технический QC загружен. Это не художественное одобрение.');
-  }catch(error){setQuality(null);setMessage('QC отклонён: '+readableError(error));}
+  }catch(error){
+   if(qcGeneration.current===task&&generation.current===mediaTask){
+    setQuality(null);
+    setMessage('QC отклонён: '+readableError(error));
+   }
+  }
  }
  function saveChoice(){
   if(!record||!urls){setMessage('Сначала повторно подтвердите оригинал и три MP4 через импорт файлов. Сохранённое решение можно просмотреть без файлов, но нельзя изменить без проверки.');return;}
@@ -135,6 +145,12 @@ export function PersonaColorComparisonStudio({projectId,record,onSave}:{
    <code>node tools/persona-color-variants.mjs "C:\Video\original.mp4" "C:\Video\persona-variants-01" [ffmpeg-dir]</code>
    <p>Если FFmpeg не находится в PATH, третьим параметром укажите папку с ffmpeg.exe и ffprobe.exe. Рендерер создаст одну папку с пятью файлами: точной копией оригинала, COMPARISON.json и тремя вариантами MP4. Выберите все пять файлов из этой папки за один раз. Исходник по первоначальному пути не изменяется. Для нового рендера укажите новую папку назначения.</p>
    <p>HDR/PQ/HLG без корректного tone mapping не обрабатываются. Исходники остаются локальными.</p>
+  </details>
+  <details>
+   <summary>Создать локальный отчёт Video Quality Lab</summary>
+   <p>После рендера пяти файлов запустите в отдельном тестовом worktree PR #138:</p>
+   <code>npm run media:comparison:review -- "C:\Video\persona-variants-01" [ffmpeg-dir]</code>
+   <p>Команда создаст новую соседнюю папку. Откройте REVIEW.html для сравнения кадров, затем импортируйте QUALITY.json в Comparison Studio. Старые папки и видео не изменяются. Художественную оценку выполняет автор.</p>
   </details>
   <label className="personaComparisonPicker">Импорт результатов сравнения
    <input type="file" accept=".mp4,.json,video/mp4,application/json" multiple disabled={busy}
