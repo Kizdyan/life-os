@@ -1,7 +1,7 @@
 import React from 'react';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {PersonaShootNow} from './PersonaShootNow';
+import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootProgressKey,shootTimecode} from './personaShootNow';
 import {exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
