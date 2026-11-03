@@ -3,7 +3,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
 import {describe,expect,it} from 'vitest';
 import {
- COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,createPersonaColorReviewBrief,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
+ COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,createPersonaColorReviewBrief,hasAuthoredPersonaColorReview,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
  readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,
 } from './personaColorComparison';
@@ -278,6 +278,31 @@ describe('explicit author rejection and timecoded artistic observations',()=>{
  });
 });
 
+
+
+describe('evidence guard for every authored artistic review state',()=>{
+ it('permits clean new-package imports but requires matching hashes for choices, rejection and notes',()=>{
+  const {manifest,files}=fixture();
+  const imported=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  expect(hasAuthoredPersonaColorReview(imported)).toBe(false);
+  const withNote=addPersonaColorReviewNote(imported,'natural-clean',14.125,
+   'lighting','issue','High contrast',stamp);
+  expect(hasAuthoredPersonaColorReview(withNote)).toBe(true);
+  const rejection=rejectPersonaColorVariants(imported,'Not acceptable',stamp);
+  expect(hasAuthoredPersonaColorReview(rejection)).toBe(true);
+  const selection=choosePersonaColorVariant(imported,'muted-filmic','Prefer this',stamp);
+  expect(hasAuthoredPersonaColorReview(selection)).toBe(true);
+  const historyOnly={...selection,selectedVariantId:undefined,comment:undefined,decidedAt:undefined};
+  expect(readPersonaColorComparisonRecord(historyOnly)).not.toBeNull();
+  expect(hasAuthoredPersonaColorReview(historyOnly)).toBe(true);
+  const updatedFiles=[{...files[0],sha256:hash('f')},...files.slice(1)];
+  const updatedManifest=structuredClone(manifest);
+  updatedManifest.source.sha256=hash('f');
+  const unrelated=inspectPersonaColorComparisonManifest(updatedManifest,updatedFiles,stamp);
+  expect(samePersonaColorComparisonEvidence(imported,unrelated)).toBe(false);
+  expect(hasAuthoredPersonaColorReview(unrelated)).toBe(false);
+ });
+});
 
 describe('portable offline artistic review brief',()=>{
  it('exports only SHA-bound decision and notes, not MP4s, paths or publication permission',()=>{
