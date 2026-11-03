@@ -10,6 +10,7 @@ import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
+import {compareTemporalLuma,sampleTemporalLuma} from './persona-comparison-temporal.mjs';
 
 const variants=[
  {id:'natural-clean',fileName:'A-natural-clean.mp4'},
@@ -109,6 +110,16 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
   if(report.video.sha256!==item.sha256)fail('MP4 changed while analyzing: '+item.fileName);
   reports.push(report);
  }
+ // Temporal evidence uses aligned source-vs-grade samples. A missing FFmpeg
+ // filter must not be interpreted as proof that a grade has no flicker.
+ const temporal=[];
+ for(const [index,item] of all.entries()){
+  try{
+   temporal.push({samples:await sampleTemporalLuma(item.path,{ffmpegDir,durationSec:reports[index].video.durationSec})});
+  }catch(error){
+   temporal.push({error:String(error?.message??error).slice(0,300)});
+  }
+ }
  const original=reports[0],base=original.video;
  const results=[];
  for(let i=1;i<all.length;i++){
@@ -130,12 +141,20 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
   }:null;
   const hotspots=[...newJumps(original,report,'luma_jumps'),...newJumps(original,report,'chroma_jumps')]
    .sort((a,b)=>a.atSec-b.atSec);
+  const temporalFlicker=temporal[0].samples&&temporal[i].samples
+   ?compareTemporalLuma(temporal[0].samples,temporal[i].samples)
+   :{status:'not_measured',sampleRate:12,alignedSamples:0,coverage:0,candidates:[],
+      reason:'Temporal sampling unavailable: '+(temporal[0].error??temporal[i].error??'unknown')};
   results.push({id:item.id,fileName:item.fileName,sha256:item.sha256,technicalStatus:mismatches.length?'fail':'pass',
-   technicalMismatches:mismatches,statistics:stats,additionalSampledJumps:hotspots,
+   technicalMismatches:mismatches,statistics:stats,additionalSampledJumps:hotspots,temporalFlicker,
    artisticStatus:'awaiting-author-review'});
  }
- const allHotspots=results.flatMap(result=>result.additionalSampledJumps)
-  .sort((a,b)=>(b.delta??0)-(a.delta??0));
+ const allHotspots=results.flatMap(result=>[
+  ...result.additionalSampledJumps,
+  ...result.temporalFlicker.candidates.map(candidate=>({
+   atSec:candidate.atSec,delta:candidate.amplitude,kind:'temporal_flicker'
+  }))
+ ]).sort((a,b)=>(b.delta??0)-(a.delta??0));
  const chosen=[];
  for(const candidate of allHotspots)if(!chosen.some(x=>Math.abs(x.atSec-candidate.atSec)<0.5))chosen.push(candidate);
  const frameMoments=moments(base.durationSec,chosen);
@@ -161,8 +180,8 @@ export async function inspectPersonaComparisonPackage({comparisonDir,outputPath,
   variants:results,
   visualEvidence:{directory:evidenceDir,frames,labels:'Each JPEG: ORIGINAL left, variant right.'},
   limitations:[
-   '4 fps signalstats can miss high-frequency flicker and is affected by motion and scene cuts.',
-   'New sampled luma/chroma jumps are review candidates, not proved grading defects.',
+   '4 fps luma/chroma jump checks are scene/motion-sensitive; 12 fps aligned temporal luma can miss flicker above 6 Hz and cannot rule out grading defects.',
+   'New sampled luma/chroma jumps and time-aligned temporal flicker flags are review candidates, not proved grading defects.',
    'Image comparisons are JPEG previews, not a substitute for video playback or skin-tone review.',
    'No objective cinematography or human-identity score is calculated.'
   ],
