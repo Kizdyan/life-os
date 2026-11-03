@@ -61,7 +61,8 @@ test('comparison QC inspects real four-file FFmpeg render, writes paired frames 
   assert.match(html,/pair-01-natural-clean\.jpg/);
   assert.doesNotMatch(html,/https?:\/\//);
   assert.doesNotMatch(html,/C:\\Users\\/);
-  const injection=renderPersonaReviewHtml({...qc,original:{...qc.original,fileName:'<script>alert(1)</script>'}},review.reviewDir);
+  const reviewQc=JSON.parse(await readFile(review.reportPath,'utf8'));
+  const injection=renderPersonaReviewHtml({...reviewQc,original:{...reviewQc.original,fileName:'<script>alert(1)</script>'}},review.reviewDir);
   assert.doesNotMatch(injection,/<script>/);
   assert.match(injection,/&lt;script&gt;/);
   assert.equal(digest(await readFile(source)),before,'one-command review must not alter original');
