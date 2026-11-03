@@ -2,7 +2,8 @@
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { access,copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import {constants as fsConstants} from 'node:fs';
 import {prepare} from './persona-editorial-choices.mjs';
 import {generatePreviews} from './persona-editorial-previews.mjs';
 import {initReview} from './persona-creative-review.mjs';
@@ -11,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze, assemble } from './persona-semantic-montage.mjs';
 import { transcribe, plan } from './persona-semantic-autoselect.mjs';
 import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
+import {createColorVariants} from './persona-color-variants.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
 import { makeManifest } from './persona-delivery-source-folder.mjs';
 
@@ -227,10 +229,32 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('technical_qa_passed');
   const timing=assessFirstReelTiming(requestedBrief,qa);
   if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
+  let aiFinishedVideo=null,aiColorPackage=null,aiFinishedQaPath=null;
+  if(aiEditorial){
+   // Actual FFmpeg output in a NEW package. The model chose a direction from
+   // the script, but did NOT visually inspect any frame or prove skin neutrality.
+   const colorPackage=await createColorVariants({
+    inputPath:output,outputDir:join(root,'ai-color-options'),ffmpegDir,
+   });
+   const selected=colorPackage.variants.find(item=>item.id===aiEditorial.look);
+   if(!selected)fail('Ollama requested an unavailable safe color grade');
+   const finished=join(root,'ai-edited-reel.mp4');
+   await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
+   const finishedQa=join(root,'ai-edited-qa.json');
+   await call(process.execPath,[verifierPath,finished,'persona-ai-reel','reel',finishedQa]);
+   const checked=JSON.parse(await readFile(finishedQa,'utf8'));
+   validateDraftQa(checked,finished);
+   aiFinishedVideo=finished;
+   aiColorPackage=join(root,'ai-color-options','COMPARISON.json');
+   aiFinishedQaPath=finishedQa;
+   events.push('real_ffmpeg_color_applied_to_edited_mp4');
+   events.push('ai_selected_color_mp4_technical_qa_passed');
+  }
   const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
+    aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
     subtitleDraft,timing,
-    warning:'Offline speech matching is not evaluation of acting, emotion, music or color. Subtitles are draft sidecars, not burned in or assured word-aligned. Check timing.status before author approval.',
+    warning:'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;
