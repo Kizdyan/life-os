@@ -100,7 +100,7 @@ try{
   const shootPage=await shootContext.newPage();
   shootPage.on('pageerror',error=>summary.errors.push('shoot-first: '+error.message));
   await shootPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
-  await shootPage.getByRole('button',{name:/Снять сегодня: актёр \+ композитор · 7 кадров/}).click();
+  await shootPage.getByRole('button',{name:'Показать 7 кадров и начать съёмку'}).click();
   const board=shootPage.getByRole('region',{name:'Снять ролик сейчас'});
   await board.waitFor({state:'visible',timeout:15000});
   await board.getByText('Я актёр. И ещё пишу музыку.').waitFor();
@@ -128,6 +128,11 @@ try{
   const aiPage=await aiContext.newPage();
   aiPage.on('pageerror',error=>summary.errors.push('director-flow: '+error.message));
   await aiPage.route('**/api/persona-director',async route=>{
+   if(route.request().method()==='GET'){
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+     status:'ready',provider:'ollama',model:'mock-local-model',realAI:true,renderedVideo:false,
+    })});return;
+   }
    const req=route.request().postDataJSON();
    const mk=(durationSec,line,action,framing,camera,lighting,performance,edit)=>
     ({durationSec,line,action,framing,camera,lighting,performance,edit});
@@ -159,6 +164,7 @@ try{
   await aiPage.getByRole('button',{name:'Создать Reels'}).click();
   const aiBoard=aiPage.getByRole('region',{name:'Снять ролик сейчас'});
   await aiBoard.getByText(/пока нет реплик и кадров/).waitFor();
+  await aiBoard.getByText('Ollama готова · mock-local-model').waitFor();
   await aiBoard.getByRole('button',{name:'Создать новый сценарий ИИ'}).click();
   await aiPage.getByRole('status').filter({hasText:'Реальная модель mock-local-model создала 4 новых кадров'}).waitFor({timeout:20000});
   await aiBoard.getByText('Я думал, это комедия').waitFor();
@@ -166,6 +172,8 @@ try{
   await aiPage.reload({waitUntil:'domcontentloaded'});
   await aiPage.getByRole('region',{name:'Снять ролик сейчас'})
    .getByText('Я думал, это комедия').waitFor();
+  await aiPage.getByRole('region',{name:'Снять ролик сейчас'})
+   .getByText(/Этот рабочий сценарий создан настоящей моделью/).waitFor();
   step(browserLabel+' imports a test-only simulated AI response into the REAL canonical draft without template fallback');
  }finally{await aiContext.close()}
  page=await context.newPage();
