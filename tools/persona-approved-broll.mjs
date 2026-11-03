@@ -16,7 +16,7 @@ import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {access,mkdir,readFile,realpath,lstat,stat,writeFile} from 'node:fs/promises';
 import {dirname,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
 
 const fail=m=>{throw Error('Persona B-roll: '+m)};
@@ -60,7 +60,7 @@ function checkInputs(timeline,matches,catalog,captions){
   matches.publicationApproved!==false||!Array.isArray(matches.shots)||
   matches.shots.length!==timeline.clips.length)fail('Invalid exact shot match report');
  if(catalog?.kind!=='persona-local-library-v1'||!Array.isArray(catalog.assets)||
-  !typeof catalog.root==='string')fail('Invalid local catalog');
+  (typeof catalog.root!=='string'||!catalog.root.trim()))fail('Invalid local catalog');
  if(matches.librarySnapshotAt!==catalog.generatedAt)fail('Stale library report: re-run shot matcher');
  if(captions?.kind!=='persona-subtitle-draft-v1'||captions.version!==1||
   !Array.isArray(captions.cues)||!captions.cues.length||captions.status!=='needs-human-review')
@@ -127,7 +127,7 @@ function validateReviewedSelection(selection,sha,timeline){
  const seen=new Set();
  for(const c of selection.choices){
   if(!Number.isInteger(c?.afterBeat)||c.afterBeat<1||c.afterBeat>timeline.clips.length||
-   seen.has(c.afterBeat)||!shaLike(c.assetId?.replace?.(/^sha256:/,''))||
+   seen.has(c.afterBeat)||!(typeof c.assetId==='string'&&/^sha256:[a-f0-9]{64}$/i.test(c.assetId))||
    c.authorReviewed!==true||c.rightsConfirmed!==true||
    !finite(c.startSec)||c.startSec<0||
    !finite(c.durationSec)||c.durationSec<.25||c.durationSec>1.9||
@@ -225,7 +225,7 @@ function run(bin,args,timeout=240000){
 }
 export async function renderApprovedBroll({
  timelinePath,matchesPath,catalogPath,captionsPath,selectionPath,outputDir,
- rendererPath=new URL('./persona-timeline-render.mjs',import.meta.url).pathname,
+ rendererPath=fileURLToPath(new URL('./persona-timeline-render.mjs',import.meta.url)),
 }={}){
  if(![timelinePath,matchesPath,catalogPath,captionsPath,selectionPath,outputDir]
   .every(x=>typeof x==='string'&&x.trim()))fail('Five input files and a NEW output directory required');
@@ -277,7 +277,7 @@ export async function renderApprovedBroll({
 const usage='Usage:\n'+
  ' node tools/persona-approved-broll.mjs template <TIMELINE.json> <ASSET-MATCHES.json> <CATALOG.json> <captions.review.json> <NEW-SELECTION.json>\n'+
  ' node tools/persona-approved-broll.mjs render <TIMELINE.json> <ASSET-MATCHES.json> <CATALOG.json> <captions.review.json> <REVIEWED-SELECTION.json> <NEW-OUTPUT-DIR>';
-if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1]).replace(/\\/g,'/')).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  const [command,...args]=process.argv.slice(2);
  try{
   const fields={timelinePath:args[0],matchesPath:args[1],catalogPath:args[2],
