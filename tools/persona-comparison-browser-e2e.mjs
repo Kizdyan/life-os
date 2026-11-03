@@ -197,6 +197,8 @@ try{
   .setInputFiles(fileSet(next));
  await waitForImport(page,'SHA-256 оригинала и трёх вариантов подтверждены');
  await afterReload.getByText(/Ожидает решения автора/).waitFor();
+ assert.equal(await afterReload.locator('[aria-label="Технический QC"]').count(),0,
+  'QC imported for the previous SHA must disappear when a different media package is imported');
  assert.equal(await afterReload.getByText(/Автор выбрал Warm Cinematic/).count(),0);
  step('Different source SHA invalidated the earlier author choice');
 
