@@ -149,7 +149,8 @@ export function buildPersonaShootPlan(input:{
    camera:safeNote?.camera||directions?.camera||scene.angle||guide.fields.camera,
    performance:safeNote?.performance||directions?.performance||scene.action,
    edit:safeNote?.edit||directions?.edit||guide.fields.editing,
-   sourceFileName:isExample&&pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:undefined,
+   sourceFileName:pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:
+    'S'+String(i+1).padStart(2,'0')+'_take01.mp4',
   };
  });
  const scriptApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevisionId);
