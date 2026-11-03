@@ -3,10 +3,11 @@ import {
  makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,
  shootProgressKey,shootTimecode,type PersonaShootPlan,type PersonaShootProgress,
 } from './personaShootNow';
+import type {PersonaDirectorGenerationMeta} from './personaProjectStore';
 import './persona-shoot-now.css';
 
 export function PersonaShootNow({
- projectId,plan,onOpenScript,onOpenEdit,onSavePilot,onGenerateAi,aiBusy=false,
+ projectId,plan,onOpenScript,onOpenEdit,onSavePilot,onGenerateAi,aiBusy=false,generation,generationCurrent=false,
 }:{
  projectId:string;
  plan:PersonaShootPlan;
@@ -15,6 +16,8 @@ export function PersonaShootNow({
  onSavePilot?:()=>void;
  onGenerateAi?:(variation:'unexpected'|'humor'|'cinematic'|'intimate')=>void;
  aiBusy?:boolean;
+ generation?:PersonaDirectorGenerationMeta;
+ generationCurrent?:boolean;
 }){
  const [currentIndex,setCurrentIndex]=useState(0);
  const [variation,setVariation]=useState<'unexpected'|'humor'|'cinematic'|'intimate'>('unexpected');
@@ -23,6 +26,22 @@ export function PersonaShootNow({
   catch{return null}
  });
  const [feedback,setFeedback]=useState('');
+ const canGenerate=Boolean(onGenerateAi);
+ const [directorHealth,setDirectorHealth]=useState<{status:string;provider?:string;model?:string}|null>(null);
+ useEffect(()=>{
+  if(!canGenerate){setDirectorHealth(null);return}
+  let alive=true;
+  const abort=new AbortController();
+  fetch('/api/persona-director',{method:'GET',signal:abort.signal}).then(async response=>{
+   if(!response.ok)throw Error('director_health_unavailable');
+   const data:unknown=await response.json();
+   if(!data||typeof data!=='object'||!('status' in data)||typeof data.status!=='string')
+    throw Error('director_health_invalid');
+   const result=data as {status:string;provider?:string;model?:string};
+   if(alive)setDirectorHealth(result);
+  }).catch(()=>{if(alive)setDirectorHealth({status:'unavailable'})});
+  return ()=>{alive=false;abort.abort()};
+ },[canGenerate,projectId]);
  const fingerprint=shootPlanFingerprint(plan);
  useEffect(()=>{
   setCurrentIndex(0);
@@ -64,11 +83,27 @@ export function PersonaShootNow({
    </div>
    <span className="personaShootNowTime">{totalDuration} сек. · {plan.scenes.length} кадров</span>
   </header>
+  {generation&&<p className="personaShootNowProvenance" role="status">
+   {generationCurrent
+    ?'Этот рабочий сценарий создан настоящей моделью '
+    :'Сценарий после генерации редактировался. Исходная модель: '}
+   <b>{generation.model}</b> · {generation.provider} · {new Date(generation.createdAt).toLocaleDateString('ru-RU')}.
+   {' '}Это подтверждение источника текста, не выполненного монтажа.
+  </p>}
   {onGenerateAi&&<div className="personaShootNowAi">
    <strong>Написать другой сценарий настоящей нейросетью</strong>
    <p>ИИ создаёт новые реплики и съёмочные кадры, а не выдаёт старый шаблон.
     Модель должна быть подключена локально через Ollama или в тестовом AI Gateway.
     Если она недоступна, мы покажем ошибку — подмены шаблоном не будет.</p>
+   <p role="status" className="personaShootNowAiConnection">
+    {directorHealth===null?'Проверяем доступность ИИ-режиссёра…':
+     directorHealth.status==='ready'?'Ollama готова · '+(directorHealth.model??'модель установлена'):
+     directorHealth.status==='configured'?'AI Gateway настроен · '+(directorHealth.model??'модель'):
+     directorHealth.status==='model_not_installed'?'Ollama доступна, но нужная модель не установлена.':
+     directorHealth.status==='ollama_offline'?'Ollama сейчас не отвечает.':
+     directorHealth.status==='not_configured'?'ИИ-режиссёр не настроен на сервере.':
+     'API нейросетевого режиссёра недоступно из этого интерфейса.'}
+   </p>
    <div>
     <label>Тип истории
      <select aria-label="Тип новой истории" value={variation} onChange={event=>setVariation(event.target.value as typeof variation)}>
