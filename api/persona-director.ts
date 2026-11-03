@@ -111,7 +111,7 @@ export default{
    }
   }
   if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'GET, POST'});
-  if(!provider)return json({error:'director_model_not_configured'},503);
+  if(!provider)return json({error:'director_model_not_configured',realAI:false,renderedVideo:false},503);
   if(!limit(request))return json({error:'director_limit_6_per_hour'},429);
   try{
    const raw=await request.text();
