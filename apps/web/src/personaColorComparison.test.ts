@@ -3,7 +3,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio';
 import {describe,expect,it} from 'vitest';
 import {
- COLOR_VARIANT_PRESETS,choosePersonaColorVariant,inspectPersonaColorComparisonManifest,
+ COLOR_VARIANT_PRESETS,addPersonaColorReviewNote,choosePersonaColorVariant,rejectPersonaColorVariants,inspectPersonaColorComparisonManifest,
  readPersonaColorComparisonRecord,readPersonaComparisonQcSummary,samePersonaColorComparisonEvidence,
  type ComparisonFileEvidence,
 } from './personaColorComparison';
@@ -194,6 +194,89 @@ describe('Malformed optional comparison evidence must not erase other projects',
  });
 });
 
+
+
+describe('explicit author rejection and timecoded artistic observations',()=>{
+ it('rejects all presets with required reason, preserves history, and allows later selection',()=>{
+  const {manifest,files}=fixture();
+  const imported=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  expect(()=>rejectPersonaColorVariants(imported,'   ','2026-11-02T21:00:00.000Z')).toThrow();
+  expect(()=>rejectPersonaColorVariants(imported,'No suitable look','not-date')).toThrow();
+  const rejected=rejectPersonaColorVariants(imported,'Skin too yellow; glasses lose definition','2026-11-02T21:00:00.000Z');
+  expect(rejected.rejectedAll).toBe(true);
+  expect(rejected.selectedVariantId).toBeUndefined();
+  expect(rejected.comment).toContain('glasses');
+  expect(rejected.decisionHistory?.[0]?.rejectedAll).toBe(true);
+  expect(readPersonaColorComparisonRecord(rejected)).toEqual(rejected);
+  expect(readPersonaColorComparisonRecord({...rejected,selectedVariantId:'natural-clean'})).toBeNull();
+  expect(readPersonaColorComparisonRecord({...rejected,rejectedAll:false})).toBeNull();
+  expect(readPersonaColorComparisonRecord({...rejected,comment:'   '})).toBeNull();
+  const chosen=choosePersonaColorVariant(rejected,'natural-clean','Looks better now','2026-11-02T22:00:00.000Z');
+  expect(chosen.rejectedAll).toBeUndefined();
+  expect(chosen.selectedVariantId).toBe('natural-clean');
+  expect(chosen.decisionHistory?.map(item=>item.rejectedAll?'reject-all':item.selectedVariantId))
+   .toEqual(['reject-all','natural-clean']);
+  const rejectedAgain=rejectPersonaColorVariants(chosen,'Still not good enough','2026-11-02T23:00:00.000Z');
+  expect(rejectedAgain.rejectedAll).toBe(true);
+  expect(rejectedAgain.selectedVariantId).toBeUndefined();
+  expect(chosen.selectedVariantId).toBe('natural-clean','original state remains untouched');
+ });
+ it('stores source-specific timecoded positive and negative observations and refuses malformed notes',()=>{
+  const {manifest,files}=fixture();
+  const imported=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const withNote=addPersonaColorReviewNote(imported,'natural-clean',34.925,'skin','issue',
+   'Face has yellow-green cast',stamp);
+  expect(withNote.reviewNotes?.[0].atSec).toBe(34.925);
+  expect(withNote.selectedVariantId).toBeUndefined();
+  expect(readPersonaColorComparisonRecord(withNote)).toEqual(withNote);
+  const withSecond=addPersonaColorReviewNote(withNote,'warm-cinematic',69.8,'glasses','good',
+   'Frames retain detail','2026-11-02T21:00:00.000Z');
+  expect(withSecond.reviewNotes?.length).toBe(2);
+  expect(()=>addPersonaColorReviewNote(withSecond,'natural-clean',Infinity,'skin','issue','Bad',stamp)).toThrow();
+  expect(()=>addPersonaColorReviewNote(withSecond,'natural-clean',1,'skin','issue',' ',stamp)).toThrow();
+  expect(readPersonaColorComparisonRecord({...withSecond,reviewNotes:[{...withSecond.reviewNotes?.[0],variantId:'other'}]})).toBeNull();
+  const other={...withSecond,sourceSha256:hash('f')};
+  expect(samePersonaColorComparisonEvidence(withSecond,other)).toBe(false);
+  expect(imported.reviewNotes).toBeUndefined();
+ });
+ it('saves rejection and observations to a project, but not to another package',()=>{
+  const {manifest,files}=fixture();
+  const imported=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const annotated=addPersonaColorReviewNote(imported,'natural-clean',0.45,'lighting','issue','Too warm',stamp);
+  const rejected=rejectPersonaColorVariants(annotated,'All variants rejected','2026-11-02T21:00:00.000Z');
+  const data=new Map<string,string>();
+  const storage:PersonaProjectStorage={
+   getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value)},
+   removeItem:key=>{data.delete(key)},
+  };
+  const first=createPersonaProject({id:'review-a',title:'A',contentType:'reel',sourceIdea:'A',now:stamp});
+  savePersonaProject(storage,{...first,colorComparison:rejected},first.id);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0].colorComparison;
+  expect(readPersonaColorComparisonRecord(restored)?.rejectedAll).toBe(true);
+  expect(readPersonaColorComparisonRecord(restored)?.reviewNotes?.[0].note).toBe('Too warm');
+  const newPackage=structuredClone(manifest);
+  newPackage.source.sha256=hash('f');
+  const reverified=inspectPersonaColorComparisonManifest(newPackage,[{...files[0],sha256:hash('f')},...files.slice(1)],stamp);
+  expect(samePersonaColorComparisonEvidence(rejected,reverified)).toBe(false);
+  expect(reverified.rejectedAll).toBeUndefined();
+  expect(reverified.reviewNotes).toBeUndefined();
+ });
+ it('renders rejected state and notes without requiring MP4 bytes after reload',()=>{
+  const {manifest,files}=fixture();
+  const initial=inspectPersonaColorComparisonManifest(manifest,files,stamp);
+  const noted=addPersonaColorReviewNote(initial,'natural-clean',34.925,'skin','issue','Too yellow',stamp);
+  const rejected=rejectPersonaColorVariants(noted,'No suitable grade','2026-11-02T21:00:00.000Z');
+  const markup=renderToStaticMarkup(React.createElement(PersonaColorComparisonStudio,{
+   projectId:'rejected',record:rejected,onSave:()=>true,
+  }));
+  expect(markup).toContain('Автор отклонил все три обработки');
+  expect(markup).toContain('Замечания по кадрам (1)');
+  expect(markup).toContain('Too yellow');
+  expect(markup).toContain('No suitable grade');
+  expect(markup).toContain('Отклонены все варианты');
+  expect(markup).toMatch(/disabled=""[^>]*>Отклонить все три обработки/);
+ });
+});
 
 describe('Persona QC report admission',()=>{
  it('accepts only an unapproved QC report tied to all four imported MP4 hashes',()=>{
