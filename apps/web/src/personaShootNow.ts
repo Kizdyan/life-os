@@ -1,3 +1,11 @@
+import type {PersonaScenarioWorkspace} from './personaProjectStore';
+import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
+import {
+ actorComposerShotDirections,createPersonaProductionGuide,exampleActorComposerBeats,
+ exampleActorComposerSourceFiles,guideShotNoteForScene,productionGuideScenes,
+ type PersonaProductionGuide,
+} from './personaProductionGuide';
+
 /**
  * One-screen shoot execution data, not an approval or evidence of filmed media.
  * A project-specific checklist is scoped to the exact edited scene sequence.
@@ -89,4 +97,68 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
   'Это съёмочный ориентир, а не автоматически проверенный или опубликованный ролик.',
  ];
  return lines.join('\n');
+}
+
+/** Take the current source of truth rather than replacing it with the demo.
+ * Never inherit camera notes if a dialogue/action/duration changed.
+ */
+export function buildPersonaShootPlan(input:{
+ title:string;workspace?:PersonaScenarioWorkspace;pipeline:PersonaProductionPipeline|null;
+ allowPilot:boolean;
+}):PersonaShootPlan{
+ const {title,workspace,pipeline,allowPilot}=input;
+ const guide:PersonaProductionGuide=workspace?.preProductionGuide??
+  createPersonaProductionGuide('2026-01-01T00:00:00.000Z',allowPilot?'actor_composer':'general');
+ const brief=pipeline?.materials.productionBrief??null;
+ const script=workspace?.script;
+ const beats=script?.currentRevision.beats;
+ const sameAsBrief=Boolean(brief&&beats&&beats.length===brief.script.length&&beats.every((beat,i)=>
+  beat.line===brief.script[i]?.line&&beat.action===brief.script[i]?.action&&
+  beat.durationSec===brief.script[i]?.durationSec));
+ const useBrief=Boolean(brief&&(!beats?.length||sameAsBrief));
+ const isExample=allowPilot&&!brief&&!beats?.length;
+ const source=beats?.length?beats.map((beat,i)=>({
+  id:String(i+1),seconds:beat.durationSec,line:beat.line,action:beat.action,
+  framing:useBrief?brief!.shots[i]?.framing??'Крупность уточняется':'План требует уточнения',
+  lighting:useBrief?brief!.shots[i]?.lighting??guide.fields.keyLight:guide.fields.keyLight,
+  angle:useBrief?brief!.shots[i]?.angle:undefined,
+ })):brief?productionGuideScenes(brief).map(scene=>({
+  id:scene.id,seconds:scene.seconds,line:scene.line,action:scene.action,
+  framing:scene.framing,lighting:scene.lighting,angle:scene.angle,
+ })):isExample?exampleActorComposerBeats.map(beat=>({
+  id:beat.id,seconds:beat.seconds,line:beat.line,action:beat.action,
+  framing:beat.framing,lighting:beat.lighting,angle:undefined as string|undefined,
+ })):[];
+ const scenes:PersonaShootScene[]=source.map((scene,i)=>{
+  const pilot=allowPilot&&source.length===exampleActorComposerBeats.length&&
+   source.every((item,j)=>item.line===exampleActorComposerBeats[j].line&&
+    item.action===exampleActorComposerBeats[j].action&&
+    item.seconds===exampleActorComposerBeats[j].seconds);
+  const directions=pilot?actorComposerShotDirections[exampleActorComposerBeats[i].id]:null;
+  const shotEvidence=useBrief&&brief?productionGuideScenes(brief)[i]:null;
+  const saved=guideShotNoteForScene(guide,{
+   ...scene,source:shotEvidence?'brief':'example',
+  }).note;
+  const safeNote=guideShotNoteForScene(guide,{
+   ...scene,source:shotEvidence?'brief':'example',
+  }).stale?null:saved;
+  return {
+   id:scene.id,seconds:scene.seconds,line:scene.line,action:scene.action,
+   framing:scene.framing,lighting:safeNote?.lighting||scene.lighting,
+   camera:safeNote?.camera||directions?.camera||scene.angle||guide.fields.camera,
+   performance:safeNote?.performance||directions?.performance||scene.action,
+   edit:safeNote?.edit||directions?.edit||guide.fields.editing,
+   sourceFileName:isExample&&pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:undefined,
+  };
+ });
+ const scriptApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevisionId);
+ const briefApproved=Boolean(brief&&useBrief&&pipeline?.stage==='READY_FOR_SHOOT'&&
+  pipeline.materials.editorialDecision?.decision==='approved');
+ return {
+  title,status:isExample?'example':scriptApproved&&briefApproved?'approved':'draft',
+  setup:{location:guide.fields.location,camera:guide.fields.camera,
+   lighting:guide.fields.keyLight,sound:guide.fields.sound,
+   wardrobe:guide.fields.wardrobeProps,arrangement:guide.fields.setArrangement},
+  scenes,
+ };
 }
