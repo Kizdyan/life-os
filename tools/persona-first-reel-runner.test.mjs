@@ -311,3 +311,66 @@ test('zero-choice Preview automatically opens Recovery instead of requiring a fi
   assert.equal(decisions.choices.length,0);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+test('7-beat simulated Whisper: strict and preview preserve six confident beats, isolate B04, and never render incomplete MP4',
+ {skip:!mediaTools,timeout:180000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-seven-beat-recovery-'));
+ try{
+  const video=join(root,'seven.mp4'),sources=join(root,'sources.json');
+  const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
+   '-f','lavfi','-i','testsrc2=s=240x320:r=10',
+   '-f','lavfi','-i','sine=frequency=500:sample_rate=48000',
+   '-t','16','-c:v','mpeg4','-c:a','aac','-shortest',video],
+   {encoding:'utf8',timeout:40000});
+  assert.equal(result.status,0,result.stderr);
+  const expected=['Сцена номер один.','Сцена номер два.','Сцена номер три.',
+   'Сцена номер четыре.','Сцена номер пять.','Сцена номер шесть.',
+   'Это колыбельная.'];
+  const spoken=[...expected.slice(0,6),'Эта колыбельная.'];
+  const briefPath=join(root,'brief.json'),model=join(root,'model.bin');
+  await mk(sources,{version:1,sources:[{id:'seven',path:video}]});
+  await mk(briefPath,{version:1,sourceFormat:'reel',
+   script:expected.map((line,i)=>({order:i+1,line,durationSec:2})),
+   shots:expected.map((_,i)=>({order:i+1,action:'Сказать текст точно по сценарию'}))});
+  await writeFile(model,Buffer.alloc(1024*1024+1));
+  const transcribeStep=async analysisPath=>{
+   const evidence=JSON.parse(await readFile(analysisPath,'utf8'));
+   assert.equal(evidence.sources.length,1);
+   await mk(join(root,currentMode,'evidence','seven-whisper.json'),{
+    transcription:spoken.map((text,i)=>({
+     text:' '+text,offsets:{from:300+i*2000,to:1650+i*2000},
+    })),
+   });
+   return {status:'synthetic-test-only-transcript',notActualWhisper:true};
+  };
+  let currentMode;
+  for(const mode of ['strict','preview']){
+   currentMode=mode;const draft=join(root,mode);
+   const status=await runFirstReel({sources,brief:briefPath,outputDir:draft,
+    whisperCli:process.execPath,whisperModel:model,mode,transcribeStep});
+   assert.equal(status.status,'needs-manual-transcript-review');
+   assert.equal(status.retainedAsrChoices,6);
+   assert.deepEqual(status.missingBeats,[7]);
+   assert.equal(status.distributionAllowed,false);
+   assert.equal(status.publicationApproved,false);
+   const decisions=JSON.parse(await readFile(join(draft,'decisions.json'),'utf8'));
+   assert.equal(decisions.mode,'preview');
+   assert.equal(decisions.choices.length,6);
+   assert.deepEqual(decisions.missingBeats,[7]);
+   const pack=JSON.parse(await readFile(
+    join(draft,'editorial-review-kit','candidate-pack.json'),'utf8'));
+   assert.equal(pack.beats.length,7);
+   assert.equal(pack.beats.filter(x=>x.candidates.length>0).length,6);
+   assert.equal(pack.beats[6].needsRecording,true);
+   assert.ok(pack.beats.slice(0,6).every(x=>x.defaultCandidateId!==null));
+   const diagnosis=JSON.parse(await readFile(status.asrDiagnostics,'utf8'));
+   assert.equal(diagnosis.beats[6].diagnosticStatus,'ASR_NEAR_MISS_NEEDS_LISTENING');
+   assert.equal(diagnosis.beats[6].reportedCandidates[0].heardByAsr,'Эта колыбельная.');
+   assert.equal(diagnosis.renderAllowed,false);
+   const report=await readFile(join(draft,'RECOVERY-RESULT.md'),'utf8');
+   assert.match(report,/Сохранены неподтверждённые ASR-кандидаты: 6 из 7/);
+   assert.match(report,/Сцены, требующие отдельной проверки: 7/);
+   await assert.rejects(stat(join(draft,'draft-reel.mp4')),/ENOENT/);
+  }
+ }finally{await rm(root,{recursive:true,force:true})}
+});
