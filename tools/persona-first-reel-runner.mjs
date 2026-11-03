@@ -97,11 +97,28 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
     briefJson.script.length<2||briefJson.script.length>30)
   fail('Invalid original production brief for recovery');
  const decisionsPath=join(dir,'decisions.json');
- const missingBeats=briefJson.script.map((_,i)=>i+1);
- const fallback={version:1,mode:'preview',recoveryRequired:true,analysisPath:analysis,briefPath:brief,
-  choices:[],missingBeats,publicationApproved:false,
-  notice:'Incomplete ASR evidence; no video render or publication approval. Review the real source manually.'};
- await writeFile(decisionsPath,JSON.stringify(fallback,null,2)+'\n',{flag:'wx'});
+ const allBeats=briefJson.script.map((_,i)=>i+1);
+ let missingBeats=allBeats,retainedAsrChoices=0,previewError=null;
+ // Strict matching can fail on just B04 after six reliable ASR selections.
+ // Preserve valid matching evidence as UNREVIEWED proposals, not approvals.
+ try{
+  await plan(analysis,brief,decisionsPath,'preview');
+  const preview=JSON.parse(await readFile(decisionsPath,'utf8'));
+  if(preview?.version!==1||preview.mode!=='preview'||
+   !Array.isArray(preview.choices)||!Array.isArray(preview.missingBeats)||
+   preview.choices.length+preview.missingBeats.length!==allBeats.length)
+   fail('Untrusted partial ASR decision packet');
+  retainedAsrChoices=preview.choices.length;
+  missingBeats=preview.missingBeats.length?preview.missingBeats:allBeats;
+ }catch(e){
+  previewError=String(e?.message??e).slice(0,400);
+  if(await exists(decisionsPath))throw Error('Incomplete preview decision file: '+previewError);
+  const fallback={version:1,mode:'preview',recoveryRequired:true,
+   analysisPath:analysis,briefPath:brief,choices:[],missingBeats:allBeats,
+   publicationApproved:false,
+   notice:'Whisper output incomplete; no video render or publication approval. Review original audio.'};
+  await writeFile(decisionsPath,JSON.stringify(fallback,null,2)+'\n',{flag:'wx'});
+ }
  const kit=join(dir,'editorial-review-kit');
  await mkdir(kit,{recursive:false});
  const packPath=join(kit,'candidate-pack.json'),selectionPath=join(kit,'selection.json');
@@ -128,7 +145,8 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
   asrDiagnostics:asrDiagnostics?.jsonPath??null,
   asrDiagnosticsMarkdown:asrDiagnostics?.markdownPath??null,
   asrDiagnosticsError:asrDiagnosticError,
-  reviewHtml:previews.reviewHtml,missingBeats,reason:String(reason??'ASR did not match the script').slice(0,2000),
+  reviewHtml:previews.reviewHtml,missingBeats,retainedAsrChoices,previewError,
+  reason:String(reason??'ASR did not match the script').slice(0,2000),
   next:'Open reviewHtml, compare playable local videos, manually confirm source, time bounds and transcript. Save selection.reviewed.json; run media:review:render to resume without repeating Whisper.'};
  await writeFile(join(dir,'RECOVERY-RESULT.json'),JSON.stringify(recoveryResult,null,2)+'\n',{flag:'wx'});
  await writeFile(join(dir,'RECOVERY-RESULT.md'),[
@@ -136,6 +154,8 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
   '**Это не готовый MP4 и не разрешение на публикацию.**','',
   'Автоматическое распознавание или подбор реплики не завершились: '+recoveryResult.reason,'',
   'Откройте локальную страницу: '+previews.reviewHtml,
+  'Сохранены неподтверждённые ASR-кандидаты: '+retainedAsrChoices+' из '+allBeats.length+'.',
+  'Сцены, требующие отдельной проверки: '+missingBeats.join(', ')+'.',
   'Посмотрите исходники; для пропущенных сцен укажите источник, начальное время, длительность и реально услышанный текст.',
   ...(asrDiagnostics?['','Фактическое сравнение Whisper со сценарием: '+asrDiagnostics.markdownPath,
    'Близость текста НЕ доказывает, что реплика была произнесена правильно.'] :
@@ -218,11 +238,13 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
   events.push('offline_asr_completed');
   const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode);
-  if(decisions.choices===0){
-   // The zero-choice preview cannot be rendered. It is an ASR recovery,
-   // not a malformed user project. Remove only the file just created by plan().
+  if(decisions.choices!==requestedBrief.script.length||
+   (Array.isArray(decisions.missingBeats)&&decisions.missingBeats.length>0)){
+   // Partial preview is NOT a valid MP4. Preserve confident candidates in
+   // recovery; only the just-created decision file is removed.
    await rm(decisions.decisions,{force:true});
-   throw Error('No confidently matched dialogue remains; manual Recovery Review required');
+   throw Error('Incomplete ASR dialogue: '+decisions.choices+' of '+
+    requestedBrief.script.length+' beats matched; manual Recovery Review required');
   }
   events.push('dialogue_cuts_proposed');
   let chosenDecisionPath=decisions.decisions;
