@@ -144,6 +144,11 @@ export function samePersonaColorComparisonEvidence(a:PersonaColorComparisonRecor
  return a.sourceSha256===b.sourceSha256&&a.variants.every((v,i)=>
    v.id===b.variants[i]?.id&&v.sha256===b.variants[i]?.sha256);
 }
+/** Reject mixing ANY artistic evidence with a different source or preset hashes. */
+export function hasAuthoredPersonaColorReview(record:PersonaColorComparisonRecord):boolean{
+ return Boolean(record.selectedVariantId||record.rejectedAll||
+  record.reviewNotes?.length||record.decisionHistory?.length);
+}
 export function choosePersonaColorVariant(
  current:PersonaColorComparisonRecord,id:PersonaColorVariantId,comment:string,decidedAt:string,
 ):PersonaColorComparisonRecord{
