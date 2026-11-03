@@ -33,6 +33,11 @@ export type PersonaProject={
  revision:number;
 };
 
+export type PersonaDirectorGenerationMeta={
+ version:1;provider:'ollama'|'gateway';model:string;
+ variation:'unexpected'|'humor'|'cinematic'|'intimate';
+ revisionId:string;createdAt:string;
+};
 export type PersonaScenarioWorkspace={
  version:1;
  research:ScenarioResearchItem[];
@@ -50,6 +55,8 @@ export type PersonaScenarioWorkspace={
  authorLockedLines?:Array<{ideaId:string;index:number;line:string}>;
  /** Project-owned, unapproved creative-to-shoot plan. */
  preProductionGuide?:PersonaProductionGuide;
+ /** Evidence of a successful model response, not of a rendered MP4. */
+ directorGeneration?:PersonaDirectorGenerationMeta;
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -62,7 +69,19 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  if(!value||typeof value!=='object')return false;
  const workspace=value as Partial<PersonaScenarioWorkspace>;
- if((workspace.preProductionGuide!==undefined&&!validatePersonaProductionGuide(workspace.preProductionGuide))||workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory))||(workspace.creativeProfile!==undefined&&
+ if((workspace.directorGeneration!==undefined&&(
+  !workspace.directorGeneration||
+  workspace.directorGeneration.version!==1||
+  !['ollama','gateway'].includes(workspace.directorGeneration.provider)||
+  typeof workspace.directorGeneration.model!=='string'||
+  workspace.directorGeneration.model.length<1||workspace.directorGeneration.model.length>120||
+  !['unexpected','humor','cinematic','intimate'].includes(workspace.directorGeneration.variation)||
+  typeof workspace.directorGeneration.revisionId!=='string'||
+  workspace.directorGeneration.revisionId.length<1||
+  workspace.directorGeneration.revisionId.length>200||
+  typeof workspace.directorGeneration.createdAt!=='string'||
+  !Number.isFinite(Date.parse(workspace.directorGeneration.createdAt))
+ ))||(workspace.preProductionGuide!==undefined&&!validatePersonaProductionGuide(workspace.preProductionGuide))||workspace.version!==1||!Array.isArray(workspace.research)||!Array.isArray(workspace.analyses)||!Array.isArray(workspace.ideas)||(workspace.selectedIdeaId!==undefined&&typeof workspace.selectedIdeaId!=='string')||(workspace.formatMemory!==undefined&&!Array.isArray(workspace.formatMemory))||(workspace.creativeProfile!==undefined&&
  (!Array.isArray(workspace.creativeProfile.priorities)||!Array.isArray(workspace.creativeProfile.constraints)||
  workspace.creativeProfile.priorities.some(value=>typeof value!=='string')||
  workspace.creativeProfile.constraints.some(value=>typeof value!=='string')))||
