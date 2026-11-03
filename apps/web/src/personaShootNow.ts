@@ -1,11 +1,3 @@
-import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
-import type {PersonaScenarioWorkspace} from './personaProjectStore';
-import {
- actorComposerShotDirections,defaultGuideFields,exampleActorComposerBeats,
- exampleActorComposerSourceFiles,generalGuideFields,guideShotNoteForScene,
- productionGuideScenes,type PersonaGuideScene,
-} from './personaProductionGuide';
-
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {
@@ -31,69 +23,6 @@ export type PersonaShootPlan={
  title:string;setup:PersonaShootSetup;scenes:PersonaShootScene[];
  status:'example'|'draft'|'approved';
 };
-
-/** A single truthful execution view of the canonical screenplay. The pilot is
- * visible only in the explicitly selected Actor+Composer project. */
-export function derivePersonaShootPlan({
- title,pilot,workspace,pipeline,
-}:{
- title:string;pilot:boolean;
- workspace?:PersonaScenarioWorkspace;
- pipeline:PersonaProductionPipeline|null;
-}):PersonaShootPlan{
- const guide=workspace?.preProductionGuide;
- const fields=guide?.fields??(pilot?defaultGuideFields:generalGuideFields);
- const sourceBrief=pipeline?.materials.productionBrief??null;
- const liveBeats=workspace?.script?.currentRevision.beats;
- const hasLiveScript=Boolean(liveBeats?.length);
- const scriptDifferent=Boolean(sourceBrief&&hasLiveScript&&(
-  sourceBrief.script.length!==liveBeats!.length||
-  liveBeats!.some((beat,i)=>beat.line!==sourceBrief.script[i]?.line||
-   beat.action!==sourceBrief.script[i]?.action||beat.durationSec!==sourceBrief.script[i]?.durationSec)
- ));
- const fromBeats=hasLiveScript?liveBeats!.map((beat,i):PersonaGuideScene=>({
-  id:String(i+1),seconds:beat.durationSec,line:beat.line,action:beat.action,
-  framing:scriptDifferent?'Крупность нужно пересогласовать с новым сценарием':
-   sourceBrief?.shots[i]?.framing??'План требует уточнения',
-  lighting:scriptDifferent?'Перепроверь свет по новой редакции':
-   sourceBrief?.shots[i]?.lighting??fields.keyLight,
-  angle:scriptDifferent?undefined:sourceBrief?.shots[i]?.angle,
-  source:'brief',
- })):null;
- const fromBrief=!hasLiveScript&&sourceBrief?productionGuideScenes(sourceBrief):null;
- const example=!fromBeats&&!fromBrief&&pilot;
- const scenes=fromBeats??fromBrief??(example?exampleActorComposerBeats.map(beat=>({...beat,source:'example' as const})):[]);
- const exactPilot=pilot&&scenes.length===exampleActorComposerBeats.length&&
-  scenes.every((scene,i)=>scene.line===exampleActorComposerBeats[i].line&&
-   scene.action===exampleActorComposerBeats[i].action&&
-   scene.seconds===exampleActorComposerBeats[i].seconds);
- const scriptApproved=Boolean(hasLiveScript&&workspace?.script?.approval?.revisionId===
-  workspace?.script?.currentRevisionId);
- const briefApproved=Boolean(pipeline?.stage==='READY_FOR_SHOOT'&&
-  pipeline?.materials.editorialDecision?.decision==='approved');
- const approved=Boolean(sourceBrief&&!scriptDifferent&&briefApproved&&
-  (scriptApproved||!hasLiveScript));
- const shots:PersonaShootScene[]=scenes.map((scene,index)=>{
-  const sourceBeat=exampleActorComposerBeats[index];
-  const directions=exactPilot&&sourceBeat?actorComposerShotDirections[sourceBeat.id]:null;
-  const stored=guide?guideShotNoteForScene(guide,scene):null;
-  const note=stored?.note&&!stored.stale?stored.note:null;
-  return {
-   id:scene.id,seconds:scene.seconds,line:scene.line,action:scene.action,
-   framing:scene.framing,lighting:note?.lighting??scene.lighting,
-   camera:note?.camera??directions?.camera??(
-    'angle' in scene&&typeof scene.angle==='string'&&scene.angle?
-     scene.angle:'Камера: уточнить ракурс, высоту и расстояние перед дублем'),
-   performance:note?.performance??directions?.performance??scene.action,
-   edit:note?.edit??directions?.edit??fields.editing,
-   ...(exactPilot&&sourceBeat?{sourceFileName:exampleActorComposerSourceFiles[sourceBeat.id]}:{}),
-  };
- });
- return {title,status:example?'example':approved?'approved':'draft',scenes:shots,
-  setup:{location:fields.location,camera:fields.camera,lighting:fields.keyLight,
-   sound:fields.sound,wardrobe:fields.wardrobeProps,arrangement:fields.setArrangement},
- };
-}
 
 export type PersonaShootProgress={
  version:1;fingerprint:string;completedIds:string[];updatedAt:string;
