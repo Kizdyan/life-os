@@ -3,14 +3,15 @@
  * No directory crawling; no unlabelled videos; no symlinks or source mutation.
  */
 import {readdir,realpath,stat,writeFile} from 'node:fs/promises';
-import {basename,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
+import {isAbsolute,join,relative,resolve,sep} from 'node:path';
 const videoExt=/\.(?:mp4|mov|mkv|webm|m4v)$/i;
 const label=/^S(0[1-9]|[12]\d|30)_take(0[1-9]|[1-9]\d)\.(?:mp4|mov|mkv|webm|m4v)$/i;
 const fail=msg=>{throw Error('Persona generic takes: '+msg)};
 export async function createGenericTakeManifest({folderPath,manifestPath}={}){
  if(typeof folderPath!=='string'||typeof manifestPath!=='string')fail('input folder and new manifest required');
  const root=await realpath(resolve(folderPath)),out=resolve(manifestPath);
- if(relative(root,out)===''||!relative(root,out).startsWith('..'))
+ const relativeOutput=relative(root,out);
+ if(relativeOutput===''||(!isAbsolute(relativeOutput)&&relativeOutput!=='..'&&!relativeOutput.startsWith('..'+sep)))
   fail('manifest must be outside the originals folder');
  const entries=await readdir(root,{withFileTypes:true});
  const videos=entries.filter(x=>videoExt.test(x.name));
