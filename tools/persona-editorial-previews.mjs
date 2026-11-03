@@ -57,7 +57,11 @@ export function verifyPreviewPack(pack,evidence){
  }
  return true;
 }
-export function buildReviewHtml(pack,template,files){
+export function buildReviewHtml(pack,template,files,diagnostics=null){
+ if(diagnostics!==null&&(diagnostics?.kind!=='persona-asr-recovery-diagnostics-v1'||
+  diagnostics.status!=='NEEDS_HUMAN_TRANSCRIPT_REVIEW'||diagnostics.publicationApproved!==false||
+  !Array.isArray(diagnostics.beats)||diagnostics.beats.length!==pack?.beats?.length))
+  fail('Untrusted ASR recovery diagnostics');
  if(pack?.kind!=='persona-editorial-candidate-pack-v1'||
   template?.kind!=='persona-editorial-selection-v1'||!Array.isArray(template.selections)||
   template.selections.length!==pack.beats.length)fail('Invalid offline review input');
@@ -72,6 +76,19 @@ export function buildReviewHtml(pack,template,files){
     '<small>Whisper: '+esc(take.transcript)+'</small>'+
     '<small class="warning">'+esc((take.technicalWarnings??[]).join('; ')||'Нет базовых технических предупреждений')+'</small></label>';
   }).join(''):'';
+  const diag=diagnostics?.beats?.find(d=>d?.beat===beat.beat&&d.expectedLine===beat.scriptLine);
+  const diagnosis=diag&&beat.candidates.length===0?
+   '<aside class="asr-diagnostic"><strong>Почему остановился автоматический монтаж</strong>'+
+   '<p>Whisper сообщил текст вместо ожидаемой реплики. Это результат распознавания, а НЕ доказательство реально сказанного.</p>'+
+   (diag.reportedCandidates??[]).slice(0,3).map(candidate=>
+    '<p><strong>'+esc(candidate.sourceId)+'</strong> ('+
+    esc(candidate.startSec)+'–'+esc(candidate.endSec)+' с): '+
+    esc(String(candidate.heardByAsr??'').slice(0,800))+'</p>'+
+    (candidate.diff?.differingPositions??[]).slice(0,10).map(diff=>
+     '<p>Слово '+esc(diff.position)+': сценарий «'+
+     esc(diff.expected)+'», Whisper «'+esc(diff.asrReported)+'»</p>').join('')
+   ).join('')+
+   '<p>Прослушай оригинал. Если фраза была другой — пересними. Если ошибся Whisper — используй ручной Recovery Review.</p></aside>':'';
   const recovery=beat.candidates.length===0?beat.recovery:null;
   const recoveryOptions=recovery?.availableSources?.map(source=>{
    const video=recoveryFiles[source.sourceId];
@@ -84,7 +101,7 @@ export function buildReviewHtml(pack,template,files){
    '<label>Начало фразы, с <input id="recoveryStart'+beat.beat+'" type="number" min="0" step="0.01"></label><label>Длительность, с <input id="recoveryDuration'+beat.beat+'" type="number" min="0.25" step="0.01"></label>'+
    '<label>Текст услышанной фразы <textarea id="recoveryText'+beat.beat+'" rows="2"></textarea></label></div>':'';
   return '<section class="scene"><h2>Сцена '+beat.beat+' — '+esc(beat.scriptLine)+'</h2><div class="clips">'+options+
-   recoveryForm+'</div><label class="reason">Почему выбран дубль? <textarea id="reason'+beat.beat+'" rows="2" placeholder="Например: естественная пауза, хороший взгляд"></textarea></label></section>';
+   recoveryForm+diagnosis+'</div><label class="reason">Почему выбран дубль? <textarea id="reason'+beat.beat+'" rows="2" placeholder="Например: естественная пауза, хороший взгляд"></textarea></label></section>';
  }).join('');
  const base={version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
   selections:pack.beats.map(b=>({beat:b.beat,candidateId:null,reviewed:false,reason:'',rejected:[],recovery:null})),
@@ -111,7 +128,7 @@ export function buildReviewHtml(pack,template,files){
   'h1{font-size:28px}.lead{color:#b5c0cb}.scene{padding:16px 0 24px;border-top:1px solid #333}'+
   '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}.recovery-form{border:1px dashed #8c7960;border-radius:12px;padding:12px;display:grid;gap:10px}.recovery-form>label{display:grid;gap:5px;font-weight:600}.recovery-form input[type=number]{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:8px;min-height:40px;box-sizing:border-box}.recovery-form textarea{box-sizing:border-box;width:100%;min-height:64px}'+
   'video{width:100%;max-height:360px;background:black;border-radius:6px}small{display:block;color:#bbc6d1;overflow-wrap:anywhere}.warning{color:#e6c99d}'+
-  '.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
+  '.asr-diagnostic{border:1px solid #aa884d;background:#2b261e;padding:12px;border-radius:10px;margin:14px 0}.asr-diagnostic p{overflow-wrap:anywhere}.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
   'button{font:inherit;background:#e8eee6;color:#171e22;border:0;border-radius:10px;padding:12px 20px;cursor:pointer}'+
   '.foot{padding:20px 0;border-top:1px solid #333;color:#c1c8ce}</style></head><body>'+
   '<h1>Persona · режиссёрский выбор дублей</h1>'+
@@ -121,7 +138,7 @@ export function buildReviewHtml(pack,template,files){
   '<p>Файл selection.reviewed.json затем передаётся в команду editorial apply. Публикация не разрешена автоматически.</p></div>'+
   '<script type="application/json" id="data">'+escapeJson(base)+'</script><script>'+script+'</script></body></html>';
 }
-export async function generatePreviews({packPath,evidencePath,outputDir}={}){
+export async function generatePreviews({packPath,evidencePath,outputDir,diagnostics=null}={}){
  if(![packPath,evidencePath,outputDir].every(x=>typeof x==='string'&&x.trim()))fail('Provide candidate pack, evidence and fresh output directory');
  const [pack,evidence]=await Promise.all([readFile(resolve(packPath),'utf8').then(JSON.parse),readFile(resolve(evidencePath),'utf8').then(JSON.parse)]);
  verifyPreviewPack(pack,evidence);
@@ -163,7 +180,7 @@ export async function generatePreviews({packPath,evidencePath,outputDir}={}){
    recoveryFiles[item.sourceId]=name;
   }
   const template={version:1,kind:'persona-editorial-selection-v1',selections:pack.beats.map(b=>({beat:b.beat}))};
-  await writeFile(join(root,'review.html'),buildReviewHtml(pack,template,{candidates:files,recovery:recoveryFiles}),{flag:'wx'});
+  await writeFile(join(root,'review.html'),buildReviewHtml(pack,template,{candidates:files,recovery:recoveryFiles},diagnostics),{flag:'wx'});
   await writeFile(join(root,'previews.json'),JSON.stringify({version:1,kind:'persona-editorial-previews-v1',items,
    originalSourcesUntouched:true,publicationApproved:false,notice:'Offline previews only. Re-encode may change preview compression but not source videos.'},null,2)+'\n',{flag:'wx'});
   return {reviewHtml:join(root,'review.html'),previewCount:items.length,recoveryPreviewCount:Object.keys(recoveryFiles).length,missingBeats:pack.beats.filter(b=>b.candidates.length===0).map(b=>b.beat)};
