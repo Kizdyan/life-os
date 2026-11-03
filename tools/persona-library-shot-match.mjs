@@ -16,8 +16,8 @@ const stopwords=new Set([
  'перед','потом','после','сейчас','сразу','без','или','вот','как',
 ]);
 function queryForShot(shot,beat){
- const unique=[...new Set(tokenize([shot.action,beat?.action,beat?.line].filter(Boolean).join(' ')))
-  .filter(x=>x.length>=4&&!stopwords.has(x))].slice(0,15);
+ const unique=[...new Set(tokenize([shot.action,beat?.action,beat?.line].filter(Boolean).join(' ')))]
+  .filter(x=>x.length>=4&&!stopwords.has(x)).slice(0,15);
  return unique.join(' ');
 }
 export function matchBriefToLibrary({brief,catalog,maxMatches=4}={}){
