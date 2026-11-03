@@ -11,6 +11,22 @@ const preset={
  workspace:undefined,pipeline:null,allowPilot:true,
 } as const;
 
+describe('Persona model-provenance visibility',()=>{
+ it('shows the actual AI model for the current revision but never claims to render video',()=>{
+  const plan=buildPersonaShootPlan(preset);
+  const meta={version:1 as const,provider:'ollama' as const,model:'qwen3:4b-instruct',
+   variation:'cinematic' as const,revisionId:'ai-revision',createdAt:'2026-11-03T14:00:00.000Z'};
+  const view=renderToStaticMarkup(<PersonaShootNow projectId="test-ai" plan={plan}
+   onOpenScript={()=>{}} generation={meta} generationCurrent={true}/>);
+  expect(view).toContain('создан настоящей моделью');
+  expect(view).toContain('qwen3:4b-instruct');
+  expect(view).toContain('не выполненного монтажа');
+  const later=renderToStaticMarkup(<PersonaShootNow projectId="test-ai" plan={plan}
+   onOpenScript={()=>{}} generation={meta} generationCurrent={false}/>);
+  expect(later).toContain('Сценарий после генерации редактировался');
+ });
+});
+
 describe('Persona direct filming experience',()=>{
  it('shows a real seven-scene shoot-ready EXAMPLE with lines, camera, acting and montage cues',()=>{
   const plan=buildPersonaShootPlan(preset);
