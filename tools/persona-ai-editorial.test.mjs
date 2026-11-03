@@ -10,7 +10,7 @@ const make=(beat,index,source,start,transcript)=>({
 const a=make(1,1,'take-a',0,'Я хочу это снять');
 const b=make(1,2,'take-b',0,'Я хочу это снять');
 const c=make(2,1,'take-a',2,'И музыка всё меняет');
-const d=make(2,2,'take-b',1,'И музыка всё меняет');
+const d=make(2,2,'take-b',1.4,'И музыка всё меняет');
 const decisions={version:1,mode:'strict',candidates:[
  {beat:1,alternatives:[a,b]},{beat:2,alternatives:[c,d]},
 ],choices:[
@@ -43,7 +43,7 @@ test('real local model chooses different existing takes without inventing source
  assert.equal(selected.aiEditorial.changedTakeSelection,true);
  assert.equal(selected.choices[0].sourceId,'take-b');
  assert.equal(selected.choices[0].startSec,0);
- assert.equal(selected.choices[1].startSec,1);
+ assert.equal(selected.choices[1].startSec,1.4);
  assert.equal(selected.choices[1].selectedCandidateId,d.candidateId);
  assert.equal(selected.choices[1].reason.includes('Ollama'),true);
  assert.equal(selected.choices[1].captionWords,d.captionWords);
