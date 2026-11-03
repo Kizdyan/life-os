@@ -15,8 +15,9 @@ import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 // to the data module.
 import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
 import {PersonaShootNow} from './PersonaShootNow';
+import {personaDirectorToBrief,readPersonaDirectorProposal} from '../../../packages/core/src/persona-director-model';
 import {buildPersonaShootPlan} from './personaShootNow';
-import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
+import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
 import {applyProductionInputField,productionBriefSnapshot,readProductionInputRaw,parseProductionInputDraft,saveProductionInputDraft,clearProductionInputDraft,productionInputDraftExists} from './personaProductionInputJournal';
@@ -247,7 +248,7 @@ export default function PersonaFactory(){
     ?'final_qa':projectStage(initialProject.stage);
   }
   return read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy';
- });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
+ });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[directorWorking,setDirectorWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
  useEffect(()=>{save('persona:active-idea:v1',chosen)},[chosen]);
  useEffect(()=>{save('persona:active-draft:v1',draft)},[draft]);
  useEffect(()=>{save('persona:active-qa:v1',qa)},[qa]);
@@ -479,6 +480,79 @@ export default function PersonaFactory(){
   setWorkspaceStep('script');setStage('final_qa');
   setStatus('Семь сцен сохранены как НЕУТВЕРЖДЁННЫЙ сценарий. Проверьте реплики, свет, кадры и факты перед редакторским решением.');
  }
+ async function generateShootWithAi(variation:'unexpected'|'humor'|'cinematic'|'intimate'){
+  if(!chosen||!activeProjectId||directorWorking)return;
+  if(!['reel','short','story'].includes(chosen.format)){
+   setStatus('Нейросетевой режиссёр поддерживает пока только короткие видео.');return;
+  }
+  if(production||scenarioWorkspace?.script||draft){
+   setStatus('В этом проекте уже есть сценарий. Для новой независимой идеи создайте отдельный проект; прежние версии не перезаписываем.');return;
+  }
+  const projectId=activeProjectId,idea=chosen;
+  try{
+   const before=loadPersonaProjects(localStorage,newProjectId);
+   const initial=before.projects.find(item=>item.id===projectId);
+   if(!initial)throw Error('Исходный проект не найден.');
+   assertPersonaAsyncImportTarget(before,projectId,initial.revision);
+   if(personaScenarioDraftExists(localStorage,projectId)||productionInputDraftExists(localStorage,projectId))
+    throw Error('Сначала сохраните незавершённый черновик проекта.');
+   setDirectorWorking(true);
+   setStatus('Запрашиваю реальную нейросеть. Без успешного ответа модельного провайдера сценарий не появится.');
+   const previousHooks=read<string[]>('persona:director-hooks:v1',[]);
+   const response=await fetch('/api/persona-director',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format},
+     variation,history:[...h.map(item=>item.title),...previousHooks].slice(-12),
+     seed:newProjectId()}),
+   });
+   const raw:unknown=await response.json().catch(()=>null);
+   if(!response.ok)throw Error(typeof raw==='object'&&raw!==null&&'error' in raw?
+    String((raw as {error:unknown}).error):'director_unavailable');
+   const proposal=readPersonaDirectorProposal(raw,idea.id);
+   if(!proposal)throw Error('Нейросеть вернула недостоверную или неполную раскадровку.');
+   assertPersonaAsyncImportTarget(loadPersonaProjects(localStorage,newProjectId),projectId,initial.revision);
+   if(personaScenarioDraftExists(localStorage,projectId)||productionInputDraftExists(localStorage,projectId))
+    throw Error('За время генерации появился несохранённый черновик. Импорт отменён.');
+   const newIdea={...idea,title:proposal.title};
+   const brief=personaDirectorToBrief(
+    {id:newIdea.id,title:newIdea.title,angle:newIdea.angle,format:newIdea.format},proposal);
+   const pipeline=importPersonaProductionBrief({
+    brief,selectedIdea:{id:newIdea.id,title:newIdea.title,angle:newIdea.angle,format:newIdea.format},
+   });
+   const base=scenarioWorkspace??{version:1 as const,research:[],analyses:[],ideas:[]};
+   const now=new Date().toISOString();
+   const guide=base.preProductionGuide??
+    createPersonaProductionGuide(now,isActorComposerPilot(idea)?'actor_composer':'general');
+   let aiGuide:ProductionGuide={
+    ...guide,fields:base.preProductionGuide?guide.fields:{
+     ...guide.fields,location:proposal.setup.location,camera:proposal.setup.camera,
+     keyLight:proposal.setup.lighting,sound:proposal.setup.sound,
+     wardrobeProps:proposal.setup.wardrobe,setArrangement:proposal.setup.arrangement,
+     editing:proposal.editingIntent,color:proposal.colorIntent,
+    },
+   };
+   for(const [i,scene] of proposal.scenes.entries()){
+    aiGuide=updateGuideShotNote(aiGuide,{
+     id:String(i+1),seconds:scene.durationSec,line:scene.line.trim(),action:scene.action.trim(),
+    },{camera:scene.camera,lighting:scene.lighting,
+     performance:scene.performance,edit:scene.edit},now);
+   }
+   const next=addImportedBriefScenario({...base,preProductionGuide:aiGuide},brief,now);
+   persistScenarioWorkspace(next,newIdea,pipeline);
+   setChosen(newIdea);setProduction(pipeline);setDraft(null);setQa(null);
+   setProductionFactsChecked(false);setWorkspaceStep('guide');setStage('final_qa');
+   save('persona:director-hooks:v1',[...previousHooks,proposal.hook,proposal.scenes[0].line].slice(-12));
+   setStatus('Реальная модель '+proposal.model+' создала '+proposal.scenes.length+
+    ' новых кадров. Реплики и режиссёрские указания сохранены как НЕУТВЕРЖДЁННЫЙ сценарий. Монтаж и съёмка не выполнены.');
+  }catch(error){
+   const code=String((error as Error)?.message||'director_unavailable');
+   setStatus(code==='director_model_not_configured'
+    ?'Реальная нейросеть не подключена. Для Windows настройте локальный Ollama в Persona Director; шаблон вместо неё не выдаётся.'
+    :code==='director_ollama_unavailable'
+    ?'Ollama не ответила. Проверьте, запущена ли локальная модель; сценарий не создан.'
+    :'Нейросетевой сценарий не создан: '+code);
+  }finally{setDirectorWorking(false)}
+ }
  function createProductionBrief(idea=chosen,angle?:string){
   if(!idea)return;
   try{
@@ -605,7 +679,9 @@ export default function PersonaFactory(){
      allowPilot:chosen.format==='reel'&&isActorComposerPilot(chosen)})}
     onOpenScript={()=>setWorkspaceStep('script')}
     onSavePilot={chosen.format==='reel'&&isActorComposerPilot(chosen)&&!production&&!scenarioWorkspace?.script&&!draft
-     ?()=>applyGuideExample(scenarioWorkspace?.preProductionGuide??createPersonaProductionGuide(new Date().toISOString(),'actor_composer')):undefined}/>}
+     ?()=>applyGuideExample(scenarioWorkspace?.preProductionGuide??createPersonaProductionGuide(new Date().toISOString(),'actor_composer')):undefined}
+    onGenerateAi={!production&&!scenarioWorkspace?.script&&!draft?variation=>{void generateShootWithAi(variation)}:undefined}
+    aiBusy={directorWorking}/>}
   {chosen&&activeProjectId&&workspaceStep==='guide'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&<PersonaProductionGuide key={`production-guide:${activeProjectId}`}
    projectTitle={chosen.title} projectAngle={chosen.angle} allowExample={chosen.format==='reel'&&!draft&&isActorComposerPilot(chosen)} workspace={scenarioWorkspace}
    pipeline={production} onSave={persistGuide} onApplyToBrief={transferGuideToBrief} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
