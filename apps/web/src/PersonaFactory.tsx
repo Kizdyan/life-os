@@ -519,6 +519,11 @@ export default function PersonaFactory(){
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format},
      variation,history:[...h.map(item=>item.title),...previousHooks].slice(-12),
+     creativePreferences:{
+      priorities:(scenarioWorkspace?.creativeProfile?.priorities??[]).slice(0,5).map(v=>v.slice(0,180)),
+      constraints:(scenarioWorkspace?.creativeProfile?.constraints??[]).slice(0,5).map(v=>v.slice(0,180)),
+     },
+     avoidFailures:(scenarioWorkspace?.editorialFeedback??[]).slice(-4).map(v=>v.comment.slice(0,180)),
      seed:newProjectId()}),
    });
    const raw:unknown=await response.json().catch(()=>null);
