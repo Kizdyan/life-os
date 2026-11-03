@@ -17,6 +17,11 @@ on:
       - "tools/persona-comparison-temporal.test.mjs"
       - "tools/persona-video-quality.mjs"
       - "tools/persona-comparison-browser-e2e.mjs"
+      - "tools/persona-ai-editorial.mjs"
+      - "tools/persona-ai-editorial.test.mjs"
+      - "tools/persona-ai-reel.mjs"
+      - "tools/persona-first-reel-runner.mjs"
+      - "tools/persona-first-reel-runner.test.mjs"
       - ".github/workflows/persona-comparison-e2e.yml"
   workflow_dispatch:
 
@@ -47,7 +52,7 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
       - name: Original-vs-grade quality regression (real FFmpeg)
-        run: node --test tools/persona-comparison-quality.test.mjs tools/persona-comparison-temporal.test.mjs tools/persona-review-handoff.test.mjs
+        run: node --test tools/persona-comparison-quality.test.mjs tools/persona-comparison-temporal.test.mjs tools/persona-review-handoff.test.mjs tools/persona-ai-editorial.test.mjs
       - name: Start Persona web UI
         shell: bash
         run: |
