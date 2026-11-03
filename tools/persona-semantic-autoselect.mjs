@@ -34,8 +34,25 @@ export function parseWhisperJson(value,durationSec){
     const audible=tokens?.filter(t=>typeof t?.text==='string' &&
       t.text.trim() && !/^<\|.*\|>$/.test(t.text.trim()) &&
       !/^\[[^\]]+\]$/.test(t.text.trim())) ?? [];
+    // Whisper JSON-full can contain an AUDIBLE zero-duration subword, e.g.
+    // " И" (300-430), " у" (430-430), " нас" (430-600).
+    // Discarding " у" silently turns the real text into "И нас"; merging the
+    // next subword may instead invent "Инас". Either can corrupt subtitles,
+    // timing evidence and strict line matching.
+    //
+    // If ANY audible token lacks a positive-duration timestamp, keep the
+    // authoritative complete segment text and its actual segment offsets.
+    // The lost word boundary is preserved, but timing is explicitly marked
+    // 'segment' (never misreported as word-accurate). Post-speech music
+    // boundaries therefore still require manual Recovery Review.
+    const hasBrokenTime=audible.some(t=>t.offsets &&
+      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to) &&
+      (t.offsets.from<0 || t.offsets.to<t.offsets.from ||
+       t.offsets.to/1000>durationSec+0.1));
+    if(hasBrokenTime)fail('ASR token time offsets outside source');
     const allTokensTimed=audible.length>0 && audible.every(t=>t.offsets &&
-      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to));
+      Number.isFinite(t.offsets.from) && Number.isFinite(t.offsets.to) &&
+      t.offsets.to>t.offsets.from);
     const candidates=allTokensTimed?audible:[seg];
     const timing=allTokensTimed?'word':'segment';
     const grouped=[];
