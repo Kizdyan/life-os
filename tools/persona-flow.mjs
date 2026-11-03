@@ -77,7 +77,7 @@ export function validateDirector(input){
  if(duration<15||duration>70)fail('Generated reel duration outside 15–70 sec');
  return input;
 }
-async function modelJSON({servers,system,payload,fetchImpl}){
+export async function modelJSON({servers,system,payload,fetchImpl}){
  const errors=[];
  for(const server of validateModelServers(servers)){
   const token=server.tokenEnv?process.env[server.tokenEnv]:null;
@@ -143,16 +143,23 @@ export function createShootSheet(idea,director){
 }
 export async function preparePersonaFlow({
  theme,outputDir,servers,style='cinematic',libraryIndexPath,fetchImpl=fetch,
+ ideasFromProposal=null,selectedIdeaId=null,ideasProvider=null,sourceProposalSha256=null,
 }={}){
  if(!txt(theme,8,700)||!allowedStyles.has(style))fail('Theme (8–700 chars) and valid style are required');
  if(!txt(outputDir,1,1000))fail('Provide a NEW output directory');
  const dir=resolve(outputDir);await absent(dir);
- const first=await modelJSON({servers,fetchImpl,system:
+ const first=ideasFromProposal!==null?
+  {data:{ideas:ideasFromProposal},provider:ideasProvider}:
+  await modelJSON({servers,fetchImpl,system:
   'Ты предлагаешь актёру и композитору три разных оригинальных коротких видео. Никаких шаблонных советов, выдуманных личных фактов и повторяющихся хуков. Отвечай ТОЛЬКО JSON формата {"ideas":[{"title":"...","angle":"...","hook":"..."},...]}.',
   payload:{theme,style,requirements:'one actor; one room; phone + tripod; possible piano; shootable 20–50 sec; character and humor'},
  });
  const ideas=validateIdeas(first.data);
- const idea=ideas[0];
+ if(ideasFromProposal!==null&&(!ideasProvider||typeof ideasProvider.id!=='string'||
+  typeof ideasProvider.model!=='string'||!/^[a-f0-9]{64}$/i.test(sourceProposalSha256??'')))
+  fail('Invalid saved proposal provenance');
+ const idea=ideasFromProposal!==null?ideas.find(x=>x.id===selectedIdeaId):ideas[0];
+ if(!idea)fail('Selected idea ID absent from saved candidate list');
  const second=await modelJSON({servers,fetchImpl,system:
   'Ты ИИ-режиссёр, который должен дать конкретные реплики, действия, свет, ракурсы и монтаж для оригинального Reels. Никакого кода, шаблонов и фиктивных биографических фактов. JSON: {"hook":"...","setup":{"location":"...","camera":"...","lighting":"...","sound":"...","wardrobe":"...","arrangement":"..."},"scenes":[{"durationSec":4,"line":"...","action":"...","framing":"close-up","camera":"...","lighting":"...","performance":"...","edit":"..."}],"editingIntent":"...","colorIntent":"..."}. Дай 4–8 сцен суммарно 15–70 секунд. Крупность только close-up, medium, detail.',
   payload:{idea,theme,style,requirements:'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
@@ -162,13 +169,16 @@ export async function preparePersonaFlow({
  const now=new Date().toISOString();
  const meta={version:1,kind:'persona-flow-v1',status:'WAITING_FOR_FOOTAGE',
   generatedAt:now,theme,style,selectedIdeaId:idea.id,
+  ideaSelectionMode:ideasFromProposal!==null?'explicit_saved_candidate':'legacy_automatic_first',
+  ...(ideasFromProposal!==null?{sourceProposalSha256}:{}),
   providers:{ideas:first.provider,director:second.provider},
   publicationApproved:false,renderedVideo:false};
  const matches=libraryIndexPath?matchBriefToLibrary({brief,
   catalog:JSON.parse(await readFile(resolve(libraryIndexPath),'utf8'))}):null;
  await mkdir(dir,{recursive:false});
  await Promise.all([
-  writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas},null,2)+'\n',{flag:'wx'}),
+  writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas,
+   selectedIdeaId:idea.id,selectionMode:meta.ideaSelectionMode},null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'PRODUCTION-BRIEF.json'),JSON.stringify(brief,null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'SHOOT.md'),createShootSheet(idea,director),{flag:'wx'}),
   writeFile(join(dir,'FLOW.json'),JSON.stringify(meta,null,2)+'\n',{flag:'wx'}),
@@ -179,6 +189,7 @@ export async function preparePersonaFlow({
  ]);
  return {dir,brief:join(dir,'PRODUCTION-BRIEF.json'),shoot:join(dir,'SHOOT.md'),
   status:meta.status,scenes:brief.script.length,provider:meta.providers,
+  selectedIdeaId:idea.id,ideaSelectionMode:meta.ideaSelectionMode,
    libraryMatches:matches?{totalShots:matches.totalShots,matchedShots:matches.matchedShots,
     report:join(dir,'SHOOT-GAPS.md')}:null};
 }
