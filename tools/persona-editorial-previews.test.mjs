@@ -66,6 +66,35 @@ test('recovery review page keeps an unmatched recorded take available for a sepa
  assert.match(html,/Границы фразы выходят за доступную длительность исходника/);
 });
 
+test('B04 review page shows actual Whisper word disagreement safely beside video, never an approval',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'b',sourceSha256:sig,durationSec:3,hasAudio:true,asrStatus:'partial-or-unmatched',
+ }]};
+ const template={version:1,kind:'persona-editorial-selection-v1',
+  selections:[{beat:1},{beat:2}]};
+ const files={candidates:{'beat1-a':'beat-01-candidate-01.mp4'},
+  recovery:{b:'source-b-inspection.mp4'}};
+ const diagnostics={kind:'persona-asr-recovery-diagnostics-v1',
+  status:'NEEDS_HUMAN_TRANSCRIPT_REVIEW',publicationApproved:false,
+  beats:[{beat:1,expectedLine:pack.beats[0].scriptLine,reportedCandidates:[]},
+   {beat:2,expectedLine:pack.beats[1].scriptLine,reportedCandidates:[{
+    sourceId:'b',startSec:.2,endSec:1.8,
+    heardByAsr:'И вместо у <img src=x onerror=alert(1)>',
+    diff:{differingPositions:[{position:2,expected:'у',asrReported:'вместо'}]},
+   }]}]};
+ const html=buildReviewHtml(pack,template,files,diagnostics);
+ assert.match(html,/Почему остановился автоматический монтаж/);
+ assert.match(html,/source-b-inspection\.mp4/);
+ assert.match(html,/Слово 2: сценарий «у», Whisper «вместо»/);
+ assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+ assert.ok(!html.includes('<img src=x onerror=alert(1)>'));
+ assert.match(html,/НЕ доказательство реально сказанного/);
+ assert.throws(()=>buildReviewHtml(pack,template,files,{
+  ...diagnostics,publicationApproved:true}),/Untrusted ASR recovery diagnostics/);
+});
+
 test('Recovery Review accepts underscored scene-take proxy but rejects paths and unsafe names',()=>{
  const pack=structuredClone(minimal);
  pack.beats[1].candidates=[];
