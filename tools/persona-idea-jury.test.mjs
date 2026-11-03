@@ -79,7 +79,7 @@ test('real HTTP model call protocol: 2 independent first passes then 2 distinct 
   assert.equal(report.independence.firstPassBlindToPeers,true);
   assert.equal(report.independence.secondPassCrossExamination,true);
   assert.equal(report.independence.localOnly,true);
-  assert.equal(report.evidenceLimits.instagramInsights,'NOT_CONNECTED');
+  assert.equal(report.evidenceLimits.instagramInsights,'NOT_SUPPLIED_TO_JURY');
   assert.equal(report.evidenceLimits.liveTrends,'NOT_VERIFIED');
   assert.equal(report.firstPass[0].verdicts.length,3);
   assert.equal(report.secondPass[1].responses.length,3);
