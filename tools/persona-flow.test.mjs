@@ -46,11 +46,23 @@ test('real-model execution path creates three ideas, one 4-scene camera-ready br
  const root=await mkdtemp(join(tmpdir(),'persona-ideas-'));
  try{
   const out=join(root,'new-production');
+  const libraryIndexPath=join(root,'library-index.json');
+  await writeFile(libraryIndexPath,JSON.stringify({kind:'persona-local-library-v1',
+   generatedAt:'2026-11-03T18:00:00Z',assets:[{
+   id:'sha256:'+'a'.repeat(64),sourcePath:'C:/Persona/inbox/piano.mp4',
+   sha256:'a'.repeat(64),kind:'video',availability:'local',
+   metadata:{durationSec:8},annotation:{
+    description:'Композитор играет на клавишах',tags:['клавиши','фортепиано'],segments:[]},
+   frames:[],
+  }]}));
   const result=await preparePersonaFlow({theme:'Смешной ролик: актёр и композитор спорят о жанре',
    outputDir:out,servers:[{id:'local',baseUrl:'http://127.0.0.1:11434',model:'qwen3:4b-instruct'}],
-   fetchImpl:mockFetch});
+   libraryIndexPath,fetchImpl:mockFetch});
   assert.equal(result.status,'WAITING_FOR_FOOTAGE');
   assert.equal(result.scenes,4);
+  assert.ok(result.libraryMatches.matchedShots>=1);
+  assert.match(await readFile(join(out,'SHOOT-GAPS.md'),'utf8'),/Композитор/);
+  assert.equal(JSON.parse(await readFile(join(out,'ASSET-MATCHES.json'),'utf8')).publicationApproved,false);
   assert.equal(result.provider.ideas.model,'qwen3:4b-instruct');
   const brief=JSON.parse(await readFile(join(out,'PRODUCTION-BRIEF.json'),'utf8'));
   assert.equal(brief.script.length,4);

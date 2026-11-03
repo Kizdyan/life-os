@@ -14,6 +14,7 @@ import {access,copyFile,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/pr
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runFirstReel,validateDraftQa} from './persona-first-reel-runner.mjs';
+import {matchBriefToLibrary,shootGapMarkdown} from './persona-library-shot-match.mjs';
 
 const fail=message=>{throw Error('Persona flow: '+message)};
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -141,7 +142,7 @@ export function createShootSheet(idea,director){
  return lines.join('\n')+'\n';
 }
 export async function preparePersonaFlow({
- theme,outputDir,servers,style='cinematic',fetchImpl=fetch,
+ theme,outputDir,servers,style='cinematic',libraryIndexPath,fetchImpl=fetch,
 }={}){
  if(!txt(theme,8,700)||!allowedStyles.has(style))fail('Theme (8–700 chars) and valid style are required');
  if(!txt(outputDir,1,1000))fail('Provide a NEW output directory');
@@ -163,15 +164,23 @@ export async function preparePersonaFlow({
   generatedAt:now,theme,style,selectedIdeaId:idea.id,
   providers:{ideas:first.provider,director:second.provider},
   publicationApproved:false,renderedVideo:false};
+ const matches=libraryIndexPath?matchBriefToLibrary({brief,
+  catalog:JSON.parse(await readFile(resolve(libraryIndexPath),'utf8'))}):null;
  await mkdir(dir,{recursive:false});
  await Promise.all([
   writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas},null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'PRODUCTION-BRIEF.json'),JSON.stringify(brief,null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'SHOOT.md'),createShootSheet(idea,director),{flag:'wx'}),
   writeFile(join(dir,'FLOW.json'),JSON.stringify(meta,null,2)+'\n',{flag:'wx'}),
+   ...(matches?[
+    writeFile(join(dir,'ASSET-MATCHES.json'),JSON.stringify(matches,null,2)+'\n',{flag:'wx'}),
+    writeFile(join(dir,'SHOOT-GAPS.md'),shootGapMarkdown(matches),{flag:'wx'}),
+   ]:[]),
  ]);
  return {dir,brief:join(dir,'PRODUCTION-BRIEF.json'),shoot:join(dir,'SHOOT.md'),
-  status:meta.status,scenes:brief.script.length,provider:meta.providers};
+  status:meta.status,scenes:brief.script.length,provider:meta.providers,
+   libraryMatches:matches?{totalShots:matches.totalShots,matchedShots:matches.matchedShots,
+    report:join(dir,'SHOOT-GAPS.md')}:null};
 }
 export async function renderPersonaFlow({
  planDir,takes,outputDir,whisperCli,whisperModel,ollamaModel,variation='cinematic',ffmpegDir,
@@ -220,7 +229,7 @@ export async function packagePersonaFlow({resultPath,outputDir,caption=''}={}){
 }
 const usage=[
  'Usage:',
- '  npm run persona:flow -- prepare "<THEME>" "<NEW_DIR>" "<SERVERS.json>" [cinematic|humor|intimate|unexpected]',
+ '  npm run persona:flow -- prepare "<THEME>" "<NEW_DIR>" "<SERVERS.json>" [cinematic|humor|intimate|unexpected] [CATALOG_INDEX.json]',
  '  npm run persona:flow -- render "<PLAN_DIR>" "<TAKES_DIR>" "<NEW_RENDER_DIR>" "<WHISPER_CLI>" "<WHISPER_MODEL>" "<OLLAMA_MODEL>" [variation] [ffmpeg-bin]',
  '  npm run persona:flow -- package "<RESULT.json>" "<NEW_PACKAGE_DIR>" [caption text]',
 ].join('\n');
@@ -229,9 +238,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  try{
   let result;
   if(cmd==='prepare'){
-   const [theme,outputDir,config,style]=args;
+   const [theme,outputDir,config,style,libraryIndexPath]=args;
    const servers=JSON.parse(await readFile(resolve(config),'utf8')).servers;
-   result=await preparePersonaFlow({theme,outputDir,servers,style:style??'cinematic'});
+   result=await preparePersonaFlow({theme,outputDir,servers,style:style??'cinematic',libraryIndexPath});
   }else if(cmd==='render'){
    const [planDir,takes,outputDir,whisperCli,whisperModel,ollamaModel,variation,ffmpegDir]=args;
    result=await renderPersonaFlow({planDir,takes,outputDir,whisperCli,whisperModel,ollamaModel,
