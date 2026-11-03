@@ -157,7 +157,10 @@ async function main() {
     const loudnessDuration=audioTreatment?.speechDurationSec??durationSec;
     const loudness=media.audio&&!muteSourceAudio?await measureLoudness(path,startSec,loudnessDuration):null;
     const musicTail=audioTreatment?await measureLoudness(path,startSec+audioTreatment.speechDurationSec,durationSec-audioTreatment.speechDurationSec):null;
-    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing, muteSourceAudio, audioTreatment, loudness, musicTail, audioLeveling:safeGain(loudness) });
+    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing,
+      beat:Number.isSafeInteger(clip.beat)?clip.beat:null,
+      brollAfterBeat:Number.isSafeInteger(clip.brollAfterBeat)?clip.brollAfterBeat:null,
+      muteSourceAudio, audioTreatment, loudness, musicTail, audioLeveling:safeGain(loudness) });
   }
   let soundtrack = null;
   if (project.soundtrack !== undefined) {
