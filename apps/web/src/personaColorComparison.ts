@@ -24,6 +24,7 @@ export type PersonaColorComparisonRecord={
  selectedVariantId?:PersonaColorVariantId;
  comment?:string;
  decidedAt?:string;
+ decisionHistory?:Array<{selectedVariantId:PersonaColorVariantId;comment:string;decidedAt:string}>;
 };
 export type ComparisonFileEvidence={name:string;sha256:string;size:number};
 const SHA=/^[a-f0-9]{64}$/;
@@ -56,6 +57,13 @@ export function readPersonaColorComparisonRecord(value:unknown):PersonaColorComp
  if(hasSelection&&(!COLOR_VARIANT_PRESETS.some(preset=>preset.id===value.selectedVariantId)||
   typeof value.comment!=='string'||value.comment.length>1000||!timestamp(value.decidedAt)))return null;
  if(!hasSelection&&(value.comment!==undefined||value.decidedAt!==undefined))return null;
+ if(value.decisionHistory!==undefined){
+  if(!Array.isArray(value.decisionHistory)||value.decisionHistory.length>20)return null;
+  for(const item of value.decisionHistory){
+   if(!object(item)||!COLOR_VARIANT_PRESETS.some(p=>p.id===item.selectedVariantId)||
+    typeof item.comment!=='string'||item.comment.length>1000||!timestamp(item.decidedAt))return null;
+  }
+ }
  return value as PersonaColorComparisonRecord;
 }
 export function inspectPersonaColorComparisonManifest(
@@ -110,7 +118,10 @@ export function choosePersonaColorVariant(
 ):PersonaColorComparisonRecord{
  if(!readPersonaColorComparisonRecord(current)||!COLOR_VARIANT_PRESETS.some(v=>v.id===id)||
   typeof comment!=='string'||comment.length>1000||!timestamp(decidedAt))fail('invalid author decision');
- const next={...current,selectedVariantId:id,comment,decidedAt};
+ const legacyPrevious=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
+  ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
+ const decisionHistory=[...(current.decisionHistory??legacyPrevious),{selectedVariantId:id,comment,decidedAt}].slice(-20);
+ const next={...current,selectedVariantId:id,comment,decidedAt,decisionHistory};
  if(!readPersonaColorComparisonRecord(next))fail('invalid saved author decision');
  return next;
 }
