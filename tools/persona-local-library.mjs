@@ -189,7 +189,11 @@ export async function scanLibrary({
    const truePath=await realpath(file);
    if(!inside(root,truePath))fail('Source escapes selected directory');
    const st=await stat(truePath);if(!st.isFile()||st.size>16*1024**3||st.size<1)fail('Unusable asset size');
-   const sha=await hash(truePath),old=byPath.get(truePath),kind=typeOf(truePath);
+   const old=byPath.get(truePath);
+   // Watch mode must not re-hash gigabytes of footage every 30 seconds.
+   const sha=old?.bytes===st.size&&old.mtimeMs===st.mtimeMs&&
+    /^[a-f0-9]{64}$/i.test(old.sha256)?old.sha256:await hash(truePath);
+   const kind=typeOf(truePath);
    const meta=old?.sha256===sha&&old.metadata?old.metadata:await probe(truePath,kind,{ffprobe});
    const manual=await manualNote(truePath,meta.durationSec);
    const frames=[];
@@ -207,7 +211,7 @@ export async function scanLibrary({
     frames.push({timeSec:time,thumbnail:name,...detected});
    }
    updated.push({id:'sha256:'+sha,sourcePath:truePath,sha256:sha,kind,
-    bytes:st.size,metadata:meta,annotation:manual,frames,
+    bytes:st.size,mtimeMs:st.mtimeMs,metadata:meta,annotation:manual,frames,
     availability:'local',checkedAt:new Date().toISOString()});
   }catch(e){errors.push({file:basename(file),error:String(e?.message??e).slice(0,300)});
    const old=byPath.get(file);if(old)updated.push({...old,availability:'error'});
