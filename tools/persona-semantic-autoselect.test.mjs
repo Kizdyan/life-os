@@ -60,6 +60,60 @@ test('mixed token timestamps cannot silently truncate spoken segment',()=>{
  assert.equal(parts.length,1);
  assert.match(parts[0].text,/проблема/);
 });
+test('zero-duration audible Whisper token preserves the complete Russian phrase with honest segment timing',()=>{
+ const source={transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:2100},
+  tokens:[
+   {text:' И',offsets:{from:300,to:430}},
+   {text:' у',offsets:{from:430,to:430}},
+   {text:' нас',offsets:{from:430,to:720}},
+   {text:' есть',offsets:{from:740,to:1100}},
+   {text:' проблема.',offsets:{from:1110,to:2100}},
+  ],
+ }]};
+ const parts=parseWhisperJson(source,3);
+ assert.deepEqual(parts,[{
+  startSec:.3,endSec:2.1,text:'И у нас есть проблема.',timing:'segment',
+ }]);
+ const exact=chooseForBrief({script:[{order:1,line:'И у нас есть проблема.'}]},[
+  {id:'real-whisper-full-b01',durationSec:3,segments:parts},
+ ]);
+ assert.equal(exact[0].sourceId,'real-whisper-full-b01');
+ assert.equal(exact[0].speechBoundaryConfidence,'segment');
+ assert.deepEqual(exact[0].captionWords.map(w=>w.text),['И у нас есть проблема.']);
+ const music={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'И у нас есть проблема.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Затем играет оригинальную музыку после реплики'}]};
+ assert.throws(()=>createEditorialPlan(music,[{
+  id:'real-whisper-full-b01',durationSec:3,segments:parts,
+ }]),/Manual review required/,'Coarse timing must not fake a post-speech music boundary');
+});
+test('zero-duration token with malformed end timestamp must not conceal corrupted evidence',()=>{
+ const invalid={transcription:[{
+  text:' И у нас есть проблема.',offsets:{from:300,to:2100},
+  tokens:[
+   {text:' И',offsets:{from:300,to:430}},
+   {text:' у',offsets:{from:430,to:200}},
+  ],
+ }]};
+ assert.throws(()=>parseWhisperJson(invalid,3),/ASR token time offsets outside source/);
+});
+test('B04 wrong vowel or grammatical ending is a strict ASR mismatch, not an approved take',()=>{
+ const wanted={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Герой произносит финальную реплику'}]};
+ for(const reported of ['Эта колыбельная.','Это колыбельное.']){
+  const segments=parseWhisperJson(whisper([[reported,.2,1.9]]),3);
+  assert.throws(()=>createEditorialPlan(wanted,[{
+   id:'B04_tts-mismatch',durationSec:3,segments,
+  }]),/Manual review required/);
+  const preview=createEditorialPlan(wanted,[{
+   id:'B04_tts-mismatch',durationSec:3,segments,
+  }],{mode:'preview'});
+  assert.deepEqual(preview.missingBeats,[1]);
+ }
+});
+
 test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
  const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[
   {text:' Компо',offsets:{from:0,to:400}},
