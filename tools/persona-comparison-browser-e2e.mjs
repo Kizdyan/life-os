@@ -120,6 +120,54 @@ try{
   await shootPage.getByRole('status').filter({hasText:'Семь сцен сохранены как НЕУТВЕРЖДЁННЫЙ сценарий'}).waitFor();
   step(browserLabel+' opens a concrete seven-shot film board, persists take marks and saves a draft');
  }finally{await shootContext.close()}
+ // Mock the MODEL RESPONSE ONLY to regression-test its canonical import.
+ // This does not claim CI ran a real Ollama model. That smoke test must run
+ // on the user's own Windows setup with a loaded model.
+ const aiContext=await browser.newContext({viewport:{width:390,height:844}});
+ try{
+  const aiPage=await aiContext.newPage();
+  aiPage.on('pageerror',error=>summary.errors.push('director-flow: '+error.message));
+  await aiPage.route('**/api/persona-director',async route=>{
+   const req=route.request().postDataJSON();
+   const mk=(durationSec,line,action,framing,camera,lighting,performance,edit)=>
+    ({durationSec,line,action,framing,camera,lighting,performance,edit});
+   const response={
+    version:1,kind:'persona-director-proposal-v1',executionMode:'ai',
+    provider:'ollama',model:'mock-local-model',ideaId:req.idea.id,
+    createdAt:'2026-11-03T13:00:00.000Z',publicationApproved:false,
+    title:'Новая история нейросети для актёра',hook:'Одна нота меняет весь жанр',
+    setup:{location:'Тихая комната с фортепиано на заднем плане',
+     camera:'Штатив на уровне глаз, вертикальный смартфон',
+     lighting:'Мягкий боковой источник над глазами',
+     sound:'Микрофон близко к лицу, записать тон комнаты',
+     wardrobe:'Нейтральная футболка и пиджак',arrangement:'Две точки для разных ролей'},
+    scenes:[
+     mk(4,'Я думал, это комедия','Актёр открывает текст','close-up','Статичный крупный план',
+      'Мягкий боковой свет','Растерянное спокойствие','Склейка на взгляде'),
+     mk(4,'А я включил музыку из триллера','Композитор играет диссонанс','medium','Клавиши и лицо в кадре',
+      'Не засвечивать руки','Сухой юмор','Оставить музыкальную паузу'),
+     mk(4,'Тогда моему герою явно конец','Актёр меняет выражение лица','close-up',
+      'Камера в той же точке','Сохранить баланс первой сцены','Напряжение и страх','Переход по смене взгляда'),
+     mk(4,'Это ещё только увертюра!','Композитор закрывает клавиши','detail',
+      'В кадре руки и клавиши','Убрать пересвет с клавиш','Невозмутимый панчлайн','Закончить на обрыве музыки'),
+    ],editingIntent:'Склейки по драматургическому конфликту',
+    colorIntent:'Естественная кожа, нейтральная палитра с контролем света',
+   };
+   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(response)});
+  });
+  await aiPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
+  await aiPage.getByRole('button',{name:'Создать Reels'}).click();
+  const aiBoard=aiPage.getByRole('region',{name:'Снять ролик сейчас'});
+  await aiBoard.getByText(/пока нет реплик и кадров/).waitFor();
+  await aiBoard.getByRole('button',{name:'Создать новый сценарий ИИ'}).click();
+  await aiPage.getByRole('status').filter({hasText:'Реальная модель mock-local-model создала 4 новых кадров'}).waitFor({timeout:20000});
+  await aiBoard.getByText('Я думал, это комедия').waitFor();
+  assert.equal(await aiBoard.getByText(/31 сек\. · 7 кадров/).count(),0);
+  await aiPage.reload({waitUntil:'domcontentloaded'});
+  await aiPage.getByRole('region',{name:'Снять ролик сейчас'})
+   .getByText('Я думал, это комедия').waitFor();
+  step(browserLabel+' imports a test-only simulated AI response into the REAL canonical draft without template fallback');
+ }finally{await aiContext.close()}
  page=await context.newPage();
  page.on('pageerror',error=>summary.errors.push(error.message));
  await page.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
