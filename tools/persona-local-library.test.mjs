@@ -35,14 +35,16 @@ test('search never pretends that a filename or annotation is verified vision',()
 });
 test('real local vision connector sends actual pixels and returns model provenance',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-vision-'));try{
-  const image=join(root,'frame.jpg');await writeFile(image,Buffer.from([0xff,0xd8,0xff,0xd9]));
+  const image=join(root,'frame.png');
+  const actualPng=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/Wp0AAAAASUVORK5CYII=','base64');
+  await writeFile(image,actualPng);
   let seen=false;
   const detected=await describeFrameVision(image,{visionModel:'vision-local',
    fetchImpl:async(url,options)=>{
     assert.equal(url,'http://127.0.0.1:11434/api/chat');
     const payload=JSON.parse(options.body);
     assert.equal(payload.model,'vision-local');
-    assert.equal(Buffer.from(payload.messages[1].images[0],'base64').length,4);
+    assert.deepEqual(Buffer.from(payload.messages[1].images[0],'base64'),actualPng);
     seen=true;
     return {ok:true,json:async()=>({message:{content:JSON.stringify({
       description:'Поезд у платформы',tags:['поезд','платформа'],
