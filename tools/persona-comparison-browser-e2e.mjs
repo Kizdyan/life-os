@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,webkit} from 'playwright-core';
@@ -91,8 +91,8 @@ try{
   ?await webkit.launch({headless:true})
   :await chromium.launch({headless:true,executablePath:browserPath,args:['--no-sandbox']});
  const context=await browser.newContext(browserKind==='webkit'
-  ?{viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,acceptDownloads:false}
-  :{viewport:{width:1280,height:860},acceptDownloads:false});
+  ?{viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,acceptDownloads:true}
+  :{viewport:{width:1280,height:860},acceptDownloads:true});
  page=await context.newPage();
  page.on('pageerror',error=>summary.errors.push(error.message));
  await page.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
@@ -204,6 +204,24 @@ try{
  await waitForImport(page,'Все три варианта отклонены автором');
  await afterReload.getByText(/Автор отклонил все три обработки/).waitFor();
  step('Author independently rejected all grades with a reason despite technical PASS');
+
+ const [briefDownload]=await Promise.all([
+  page.waitForEvent('download',{timeout:20000}),
+  afterReload.getByRole('button',{name:'Скачать художественные замечания для Codex (JSON)'}).click(),
+ ]);
+ assert.match(briefDownload.suggestedFilename(),/^PERSONA-REVIEW-[a-f0-9]{12}\.json$/);
+ const exportedBrief=JSON.parse(await readFile(await briefDownload.path(),'utf8'));
+ assert.equal(exportedBrief.kind,'persona-color-review-brief-v1');
+ assert.equal(exportedBrief.artisticStatus,'rejected-all');
+ assert.equal(exportedBrief.publicationApproved,false);
+ assert.equal(exportedBrief.decision.rejectedAll,true);
+ assert.equal(exportedBrief.observations.length,1);
+ assert.equal(exportedBrief.observations[0].category,'skin');
+ assert.equal(exportedBrief.source.sha256,first.source.sha256);
+ assert.equal(exportedBrief.variants[0].sha256,first.variants[0].sha256);
+ assert.equal(JSON.stringify(exportedBrief).includes(root),false,'review brief must not leak local source path');
+ step('Downloaded fully local artistic JSON brief with author rejection, observation and all source hashes');
+
 
  await page.reload({waitUntil:'domcontentloaded'});
  const rejectedReload=await openComparison(page);
