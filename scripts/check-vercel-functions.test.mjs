@@ -29,5 +29,5 @@ test('Vercel scanner includes public routes but never hidden helpers or undersco
 test('the real repository API stays within the Vercel Hobby budget',async()=>{
  const dir=new URL('../api/',import.meta.url);
  const result=await scanVercelApi(fileURLToPath(dir));
- assert.equal(assertVercelApiBudget(result),7,'exactly seven intended API routes, no tests');
+ assert.equal(assertVercelApiBudget(result),8,'exactly eight intended API routes, no tests');
 });
