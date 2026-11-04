@@ -43,8 +43,11 @@ async function sourceFiles(input){
  if(info.isDirectory()){
   const entries=await readdir(path,{withFileTypes:true});
   const videos=entries.filter(item=>videoExt.test(item.name));
-  if(videos.length<2||videos.length>12||videos.some(v=>!v.isFile()))
-   fail('Select 2-12 regular, explicitly named source videos; no symlinked footage');
+  // The existing named-takes intake supports up to 42 recordings (7 scenes
+  // plus alternatives), but sends only 7 unreviewed defaults into the <=12
+  // source engine. Hash ALL 42 originals, never lose their provenance.
+  if(videos.length<2||videos.length>42||videos.some(v=>!v.isFile()))
+   fail('Select 2-42 regular, explicitly named source videos; no symlinked footage');
   selected=videos.map(v=>join(path,v.name));
  }else if(info.isFile()&&videoExt.test(path))selected=[path];
  else if(info.isFile()&&extname(path).toLowerCase()==='.json'){
@@ -107,10 +110,11 @@ async function assertSevenSceneBrief(path){
   fail('The final approved scene must say the FULL line: Это колыбельная? Это финал триллера.');
  return brief;
 }
-function startReport({sources,brief,output,status,originals,reviewHtml,qaPath,video}){
+function startReport({sources,brief,output,status,originals,reviewHtml,qaPath,video,alternateTakes=[]}){
  return {version:1,kind:'persona-seven-scene-real-pilot-v1',status,
   provenance:'LOCAL_USER_MEDIA_NOT_SYNTHETIC',sources,brief,output,originals,
   reviewHtml:reviewHtml??null,video:video??null,qaPath:qaPath??null,
+  alternateTakes,allRecordedTakesCompared:alternateTakes.length===0,
   publicationApproved:false,distributionAllowed:false,
   note:'Ready only for manual selection. No claims of verified speech, acting, skin tone, audio mix or publication.'};
 }
@@ -145,7 +149,19 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
  const reviewHtml=recovered?result.reviewHtml:kit?.playableReviewPage;
  if(typeof reviewHtml!=='string'||!await exists(reviewHtml))
   fail('Local review page missing; no approval possible');
- const report=startReport({sources:input,brief,output,originals:before,
+ // The pre-existing 7-scene folder intake chooses the lowest take number
+ // for each beat, but DOES NOT pass all 42 recordings through ASR.
+ // Surface the unused alternates explicitly; never imply the system evaluated
+ // their acting, framing, or suitability.
+ let alternateTakes=[];
+ const reportPath=result?.sourceSelection?.report;
+ if(result?.sourceSelection?.kind==='selected-folder'&&typeof reportPath==='string'&&
+    within(output,resolve(reportPath))){
+  const intake=await json(reportPath);
+  if(Array.isArray(intake.alternateTakes))
+   alternateTakes=intake.alternateTakes.map(x=>({id:x.id,file:x.file}));
+ }
+ const report=startReport({sources:input,brief,output,originals:before,alternateTakes,
   status:recovered?'NEEDS_MANUAL_ASR_REVIEW':'NEEDS_HUMAN_TAKE_REVIEW',
   reviewHtml,video:recovered?null:result.output,qaPath:recovered?null:result.qaPath});
  await writeFile(join(output,'PILOT.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
@@ -157,7 +173,12 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
   '- Проверены SHA-256 исходников до и после обработки; неизменность: PASS.',
   '- Страница для просмотра и прослушивания: '+reviewHtml,
   '- MP4: '+(report.video??'НЕ СОЗДАН: требуется ручной Recovery Review'),
-  '- Техническая проверка: '+(report.qaPath??'только после реального монтажа'),'',
+  '- Техническая проверка: '+(report.qaPath??'только после реального монтажа'),
+  '- Не рассмотренные альтернативные дубли: '+report.alternateTakes.length,
+  ...(report.alternateTakes.length?[
+   'ВАЖНО: альтернативные дубли НЕ были автоматически проанализированы и НЕ участвовали в выборе.',
+   'Для сравнения пересобери входной sources.json (до 12 файлов) и создай НОВЫЙ пилот;',
+   'не считай самый первый дубль лучшим по игре.']:[]),'',
   'Прослушать ВСЕ семь реплик. Финал должен быть дословным: «Это колыбельная? Это финал триллера.»',
   'Проверить B03: речь, паузу и вступление собственной музыки.',
   'В браузере сохранить selection.reviewed.json только после просмотра каждого дубля.',
