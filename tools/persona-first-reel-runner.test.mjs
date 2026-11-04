@@ -405,6 +405,21 @@ test('7-beat simulated Whisper: strict and preview preserve six confident beats,
        reason:'Synthetic test-only explicit recovery; not actual Russian speech'},
      }),
     });
+    // Negative real-media gate: a carefully prepared Recovery Review cannot
+    // push the wrong B04 vowel through the assembler's permissive word overlap.
+    // It must fail before FFmpeg can render any misleading master file.
+    const wrongSelection=JSON.parse(await readFile(selectionPath,'utf8'));
+    wrongSelection.selections[6].recovery.transcript='Эта колыбельная.';
+    const wrongPath=join(root,'synthetic-wrong-b04.json');
+    await mk(wrongPath,wrongSelection);
+    const rejectedOutput=join(root,'rejected-b04-render');
+    await assert.rejects(renderReviewedReel({draftDir:draft,
+     selectionPath:wrongPath,outputDir:rejectedOutput}),
+     /Manual recovery transcript differs from approved script for beat 7/);
+    await assert.rejects(stat(join(rejectedOutput,'reviewed-reel.mp4')),/ENOENT/);
+    const wrongFailure=JSON.parse(await readFile(join(rejectedOutput,'FAILED.json'),'utf8'));
+    assert.equal(wrongFailure.status,'failed');
+    assert.match(wrongFailure.error,/transcript differs from approved script/);
     const reviewed=await renderReviewedReel({draftDir:draft,
      selectionPath,outputDir:join(root,'reviewed-seven')});
     assert.equal(reviewed.status,'awaiting-author-review');
