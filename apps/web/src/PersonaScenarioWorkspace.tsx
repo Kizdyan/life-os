@@ -12,6 +12,7 @@ import { importPersonaProductionBrief } from '../../../packages/core/src/persona
 import {
  analyseScenarioReference,
  addFreeTrendLeadToScenarioResearch,
+ assessScenarioCreativeRisks,
  buildScenarioPreEditPlan,
  approveScenarioScript,
  createScenarioScript,
@@ -123,6 +124,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  },[project.id,script?.currentRevisionId,editingRevisionId,beats,revisionReason]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
+ const creativeRisks=script?assessScenarioCreativeRisks({...script.currentRevision,beats}):null;
  const preEditPlan=script&&beats.length&&beats.every(beat=>beat.line.trim()&&beat.action.trim()&&Number.isFinite(beat.durationSec)&&beat.durationSec>0)
   ?buildScenarioPreEditPlan({...script.currentRevision,beats},script.idea,workspace.research):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
@@ -338,7 +340,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    if(!brief||brief.script.length<3||brief.script.length>12)throw new Error('Ожидается 3–12 сценарных частей.');
    const beats:ScenarioScriptBeat[]=brief.script.map((beat,index)=>({
     purpose:index===0?'hook':index===brief.script.length-1?'ending':'development',
-    line:beat.line,action:beat.action,durationSec:beat.durationSec
+    line:beat.line,action:beat.action,durationSec:beat.durationSec,
+    ...(brief.preEditPlan?.scenes[index]?.editIntent
+      ?{editIntent:brief.preEditPlan.scenes[index].editIntent}
+      :script.currentRevision.beats[index]?.line===beat.line&&
+       script.currentRevision.beats[index]?.action===beat.action&&
+       script.currentRevision.beats[index]?.durationSec===beat.durationSec&&
+       script.currentRevision.beats[index]?.editIntent
+        ?{editIntent:script.currentRevision.beats[index].editIntent}:{})
    }));
    assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const candidate=reviseScenarioScript(script,{
@@ -490,6 +499,10 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       {(workspace.editorialFeedback??[]).length>0&&<p className="personaScenarioHint">Сохранено критических замечаний: {workspace.editorialFeedback?.length}. Они будут учитываться как ограничения при следующем формировании идей.</p>}
     </div>
    {preEditPlan&&<section className="personaScenarioReview" aria-label="Предмонтаж до утверждения">
+     <h5>Продюсерское обоснование выбора</h5>
+     <p><b>Основание:</b> {script.idea.evidenceNote||'Исследование результатов Instagram не подтверждено; это творческая гипотеза.'}</p>
+     <p><b>Конфликт:</b> {script.idea.originalConflict}. <b>Актёрская задача:</b> {script.idea.actingTask}. <b>Планируемый финал:</b> {script.idea.ending}.</p>
+     {creativeRisks&&creativeRisks.findings.length>0&&<div><b>Редакторские риски до утверждения:</b><ul>{creativeRisks.findings.map((finding,i)=><li key={`${finding.category}-${i}`}>{finding.explanation} Рекомендация: {finding.proposedFix}</li>)}</ul></div>}
      <h5>Предмонтаж спроектирован до съёмки</h5>
      <p>Реплики и будущие склейки проектируются вместе. После утверждения замысел переходит в Production Brief без повторной генерации. Реальных таймкодов и исходников пока нет.</p>
      <p>{preEditPlan.researchEvidence.note}</p>
