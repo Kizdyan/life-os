@@ -162,6 +162,7 @@ test('author-selected synthetic fixture receives independent QA and remains unpu
    renderReviewed:async()=>{
     await mkdir(reviewedDir);await writeFile(mp4,'synthetic-fixture-not-a-real-mp4');
     await writeFile(timeline,'{}');
+    await writeFile(mp4+'.persona.json','{}');
     return {kind:'persona-reviewed-reel-v1',status:'awaiting-author-review',
      publicationApproved:false,distributionAllowed:false,output:mp4,timelinePath:join(reviewedDir,'reviewed-timeline.json'),
      renderManifestPath:mp4+'.persona.json',
