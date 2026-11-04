@@ -60,6 +60,34 @@ describe('script revision revokes production authorization',()=>{
   expect(reconciled?.materials.qa).toEqual(approved.materials.qa);
   expect(reconcilePersonaProductionWithScenario(reconciled,changed)).toBe(reconciled);
  });
+ it('revokes shoot permission if ONLY the approved pre-edit montage revision changes',()=>{
+  const {brief,approved,workspace}=production();
+  const rev=workspace.script!.currentRevisionId;
+  const preEditPlan={
+   version:1 as const,kind:'persona-pre-edit-plan-v1' as const,status:'intent_only' as const,
+   origin:'scenario_revision' as const,sourceRevisionId:rev,
+   researchEvidence:{level:'hypothesis_only' as const,sourceUrls:[],note:'Нет измеренных доказательств'},
+   scenes:brief.script.map(beat=>({
+    order:beat.order,line:beat.line,durationSec:beat.durationSec,
+    editIntent:'Склейка на действие',audioIntent:'Реальный звук',subtitleIntent:'Только проверенная речь',
+    mediaStatus:'awaiting_author_footage' as const,
+   })),
+   publicationApproved:false as const,
+  };
+  const planned={...approved,materials:{...approved.materials,
+   productionBrief:{...brief,preEditPlan}}};
+  expect(reconcilePersonaProductionWithScenario(planned,workspace)).toBe(planned);
+  const changed={...workspace,script:{...workspace.script!,
+   currentRevisionId:'new-edit-revision',
+   currentRevision:{...workspace.script!.currentRevision,id:'new-edit-revision'},
+  }};
+  const revoked=reconcilePersonaProductionWithScenario(planned,changed);
+  expect(revoked?.stage).toBe('QA');
+  expect(revoked?.materials.editorialDecision).toBeUndefined();
+  const altered=workspace.script!.currentRevision.beats.map((b,i)=>
+   i===0?{...b,editIntent:'Склейка на другую реакцию'}:b);
+  expect(productionBriefMatchesBeats({...brief,preEditPlan},altered)).toBe(false);
+ });
  it('does not revoke a pipeline that has not created any Production Brief',()=>{
   const {workspace}=production();
   const draft={stage:'SCRIPT' as const,statuses:{
