@@ -12,7 +12,16 @@
 
 ## Подготовка
 
-Нужны Windows, Node.js 22+, локальные FFmpeg/FFprobe, нативный `whisper-cli.exe`, multilingual `ggml` модель и выбранные реальные исходники (например, семь именованных файлов A01/B01/A02/B02/A03/B03/A04 или два длинных ролевых дубля; снимки не подменяются). Используйте путь, где уже лежат реальные исходники. В PowerShell **из корня отдельного worktree**:
+Нужны Windows, Node.js 22+, локальные FFmpeg/FFprobe, нативный `whisper-cli.exe`, multilingual `ggml` модель и выбранные реальные исходники (например, семь именованных файлов A01/B01/A02/B02/A03/B03/A04 или два длинных ролевых дубля; снимки не подменяются). Используйте путь, где уже лежат реальные исходники. Создайте отдельный worktree **не меняя открытую ветку Codex**:
+
+```powershell
+# Выполняется один раз из существующей локальной копии life-os
+git fetch origin fix/persona-manual-verbatim-b04-20261104
+git worktree add --detach "C:\Persona\life-os-pilot" FETCH_HEAD
+Set-Location "C:\Persona\life-os-pilot"
+```
+
+В PowerShell **из корня нового worktree**:
 
 ```powershell
 npm ci
