@@ -163,18 +163,20 @@ test('author-selected synthetic fixture receives independent QA and remains unpu
     await mkdir(reviewedDir);await writeFile(mp4,'synthetic-fixture-not-a-real-mp4');
     await writeFile(timeline,'{}');
     return {kind:'persona-reviewed-reel-v1',status:'awaiting-author-review',
-     publicationApproved:false,distributionAllowed:false,output:mp4,timelinePath:timeline,
+     publicationApproved:false,distributionAllowed:false,output:mp4,timelinePath:join(reviewedDir,'reviewed-timeline.json'),
+     renderManifestPath:mp4+'.persona.json',
      qaPath:join(reviewedDir,'reviewed-qa.json'),
      subtitleDraft:{srtPath:'test.srt'},creativeReviewTemplate:'checklist.json'};
    },
    analyzeQuality:async options=>{
     assert.equal(options.videoPath,mp4);
-    assert.equal(options.timelinePath,timeline);
+    assert.equal(options.timelinePath,mp4+'.persona.json');
     assert.equal(options.expectedDurationSec,31);
     return {status:'awaiting-author-review',publicationApproved:false,
      distributionAllowed:false,
      video:{sha256:fakeHash('synthetic-fixture-not-a-real-mp4')},
-     findings:[{id:'acting',status:'needs_human_review',summary:'Manual only'}]};
+     findings:[{id:'scene_timeline',status:'measured',measurement:{scenes:Array.from({length:7},(_,i)=>({beat:i+1}))}},
+      {id:'acting',status:'needs_human_review',summary:'Manual only'}]};
    }});
   assert.equal(result.status,'NEEDS_FULL_HUMAN_CREATIVE_REVIEW');
   assert.equal(result.publicationApproved,false);
