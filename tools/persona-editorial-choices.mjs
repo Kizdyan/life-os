@@ -12,6 +12,10 @@ import {overlapsBlackInterval} from './persona-take-qa.mjs';
 
 const fail=message=>{throw Error(message)};
 const valid=n=>typeof n==='number'&&Number.isFinite(n);
+// Text-level comparison ONLY. This does not prove what the author actually said:
+// the human must listen to original audio before asserting a recovery transcript.
+const normalizeSpeech=s=>String(s).normalize('NFKC').toLocaleLowerCase('ru-RU')
+ .replaceAll('ё','е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 const readJson=async p=>JSON.parse(await readFile(resolve(p),'utf8'));
 const musicAfterSpeech=shot=>/(?:после реплики|после слов|затем).{0,90}(?:музык|мелод|фортепиан|клавиш|пианино)/iu.test(String(shot?.action||''));
 function sourceById(sources){return new Map(sources.map(s=>[s.id,s]));}
@@ -57,7 +61,7 @@ function recoveryForSources(sources){
  })),actions:['Просмотреть и прослушать локальный исходник','Сверить результат Whisper с речью','Вручную указать границы и текст фразы либо выбрать пересъёмку','Повторить монтаж только после явной проверки фрагмента'],
   note:'Ручная разметка хранится отдельно от Whisper и не доказывает автоматическую точность распознавания.'};
 }
-function manualRecovery(selected,source,beat){
+function manualRecovery(selected,source,beat,expectedLine){
  const item=selected?.recovery;
  if(!item||item.kind!=='persona-manual-segment-v1'||item.confirmed!==true||
     item.sourceId!==source?.id||item.sourceSha256!==source?.sha256||
@@ -67,6 +71,15 @@ function manualRecovery(selected,source,beat){
     item.reason.trim().length<3||item.reason.length>500||source.hasAudio!==true||
     overlapsBlackInterval(item.startSec,item.startSec+item.durationSec,source.technicalQuality?.blackIntervals))
   fail('Invalid manual recovery for beat '+beat);
+ // The earlier semantic assembler only checked bag-of-words overlap (>= 0.45).
+ // That allowed a reviewed "Эта колыбельная" to masquerade as the APPROVED
+ // B04 line "Это колыбельная". Never treat a near miss as a valid take.
+ // A genuinely different spoken line requires a new recording or a separately
+ // approved SCRIPT change, not a quiet transcript/subtitle substitution.
+ if(typeof expectedLine!=='string'||!normalizeSpeech(expectedLine)||
+    normalizeSpeech(item.transcript)!==normalizeSpeech(expectedLine))
+  fail('Manual recovery transcript differs from approved script for beat '+beat+
+    '; listen to the real audio, reshoot if necessary, or explicitly revise the brief');
  return {beat,sourceId:source.id,startSec:Number(item.startSec.toFixed(3)),durationSec:Number(item.durationSec.toFixed(3)),
   transcript:item.transcript.trim(),captionWords:[],confidence:null,sourceSha256:source.sha256,
   transcriptSource:'manual-review',manualTranscriptReview:true,
@@ -171,7 +184,7 @@ export function applySelections(pack,selection,existing,analysis,brief){
   let found=item.candidates.find(c=>c.candidateId===selected.candidateId),manual=false;
   if(!found&&selected.recovery){
    const src=known.get(selected.recovery.sourceId);
-   found=manualRecovery(selected,src,beat);manual=true;
+   found=manualRecovery(selected,src,beat,brief.script[i].line);manual=true;
   }
   if(!found)fail('Selected candidate not in evidence pack for beat '+beat);
   const src=known.get(found.sourceId);
