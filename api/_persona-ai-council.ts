@@ -54,8 +54,9 @@ export function chooseCouncilModel(
   const usable=models.filter(m=>m.skills[task]>0&&available(m));
   if(!usable.length)return null;
   // Prefer a genuinely different model for critique when one is available.
-  const diverse=task==="review"&&avoidModelId&&usable.some(m=>m.id!==avoidModelId)
-    ?usable.filter(m=>m.id!==avoidModelId):usable;
+  const previous=models.find(m=>m.id===avoidModelId);
+  const diverse=task==="review"&&previous&&usable.some(m=>m.model!==previous.model)
+    ?usable.filter(m=>m.model!==previous.model):usable;
   const ranked=diverse.map(model=>{
     const feedback=outcomes.filter(o=>o.modelId===model.id&&o.task===task);
     const observed=feedback.length>=3;
