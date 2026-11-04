@@ -44,6 +44,39 @@ test('real-media pilot creates a review-only checkpoint and verifies original SH
  }finally{await f.cleanup()}
 });
 
+test('13 original named takes are hashed, but unreviewed alternatives are never called best',async()=>{
+ const f=await fixture();
+ try{
+  const added=[
+   'A02_actor_audition_take01.mov','B02_composer_deadline_take01.mov',
+   'A03_actor_sleep_take01.mov','B03_composer_lullaby_take01.mov',
+   'A04_actor_payoff_take01.mov','A01_actor_hook_take02.mov',
+   'B01_composer_problem_take02.mov','A02_actor_audition_take02.mov',
+   'B02_composer_deadline_take02.mov','A03_actor_sleep_take02.mov',
+   'B03_composer_lullaby_take02.mov'
+  ];
+  for(const [i,name] of added.entries())
+   await writeFile(join(f.source,name),Buffer.alloc(2048,i+20));
+  const draft=join(f.root,'pilot-many-takes');
+  const alternates=added.filter(name=>name.includes('_take02.'));
+  const report=await startRealPilot({sources:f.source,outputDir:draft,runDraft:async()=>{
+   await mkdir(draft);
+   const intake=join(draft,'intake');await mkdir(intake);
+   await writeFile(join(intake,'intake-report.json'),JSON.stringify({
+    alternateTakes:alternates.map((name,i)=>({id:'alternative-'+i,file:name}))
+   }));
+   const reviewHtml=join(draft,'review.html');
+   await writeFile(reviewHtml,'must be reviewed manually');
+   return {status:'needs-manual-transcript-review',reviewHtml,
+    publicationApproved:false,distributionAllowed:false};
+  }});
+  assert.equal(report.originals.length,14,'13 user recordings plus the brief fingerprinted');
+  assert.equal(report.alternateTakes.length,6);
+  assert.equal(report.allRecordedTakesCompared,false);
+  assert.match(await readFile(join(draft,'PILOT.md'),'utf8'),/НЕ были автоматически проанализированы/);
+ }finally{await f.cleanup()}
+});
+
 test('pilot refuses output inside originals, existing dirs and mutated user footage',async()=>{
  const f=await fixture();
  try{
