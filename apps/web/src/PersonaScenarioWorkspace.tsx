@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
+import PersonaAiCouncilPanel from './PersonaAiCouncilPanel';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
  readPersonaScenarioDraft,readPersonaScenarioDraftRaw,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
@@ -274,14 +275,30 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const approveScript=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('Сначала сохраните или разрешите несохранённый черновик, включая причину редакции.');return}
-  try{assertNoPendingDraftRecord();const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
+  try{
+   assertNoPendingDraftRecord();
+   const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});
+   const memory=scenarioScriptToFormatMemoryObservation(next);
+   const ai=script.idea.aiProvenance;
+   const previous=workspace.aiCouncilOutcomes??[];
+   const outcome=ai&&!previous.some(x=>x.revisionId===script.currentRevisionId)
+    ?[{modelId:ai.modelId,task:'ideation' as const,accepted:true,revisionId:script.currentRevisionId}]:[];
+   update({script:next,
+    formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory],
+    ...(outcome.length?{aiCouncilOutcomes:[...previous,...outcome].slice(-50)}:{})});
+   setError('');
+  }
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
  };
  const rejectWithFeedback=()=>{
   if(!script||rejectionFeedback.trim().length<12){setError('Укажите конкретную причину отклонения (не менее 12 символов).');return}
   const current=script.currentRevision.id;
   const feedback={revisionId:current,comment:rejectionFeedback.trim(),createdAt:new Date().toISOString()};
-  update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback]});
+  const ai=script.idea.aiProvenance,previous=workspace.aiCouncilOutcomes??[];
+  const outcome=ai&&!previous.some(x=>x.revisionId===current)
+   ?[{modelId:ai.modelId,task:'ideation' as const,accepted:false,revisionId:current}]:[];
+  update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback],
+   ...(outcome.length?{aiCouncilOutcomes:[...previous,...outcome].slice(-50)}:{})});
   setRejectionFeedback('');setError('Критика сохранена отдельно от одобрений; следующий набор идей получит эту причину как ограничение.');
  };
  const exportLocalAiTask=()=>{
@@ -390,7 +407,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить проверяемый разбор.')}
  };
  return <section className="personaScenario" aria-label="Сценарий и референсы">
-  <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">Perplexity отключён · Ollama только через CLI на Windows</span></header>
+  <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">AI-провайдеры проверяются отдельно · без скрытых платных вызовов</span></header>
   <section className="personaTrendLeads"><div><h4>Бесплатные сигналы формата</h4><p>Датированные публичные источники. Это не метрики Reels и не доказательство просмотра конкретного ролика.</p></div>{freeScenarioTrendLeads.map((lead,index)=><article key={lead.id}><div><b>{lead.title}</b><p>{lead.mechanism}</p><small>{lead.publishedAt} · {lead.sourceTitle} · {lead.dateKind==='observed'?'дата проверки':'дата публикации'}</small><p><a href={lead.sourceUrl} target="_blank" rel="noreferrer">Открыть источник</a></p><small>{lead.limitation}</small></div><button type="button" className="ghost" onClick={()=>addTrendLead(index)}>Добавить в проект</button></article>)}</section>
   <details className="personaScenarioCard"><summary>Творческий профиль проекта · редактировать</summary>
     <p>Сохранённые требования этого проекта, а не выдуманная биография. Настрой свои приоритеты и ограничения для следующих идей.</p>
@@ -417,8 +434,10 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p className="personaScenarioHint">{workspace.analyses.length?`Сохранено разборов: ${workspace.analyses.length}.`:'Нет содержательного разбора. Без него Idea Engine выдаёт только явно обозначенные шаблонные варианты.'}</p>
    </article>
   </div>
-  <section className="personaScenarioIdeas"><div><h4>Оригинальные идеи</h4><p>Локальные варианты опираются на выбранные ссылки и ограничения Creative Profile. Это не прогноз охватов и не копирование чужих сцен.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 идеи</button></section>
-  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
+  <PersonaAiCouncilPanel project={project} workspace={workspace} creativeProfile={effectiveProfile} onChange={onChange}/>
+  <section className="personaScenarioIdeas"><div><h4>Локальные идеи без нейросети</h4><p>Бесплатная резервная функция создаёт шаблонные варианты. Это не реальное исследование Perplexity и не AI-генерация.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 шаблонные идеи</button></section>
+  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='ai_generated'?('AI-идея: '+idea.aiProvenance?.model+' · ещё не утверждена'):
+ idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {corruptDraft&&<div role="alert" className="personaScenarioWarning">
     <p>В браузере обнаружена повреждённая страховочная копия сценария. Она не удалена и не заменена новым текстом. Сначала сохраните её на компьютер, затем можно удалить запись из браузера и продолжить работу.</p>
