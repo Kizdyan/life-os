@@ -125,7 +125,7 @@ test('ASR B04 replay controls seek to real recovery video at normal and slow spe
  assert.match(html,/таймкоды Whisper приблизительные/i);
  assert.match(html,/Автоматический выбор запрещён/);
  assert.match(html,/НЕ доказательство реально сказанного/);
- assert.match(html,/publicationApproved:false/,'offline selection does not approve publication');
+ assert.match(html,/Публикация не разрешена автоматически/,'replay never approves publication');
  const invalids=[
   {...diagnostics.beats[1].reportedCandidates[0],sourceId:'other'},
   {...diagnostics.beats[1].reportedCandidates[0],startSec:-1},
