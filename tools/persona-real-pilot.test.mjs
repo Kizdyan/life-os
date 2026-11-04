@@ -52,6 +52,16 @@ test('pilot refuses output inside originals, existing dirs and mutated user foot
   await assert.rejects(startRealPilot({sources:f.source,outputDir:bad,
    runDraft:async()=>{invoked++;}}),/outside originals/);
   assert.equal(invoked,0);
+  // A manifest bypassed the older folder-only guard; keep both modes safe.
+  const manifest=join(f.root,'sources.json');
+  await writeFile(manifest,JSON.stringify({version:1,sources:[
+   {id:'A01',path:f.video},
+   {id:'B01',path:join(f.source,'B01_composer_problem_take01.mov')}
+  ]}));
+  await assert.rejects(startRealPilot({sources:manifest,
+   outputDir:join(f.source,'bad-from-manifest'),
+   runDraft:async()=>{invoked++;}}),/outside originals/);
+  assert.equal(invoked,0);
   const existing=join(f.root,'existing');await mkdir(existing);
   await assert.rejects(startRealPilot({sources:f.source,outputDir:existing,
    runDraft:async()=>{invoked++;}}),/already exists/);
