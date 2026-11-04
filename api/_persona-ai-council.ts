@@ -5,7 +5,7 @@ export type AiCouncilProvider = "perplexity_agent"|"ollama";
 export type AiCouncilModel = {id:string;provider:AiCouncilProvider;model:string;
   /** Explicit operator-declared suitability (0–3), not a benchmark result. */
   skills:Record<AiCouncilTask,number>;costTier:1|2|3};
-export type AiCouncilOutcome = {modelId:string;task:AiCouncilTask;accepted:boolean};
+export type AiCouncilOutcome = {modelId:string;task:AiCouncilTask;accepted:boolean;revisionId?:string};
 export type AiCouncilStep = {task:AiCouncilTask;modelId:string;provider:AiCouncilProvider;model:string;
   selectionBasis:string;status:"completed"|"failed";costUsd:number|null;
   inputTokens:number|null;outputTokens:number|null};
