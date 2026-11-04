@@ -47,6 +47,9 @@ describe("Persona Scenario workspace", () => {
     const markup = render({ version: 1, research, analyses: [], ideas: [idea], selectedIdeaId: idea.id, script: draft });
 
     expect(markup).toContain("Метаданные ссылки — видео не просмотрено");
+    expect(markup).toContain("Предмонтаж спроектирован до съёмки");
+    expect(markup).toContain("Монтаж сцены 1");
+    expect(markup).toContain("Нет подтверждённого исследования Instagram");
     expect(markup).toContain("Perplexity отключён");
     expect(markup).toContain("Абсурдная «проба на роль»");
     expect(markup).toContain("2026-10-07");
