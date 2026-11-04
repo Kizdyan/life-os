@@ -3,6 +3,7 @@ import {
   analyseScenarioReference,
   approveScenarioScript,
   createScenarioScript,
+  buildScenarioPreEditPlan,
   addFreeTrendLeadToScenarioResearch,
   assessScenarioCreativeRisks,
   freeScenarioTrendLeads,
@@ -313,4 +314,59 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(analysis.evidenceUse.use).toBe("format_only");
     expect(scenarioScriptToFormatMemoryObservation(approved).userSignal).toBe("explicit_approval");
   });
+});
+
+describe("Pre-shoot editing plan / research evidence gate",()=>{
+ it("preserves exact author cut ideas before and after script approval",()=>{
+  const idea={id:"cut-idea",title:"Актёр и музыка",referenceIds:["ref-ig"],
+    originalConflict:"Смена музыкальной задачи",actingTask:"Сыграть сомнение",
+    ending:"Музыка всё меняет.",productionComplexity:"low" as const,
+    estimatedDurationSec:15,creativeProfileFit:"Подходит"};
+  const beats=[
+   {purpose:"hook" as const,line:"Что происходит?",action:"Взгляд на клавиши",durationSec:4,editIntent:"Резать точно на первый аккорд."},
+   {purpose:"development" as const,line:"Музыка меняет обстоятельства.",action:"Сыграть на клавишах",durationSec:5,editIntent:"Склейка на реакцию после музыки."},
+   {purpose:"ending" as const,line:"Это уже финал триллера.",action:"Реакция крупным планом",durationSec:6,editIntent:"Оставить короткую паузу перед панчлайном."},
+  ];
+  const script=createScenarioScript(idea,{createdAt:"2026-11-04T09:00:00.000Z",beats});
+  const research=[{id:"ref-ig",url:"https://www.instagram.com/reel/sample/",
+    platform:"instagram" as const,observedAt:"2026-11-04T08:00:00.000Z",
+    observationStatus:"metadata_only" as const,
+    evidence:{kind:"manual_link" as const,observedFields:["url" as const]}}];
+  const intent=buildScenarioPreEditPlan(script.currentRevision,idea,research);
+  expect(intent.status).toBe("intent_only");
+  expect(intent.researchEvidence.level).toBe("metadata_only");
+  expect(intent.scenes[0].editIntent).toBe(beats[0].editIntent);
+  expect(intent.scenes[0].mediaStatus).toBe("awaiting_author_footage");
+  expect(intent.publicationApproved).toBe(false);
+  const approved=approveScenarioScript(script,{author:"Автор",
+    comment:"Реплики и склейки готовы к съёмке.",approvedAt:"2026-11-04T09:01:00.000Z"});
+  const project={id:"cut-idea",title:"Актёр и музыка",angle:"Смена музыкальной задачи",format:"reel" as const};
+  const brief=scenarioScriptToProductionBrief(approved,project,research);
+  expect(brief.preEditPlan?.sourceRevisionId).toBe(approved.currentRevisionId);
+  expect(brief.preEditPlan?.scenes.map(s=>s.editIntent)).toEqual(beats.map(b=>b.editIntent));
+  expect(brief.preEditPlan?.scenes.every(s=>!("sourcePath" in s)&&!("startSec" in s))).toBe(true);
+  expect(importPersonaProductionBrief({brief}).materials.productionBrief?.preEditPlan).toEqual(brief.preEditPlan);
+  expect(()=>importPersonaProductionBrief({brief:{...brief,
+    preEditPlan:{...brief.preEditPlan!,scenes:brief.preEditPlan!.scenes.map((s,i)=>i===0?{...s,line:"Другая реплика"}:s)}
+  }})).toThrow(/stale|differs/);
+  const revised=reviseScenarioScript(approved,{createdAt:"2026-11-04T09:02:00.000Z",
+    reason:"Другой ритм",beats:approved.currentRevision.beats.map((b,i)=>i===0?{...b,editIntent:"Резать на жест."}:b)});
+  expect(revised.approval).toBeUndefined();
+  expect(()=>scenarioScriptToProductionBrief(revised,project)).toThrow(/approval/);
+ });
+ it("marks unfounded popularity claims as hypotheses, not Instagram results",()=>{
+  const idea={id:"no-research",title:"Оригинальный формат",referenceIds:[],
+    originalConflict:"Актёр сталкивается с задачей",actingTask:"Реакция",
+    ending:"Неожиданный финал",productionComplexity:"low" as const,
+    estimatedDurationSec:15,creativeProfileFit:"Авторский эксперимент"};
+  const revision=createScenarioScript(idea,{createdAt:"2026-11-04T10:00:00Z",beats:[
+   {purpose:"hook",line:"Первый кадр",action:"Смотреть в объектив",durationSec:3},
+   {purpose:"development",line:"Развитие",action:"Показать действие",durationSec:5},
+   {purpose:"ending",line:"Финал",action:"Сделать паузу",durationSec:4},
+  ]}).currentRevision;
+  const plan=buildScenarioPreEditPlan(revision,idea);
+  expect(plan.researchEvidence.level).toBe("hypothesis_only");
+  expect(plan.researchEvidence.sourceUrls).toEqual([]);
+  expect(plan.scenes.every(s=>s.mediaStatus==="awaiting_author_footage")).toBe(true);
+ });
 });
