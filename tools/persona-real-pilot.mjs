@@ -119,7 +119,10 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
  const input=safePath(sources),brief=safePath(briefPath),output=safePath(outputDir);
  const sourceInfo=await stat(input);
  const sourceParent=sourceInfo.isDirectory()?[await realpath(input)]:[];
- verifyNewDestination(output,sourceParent);
+ // Explicit manifests and single MOV inputs do not otherwise get the runner's
+ // folder-level protection. Never create an output inside ANY source directory.
+ const sourceParents=[...new Set((await sourceFiles(input)).map(path=>dirname(path)))];
+ verifyNewDestination(output,[...sourceParent,...sourceParents]);
  if(within(output,input)||within(output,brief))fail('Pilot output cannot contain input sources or brief');
  if(await exists(output))fail('Pilot output already exists. Choose a NEW directory');
  await assertSevenSceneBrief(brief);
@@ -175,6 +178,8 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
   previous.output!==draft||!Array.isArray(previous.originals))
   fail('Missing or unsafe, mismatched real-media PILOT.json');
  const brief=await assertSevenSceneBrief(previous.brief);
+ const sourceParents=[...new Set((await sourceFiles(previous.sources)).map(path=>dirname(path)))];
+ verifyNewDestination(output,sourceParents);
  assertOriginalsUnchanged(previous.originals,await fingerprint(previous.sources,previous.brief));
  let reviewed=null,quality=null,processingError=null;
  try{
