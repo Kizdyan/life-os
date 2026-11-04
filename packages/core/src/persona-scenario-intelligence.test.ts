@@ -230,8 +230,15 @@ describe("Persona Scenario Intelligence research core", () => {
     const approved=approveScenarioScript(script,{author:"Тест",comment:"Тестовое одобрение",approvedAt:"2026-10-30T10:01:00Z"});
     const project={id:"project-1",title:"Тестовая сцена",angle:"Сыграть конфликт в коридоре",format:"reel" as const};
     const original=scenarioScriptToProductionBrief(approved,project);
-    const modelFile={...original,script:original.script.map((line,i)=>i===1
+    const staleModelFile={...original,script:original.script.map((line,i)=>i===1
       ?{...line,line:"Я услышал шаги из соседнего зала."}:line)};
+    // A model cannot change the words and silently keep the old author edit plan.
+    expect(()=>importPersonaProductionBrief({brief:staleModelFile,selectedIdea:project})).toThrow(/stale|differs/);
+    const modelFile={...staleModelFile,preEditPlan:{...original.preEditPlan!,
+      scenes:original.preEditPlan!.scenes.map((scene,i)=>i===1?{
+        ...scene,line:"Я услышал шаги из соседнего зала.",
+        editIntent:"Рассмотреть новую реакцию после изменения реплики."
+      }:scene)}};
     const imported=importPersonaProductionBrief({brief:modelFile,selectedIdea:project});
     const text=imported.materials.productionBrief!.script;
     const next=reviseScenarioScript(approved,{createdAt:"2026-10-30T10:02:00Z",
@@ -270,7 +277,13 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(pipeline.materials.productionBrief?.script).toEqual(brief.script);
     expect(pipeline.materials.editorialDecision).toBeUndefined();
     expect(pipeline.statuses.READY_FOR_SHOOT).toBe("pending");
-    const shotChanged={...brief,script:brief.script.map((line,i)=>i===0?{...line,line:"Переписано после одобрения"}:line)};
+    const staleShotChanged={...brief,script:brief.script.map((line,i)=>i===0?{...line,line:"Переписано после одобрения"}:line)};
+    expect(()=>revisePersonaProductionBrief(pipeline,staleShotChanged)).toThrow(/stale|differs/);
+    const shotChanged={...staleShotChanged,preEditPlan:{...brief.preEditPlan!,
+      scenes:brief.preEditPlan!.scenes.map((scene,i)=>i===0?{
+        ...scene,line:"Переписано после одобрения",
+        editIntent:"Перепланировать начало после изменения хука."
+      }:scene)}};
     const revised=revisePersonaProductionBrief(pipeline,shotChanged);
     expect(revised.materials.editorialDecision).toBeUndefined();
     expect(revised.materials.qa?.status).toBe("needs_revision");
