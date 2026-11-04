@@ -80,6 +80,22 @@ export function personaDirectorToBrief(
   ...base,hook:{firstSeconds:p.hook,visual:p.scenes[0].action,
    delivery:p.scenes[0].performance},
   script,shots,adaptations,
+  preEditPlan:{
+   version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',
+   origin:'ai_director',sourceRevisionId:null,
+   researchEvidence:{
+    level:'hypothesis_only',sourceUrls:[],
+    note:'AI-режиссёр предложил монтаж; проверенные показатели Instagram и просмотр референсов не предоставлены.',
+   },
+   scenes:p.scenes.map((scene,i)=>({
+    order:i+1,line:scene.line.trim(),durationSec:scene.durationSec,
+    editIntent:scene.edit.trim(),
+    audioIntent:'Запись реального звука; музыкальный акцент только после проверки доступной музыки.',
+    subtitleIntent:'Сверить с реально произнесёнными словами и безопасными зонами платформы.',
+    mediaStatus:'awaiting_author_footage' as const,
+   })),
+   publicationApproved:false,
+  },
   capture:{...base.capture,location:p.setup.location,lighting:p.setup.lighting,
    wardrobe:p.setup.wardrobe,audio:{...base.capture.audio,recording:p.setup.sound}},
   postProduction:{...base.postProduction,transitions:p.editingIntent,color:p.colorIntent},
