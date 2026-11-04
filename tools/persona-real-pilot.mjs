@@ -233,10 +233,13 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
    resolve(reviewed.output||'')!==join(output,'reviewed-reel.mp4'))
    fail('Reviewed renderer did not return a locally verified unpublished MP4');
   const qualityPath=join(output,'VIDEO-QUALITY.json');
-  if(typeof reviewed.timelinePath!=='string'||!await exists(reviewed.timelinePath))
-   fail('Rendered timeline manifest is missing; per-scene QA cannot be claimed');
+  const expectedManifest=reviewed.output+'.persona.json';
+  if(typeof reviewed.renderManifestPath!=='string'||
+   resolve(reviewed.renderManifestPath)!==resolve(expectedManifest)||
+   !await exists(expectedManifest))
+   fail('Trusted FFmpeg render manifest is missing or does not belong to this MP4');
   quality=await analyzeQuality({videoPath:reviewed.output,
-   timelinePath:reviewed.timelinePath,
+   timelinePath:expectedManifest,
    subtitlePath:reviewed.subtitleDraft?.srtPath,
    expectedDurationSec:brief.script.reduce((n,s)=>n+(Number(s.durationSec)||0),0),
    outputPath:qualityPath,ffmpegDir});
@@ -245,6 +248,11 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
    fail('Independent technical video quality report missing or unsafe');
   if(quality.video?.sha256!==await digest(reviewed.output))
    fail('Independent QA fingerprint does not match rendered MP4');
+  const sceneFinding=quality.findings.find(item=>item?.id==='scene_timeline');
+  const measuredScenes=sceneFinding?.measurement?.scenes;
+  if(sceneFinding?.status!=='measured'||!Array.isArray(measuredScenes)||
+   measuredScenes.length!==7||measuredScenes.some((scene,index)=>scene?.beat!==index+1))
+   fail('Independent QA did not verify the complete ordered seven-scene render manifest');
  }catch(error){processingError=error}
  assertOriginalsUnchanged(previous.originals,await fingerprint(previous.sources,previous.brief));
  if(processingError)throw processingError;
