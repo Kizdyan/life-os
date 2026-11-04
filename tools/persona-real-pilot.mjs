@@ -207,7 +207,7 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
   technicalQaPath:reviewed.qaPath,qualityReportPath:join(output,'VIDEO-QUALITY.json'),
   subtitles:reviewed.subtitleDraft?.srtPath??null,
   creativeReview:reviewed.creativeReviewTemplate??null,
-  warnings: warnings.map(x=>({id:x.id,status:x.status,summary:x.summary??x.description??null})),
+  warnings: warnings.map(x=>({id:x.id,status:x.status,summary:x.detail??x.summary??x.description??null})),
   noArtisticApproval:'Must inspect 7/7 actual speech, pace, acting, color, glasses, audio, subtitles, B03 music and full final B04.'};
  await writeFile(join(output,'PILOT-REVIEWED.json'),JSON.stringify(final,null,2)+'\n',{flag:'wx'});
  await writeFile(join(output,'PILOT-REVIEWED.md'),[
