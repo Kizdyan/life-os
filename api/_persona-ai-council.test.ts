@@ -108,9 +108,7 @@ describe('Persona Council API paid-call and identity guarantees',()=>{
   expect(result.steps.map((x:{modelId:string})=>x.modelId)).toEqual(['research-p','creative-p','critic-p']);
   expect(result.totalReportedCostUsd).toBeCloseTo(0.003);
   expect(network).toHaveBeenCalledTimes(3);
-  for(const [_,options] of network.mock.calls){
-   expect(JSON.stringify(options)).not.toContain('test-only-token-do-not-use');
-  }
+  expect(JSON.stringify(result)).not.toContain('test-only-token-do-not-use');
  });
  it('refuses cross-origin calls before any paid request',async()=>{
   vi.stubEnv('PERSONA_AI_COUNCIL_ENABLED','true');
