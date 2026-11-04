@@ -129,6 +129,45 @@ test('partial Preview decisions can be fully reviewed into new strict montage wi
   /schema mismatch/);
 });
 
+test('manual B04 recovery never accepts a near-miss as the approved script line',()=>{
+ const approved={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Я актёр.'},{order:2,line:'Это колыбельная.'}],
+  shots:[{order:1,action:'Реплика'},{order:2,action:'Финальная реплика'}]};
+ const first=source('A01', [['Я',.2,.4],['актёр',.5,1]],'a');
+ const disputed=source('B04', [],'b');
+ const partial={version:1,mode:'preview',analysisPath:'analysis.json',briefPath:'brief.json',
+  choices:[{beat:1,sourceId:'A01',startSec:0,durationSec:1.2,
+   transcript:'Я актёр',confidence:.9,reason:'Preview'}],missingBeats:[2]};
+ const pack=buildCandidatePack(approved,[first,disputed],partial);
+ assert.ok(pack.beats[0].candidates.length>0);
+ assert.equal(pack.beats[1].candidates.length,0);
+ const analysis={kind:'persona-evidence-v1',sources:[first,disputed]};
+ const makeSelection=transcript=>{
+  const selected=createSelectionTemplate(pack);
+  selected.selections[0].candidateId=pack.beats[0].candidates[0].candidateId;
+  selected.selections[0].reviewed=true;
+  selected.selections[0].reason='Просмотрел первый дубль';
+  selected.selections[1]={beat:2,candidateId:null,reviewed:true,
+   reason:'Прослушал B04 вручную',rejected:[],recovery:{
+    kind:'persona-manual-segment-v1',sourceId:'B04',sourceSha256:sha('b'),
+    startSec:.5,durationSec:1.2,transcript,confirmed:true,
+    reason:'Сверил с оригинальным звуком'}};
+  return selected;
+ };
+ for(const wrong of ['Эта колыбельная.','Это колыбельное.','Это не колыбельная.',
+  'Это колыбельная, наверное.']){
+  assert.throws(()=>applySelections(pack,makeSelection(wrong),partial,analysis,approved),
+   /transcript differs from approved script for beat 2/,
+   'must reject actual spoken near miss: '+wrong);
+ }
+ for(const exact of ['Это колыбельная.', ' ЭТО, КОЛЫБЕЛЬНАЯ! ']){
+  const result=applySelections(pack,makeSelection(exact),partial,analysis,approved);
+  assert.equal(result.decisions.choices[1].transcript,exact.trim());
+  assert.equal(result.decisions.choices[1].manualTranscriptReview,true);
+  assert.equal(result.memory.publicationApproved,false);
+ }
+});
+
 test('ASR recovery with no audio sources reports reshoot instead of offering a false manual transcript',()=>{
  const silent=[{...source('silent',[],'a'),hasAudio:false}];
  const pack=buildCandidatePack(brief,silent,{version:1,mode:'preview',choices:[],missingBeats:[1,2]});
