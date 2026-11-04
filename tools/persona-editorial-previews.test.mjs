@@ -120,8 +120,8 @@ test('ASR B04 replay controls seek to real recovery video at normal and slow spe
  assert.match(html,/data-replay-end="1.650"/);
  assert.match(html,/data-replay-speed="1"/);
  assert.match(html,/data-replay-speed="0.8"/);
- assert.match(html,/video\\.currentTime=Math\\.max/);
- assert.match(html,/video\\.pause\\(\\)/);
+ assert.ok(html.includes('video.currentTime=Math.max'),'review control seeks within local video');
+ assert.ok(html.includes('video.pause()'),'review control stops playback near the end');
  assert.match(html,/таймкоды Whisper приблизительные/i);
  assert.match(html,/Автоматический выбор запрещён/);
  assert.match(html,/НЕ доказательство реально сказанного/);
