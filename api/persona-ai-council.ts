@@ -165,6 +165,7 @@ export async function runPersonaAiCouncil(input:ReturnType<typeof parseInput>,no
     {id:ideasCall.model.id,provider:ideasCall.model.provider,model:steps[1].model},runId);
   let review:AiCouncilResult["review"]={recommendationIndex:null,
     rationale:"Независимая оценка ещё не завершена.",concerns:[],independentModel:false};
+  try{
   const reviewCall=await use("review",JSON.stringify({
     task:"Оцени каждую из трёх идей. Не изменяй реплики и не объявляй сценарий утверждённым.",
     researchLimitations:sources.length?"Только метаданные публичных ссылок.":"Подтверждённых источников нет.",
@@ -181,6 +182,21 @@ export async function runPersonaAiCouncil(input:ReturnType<typeof parseInput>,no
     concerns:Array.isArray(critique.concerns)?critique.concerns.filter(x=>typeof x==="string").slice(0,5).map(x=>(x as string).slice(0,250)):[],
     independentModel:independent,
   };
+  }catch{
+    // Research and ideation have already consumed real API calls. Preserve the
+    // three unapproved ideas; never pay for them again solely because critique failed.
+    const last=steps.at(-1);
+    if(last?.task==="review")last.status="failed";
+    else{
+      const chosen=chooseCouncilModel(catalogue,"review",eligible,input.observations,ideasCall.model.id);
+      if(chosen)steps.push({task:"review",modelId:chosen.model.id,provider:chosen.model.provider,
+        model:chosen.model.model,selectionBasis:chosen.basis,status:"failed",
+        costUsd:null,inputTokens:null,outputTokens:null});
+    }
+    reported=false;
+    review={recommendationIndex:null,rationale:"Независимый редактор не вернул пригодный ответ. Три идеи сохранены без рекомендации и без утверждения.",
+      concerns:["Проверьте идеи вручную: редактирование не подтверждено."],independentModel:false};
+  }
   return {version:1,status:"proposed_unapproved",
     researchStatus:sources.length?"source_metadata_only":"no_verified_sources",
     researchSummary:summary,sources,ideas,review,steps,
