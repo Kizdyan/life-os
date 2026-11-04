@@ -398,11 +398,13 @@ function parsePreEditPlan(
     if(!beat||scene.order!==i+1||scene.line!==beat.line||
       scene.durationSec!==beat.durationSec)
       throw new Error("Pre-edit plan is stale or differs from the approved script");
+    const visualIntent=scene.visualIntent===undefined?undefined:parsePreEditVisualIntent(scene.visualIntent,i);
     return {
       order:i+1,line:beat.line,durationSec:beat.durationSec,
       editIntent:text(scene.editIntent,"preEditPlan.scenes.editIntent"),
       audioIntent:text(scene.audioIntent,"preEditPlan.scenes.audioIntent"),
       subtitleIntent:text(scene.subtitleIntent,"preEditPlan.scenes.subtitleIntent"),
+      ...(visualIntent?{visualIntent}:{}),
       mediaStatus:"awaiting_author_footage" as const,
     };
   });
@@ -416,7 +418,23 @@ function parsePreEditPlan(
       sourceUrls:sources,
       note:text(evidence.note,"preEditPlan.researchEvidence.note"),
     },
-    scenes,publicationApproved:false,
+    scenes,
+    ...(plan.colorIntent===undefined?{}:{colorIntent:text(plan.colorIntent,"preEditPlan.colorIntent")}),
+    publicationApproved:false,
+  };
+}
+
+function parsePreEditVisualIntent(value: unknown, index: number): NonNullable<PersonaProductionBrief["preEditPlan"]>["scenes"][number]["visualIntent"] {
+  const visual=asRecord(value,`preEditPlan.scenes[${index}].visualIntent`);
+  const framing=visual.framing;
+  if(framing!=="close-up"&&framing!=="medium"&&framing!=="detail")
+    throw new Error(`preEditPlan.scenes[${index}].visualIntent.framing is invalid`);
+  return {
+    framing,
+    angle:text(visual.angle,`preEditPlan.scenes[${index}].visualIntent.angle`),
+    cameraMovement:text(visual.cameraMovement,`preEditPlan.scenes[${index}].visualIntent.cameraMovement`),
+    lighting:text(visual.lighting,`preEditPlan.scenes[${index}].visualIntent.lighting`),
+    performance:text(visual.performance,`preEditPlan.scenes[${index}].visualIntent.performance`),
   };
 }
 

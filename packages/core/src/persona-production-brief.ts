@@ -33,6 +33,8 @@ export interface PersonaPreEditPlan {
     sourceUrls: string[];
     note: string;
   };
+  /** A pre-filming colour direction, not a measured property of recorded media. */
+  colorIntent?: string;
   scenes: Array<{
     order: number;
     line: string;
@@ -40,6 +42,14 @@ export interface PersonaPreEditPlan {
     editIntent: string;
     audioIntent: string;
     subtitleIntent: string;
+    /** Optional only so existing stored v1 briefs remain importable. */
+    visualIntent?: {
+      framing: "close-up" | "medium" | "detail";
+      angle: string;
+      cameraMovement: string;
+      lighting: string;
+      performance: string;
+    };
     mediaStatus: "awaiting_author_footage";
   }>;
   publicationApproved: false;

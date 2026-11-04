@@ -109,6 +109,19 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(ideas.every((idea) => !("visibleMetrics" in idea))).toBe(true);
   });
 
+  it("offers three evidence-labelled ideas with a concrete filming risk instead of a claimed popularity forecast", () => {
+    const ideas = suggestScenarioIdeas({
+      research: validateScenarioResearch([source]),
+      creativeProfile: { priorities: ["актёрская задача"], constraints: ["одна камера"] },
+      count: 3,
+    });
+
+    expect(ideas).toHaveLength(3);
+    expect(ideas.every((idea) => (idea.productionRisk??'').length > 20)).toBe(true);
+    expect(ideas.every((idea) => idea.evidenceNote?.includes("прогноз охватов") || idea.evidenceNote?.includes("Шаблонная идея"))).toBe(true);
+    expect(ideas).not.toHaveProperty("views");
+  });
+
   it("allows an empty library as an openly labelled offline template fallback", () => {
     const ideas=suggestScenarioIdeas({research:[],creativeProfile:{priorities:[],constraints:[]},count:5});
     expect(ideas).toHaveLength(5);
@@ -349,6 +362,10 @@ describe("Pre-shoot editing plan / research evidence gate",()=>{
   expect(intent.status).toBe("intent_only");
   expect(intent.researchEvidence.level).toBe("metadata_only");
   expect(intent.scenes[0].editIntent).toBe(beats[0].editIntent);
+  expect(intent.scenes[0].visualIntent).toMatchObject({
+   framing:"close-up",lighting:expect.stringContaining("Мягкий"),
+  });
+  expect(intent.colorIntent).toContain("естественный тон кожи");
   expect(intent.scenes[0].mediaStatus).toBe("awaiting_author_footage");
   expect(intent.publicationApproved).toBe(false);
   const approved=approveScenarioScript(script,{author:"Автор",
@@ -357,6 +374,7 @@ describe("Pre-shoot editing plan / research evidence gate",()=>{
   const brief=scenarioScriptToProductionBrief(approved,project,research);
   expect(brief.preEditPlan?.sourceRevisionId).toBe(approved.currentRevisionId);
   expect(brief.preEditPlan?.scenes.map(s=>s.editIntent)).toEqual(beats.map(b=>b.editIntent));
+  expect(brief.preEditPlan?.scenes[1].visualIntent?.cameraMovement).toContain("Статичный");
   expect(brief.preEditPlan?.scenes.every(s=>!("sourcePath" in s)&&!("startSec" in s))).toBe(true);
   expect(importPersonaProductionBrief({brief}).materials.productionBrief?.preEditPlan).toEqual(brief.preEditPlan);
   expect(()=>importPersonaProductionBrief({brief:{...brief,

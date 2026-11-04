@@ -193,7 +193,14 @@ export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,f
   {brief.preEditPlan&&<section className="briefBeat" aria-label="Замысел монтажа, сохранённый до съёмки">
     <h4>Монтажный замысел из сценария · без повторной генерации</h4>
     <p>{brief.preEditPlan.researchEvidence.note}</p>
-    <ol>{brief.preEditPlan.scenes.map(scene=><li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b> — {scene.editIntent}. <small>Таймкоды и соответствующие исходники выбираются только после съёмки.</small></li>)}</ol>
+    {brief.preEditPlan.colorIntent&&<p><b>Цветовой замысел:</b> {brief.preEditPlan.colorIntent} <small>Направление для последующей ручной проверки, не применённая обработка.</small></p>}
+    <ol>{brief.preEditPlan.scenes.map(scene=>{
+      const visual=scene.visualIntent;
+      return <li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b>
+       {visual&&<><p><b>Камера:</b> {visual.framing} · {visual.angle} {visual.cameraMovement}</p><p><b>Свет:</b> {visual.lighting}</p><p><b>Актёрская задача:</b> {visual.performance}</p></>}
+       <p><b>Монтаж:</b> {scene.editIntent}</p><p><b>Звук:</b> {scene.audioIntent}</p><p><b>Субтитры:</b> {scene.subtitleIntent}</p>
+       <small>Таймкоды и соответствующие исходники выбираются только после съёмки.</small></li>;
+    })}</ol>
     <small>Это монтажное намерение, а не реальные монтажные решения; публикация запрещена.</small>
    </section>}
   {pipeline.stage==='QA'&&<div className="editorialGate"><h4>Редакторское решение</h4><p>Сценарий, кадры и бриф сохранятся при отклонении.</p><input aria-label="Имя редактора" value={editor} onChange={e=>onEditorChange(e.target.value)} placeholder="Имя редактора"/><textarea aria-label="Комментарий редактора" value={comment} onChange={e=>onCommentChange(e.target.value)} placeholder="Комментарий: что подтверждено или что исправить"/>{requiresFactReview&&<label><input type="checkbox" checked={factsChecked} onChange={e=>onFactsCheckedChange(e.target.checked)}/> Факты в свободных репликах сверены с автором или источником.</label>}<div className="actions"><button className="dangerGhost" disabled={!editor.trim()||!comment.trim()} onClick={()=>onDecision('rejected')}>Вернуть на доработку</button><button className="primary" disabled={!canApprove} onClick={()=>onDecision('approved')}>Одобрить для съёмки</button></div></div>}

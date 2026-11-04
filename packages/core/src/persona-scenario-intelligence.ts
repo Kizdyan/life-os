@@ -50,6 +50,9 @@ export interface ScenarioIdea {
   actingTask: string;
   ending: string;
   productionComplexity: "low" | "medium" | "high";
+  /** Practical risk to resolve before shooting, never a forecast of reach.
+   * Optional for scripts saved before this field existed. */
+  productionRisk?: string;
   estimatedDurationSec: number;
   creativeProfileFit: string;
   /** How the concept was actually produced, not a prediction of audience success. */
@@ -121,6 +124,22 @@ export interface ScenarioScriptBeat {
   durationSec: number;
   /** Author's planned cut, sound or reaction, versioned together with the words. */
   editIntent?: string;
+}
+
+function defaultPreEditVisualIntent(
+  beat: ScenarioScriptBeat,
+  index: number,
+  idea: ScenarioIdea,
+): NonNullable<PersonaPreEditPlan["scenes"][number]["visualIntent"]> {
+  return {
+    framing: index === 0 || beat.purpose === "ending" ? "close-up" : "medium",
+    angle: index === 0
+      ? "На уровне глаз; первое физическое действие читается в кадре."
+      : "Ракурс выбирается по действию героя; не терять лицо и значимый реквизит.",
+    cameraMovement: "Статичный дубль; движение камеры только если оно усиливает уже запланированное действие.",
+    lighting: "Мягкий фронтальный источник чуть выше глаз; не смешивать дневной и холодный искусственный свет.",
+    performance: `Актёрская задача: ${idea.actingTask} Действие кадра: ${beat.action}`,
+  };
 }
 
 export interface ScenarioScriptFinding {
@@ -350,8 +369,8 @@ export function suggestScenarioIdeas(input: {
   creativeProfile: ScenarioCreativeProfile;
   count: number;
 }): ScenarioIdea[] {
-  if (!Number.isInteger(input.count) || input.count < 5 || input.count > 10) {
-    throw new Error("Idea count must be between 5 and 10");
+  if (!Number.isInteger(input.count) || input.count < 2 || input.count > 10) {
+    throw new Error("Idea count must be between 2 and 10");
   }
   // A fully empty research inbox can still create clearly labelled fallback ideas.
   const references = input.research.length ? validateScenarioResearch(input.research) : [];
@@ -397,6 +416,9 @@ export function suggestScenarioIdeas(input: {
         ? `${seedEnding} Проверить, как найденный принцип завершения «${observation.payoff}» применим к оригинальному герою.`
         : seedEnding,
       productionComplexity: index%3===0 ? "medium" : "low",
+      productionRisk: index%3===0
+        ? "Нужны различимые реакции и два контрастных действия; без них поворот останется только в тексте."
+        : "Проверьте, что действие и звук читаются с первого дубля; не заменяйте отсутствующую реакцию декоративной склейкой.",
       estimatedDurationSec: 20 + index%3*5,
       creativeProfileFit:profileFit,
       origin,
@@ -442,8 +464,10 @@ export function buildScenarioPreEditPlan(
         editIntent:beat.editIntent?.trim()||fallback,
         audioIntent:"Сохранить реальную речь; музыкальные акценты — только по утверждённому плану и при наличии записанного звука.",
         subtitleIntent:"Синхронизировать с фактическими словами, с учётом безопасных полей Reels.",
+        visualIntent:defaultPreEditVisualIntent(beat,index,idea),
         mediaStatus:"awaiting_author_footage" as const};
     }),
+    colorIntent:"Natural Clean как исходное направление: нейтральный баланс белого, естественный тон кожи и без изменения лица, очков или геометрии.",
     publicationApproved:false,
   };
 }
@@ -587,16 +611,20 @@ export function scenarioScriptToProductionBrief(
     action: beat.action,
     durationSec: beat.durationSec,
   }));
-  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => ({
-    order: beat.order,
-    durationSec: beat.durationSec,
-    framing: index === 0 || index === authored.length - 1 ? "close-up" : "medium",
-    angle: index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя",
-    cameraMovement: "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
-    lighting: base.capture.lighting,
-    // The authored physical action is copied exactly, never a generated summary.
-    action: beat.action,
-  }));
+  const preEditPlan = buildScenarioPreEditPlan(current,script.idea,research);
+  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => {
+    const visual=preEditPlan.scenes[index].visualIntent;
+    return {
+      order: beat.order,
+      durationSec: beat.durationSec,
+      framing: visual?.framing ?? (index === 0 || index === authored.length - 1 ? "close-up" : "medium"),
+      angle: visual?.angle ?? (index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя"),
+      cameraMovement: visual?.cameraMovement ?? "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
+      lighting: visual?.lighting ?? base.capture.lighting,
+      // The authored physical action is copied exactly, never a generated summary.
+      action: beat.action,
+    };
+  });
   const durationSec = authored.reduce((sum, beat) => sum + beat.durationSec, 0);
   return {
     ...base,
@@ -607,12 +635,13 @@ export function scenarioScriptToProductionBrief(
     },
     script: authored,
     shots,
-    preEditPlan: buildScenarioPreEditPlan(current,script.idea,research),
+    preEditPlan,
     adaptations: {
       reels: { ...base.adaptations.reels, durationSec },
       shorts: { ...base.adaptations.shorts, durationSec },
       vkClips: { ...base.adaptations.vkClips, durationSec },
     },
+    postProduction: {...base.postProduction,color:preEditPlan.colorIntent??base.postProduction.color},
   };
 }
 

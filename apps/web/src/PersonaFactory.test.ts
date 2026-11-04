@@ -172,11 +172,11 @@ describe('Production Brief recovery UI',()=>{
    setItem:(key:string,value:string)=>{entries.set(key,value)},
    removeItem:(key:string)=>{entries.delete(key)}};
  };
- const renderPanel=(store:ReturnType<typeof storage>)=>{
+ const renderPanel=(store:ReturnType<typeof storage>,currentPipeline= pipeline)=>{
   vi.stubGlobal('window',{localStorage:store});
   try{
    return renderToString(React.createElement(PersonaProductionBriefPanel,{
-    projectId:'project-1',pipeline,editor:'Автор',comment:'Можно снимать',factsChecked:true,
+    projectId:'project-1',pipeline:currentPipeline,editor:'Автор',comment:'Можно снимать',factsChecked:true,
     onEditorChange:()=>undefined,onCommentChange:()=>undefined,onFactsCheckedChange:()=>undefined,
     onDecision:()=>undefined,onRebuild:()=>undefined,onAngleChange:()=>undefined,onBriefChange:()=>true,
    }));
@@ -186,6 +186,26 @@ describe('Production Brief recovery UI',()=>{
   const markup=renderPanel(storage());
   expect(markup).not.toContain('Проверить и сохранить восстановленную правку');
   expect(markup).toContain('Редактировать реплику 1');
+ });
+ it('keeps the pre-shoot camera, light, performance, edit, sound and colour directions visible in the canonical brief',()=>{
+  const preEditPlan={version:1 as const,kind:'persona-pre-edit-plan-v1' as const,status:'intent_only' as const,
+   origin:'scenario_revision' as const,sourceRevisionId:null,
+   researchEvidence:{level:'hypothesis_only' as const,sourceUrls:[],note:'Творческая гипотеза, а не прогноз охватов.'},
+   colorIntent:'Natural Clean: нейтральный белый и естественный тон кожи.',publicationApproved:false as const,
+   scenes:brief.script.map((beat,index)=>({order:beat.order,line:beat.line,durationSec:beat.durationSec,
+    editIntent:'Склейка по действию.',audioIntent:'Сохранить чистую речь.',subtitleIntent:'Титры в безопасной зоне.',
+    visualIntent:{framing:index===0?'close-up' as const:'medium' as const,angle:'На уровне глаз.',cameraMovement:'Штатив.',lighting:'Мягкий источник.',performance:'Сыграть реакцию, а не объяснять её.'},
+    mediaStatus:'awaiting_author_footage' as const,
+   }))};
+  const planned={...pipeline,materials:{...pipeline.materials,productionBrief:{...brief,preEditPlan}}} as typeof pipeline;
+  const markup=renderPanel(storage(),planned);
+  expect(markup).toContain('Цветовой замысел:');
+  expect(markup).toContain('Камера:');
+  expect(markup).toContain('Свет:');
+  expect(markup).toContain('Актёрская задача:');
+  expect(markup).toContain('Монтаж:');
+  expect(markup).toContain('Субтитры:');
+  expect(markup).toContain('публикация запрещена');
  });
  it('renders the exact unblurred text after reload without applying it automatically',()=>{
   const s=storage(),value='Автор ещё набирает новую реплику';

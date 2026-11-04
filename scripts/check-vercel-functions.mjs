@@ -11,6 +11,8 @@ const root=resolve(here,'..');
 const sourceExt=/\.(?:[cm]?[jt]s|[jt]sx)$/i;
 const isPrivate=name=>name.startsWith('_')||name.startsWith('.')||name.endsWith('.d.ts');
 const isTest=name=>/\.(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/i.test(name);
+/** Reports are persisted and tested cross-platform, so Vercel-style paths are always POSIX. */
+const reportPath=(from,to)=>relative(from,to).replaceAll('\\','/');
 
 export async function scanVercelApi(apiDir){
  const entries=[];
@@ -25,9 +27,9 @@ export async function scanVercelApi(apiDir){
  }
  await visit(resolve(apiDir));
  return {
-  functions:entries.filter(e=>!isPrivate(e.name)).map(e=>relative(apiDir,e.path)).sort(),
+  functions:entries.filter(e=>!isPrivate(e.name)).map(e=>reportPath(apiDir,e.path)).sort(),
   leakedTests:entries.filter(e=>isTest(e.name)&&!isPrivate(e.name))
-   .map(e=>relative(apiDir,e.path)).sort()
+   .map(e=>reportPath(apiDir,e.path)).sort()
  };
 }
 

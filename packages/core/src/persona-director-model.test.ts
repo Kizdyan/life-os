@@ -49,6 +49,8 @@ describe('Persona AI Director canonical handoff',()=>{
   expect(brief.preEditPlan?.origin).toBe('ai_director');
   expect(brief.preEditPlan?.researchEvidence.level).toBe('hypothesis_only');
   expect(brief.preEditPlan?.scenes.map(scene=>scene.editIntent)).toEqual(proposal.scenes.map(scene=>scene.edit));
+  expect(brief.preEditPlan?.scenes.map(scene=>scene.visualIntent?.performance)).toEqual(proposal.scenes.map(scene=>scene.performance));
+  expect(brief.preEditPlan?.colorIntent).toBe(proposal.colorIntent);
   expect(brief.preEditPlan?.publicationApproved).toBe(false);
   expect(brief.preEditPlan?.scenes.every(scene=>scene.mediaStatus==='awaiting_author_footage')).toBe(true);
   expect(brief.adaptations.reels.durationSec).toBe(18);

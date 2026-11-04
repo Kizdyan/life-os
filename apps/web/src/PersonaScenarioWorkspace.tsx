@@ -228,7 +228,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить источник.');}
  };
  const buildIdeas=()=>{
-  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile:{...effectiveProfile,constraints:[...effectiveProfile.constraints,...(workspace.editorialFeedback??[]).slice(-3).map(item=>'Автор ранее отклонил сценарий: '+item.comment)]},count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
+  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile:{...effectiveProfile,constraints:[...effectiveProfile.constraints,...(workspace.editorialFeedback??[]).slice(-3).map(item=>'Автор ранее отклонил сценарий: '+item.comment)]},count:3});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала добавьте проверяемую ссылку.');}
  };
  const selectIdea=(id:string)=>{setSelectedIdeaId(id);update({selectedIdeaId:id});};
@@ -417,8 +417,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p className="personaScenarioHint">{workspace.analyses.length?`Сохранено разборов: ${workspace.analyses.length}.`:'Нет содержательного разбора. Без него Idea Engine выдаёт только явно обозначенные шаблонные варианты.'}</p>
    </article>
   </div>
-  <section className="personaScenarioIdeas"><div><h4>Оригинальные идеи</h4><p>Локальные варианты опираются на выбранные ссылки и ограничения Creative Profile. Это не прогноз охватов и не копирование чужих сцен.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 5 идей</button></section>
-  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
+  <section className="personaScenarioIdeas"><div><h4>Оригинальные идеи</h4><p>Локальные варианты опираются на выбранные ссылки и ограничения Creative Profile. Это не прогноз охватов и не копирование чужих сцен.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 идеи</button></section>
+  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {corruptDraft&&<div role="alert" className="personaScenarioWarning">
     <p>В браузере обнаружена повреждённая страховочная копия сценария. Она не удалена и не заменена новым текстом. Сначала сохраните её на компьютер, затем можно удалить запись из браузера и продолжить работу.</p>
@@ -507,7 +507,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p>Реплики и будущие склейки проектируются вместе. После утверждения замысел переходит в Production Brief без повторной генерации. Реальных таймкодов и исходников пока нет.</p>
      <p>{preEditPlan.researchEvidence.note}</p>
      {preEditPlan.researchEvidence.sourceUrls.length>0&&<ul>{preEditPlan.researchEvidence.sourceUrls.map(url=><li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>}
-     <ol>{preEditPlan.scenes.map(scene=><li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b> — {scene.editIntent} <small>Звук: {scene.audioIntent}</small></li>)}</ol>
+     {preEditPlan.colorIntent&&<p><b>Цветовой замысел:</b> {preEditPlan.colorIntent} <small>Это направление для сравнения после съёмки, не применённый фильтр.</small></p>}
+     <ol>{preEditPlan.scenes.map(scene=>{
+      const visual=scene.visualIntent;
+      return <li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b>
+       {visual&&<><p><b>Камера:</b> {visual.framing} · {visual.angle} {visual.cameraMovement}</p><p><b>Свет:</b> {visual.lighting}</p><p><b>Актёрская задача:</b> {visual.performance}</p></>}
+       <p><b>Монтаж:</b> {scene.editIntent}</p><p><b>Звук:</b> {scene.audioIntent}</p><p><b>Субтитры:</b> {scene.subtitleIntent}</p>
+       <small>Таймкоды и соответствующие исходники выбираются только после съёмки.</small></li>;
+     })}</ol>
      <p><small>Популярность в Instagram не доказана без фактических данных. Финальный монтаж утверждается после съёмки.</small></p>
     </section>}
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}

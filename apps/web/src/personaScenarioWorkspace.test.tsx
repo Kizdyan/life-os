@@ -49,6 +49,10 @@ describe("Persona Scenario workspace", () => {
     expect(markup).toContain("Метаданные ссылки — видео не просмотрено");
     expect(markup).toContain("Предмонтаж спроектирован до съёмки");
     expect(markup).toContain("Монтаж сцены 1");
+    expect(markup).toContain("Камера:");
+    expect(markup).toContain("Свет:");
+    expect(markup).toContain("Актёрская задача:");
+    expect(markup).toContain("Цветовой замысел:");
     expect(markup).toContain("Нет подтверждённого исследования Instagram");
     expect(markup).toContain("Perplexity отключён");
     expect(markup).toContain("Абсурдная «проба на роль»");
