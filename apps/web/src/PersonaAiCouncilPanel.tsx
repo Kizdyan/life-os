@@ -36,13 +36,21 @@ export default function PersonaAiCouncilPanel({project,workspace,creativeProfile
    assertPersonaAsyncImportTarget(before,project.id,snapshot.revision);
    const current=snapshot.scenarioWorkspace??workspace;
    if(current.script)throw Error('В проекте есть сценарий. Он не может быть заменён исследованием.');
+   // Learn from explicitly labeled author decisions across ALL saved Persona projects,
+   // not only from the newly created empty project.
+   const outcomes=before.projects.flatMap(p=>p.scenarioWorkspace?.aiCouncilOutcomes??[])
+     .filter(x=>x.revisionId&&x.modelId).filter((x,i,all)=>
+       all.findIndex(other=>other.revisionId===x.revisionId&&other.modelId===x.modelId&&
+         other.task===x.task)===i).slice(-35);
+   const history=before.projects.flatMap(p=>p.scenarioWorkspace?.ideas.map(i=>i.title)??[])
+     .slice(-12);
    const response=await fetch('/api/persona-ai-council',{method:'POST',
     headers:{'Content-Type':'application/json',...(accessToken?{'x-persona-ai-access':accessToken}:{})},
     body:JSON.stringify({action:'run',confirmedSpend:true,
      creativeProfile:{priorities:creativeProfile.priorities,constraints:creativeProfile.constraints},
-     history:current.ideas.map(i=>i.title).slice(-12),
-     feedback:(current.editorialFeedback??[]).map(x=>x.comment).slice(-8),
-     outcomes:(current.aiCouncilOutcomes??[]).slice(-35)})});
+     history,
+     feedback:before.projects.flatMap(p=>p.scenarioWorkspace?.editorialFeedback?.map(f=>f.comment)??[]).slice(-8),
+     outcomes})});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(typeof data.error==='string'?data.error:'council_network_failure');
    const result=data as AiCouncilResult;
