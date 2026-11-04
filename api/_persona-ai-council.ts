@@ -130,6 +130,6 @@ export function parseCouncilIdeas(
       productionRisk,estimatedDurationSec:raw.durationSec as number,creativeProfileFit,
       origin:"ai_generated" as const,
       evidenceNote:evidenceNote+" Реальные Instagram-метрики не подтверждены.",
-      aiProvenance:{provider:trace.provider,model:trace.model,runId,status:"unapproved" as const}};
+      aiProvenance:{provider:trace.provider,model:trace.model,modelId:trace.id,runId,status:"unapproved" as const}};
   });
 }
