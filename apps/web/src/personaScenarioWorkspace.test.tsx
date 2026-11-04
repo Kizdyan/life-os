@@ -54,7 +54,9 @@ describe("Persona Scenario workspace", () => {
     expect(markup).toContain("Актёрская задача:");
     expect(markup).toContain("Цветовой замысел:");
     expect(markup).toContain("Нет подтверждённого исследования Instagram");
-    expect(markup).toContain("Perplexity отключён");
+    expect(markup).toContain("Совет нейросетей");
+    expect(markup).toContain("AI-провайдеры проверяются отдельно");
+    expect(markup).toContain("Собрать 3 шаблонные идеи");
     expect(markup).toContain("Абсурдная «проба на роль»");
     expect(markup).toContain("2026-10-07");
     expect(markup).not.toContain("Создать съёмочный бриф");
