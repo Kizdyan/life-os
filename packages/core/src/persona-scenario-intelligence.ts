@@ -1,4 +1,4 @@
-import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief.js";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea, type PersonaPreEditPlan } from "./persona-production-brief.js";
 import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory.js";
 import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence.js";
 
@@ -119,6 +119,8 @@ export interface ScenarioScriptBeat {
   line: string;
   action: string;
   durationSec: number;
+  /** Author's planned cut, sound or reaction, versioned together with the words. */
+  editIntent?: string;
 }
 
 export interface ScenarioScriptFinding {
@@ -405,6 +407,47 @@ export function suggestScenarioIdeas(input: {
   });
 }
 
+/** Pre-shoot edit intentions are created from the SCRIPT REVISION, not from ASR or
+ * nonexistent footage. Evidence is linked by real reference IDs, without claims
+ * about viral performance or measured Instagram retention.
+ */
+export function buildScenarioPreEditPlan(
+  revision: Pick<ScenarioScriptRevision,"id"|"beats">,
+  idea: ScenarioIdea,
+  research: readonly ScenarioResearchItem[] = [],
+): PersonaPreEditPlan {
+  if (!revision.id.trim() || !revision.beats.length) throw new Error("Pre-edit plan needs a script revision");
+  const linked=research.filter(item=>idea.referenceIds.includes(item.id)&&item.observationStatus!=="unavailable");
+  const reviewed=linked.filter(item=>item.observationStatus==="user_reviewed"&&Boolean(item.reviewedAt));
+  const level:PersonaPreEditPlan["researchEvidence"]["level"]=
+    reviewed.length?"reviewed_reference":linked.length?"metadata_only":"hypothesis_only";
+  const note=level==="reviewed_reference"
+    ?"Сохранён разбор просмотренного референса. Это наблюдение о творческом приёме, не доказательство охватов или успеха."
+    :level==="metadata_only"
+    ?"Есть только ссылки или метаданные. Содержание и эффективность конкретных Reels не подтверждены."
+    :"Нет подтверждённого исследования Instagram для этой идеи. Это творческая гипотеза, а не проверенный тренд.";
+  return {
+    version:1,kind:"persona-pre-edit-plan-v1",status:"intent_only",origin:"scenario_revision",
+    sourceRevisionId:revision.id,
+    researchEvidence:{level,sourceUrls:linked.map(item=>item.url),note},
+    scenes:revision.beats.map((beat,index)=>{
+      if(!beat.line.trim()||!beat.action.trim()||!Number.isFinite(beat.durationSec)||beat.durationSec<=0)
+        throw new Error("Pre-edit planning needs complete, timed scenes");
+      const fallback=beat.purpose==="hook"
+        ?"Начать с действия и реплики, без вступительной заставки; резать по смыслу."
+        :beat.purpose==="ending"
+        ?"Выдержать реакцию и закончить на подтверждённом панчлайне."
+        :"Склейка по реакции или действию, с сохранением смысловой паузы.";
+      return {order:index+1,line:beat.line,durationSec:beat.durationSec,
+        editIntent:beat.editIntent?.trim()||fallback,
+        audioIntent:"Сохранить реальную речь; музыкальные акценты — только по утверждённому плану и при наличии записанного звука.",
+        subtitleIntent:"Синхронизировать с фактическими словами, с учётом безопасных полей Reels.",
+        mediaStatus:"awaiting_author_footage" as const};
+    }),
+    publicationApproved:false,
+  };
+}
+
 /** Starts a versioned scenario script; content remains an author draft until approval. */
 export function createScenarioScript(
   idea: ScenarioIdea,
@@ -521,6 +564,7 @@ export function scenarioScriptToProductionBriefInput(script: ScenarioScript): Pe
 export function scenarioScriptToProductionBrief(
   script: ScenarioScript,
   selectedProject: PersonaProductionIdea,
+  research: readonly ScenarioResearchItem[] = [],
 ): PersonaProductionBrief {
   const current = requireCurrentRevision(script);
   if (!script.approval || script.approval.revisionId !== current.id) {
@@ -563,6 +607,7 @@ export function scenarioScriptToProductionBrief(
     },
     script: authored,
     shots,
+    preEditPlan: buildScenarioPreEditPlan(current,script.idea,research),
     adaptations: {
       reels: { ...base.adaptations.reels, durationSec },
       shorts: { ...base.adaptations.shorts, durationSec },
@@ -612,7 +657,11 @@ function createRevision(input: Omit<ScenarioScriptRevision, "review">): Scenario
     if (!beat || !["hook", "development", "ending"].includes(beat.purpose) || !nonEmpty(beat.line) || !Number.isFinite(beat.durationSec) || beat.durationSec <= 0) {
       throw new Error(`Script beat ${index + 1} is invalid`);
     }
-    return { ...beat, line: beat.line.trim(), action: typeof beat.action === "string" ? beat.action.trim() : "" };
+    if(beat.editIntent!==undefined&&typeof beat.editIntent!=="string")
+      throw new Error("Pre-edit note must be text");
+    const {editIntent,...rest}=beat;
+    return {...rest,line:beat.line.trim(),action:typeof beat.action==="string"?beat.action.trim():"",
+      ...(editIntent?.trim()?{editIntent:editIntent.trim()}:{})};
   });
   const sourceFacts = input.sourceFacts.map((fact, index) => requireText(fact, `sourceFacts[${index}]`));
   return { ...input, id: input.id.trim(), reason: input.reason?.trim(), beats, sourceFacts };
