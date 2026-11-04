@@ -113,13 +113,14 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(segments.slice(i,j).some(part=>part.transcriptConflict===true))continue;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
-      // Bag-of-words scoring alone can falsely match "Это колыбельная"
-      // inside "Эта колыбельная. Это совсем другое." because both words
-      // appear somewhere. Short scripted lines require exact word order and
-      // adjacency before they can become even a provisional ASR candidate.
+      // Short lines are especially sensitive to even ONE extra/missing word:
+      // "Это колыбельная, наверное" is not a verbatim B04 take.
+      // A full coarse segment cannot be silently trimmed to fit the script.
+      // Timed word tokens can still yield a separate exact candidate window.
       const expectedWords=normalize(line),heardWords=normalize(text);
       if(expectedWords.length<=3 &&
-         !heardWords.some((_,k)=>expectedWords.every((w,j)=>heardWords[k+j]===w)))
+         (heardWords.length!==expectedWords.length ||
+          expectedWords.some((word,index)=>heardWords[index]!==word)))
         continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;

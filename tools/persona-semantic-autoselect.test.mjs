@@ -199,6 +199,26 @@ test('B04 cannot be selected from words scattered across a different spoken phra
  assert.deepEqual(preview.missingBeats,[1]);
  assert.equal(preview.choices.length,0);
 });
+test('B04 short phrase cannot auto-pass with extra words in a coarse ASR segment',()=>{
+ const requested={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Финальная реплика'}]};
+ const nearMisses=['Это колыбельная, наверное.','Ну это колыбельная.',
+  'Это колыбельная. Ещё раз.', 'Это колыбельная, да.'];
+ for(const text of nearMisses){
+  const segments=parseWhisperJson(whisper([[text,.2,1.9]]),3);
+  const takes=[{id:'B04_extra_words',durationSec:3,segments}];
+  assert.throws(()=>createEditorialPlan(requested,takes),/Manual review required/,
+   'must not auto-match: '+text);
+  const preview=createEditorialPlan(requested,takes,{mode:'preview'});
+  assert.deepEqual(preview.missingBeats,[1]);
+  assert.equal(preview.choices.length,0);
+ }
+ // Truly verbatim speech remains available as a technical ASR proposal.
+ const exact=parseWhisperJson(whisper([['Это колыбельная.',.2,1.9]]),3);
+ assert.equal(createEditorialPlan(requested,[{id:'B04_exact',durationSec:3,segments:exact}]).choices.length,1);
+});
+
 test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
  const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[
   {text:' Компо',offsets:{from:0,to:400}},
