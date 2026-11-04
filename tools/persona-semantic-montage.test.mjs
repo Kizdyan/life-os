@@ -123,6 +123,50 @@ test('preview assembly writes only explicitly selected ordered beats and reports
  }finally{await rm(d,{recursive:true,force:true})}
 });
 
+test('approved pre-shoot cut intentions survive source selection, while stale changes are blocked',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-edit-intent-review-'));
+ try{
+  const source=join(d,'source.mp4'),bytes=Buffer.from('approved-intent-fixture');
+  await writeFile(source,bytes);
+  const briefPath=join(d,'brief.json'),analysis=join(d,'analysis.json'),decisions=join(d,'decisions.json');
+  const preEditPlan={
+   version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:'scenario_revision',
+   sourceRevisionId:'script-r1',publicationApproved:false,
+   researchEvidence:{level:'metadata_only',sourceUrls:['https://www.instagram.com/reel/example/'],
+    note:'Link only, no verified Instagram view or performance'},
+   scenes:minimalBrief.script.map((b,i)=>({
+    order:b.order,line:b.line,durationSec:b.durationSec,
+    editIntent:i===0?'Cut on actor reaction to first note':'Keep answer and intentional pause',
+    audioIntent:'Only real audio',subtitleIntent:'Only actually spoken words',
+    mediaStatus:'awaiting_author_footage'
+   }))
+  };
+  await mk(briefPath,{...minimalBrief,preEditPlan});
+  await mk(analysis,{version:1,kind:'persona-evidence-v1',sources:[{
+   id:'first',path:source,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),
+   durationSec:5
+  }]});
+  await mk(decisions,{version:1,analysisPath:analysis,briefPath,choices:[
+   {beat:1,sourceId:'first',startSec:0,durationSec:1.1,confidence:.9,
+    transcript:minimalBrief.script[0].line,reason:'Matched real source timeline, human review not yet done'},
+   {beat:2,sourceId:'first',startSec:2,durationSec:1.2,confidence:.9,
+    transcript:minimalBrief.script[1].line,reason:'Exact spoken words with separate source interval'},
+  ]});
+  const out=await assemble(decisions,join(d,'project.json'));
+  const review=JSON.parse(await readFile(out.review,'utf8'));
+  assert.equal(review.preEditPlan.status,'intent_preserved_not_verified');
+  assert.deepEqual(review.preEditPlan.allScenes,preEditPlan.scenes);
+  assert.equal(review.cuts[0].approvedPreEditIntent,preEditPlan.scenes[0].editIntent);
+  assert.equal(review.cuts[0].preEditMatchStatus,'requires-human-creative-review');
+  const stale={...preEditPlan,scenes:preEditPlan.scenes.map((x,i)=>
+   i===0?{...x,line:'Invented dialogue after approval'}:x)};
+  await mk(briefPath,{...minimalBrief,preEditPlan:stale});
+  await assert.rejects(()=>assemble(decisions,join(d,'should-not-render.json')),
+   /Pre-edit plan stale/);
+  await assert.rejects(()=>stat(join(d,'should-not-render.json')),/ENOENT/);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
+
 test('B03 music tail requires a word timestamp or an explicit manual boundary',async()=>{
  const d=await mkdtemp(join(tmpdir(),'persona-b03-boundary-'));
  try{
