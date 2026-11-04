@@ -113,14 +113,15 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(segments.slice(i,j).some(part=>part.transcriptConflict===true))continue;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
-      // Short lines are especially sensitive to even ONE extra/missing word:
-      // "Это колыбельная, наверное" is not a verbatim B04 take.
-      // A full coarse segment cannot be silently trimmed to fit the script.
-      // Timed word tokens can still yield a separate exact candidate window.
+      // Every approved scene, including the FULL B04 "Это колыбельная?
+      // Это финал триллера", requires the exact ordered normalized words.
+      // Fuzzy bag-of-words only ranks confirmed exact candidates; it must
+      // never validate a different vowel, missing word or extra filler.
+      // Timed tokens can form an exact sub-window; one coarse ASR segment
+      // with surrounding speech CANNOT be trimmed without human review.
       const expectedWords=normalize(line),heardWords=normalize(text);
-      if(expectedWords.length<=3 &&
-         (heardWords.length!==expectedWords.length ||
-          expectedWords.some((word,index)=>heardWords[index]!==word)))
+      if(heardWords.length!==expectedWords.length ||
+         expectedWords.some((word,index)=>heardWords[index]!==word))
         continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;
