@@ -56,7 +56,9 @@ export interface ScenarioIdea {
   estimatedDurationSec: number;
   creativeProfileFit: string;
   /** How the concept was actually produced, not a prediction of audience success. */
-  origin?: "reviewed_reference" | "template_fallback";
+  origin?: "reviewed_reference" | "template_fallback" | "ai_generated";
+  /** Actual provider/model of proposed concept; NEVER publication approval. */
+  aiProvenance?: {provider:"perplexity_agent"|"ollama";model:string;runId:string;status:"unapproved"};
   evidenceNote?: string;
 }
 
