@@ -5,7 +5,7 @@
   "scripts": {
     "test": "vitest run --exclude '**/*.test.mjs'",
     "typecheck": "tsc --noEmit",
-    "api:typecheck": "tsc -p api/tsconfig.json --noEmit",
+    "api:typecheck": "node --test scripts/check-vercel-functions.test.mjs && node scripts/check-vercel-functions.mjs && tsc -p api/tsconfig.json --noEmit",
     "web:dev": "vite apps/web",
     "web:build": "vite build apps/web",
     "media:probe": "node tools/persona-media-engine.mjs probe",
