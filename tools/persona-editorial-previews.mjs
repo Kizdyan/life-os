@@ -115,7 +115,7 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
     '<small>Whisper: '+esc(source.asrStatus==='empty'?'речь не распознана':'нет пригодного совпадения')+'. Этот прокси только для просмотра; исходник не изменяется.</small>'+
     '<label><input type="radio" name="recovery'+beat.beat+'" value="'+esc(source.sourceId)+'"> Выбрать этот исходник для ручной разметки</label></article>';
   }).join('')??'';
-  const recoveryForm=recovery?'<div class="recovery-form">'+(recovery.availableSources.length?'':'<p>Нет исходников с пригодной аудиодорожкой — требуется пересъёмка этой сцены.</p>')+'<p><strong>Recovery Review.</strong> Укажи только после просмотра: начало, длительность и услышанный текст. Это не подменяет исходный Whisper и будет помечено как ручная разметка.</p>'+recoveryOptions+
+  const recoveryForm=recovery?'<div class="recovery-form">'+(recovery.availableSources.length?'':'<p>Нет исходников с пригодной аудиодорожкой — требуется пересъёмка этой сцены.</p>')+'<p><strong>Recovery Review.</strong> Укажи только после просмотра: начало, длительность и <strong>действительно услышанный текст</strong>. Он должен совпадать с утверждённой репликой (регистр и пунктуация несущественны). Если речь другая — пересними сцену или отдельно измени сценарий. Это не подменяет исходный Whisper и будет помечено как ручная разметка.</p>'+recoveryOptions+
    '<label>Начало фразы, с <input id="recoveryStart'+beat.beat+'" type="number" min="0" step="0.01"></label><label>Длительность, с <input id="recoveryDuration'+beat.beat+'" type="number" min="0.25" step="0.01"></label>'+
    '<label>Текст услышанной фразы <textarea id="recoveryText'+beat.beat+'" rows="2"></textarea></label></div>':'';
   return '<section class="scene"><h2>Сцена '+beat.beat+' — '+esc(beat.scriptLine)+'</h2><div class="clips">'+options+
@@ -123,7 +123,8 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
  }).join('');
  const base={version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
   selections:pack.beats.map(b=>({beat:b.beat,candidateId:null,reviewed:false,reason:'',rejected:[],recovery:null})),
-  recoverySources:Object.fromEntries(pack.beats.map(b=>[b.beat,b.recovery?.availableSources??[]]))};
+  recoverySources:Object.fromEntries(pack.beats.map(b=>[b.beat,b.recovery?.availableSources??[]])),
+  expectedLines:Object.fromEntries(pack.beats.map(b=>[b.beat,b.scriptLine]))};
  const replayScript=[
   'const activeReplay=new WeakMap();',
   'document.querySelectorAll("button[data-replay-source]").forEach(button=>button.addEventListener("click",()=>{',
@@ -141,6 +142,7 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
   '}));',
  ].join('');
  const script='const template=JSON.parse(document.getElementById("data").textContent);'+
+  'const normalizeSpoken=s=>String(s??"").normalize("NFKC").toLocaleLowerCase("ru-RU").replaceAll("ё","е").replace(/[^\\p{L}\\p{N}]+/gu," ").trim();'+
   'document.getElementById("save").addEventListener("click",()=>{'+
   'const result=JSON.parse(JSON.stringify(template));'+
   'for(const item of result.selections){'+
@@ -149,6 +151,7 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
   'if((!pick&&!recoveryPick)||reason.length<3){alert("Для каждой сцены нужно посмотреть видео, выбрать дубль или Recovery Review и объяснить выбор.");return;}'+
   'if(recoveryPick){const start=Number(document.getElementById("recoveryStart"+item.beat).value),duration=Number(document.getElementById("recoveryDuration"+item.beat).value),transcript=document.getElementById("recoveryText"+item.beat).value.trim(),source=template.recoverySources[item.beat].find(x=>x.sourceId===recoveryPick.value);'+
   'if(!source||!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<.25||transcript.length<3){alert("Для ручной разметки нужны источник, границы и текст фразы.");return;}if(start+duration>source.durationSec){alert("Границы фразы выходят за доступную длительность исходника.");return;}'+
+  'if(!normalizeSpoken(template.expectedLines[item.beat])||normalizeSpoken(transcript)!==normalizeSpoken(template.expectedLines[item.beat])){alert("Услышанная фраза не совпадает со сценарием. Нельзя выдавать «Эта колыбельная» за «Это колыбельная». Пересними реплику или отдельно утверди изменение сценария.");return;}'+
   'item.candidateId=null;item.recovery={kind:"persona-manual-segment-v1",transcriptSource:"manual-review",sourceId:source.sourceId,sourceSha256:source.sourceSha256,startSec:start,durationSec:duration,transcript,confirmed:true,reason};'+
   '}else item.candidateId=pick.value;item.reason=reason;item.reviewed=true;}'+
   'result.status="human-reviewed-not-published";'+
