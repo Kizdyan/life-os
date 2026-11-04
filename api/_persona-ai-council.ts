@@ -35,7 +35,8 @@ export function parseCouncilModels(json:string):AiCouncilModel[]{
       !["perplexity_agent","ollama"].includes(String(item.provider))||
       !safeModel.test(String(item.model))||!record(item.skills)||
       ![1,2,3].includes(Number(item.costTier)))throw Error("Invalid model configuration at "+index);
-    const skills=Object.fromEntries(tasks.map(task=>[task,item.skills[task]])) as Record<AiCouncilTask,unknown>;
+    const declared=item.skills as Record<string,unknown>;
+    const skills=Object.fromEntries(tasks.map(task=>[task,declared[task]])) as Record<AiCouncilTask,unknown>;
     if(tasks.some(task=>!Number.isInteger(skills[task])||(skills[task] as number)<0||(skills[task] as number)>3))
       throw Error("Model task suitability must be integer 0–3");
     if(item.provider==="ollama"&&(skills.research as number)>0)
@@ -52,7 +53,10 @@ export function chooseCouncilModel(
 ):{model:AiCouncilModel;basis:string}|null{
   const usable=models.filter(m=>m.skills[task]>0&&available(m));
   if(!usable.length)return null;
-  const ranked=usable.map(model=>{
+  // Prefer a genuinely different model for critique when one is available.
+  const diverse=task==="review"&&avoidModelId&&usable.some(m=>m.id!==avoidModelId)
+    ?usable.filter(m=>m.id!==avoidModelId):usable;
+  const ranked=diverse.map(model=>{
     const feedback=outcomes.filter(o=>o.modelId===model.id&&o.task===task);
     const observed=feedback.length>=3;
     const rate=observed?feedback.filter(o=>o.accepted).length/feedback.length:0;
