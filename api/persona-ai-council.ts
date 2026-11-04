@@ -164,7 +164,7 @@ export async function runPersonaAiCouncil(input:ReturnType<typeof parseInput>,no
   const independent=reviewCall.model.id!==ideasCall.model.id&&steps[2].model!==steps[1].model;
   const index=critique.recommendationIndex;
   review={
-    recommendationIndex:Number.isInteger(index)&&index>=0&&index<3?index as number:null,
+    recommendationIndex:typeof index==="number"&&Number.isInteger(index)&&index>=0&&index<3?index:null,
     rationale:typeof critique.rationale==="string"?critique.rationale.slice(0,900):"Критик не объяснил выбор.",
     concerns:Array.isArray(critique.concerns)?critique.concerns.filter(x=>typeof x==="string").slice(0,5).map(x=>(x as string).slice(0,250)):[],
     independentModel:independent,
