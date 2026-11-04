@@ -12,6 +12,7 @@ import { importPersonaProductionBrief } from '../../../packages/core/src/persona
 import {
  analyseScenarioReference,
  addFreeTrendLeadToScenarioResearch,
+ buildScenarioPreEditPlan,
  approveScenarioScript,
  createScenarioScript,
  freeScenarioTrendLeads,
@@ -52,9 +53,9 @@ export function personaScenarioDraftIsDirty(
 
 function draftBeats(idea:ScenarioIdea):ScenarioScriptBeat[]{
  return [
-  {purpose:'hook',line:`${idea.title}: одна ситуация, которую нельзя решить красивой позой.`,action:'Крупный план, начать действие в первом кадре.',durationSec:5},
-  {purpose:'development',line:idea.originalConflict,action:'Перейти к предмету или действию, которое показывает препятствие.',durationSec:8},
-  {purpose:'ending',line:idea.ending,action:'Вернуться к реакции и оставить завершённую паузу.',durationSec:6},
+  {purpose:'hook',line:`${idea.title}: одна ситуация, которую нельзя решить красивой позой.`,action:'Крупный план, начать действие в первом кадре.',durationSec:5,editIntent:'Начать сразу с действия и хука, обрезать заставку.'},
+  {purpose:'development',line:idea.originalConflict,action:'Перейти к предмету или действию, которое показывает препятствие.',durationSec:8,editIntent:'Склейка на предмет или действие, оставить смысловую паузу.'},
+  {purpose:'ending',line:idea.ending,action:'Вернуться к реакции и оставить завершённую паузу.',durationSec:6,editIntent:'Вернуться к реакции крупным планом и закончить после панчлайна.'},
  ];
 }
 
@@ -122,6 +123,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  },[project.id,script?.currentRevisionId,editingRevisionId,beats,revisionReason]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
+ const preEditPlan=script&&beats.length&&beats.every(beat=>beat.line.trim()&&beat.action.trim()&&Number.isFinite(beat.durationSec)&&beat.durationSec>0)
+  ?buildScenarioPreEditPlan({...script.currentRevision,beats},script.idea,workspace.research):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
  const hasPendingChanges=Boolean(script&&personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason))||Boolean(staleDraft||corruptDraft);
  const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
@@ -350,7 +353,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const createBrief=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('В бриф нельзя переносить несохранённый черновик: сначала сохраните новую версию и утвердите её.');return}
-  try{assertNoPendingDraftRecord();onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
+  try{assertNoPendingDraftRecord();onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType},workspace.research));setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{
@@ -430,6 +433,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       {lockedForScript.some(lock=>lock.index===index)?'🔒 Закреплена автором · снять закрепление':'Закрепить реплику'}
      </button>
      <label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
+     <label>Будущий монтаж и звук<textarea aria-label={`Монтаж сцены ${index+1}`} value={beat.editIntent??''} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,editIntent:event.target.value}:item))} placeholder="Когда склеить, какую реакцию сохранить, где войдёт музыка?"/></label>
      {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
        <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
        <button type="button" className="ghost" disabled={beats[index+1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,1)}>Ниже</button>
@@ -485,6 +489,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       <button type="button" className="ghost" onClick={rejectWithFeedback} disabled={rejectionFeedback.trim().length<12}>Сохранить причину отклонения</button>
       {(workspace.editorialFeedback??[]).length>0&&<p className="personaScenarioHint">Сохранено критических замечаний: {workspace.editorialFeedback?.length}. Они будут учитываться как ограничения при следующем формировании идей.</p>}
     </div>
+   {preEditPlan&&<section className="personaScenarioReview" aria-label="Предмонтаж до утверждения">
+     <h5>Предмонтаж спроектирован до съёмки</h5>
+     <p>Реплики и будущие склейки проектируются вместе. После утверждения замысел переходит в Production Brief без повторной генерации. Реальных таймкодов и исходников пока нет.</p>
+     <p>{preEditPlan.researchEvidence.note}</p>
+     {preEditPlan.researchEvidence.sourceUrls.length>0&&<ul>{preEditPlan.researchEvidence.sourceUrls.map(url=><li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>}
+     <ol>{preEditPlan.scenes.map(scene=><li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b> — {scene.editIntent} <small>Звук: {scene.audioIntent}</small></li>)}</ol>
+     <p><small>Популярность в Instagram не доказана без фактических данных. Финальный монтаж утверждается после съёмки.</small></p>
+    </section>}
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}
    {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasPendingChanges||review?.status!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
    {isApproved&&<><p className="personaScenarioHint">В памяти форматов сохранены только одобренные вами приёмы, без выдуманных охватов: {workspace.formatMemory?.length??0}.</p><button type="button" className="primary" onClick={createBrief}>Создать съёмочный бриф</button></>}
