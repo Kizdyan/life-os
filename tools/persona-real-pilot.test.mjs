@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtemp,mkdir,readFile,rm,stat,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rm,stat,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {assertOriginalsUnchanged,startRealPilot,resumeRealPilot} from './persona-real-pilot.mjs';
@@ -34,6 +34,8 @@ test('real-media pilot creates a review-only checkpoint and verifies original SH
   });
   assert.equal(reviewed,false);
   assert.equal(report.status,'NEEDS_MANUAL_ASR_REVIEW');
+  assert.equal(report.takeComparisonStatus,'unknown');
+  assert.equal(report.allRecordedTakesCompared,null);
   assert.equal(report.publicationApproved,false);
   assert.equal(report.video,null);
   assert.equal(report.originals.length,3,'two source videos and seven-beat brief hashed');
@@ -72,8 +74,21 @@ test('13 original named takes are hashed, but unreviewed alternatives are never 
   }});
   assert.equal(report.originals.length,14,'13 user recordings plus the brief fingerprinted');
   assert.equal(report.alternateTakes.length,6);
+  assert.equal(report.takeComparisonStatus,'not_compared');
   assert.equal(report.allRecordedTakesCompared,false);
   assert.match(await readFile(join(draft,'PILOT.md'),'utf8'),/НЕ были автоматически проанализированы/);
+ }finally{await f.cleanup()}
+});
+
+test('pilot refuses output through a symlink or Windows junction into originals',async()=>{
+ const f=await fixture();
+ try{
+  const alias=join(f.root,'originals-alias');
+  await symlink(f.source,alias,process.platform==='win32'?'junction':'dir');
+  let invoked=0;
+  await assert.rejects(startRealPilot({sources:f.source,outputDir:join(alias,'draft'),
+   runDraft:async()=>{invoked++;}}),/symbolic links or Windows junctions|outside originals/);
+  assert.equal(invoked,0);
  }finally{await f.cleanup()}
 });
 
@@ -142,16 +157,19 @@ test('author-selected synthetic fixture receives independent QA and remains unpu
   const reviewedDir=join(f.root,'reviewed');
   const mp4=join(reviewedDir,'reviewed-reel.mp4');
   const selection=join(f.root,'selection.reviewed.json');await writeFile(selection,'{}');
+  const timeline=join(reviewedDir,'timeline.json');
   const result=await resumeRealPilot({draftDir:draft,selectionPath:selection,outputDir:reviewedDir,
    renderReviewed:async()=>{
     await mkdir(reviewedDir);await writeFile(mp4,'synthetic-fixture-not-a-real-mp4');
+    await writeFile(timeline,'{}');
     return {kind:'persona-reviewed-reel-v1',status:'awaiting-author-review',
-     publicationApproved:false,distributionAllowed:false,output:mp4,
+     publicationApproved:false,distributionAllowed:false,output:mp4,timelinePath:timeline,
      qaPath:join(reviewedDir,'reviewed-qa.json'),
      subtitleDraft:{srtPath:'test.srt'},creativeReviewTemplate:'checklist.json'};
    },
    analyzeQuality:async options=>{
     assert.equal(options.videoPath,mp4);
+    assert.equal(options.timelinePath,timeline);
     assert.equal(options.expectedDurationSec,31);
     return {status:'awaiting-author-review',publicationApproved:false,
      distributionAllowed:false,
