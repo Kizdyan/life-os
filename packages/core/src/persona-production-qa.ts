@@ -13,7 +13,8 @@ export interface PersonaProductionStructuralCheck {
     | "subtitle-readability"
     | "format-duration"
     | "script-shot-sync"
-    | "fact-references";
+    | "fact-references"
+    | "pre-edit-plan-sync";
   passed: boolean;
   message: string;
 }
@@ -120,6 +121,17 @@ export function evaluatePersonaProductionBrief(input: {
       id: "fact-references",
       passed: brief.factReferences.every((fact) => input.allowedFacts.includes(fact)),
       message: "Каждая фактическая ссылка должна быть в утверждённом наборе фактов автора.",
+    },
+    {
+      id: "pre-edit-plan-sync",
+      passed: stillFormat ? !brief.preEditPlan : !brief.preEditPlan ||
+        (brief.preEditPlan.status==="intent_only"&&brief.preEditPlan.publicationApproved===false&&
+         brief.preEditPlan.scenes.length===brief.script.length&&
+         brief.preEditPlan.scenes.every((scene,index)=>
+           scene.order===index+1&&scene.line===brief.script[index].line&&
+           scene.durationSec===brief.script[index].durationSec&&
+           scene.mediaStatus==="awaiting_author_footage"&&isText(scene.editIntent))),
+      message: "Монтажный замысел должен соответствовать точным словам и длительности без выдуманных исходников.",
     },
   ];
 
