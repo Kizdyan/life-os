@@ -36,7 +36,9 @@ function config(){
   const reviewer=chooseCouncilModel(found,"review",eligible,[],creator?.model.id);
   const distinct=Boolean(creator&&reviewer&&creator.model.model!==reviewer.model.model);
   return {
-    state:!enabled?"disabled":!found.length?"models_missing":
+    state:!enabled?"disabled":env("VERCEL_ENV")==="production"?"production_locked":
+      env("VERCEL_ENV")&&env("PERSONA_AI_COUNCIL_ACCESS_TOKEN").length<24?"access_token_missing":
+      !found.length?"models_missing":
       !researcher?"research_unavailable":!creator?"ideation_unavailable":
       !reviewer?"review_unavailable":!distinct?"independent_editor_missing":"configured_not_live_verified",
     models:found.map(model=>({id:model.id,provider:model.provider,model:model.model,
