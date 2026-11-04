@@ -154,9 +154,10 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
  // Surface the unused alternates explicitly; never imply the system evaluated
  // their acting, framing, or suitability.
  let alternateTakes=[];
- const reportPath=result?.sourceSelection?.report;
- if(result?.sourceSelection?.kind==='selected-folder'&&typeof reportPath==='string'&&
-    within(output,resolve(reportPath))){
+ const reportPath=sourceInfo.isDirectory()?join(output,'intake','intake-report.json'):null;
+ // The ASR recovery object does not carry sourceSelection metadata, so read
+ // the local source intake report even when Whisper forced a recovery stop.
+ if(reportPath&&await exists(reportPath)){
   const intake=await json(reportPath);
   if(Array.isArray(intake.alternateTakes))
    alternateTakes=intake.alternateTakes.map(x=>({id:x.id,file:x.file}));
