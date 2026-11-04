@@ -46,20 +46,25 @@ export function canNavigateFromPersonaGuide(hasUnsavedChanges:boolean):boolean{
 }
 export function productionBriefMatchesBeats(
  brief:PersonaProductionBrief|undefined,
- beats:readonly {line:string;action:string;durationSec:number}[]|undefined,
+ beats:readonly {line:string;action:string;durationSec:number;editIntent?:string}[]|undefined,
 ):boolean{
  if(!beats)return true; // Older projects can carry a brief without Scenario Intelligence.
  if(!brief||brief.script.length!==beats.length)return false;
  return beats.every((beat,i)=>beat.line===brief.script[i]?.line&&
-  beat.action===brief.script[i]?.action&&beat.durationSec===brief.script[i]?.durationSec);
+  beat.action===brief.script[i]?.action&&beat.durationSec===brief.script[i]?.durationSec&&
+  (beat.editIntent===undefined||brief.preEditPlan?.scenes[i]?.editIntent===beat.editIntent));
 }
 /** A new saved script revision revokes any earlier human shoot approval without
  * mutating the brief or losing revision history. */
 export function reconcilePersonaProductionWithScenario(
  pipeline:PersonaProductionPipeline|null,workspace:ScenarioWorkspace|undefined,
 ):PersonaProductionPipeline|null{
- if(!pipeline||!pipeline.materials.productionBrief||!workspace?.script||productionBriefMatchesBeats(
-  pipeline.materials.productionBrief,workspace.script.currentRevision.beats))return pipeline;
+ if(!pipeline||!pipeline.materials.productionBrief||!workspace?.script)return pipeline;
+ const plan=pipeline.materials.productionBrief.preEditPlan;
+ const correctRevision=plan?.origin!=='scenario_revision'||
+   plan.sourceRevisionId===workspace.script.currentRevisionId;
+ if(correctRevision&&productionBriefMatchesBeats(
+   pipeline.materials.productionBrief,workspace.script.currentRevision.beats))return pipeline;
  if(pipeline.stage==='QA'&&pipeline.statuses.QA==='needs_revision'&&
   !pipeline.materials.editorialDecision)return pipeline;
  const {editorialDecision:_supersededApproval,...materials}=pipeline.materials;
@@ -185,6 +190,12 @@ export function PersonaProductionBriefPanel({projectId,pipeline,editor,comment,f
   <div className="briefGrid"><article><small>СЦЕНАРИЙ</small>{brief.script.map((beat,index)=><fieldset className="briefBeat" key={beat.order}><legend>Кадр {beat.order}</legend><label>Реплика<textarea aria-label={`Редактировать реплику ${beat.order}`} defaultValue={valueFor(`script:${index}:line`,beat.line)} onChange={e=>typeField(`script:${index}:line`,e.currentTarget.value,e.currentTarget,beat.line)} onBlur={e=>commitField(`script:${index}:line`,e.currentTarget.value)}/></label><label>Длительность, сек.<input aria-label={`Длительность кадра ${beat.order}`} type="number" min="0.1" step="0.1" defaultValue={valueFor(`script:${index}:durationSec`,String(beat.durationSec))} onChange={e=>typeField(`script:${index}:durationSec`,e.currentTarget.value,e.currentTarget,String(beat.durationSec))} onBlur={e=>commitField(`script:${index}:durationSec`,e.currentTarget.value)}/></label><label>Действие<textarea aria-label={`Сценарное действие ${beat.order}`} defaultValue={valueFor(`script:${index}:action`,beat.action)} onChange={e=>typeField(`script:${index}:action`,e.currentTarget.value,e.currentTarget,beat.action)} onBlur={e=>commitField(`script:${index}:action`,e.currentTarget.value)}/></label></fieldset>)}</article><article><small>КАДРЫ</small>{brief.shots.map((shot,index)=><fieldset className="briefBeat" key={shot.order}><legend>Кадр {shot.order} · {shot.framing}</legend><label>Ракурс<textarea aria-label={`Ракурс кадра ${shot.order}`} defaultValue={valueFor(`shot:${index}:angle`,shot.angle)} onChange={e=>typeField(`shot:${index}:angle`,e.currentTarget.value,e.currentTarget,shot.angle)} onBlur={e=>commitField(`shot:${index}:angle`,e.currentTarget.value)}/></label><label>Движение камеры<textarea aria-label={`Движение камеры ${shot.order}`} defaultValue={valueFor(`shot:${index}:cameraMovement`,shot.cameraMovement)} onChange={e=>typeField(`shot:${index}:cameraMovement`,e.currentTarget.value,e.currentTarget,shot.cameraMovement)} onBlur={e=>commitField(`shot:${index}:cameraMovement`,e.currentTarget.value)}/></label><label>Свет<textarea aria-label={`Свет кадра ${shot.order}`} defaultValue={valueFor(`shot:${index}:lighting`,shot.lighting)} onChange={e=>typeField(`shot:${index}:lighting`,e.currentTarget.value,e.currentTarget,shot.lighting)} onBlur={e=>commitField(`shot:${index}:lighting`,e.currentTarget.value)}/></label><label>Съёмочное указание<textarea aria-label={`Съёмочное указание ${shot.order}`} defaultValue={valueFor(`shot:${index}:action`,shot.action)} onChange={e=>typeField(`shot:${index}:action`,e.currentTarget.value,e.currentTarget,shot.action)} onBlur={e=>commitField(`shot:${index}:action`,e.currentTarget.value)}/></label></fieldset>)}</article></div>
   <div className="briefNotes"><p><b>Звук:</b> {brief.capture.audio.recording}</p><p><b>Монтаж:</b> {brief.postProduction.transitions}</p><p><b>Титры:</b> до {brief.postProduction.subtitles.maxCharactersPerLine} символов в строке.</p></div>
   <div className={qa.status==='needs_revision'?'briefIssues':'briefChecks'}><b>{qa.status==='needs_revision'?'Нужны правки структуры':'Проверка брифа'}</b><ul>{qa.structuralChecks.map(check=><li key={check.id} className={check.passed?'ok':'bad'}>{check.passed?'✓':'!'} {check.message}</li>)}</ul>{requiresFactReview&&<p className="factReview"><b>Нужна ручная проверка фактов.</b> {qa.factReview.message}</p>}</div>
+  {brief.preEditPlan&&<section className="briefBeat" aria-label="Замысел монтажа, сохранённый до съёмки">
+    <h4>Монтажный замысел из сценария · без повторной генерации</h4>
+    <p>{brief.preEditPlan.researchEvidence.note}</p>
+    <ol>{brief.preEditPlan.scenes.map(scene=><li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b> — {scene.editIntent}. <small>Таймкоды и соответствующие исходники выбираются только после съёмки.</small></li>)}</ol>
+    <small>Это монтажное намерение, а не реальные монтажные решения; публикация запрещена.</small>
+   </section>}
   {pipeline.stage==='QA'&&<div className="editorialGate"><h4>Редакторское решение</h4><p>Сценарий, кадры и бриф сохранятся при отклонении.</p><input aria-label="Имя редактора" value={editor} onChange={e=>onEditorChange(e.target.value)} placeholder="Имя редактора"/><textarea aria-label="Комментарий редактора" value={comment} onChange={e=>onCommentChange(e.target.value)} placeholder="Комментарий: что подтверждено или что исправить"/>{requiresFactReview&&<label><input type="checkbox" checked={factsChecked} onChange={e=>onFactsCheckedChange(e.target.checked)}/> Факты в свободных репликах сверены с автором или источником.</label>}<div className="actions"><button className="dangerGhost" disabled={!editor.trim()||!comment.trim()} onClick={()=>onDecision('rejected')}>Вернуть на доработку</button><button className="primary" disabled={!canApprove} onClick={()=>onDecision('approved')}>Одобрить для съёмки</button></div></div>}
   {pipeline.materials.editorialDecision&&<p className="decisionLog"><b>{pipeline.materials.editorialDecision.decision==='approved'?'Одобрено':'Возвращено на доработку'}:</b> {pipeline.materials.editorialDecision.editor} · {pipeline.materials.editorialDecision.comment}</p>}
   {brief.sourceFormat==='reel'&&<PersonaLocalProductionHandoff pipeline={pipeline} projectId={projectId} hasUnsavedDraft={raw!==null}/>}
