@@ -9,7 +9,7 @@
  */
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
-import {readdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
+import {lstat,readdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {runFirstReel} from './persona-first-reel-runner.mjs';
@@ -89,10 +89,28 @@ export function assertOriginalsUnchanged(before,after){
   fail('Original video or Production Brief changed; stop before any review/approval');
  return true;
 }
-function verifyNewDestination(output,protectedDirs=[]){
- const dest=safePath(output);
+async function canonicalProspectivePath(path){
+ let current=resolve(path),suffix=[];
+ while(true){
+  try{
+   const info=await lstat(current);
+   if(info.isSymbolicLink())fail('Output path must not traverse symbolic links or Windows junctions');
+   const canonical=await realpath(current);
+   return resolve(canonical,...suffix.reverse());
+  }catch(error){
+   if(error?.code!=='ENOENT'&&error?.code!=='ENOTDIR')throw error;
+   const parent=dirname(current);
+   if(parent===current)fail('Cannot resolve output path safely');
+   suffix.unshift(basename(current));
+   current=parent;
+  }
+ }
+}
+async function verifyNewDestination(output,protectedDirs=[]){
+ const dest=safePath(output),canonicalDest=await canonicalProspectivePath(dest);
  for(const path of protectedDirs){
-  if(within(resolve(path),dest))
+  const canonicalProtected=await realpath(resolve(path));
+  if(within(canonicalProtected,canonicalDest))
    fail('Output must be outside originals, previous draft, and other protected directories');
  }
  return dest;
@@ -114,7 +132,9 @@ function startReport({sources,brief,output,status,originals,reviewHtml,qaPath,vi
  return {version:1,kind:'persona-seven-scene-real-pilot-v1',status,
   provenance:'LOCAL_USER_MEDIA_NOT_SYNTHETIC',sources,brief,output,originals,
   reviewHtml:reviewHtml??null,video:video??null,qaPath:qaPath??null,
-  alternateTakes,allRecordedTakesCompared:alternateTakes.length===0,
+  alternateTakes,
+  takeComparisonStatus:alternateTakes.length?'not_compared':'unknown',
+  allRecordedTakesCompared:alternateTakes.length?false:null,
   publicationApproved:false,distributionAllowed:false,
   note:'Ready only for manual selection. No claims of verified speech, acting, skin tone, audio mix or publication.'};
 }
@@ -126,13 +146,14 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
  // Explicit manifests and single MOV inputs do not otherwise get the runner's
  // folder-level protection. Never create an output inside ANY source directory.
  const sourceParents=[...new Set((await sourceFiles(input)).map(path=>dirname(path)))];
- verifyNewDestination(output,[...sourceParent,...sourceParents]);
+ await verifyNewDestination(output,[...sourceParent,...sourceParents]);
  if(within(output,input)||within(output,brief))fail('Pilot output cannot contain input sources or brief');
  if(await exists(output))fail('Pilot output already exists. Choose a NEW directory');
  await assertSevenSceneBrief(brief);
  const before=await fingerprint(input,brief);
  let result=null,kit=null,processingError=null;
  try{
+  await verifyNewDestination(output,[...sourceParent,...sourceParents]);
   result=await runDraft({sources:input,brief,outputDir:output,whisperCli,whisperModel,
    ffmpegDir,mode:'strict'});
   requireUnpublished(result);
@@ -191,7 +212,7 @@ export async function startRealPilot({sources,outputDir,whisperCli,whisperModel,
 export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDir,
  renderReviewed=renderReviewedReel,analyzeQuality=analyzePersonaVideoQuality}={}){
  const draft=safePath(draftDir),selection=safePath(selectionPath),output=safePath(outputDir);
- verifyNewDestination(output,[draft]);
+ await verifyNewDestination(output,[draft]);
  if(await exists(output))fail('Reviewed output already exists; originals and drafts are immutable');
  const previous=await json(join(draft,'PILOT.json'));
  if(previous?.kind!=='persona-seven-scene-real-pilot-v1'||
@@ -201,7 +222,7 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
   fail('Missing or unsafe, mismatched real-media PILOT.json');
  const brief=await assertSevenSceneBrief(previous.brief);
  const sourceParents=[...new Set((await sourceFiles(previous.sources)).map(path=>dirname(path)))];
- verifyNewDestination(output,sourceParents);
+ await verifyNewDestination(output,sourceParents);
  assertOriginalsUnchanged(previous.originals,await fingerprint(previous.sources,previous.brief));
  let reviewed=null,quality=null,processingError=null;
  try{
@@ -212,7 +233,10 @@ export async function resumeRealPilot({draftDir,selectionPath,outputDir,ffmpegDi
    resolve(reviewed.output||'')!==join(output,'reviewed-reel.mp4'))
    fail('Reviewed renderer did not return a locally verified unpublished MP4');
   const qualityPath=join(output,'VIDEO-QUALITY.json');
+  if(typeof reviewed.timelinePath!=='string'||!await exists(reviewed.timelinePath))
+   fail('Rendered timeline manifest is missing; per-scene QA cannot be claimed');
   quality=await analyzeQuality({videoPath:reviewed.output,
+   timelinePath:reviewed.timelinePath,
    subtitlePath:reviewed.subtitleDraft?.srtPath,
    expectedDurationSec:brief.script.reduce((n,s)=>n+(Number(s.durationSec)||0),0),
    outputPath:qualityPath,ffmpegDir});
