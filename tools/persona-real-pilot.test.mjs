@@ -13,6 +13,7 @@ async function fixture(){
  const source=join(root,'originals');await mkdir(source);
  const video=join(source,'A01_actor_hook_take01.mov');
  await writeFile(video,Buffer.alloc(2048,7));
+ await writeFile(join(source,'B01_composer_problem_take01.mov'),Buffer.alloc(2048,6));
  return {root,source,video,cleanup:()=>rm(root,{recursive:true,force:true})};
 }
 test('real-media pilot creates a review-only checkpoint and verifies original SHA',async()=>{
@@ -35,7 +36,7 @@ test('real-media pilot creates a review-only checkpoint and verifies original SH
   assert.equal(report.status,'NEEDS_MANUAL_ASR_REVIEW');
   assert.equal(report.publicationApproved,false);
   assert.equal(report.video,null);
-  assert.equal(report.originals.length,2,'source and seven-beat brief hashed');
+  assert.equal(report.originals.length,3,'two source videos and seven-beat brief hashed');
   assert.equal(JSON.parse(await readFile(join(draft,'PILOT.json'),'utf8')).reviewHtml,join(draft,'review.html'));
   assert.match(await readFile(join(draft,'PILOT.md'),'utf8'),/Это колыбельная\? Это финал триллера/);
   assert.equal((await stat(f.video)).size,2048);
