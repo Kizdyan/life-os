@@ -95,6 +95,52 @@ test('B04 review page shows actual Whisper word disagreement safely beside video
   ...diagnostics,publicationApproved:true}),/Untrusted ASR recovery diagnostics/);
 });
 
+test('ASR B04 replay controls seek to real recovery video at normal and slow speed without approving speech',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'B04_take01',sourceSha256:sig,durationSec:4,hasAudio:true,asrStatus:'partial-or-unmatched',
+ }]};
+ const files={candidates:{'beat1-a':'beat-01-candidate-01.mp4'},
+  recovery:{B04_take01:'source-B04_take01-inspection.mp4'}};
+ const template={version:1,kind:'persona-editorial-selection-v1',
+  selections:[{beat:1},{beat:2}]};
+ const diagnostics={kind:'persona-asr-recovery-diagnostics-v1',
+  status:'NEEDS_HUMAN_TRANSCRIPT_REVIEW',publicationApproved:false,
+  beats:[{beat:1,expectedLine:pack.beats[0].scriptLine,reportedCandidates:[]},
+   {beat:2,expectedLine:pack.beats[1].scriptLine,reportedCandidates:[{
+    sourceId:'B04_take01',startSec:.45,endSec:1.65,
+    heardByAsr:'Эта колыбельная.',tokenSegmentConflict:true,
+    diff:{differingPositions:[{position:1,expected:'это',asrReported:'эта'}]},
+   }]}]};
+ const html=buildReviewHtml(pack,template,files,diagnostics);
+ assert.match(html,/data-review-source="B04_take01"/);
+ assert.match(html,/data-replay-source="B04_take01"/);
+ assert.match(html,/data-replay-start="0.450"/);
+ assert.match(html,/data-replay-end="1.650"/);
+ assert.match(html,/data-replay-speed="1"/);
+ assert.match(html,/data-replay-speed="0.8"/);
+ assert.ok(html.includes('video.currentTime=Math.max'),'review control seeks within local video');
+ assert.ok(html.includes('video.pause()'),'review control stops playback near the end');
+ assert.match(html,/таймкоды Whisper приблизительные/i);
+ assert.match(html,/Автоматический выбор запрещён/);
+ assert.match(html,/НЕ доказательство реально сказанного/);
+ assert.match(html,/Публикация не разрешена автоматически/,'replay never approves publication');
+ const invalids=[
+  {...diagnostics.beats[1].reportedCandidates[0],sourceId:'other'},
+  {...diagnostics.beats[1].reportedCandidates[0],startSec:-1},
+  {...diagnostics.beats[1].reportedCandidates[0],endSec:60},
+  {...diagnostics.beats[1].reportedCandidates[0],endSec:.2},
+  {...diagnostics.beats[1].reportedCandidates[0],startSec:'0.5'},
+ ];
+ for(const invalid of invalids){
+  const altered=structuredClone(diagnostics);
+  altered.beats[1].reportedCandidates=[invalid];
+  const page=buildReviewHtml(pack,template,files,altered);
+  assert.ok(!page.includes('data-replay-source='),'invalid candidate cannot get a seek control');
+ }
+});
+
 test('Recovery Review accepts underscored scene-take proxy but rejects paths and unsafe names',()=>{
  const pack=structuredClone(minimal);
  pack.beats[1].candidates=[];

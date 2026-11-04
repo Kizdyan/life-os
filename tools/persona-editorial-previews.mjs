@@ -76,24 +76,42 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
     '<small>Whisper: '+esc(take.transcript)+'</small>'+
     '<small class="warning">'+esc((take.technicalWarnings??[]).join('; ')||'Нет базовых технических предупреждений')+'</small></label>';
   }).join(''):'';
+  const recovery=beat.candidates.length===0?beat.recovery:null;
   const diag=diagnostics?.beats?.find(d=>d?.beat===beat.beat&&d.expectedLine===beat.scriptLine);
-  const diagnosis=diag&&beat.candidates.length===0?
+  const diagnosis=diag&&recovery?
    '<aside class="asr-diagnostic"><strong>Почему остановился автоматический монтаж</strong>'+
    '<p>Whisper сообщил текст вместо ожидаемой реплики. Это результат распознавания, а НЕ доказательство реально сказанного.</p>'+
-   (diag.reportedCandidates??[]).slice(0,3).map(candidate=>
-    '<p><strong>'+esc(candidate.sourceId)+'</strong> ('+
-    esc(candidate.startSec)+'–'+esc(candidate.endSec)+' с): '+
-    esc(String(candidate.heardByAsr??'').slice(0,800))+'</p>'+
-    (candidate.diff?.differingPositions??[]).slice(0,10).map(diff=>
-     '<p>Слово '+esc(diff.position)+': сценарий «'+
-     esc(diff.expected)+'», Whisper «'+esc(diff.asrReported)+'»</p>').join('')
-   ).join('')+
-   '<p>Прослушай оригинал. Если фраза была другой — пересними. Если ошибся Whisper — используй ручной Recovery Review.</p></aside>':'';
-  const recovery=beat.candidates.length===0?beat.recovery:null;
+   (diag.reportedCandidates??[]).slice(0,3).map(candidate=>{
+    const source=recovery.availableSources?.find(s=>s.sourceId===candidate.sourceId);
+    const canReplay=source?.hasAudio===true&&finite(source.durationSec)&&
+     finite(candidate.startSec)&&finite(candidate.endSec)&&candidate.startSec>=0&&
+     candidate.endSec>candidate.startSec&&candidate.endSec<=source.durationSec+0.1;
+    // Only source/time references that belong to this beat's trusted local
+    // recovery list get a replay control. Untrusted diagnostics remain text.
+    const controls=canReplay?
+     '<div class="asr-replay"><button type="button" data-replay-source="'+esc(source.sourceId)+
+     '" data-replay-start="'+candidate.startSec.toFixed(3)+
+     '" data-replay-end="'+candidate.endSec.toFixed(3)+
+     '" data-replay-speed="1">▶ Прослушать фразу</button>'+
+     '<button type="button" data-replay-source="'+esc(source.sourceId)+
+     '" data-replay-start="'+candidate.startSec.toFixed(3)+
+     '" data-replay-end="'+candidate.endSec.toFixed(3)+
+     '" data-replay-speed="0.8">0,8× повтор</button></div>':'';
+    return '<div class="asr-comparison"><p><strong>'+esc(candidate.sourceId)+'</strong> ('+
+     esc(candidate.startSec)+'–'+esc(candidate.endSec)+' с): '+
+     esc(String(candidate.heardByAsr??'').slice(0,800))+'</p>'+
+     (candidate.diff?.differingPositions??[]).slice(0,10).map(diff=>
+      '<p>Слово '+esc(diff.position)+': сценарий «'+
+      esc(diff.expected)+'», Whisper «'+esc(diff.asrReported)+'»</p>').join('')+
+     (candidate.tokenSegmentConflict===true?
+      '<p><strong>Конфликт:</strong> текст сегмента и токены Whisper противоречат друг другу. Автоматический выбор запрещён.</p>':'')+
+     controls+'</div>';
+   }).join('')+
+   '<p>Прослушай оригинал. Таймкоды Whisper приблизительные; кнопки только перемещают воспроизведение, не подтверждают реплику. Если фраза другая — пересними. Если ошибся Whisper — используй ручной Recovery Review.</p></aside>':'';
   const recoveryOptions=recovery?.availableSources?.map(source=>{
    const video=recoveryFiles[source.sourceId];
    if(typeof video!=='string'||!/^[a-z0-9_-]+\.mp4$/i.test(video))fail('Missing generated recovery preview');
-   return '<article class="take recovery"><strong>Recovery Review · '+esc(source.sourceId)+'</strong><video controls playsinline preload="metadata" src="'+esc(video)+'"></video>'+
+   return '<article class="take recovery"><strong>Recovery Review · '+esc(source.sourceId)+'</strong><video controls playsinline preload="metadata" data-review-source="'+esc(source.sourceId)+'" src="'+esc(video)+'"></video>'+
     '<small>Whisper: '+esc(source.asrStatus==='empty'?'речь не распознана':'нет пригодного совпадения')+'. Этот прокси только для просмотра; исходник не изменяется.</small>'+
     '<label><input type="radio" name="recovery'+beat.beat+'" value="'+esc(source.sourceId)+'"> Выбрать этот исходник для ручной разметки</label></article>';
   }).join('')??'';
@@ -106,6 +124,22 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
  const base={version:1,kind:'persona-editorial-selection-v1',status:'unreviewed',
   selections:pack.beats.map(b=>({beat:b.beat,candidateId:null,reviewed:false,reason:'',rejected:[],recovery:null})),
   recoverySources:Object.fromEntries(pack.beats.map(b=>[b.beat,b.recovery?.availableSources??[]]))};
+ const replayScript=[
+  'const activeReplay=new WeakMap();',
+  'document.querySelectorAll("button[data-replay-source]").forEach(button=>button.addEventListener("click",()=>{',
+  'const section=button.closest(".scene");',
+  'const video=Array.from(section?.querySelectorAll("video[data-review-source]")||[]).find(v=>v.dataset.reviewSource===button.dataset.replaySource);',
+  'const start=Number(button.dataset.replayStart),end=Number(button.dataset.replayEnd);',
+  'if(!video||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start){alert("Нет достоверного фрагмента для прослушивания.");return;}',
+  'const previous=activeReplay.get(video);if(previous)video.removeEventListener("timeupdate",previous);',
+  'const stop=end+0.4;',
+  'const onTime=()=>{if(video.currentTime>=stop){video.pause();video.removeEventListener("timeupdate",onTime);activeReplay.delete(video);}};',
+  'activeReplay.set(video,onTime);video.addEventListener("timeupdate",onTime);',
+  'video.playbackRate=button.dataset.replaySpeed==="0.8"?0.8:1;',
+  'video.currentTime=Math.max(0,start-0.4);',
+  'const playResult=video.play();if(playResult?.catch)playResult.catch(()=>{});',
+  '}));',
+ ].join('');
  const script='const template=JSON.parse(document.getElementById("data").textContent);'+
   'document.getElementById("save").addEventListener("click",()=>{'+
   'const result=JSON.parse(JSON.stringify(template));'+
@@ -121,14 +155,14 @@ export function buildReviewHtml(pack,template,files,diagnostics=null){
   'const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)+"\\n"],{type:"application/json"}));'+
   'const link=document.createElement("a");link.href=url;link.download="selection.reviewed.json";link.click();'+
   'setTimeout(()=>URL.revokeObjectURL(url),1000);'+
-  '});';
+  '});'+replayScript;
  return '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'+
   '<title>Persona · Выбор дублей</title><style>'+
   'body{font:16px/1.5 system-ui,sans-serif;background:#12161d;color:#eee;margin:0;padding:24px;max-width:1100px;margin:auto}'+
   'h1{font-size:28px}.lead{color:#b5c0cb}.scene{padding:16px 0 24px;border-top:1px solid #333}'+
   '.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}.take{background:#202630;border:1px solid #424a56;border-radius:12px;padding:12px;display:grid;gap:7px}.recovery-form{border:1px dashed #8c7960;border-radius:12px;padding:12px;display:grid;gap:10px}.recovery-form>label{display:grid;gap:5px;font-weight:600}.recovery-form input[type=number]{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:8px;min-height:40px;box-sizing:border-box}.recovery-form textarea{box-sizing:border-box;width:100%;min-height:64px}'+
   'video{width:100%;max-height:360px;background:black;border-radius:6px}small{display:block;color:#bbc6d1;overflow-wrap:anywhere}.warning{color:#e6c99d}'+
-  '.asr-diagnostic{border:1px solid #aa884d;background:#2b261e;padding:12px;border-radius:10px;margin:14px 0}.asr-diagnostic p{overflow-wrap:anywhere}.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
+  '.asr-diagnostic{border:1px solid #aa884d;background:#2b261e;padding:12px;border-radius:10px;margin:14px 0}.asr-diagnostic p{overflow-wrap:anywhere}.asr-comparison{border-top:1px solid #66563d;padding:8px 0}.asr-replay{display:flex;flex-wrap:wrap;gap:8px}.asr-replay button{background:#d4dfeb;color:#1c2834;padding:8px 12px}.pick{font-weight:600}.reason{display:grid;gap:6px;margin-top:12px}textarea{font:inherit;color:#eee;background:#202630;border:1px solid #687485;border-radius:7px;padding:10px}'+
   'button{font:inherit;background:#e8eee6;color:#171e22;border:0;border-radius:10px;padding:12px 20px;cursor:pointer}'+
   '.foot{padding:20px 0;border-top:1px solid #333;color:#c1c8ce}</style></head><body>'+
   '<h1>Persona · режиссёрский выбор дублей</h1>'+
