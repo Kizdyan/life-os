@@ -19,7 +19,7 @@ const ideas=()=>({ideas:[0,1,2].map(i=>({
  profileFit:'Можно сыграть разные состояния в одной комнате '+i,
  durationSec:24+i,reason:'Понятный конфликт и возможность выразительного контраста '+i,
  sourceIndices:[0],
-})]}));
+}))});
 const reply=(model:string,content:unknown,research=false)=>({
  status:'completed',model,output:[
   ...(research?[{type:'search_results',results:[
