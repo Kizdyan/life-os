@@ -21,6 +21,8 @@ async function fingerprintFile(file:File):Promise<string|undefined>{
 function newClipId(){return typeof crypto.randomUUID==='function'?crypto.randomUUID():'clip-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
 
 export default function PersonaVideoTimeline({projectId,initialTimeline,onTimelineChange,canProduce=true}:{projectId:string;initialTimeline?:unknown;onTimelineChange?:(timeline:PersonaTimelineSettings)=>void;canProduce?:boolean}) {
+ const canProduceRef=useRef(canProduce);
+ canProduceRef.current=canProduce;
  const storageKey='persona:timeline:draft:v1:'+projectId;
  const initial=useRef<PersonaTimelineSettings|null>(null);if(initial.current===null)initial.current=timelineFrom(initialTimeline,legacyClips(storageKey));
  const urls=useRef(new Map<string,string>());
@@ -49,13 +51,14 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
-  if(!canProduce){setError('Требуется повторное утверждение сценария и съёмочного брифа. Импорт заблокирован.');event.target.value='';return}
+  if(!canProduceRef.current){setError('Требуется повторное утверждение сценария и съёмочного брифа. Импорт заблокирован.');event.target.value='';return}
   const additions:Clip[]=[];
   for(const file of files) {
    if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
    try {
     const duration=await readVideoDuration(file);
     const fingerprint=await fingerprintFile(file).catch(()=>undefined);
+    if(!canProduceRef.current){setError('Утверждение изменилось во время чтения файла. Импорт отменён.');break;}
     const candidate={name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,sourceDuration:duration,fingerprint};
     const old=clips.find(clip=>!urls.current.has(clip.id)&&matchesPersonaTimelineSource(clip,candidate));
     if(old){
@@ -71,6 +74,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
   }
+  if(!canProduceRef.current){for(const clip of additions){const url=urls.current.get(clip.id);if(url)URL.revokeObjectURL(url);urls.current.delete(clip.id);filesById.current.delete(clip.id);}event.target.value='';return;}
   if(additions.length)setPreviewId(additions[0].id);
   setClips(old=>[...old,...additions]);
   event.target.value='';
