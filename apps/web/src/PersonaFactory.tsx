@@ -36,7 +36,8 @@ import{
  startPersonaProductionPipeline,
  type PersonaProductionPipeline,
 }from'../../../packages/core/src/persona-production-pipeline';
-import type { PersonaProductionBrief } from '../../../packages/core/src/persona-production-brief';
+import type { PersonaProductionBrief,PersonaProductionIdea } from '../../../packages/core/src/persona-production-brief';
+import {scenarioScriptToProductionBrief} from '../../../packages/core/src/persona-scenario-intelligence';
 
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 
@@ -74,6 +75,20 @@ export function assertPersonaProductionCanBeApproved(
     brief.preEditPlan.sourceRevisionId!==workspace?.script?.currentRevisionId)
   throw Error('Монтажный замысел относится к прежней редакции сценария. Обновите съёмочный бриф.');
 }
+/** Keep author-approved dialogue and edit beats when legacy shortcuts create video briefs.
+ * Never reintroduce the generic three-beat template after scenario signoff.
+ */
+export function buildApprovedPersonaVideoBrief(
+ idea:PersonaProductionIdea,
+ workspace:ScenarioWorkspace|undefined,
+):PersonaProductionBrief{
+ if(!['reel','short','story'].includes(idea.format))
+  throw Error('Видео-бриф создаётся только для видеоформатов.');
+ if(!isScenarioCreativeApprovedForShooting(workspace)||!workspace?.script)
+  throw Error('Сначала завершите творческую проверку и утвердите текущий сценарий.');
+ return scenarioScriptToProductionBrief(workspace.script,idea,workspace.research);
+}
+
 /** A new saved script revision revokes any earlier human shoot approval without
  * mutating the brief or losing revision history. */
 export function reconcilePersonaProductionWithScenario(
@@ -628,8 +643,13 @@ export default function PersonaFactory(){
  function createProductionBrief(idea=chosen,angle?:string){
   if(!idea)return;
   try{
-   if(['reel','short','story'].includes(idea.format)&&!isScenarioCreativeApprovedForShooting(scenarioWorkspace))
-    throw Error('Сначала завершите творческую проверку и утвердите сценарий, затем создавайте съёмочный бриф.');
+   if(['reel','short','story'].includes(idea.format)){
+    if(angle!==undefined&&angle.trim()!==idea.angle.trim())
+     throw Error('Ракурс идеи изменён. Сначала внесите изменение в сценарий и утвердите новую редакцию.');
+    const approvedBrief=buildApprovedPersonaVideoBrief(idea,scenarioWorkspace);
+    createScenarioProductionBrief(approvedBrief);
+    return;
+   }
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Сначала сохраните или разрешите незавершённую правку брифа.');
    const next=buildPersonaProductionWorkflow({...idea,angle:angle??idea.angle});
@@ -645,6 +665,9 @@ export default function PersonaFactory(){
     throw Error('Текущая версия сценария не получила художественное и авторское утверждение.');
    if(!productionBriefMatchesBeats(brief,scenarioWorkspace?.script?.currentRevision.beats))
     throw Error('Съёмочный бриф расходится с утверждёнными репликами, действиями или длительностями.');
+   if(brief.preEditPlan?.origin!=='scenario_revision'||
+      brief.preEditPlan.sourceRevisionId!==scenarioWorkspace?.script?.currentRevisionId)
+    throw Error('Нужна монтажная карта именно утверждённой редакции сценария.');
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Есть несохранённый ввод в прежнем съёмочном брифе. Сначала сохраните или разрешите черновик.');
    const next=importPersonaProductionBrief({brief,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
