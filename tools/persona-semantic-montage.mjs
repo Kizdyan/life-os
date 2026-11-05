@@ -100,6 +100,8 @@ async function analyze(inputArg, outputArg) {
 }
 function words(line){return new Set(String(line||'').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/u).filter(x=>x.length>2));}
 function sharedWords(briefLine, transcript){const expected=words(briefLine),spoken=words(transcript);if(!expected.size)return 1;return [...expected].filter(x=>spoken.has(x)).length/expected.size;}
+const normalizeLine=text=>String(text??'').normalize('NFKC').toLowerCase().replaceAll('ё','е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const musicAfterSpeech=shot=>/(?:после реплики|после слов|затем).{0,90}(?:музык|мелод|фортепиан|клавиш|пианино)/iu.test(String(shot?.action||''));
 async function assemble(decisionsArg, projectArg) {
   const decisionsFile = resolve(decisionsArg),base=dirname(decisionsFile),d=await readJson(decisionsFile);
   assert(d?.version===1 && typeof d.analysisPath==='string' && typeof d.briefPath==='string', 'Missing analysis/brief paths');
@@ -149,6 +151,8 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
     const overlap=sharedWords(beat.line,c.transcript);
     assert(overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
+    if(mode==='strict')assert(normalizeLine(beat.line)===normalizeLine(c.transcript),
+     'Beat '+beatNumber+' timed transcript differs from FULL approved script; stop montage and review or reshoot');
     const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
     assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
@@ -159,11 +163,14 @@ async function assemble(decisionsArg, projectArg) {
     }
     usedIntervals.push({id:c.sourceId,startSec:c.startSec,endSec:c.startSec+c.durationSec});
     const musicHold=c.postSpeechMusicPreserved===true;
+    if(musicAfterSpeech(shot))assert(musicHold,
+     'Post-speech original music requires a verified boundary; never normalize its tail as dialogue');
     let audioTreatment;
     if(musicHold){
       assert(c.speechBoundaryConfidence==='word'||Number.isFinite(c.manualMusicBoundarySec), 'Post-speech music needs word timing or manual boundary');
       const boundary=c.speechBoundaryConfidence==='word'?c.speechEndSec:c.manualMusicBoundarySec;
-      assert(finite(boundary,c.startSec,c.startSec+c.durationSec), 'Invalid post-speech music boundary');
+      assert(finite(boundary,c.startSec+0.02,c.startSec+c.durationSec-0.02),
+       'Invalid post-speech music boundary');
       audioTreatment={speechDurationSec:Number((boundary-c.startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
     }
     clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{})});
