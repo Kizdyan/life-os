@@ -586,7 +586,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p><small>Популярность в Instagram не доказана без фактических данных. Финальный монтаж утверждается после съёмки.</small></p>
     </section>}
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}
-   {!isApproved&&<div className="personaScenarioReview" aria-label="Художественная приёмка редакции">
+   {script&&<div className="personaScenarioReview" aria-label="Художественная приёмка редакции">
      <h5>Творческая приёмка · до съёмки</h5>
      <p>Script Doctor проверил структуру, но не доказал интерес зрителя, актёрское качество или будущие просмотры. Оцените редакцию с пяти профессиональных сторон. Это вопросы для автора, а не фиктивное заключение пяти AI-моделей.</p>
      <ul>{personaCreativeLenses.map(lens=><li key={lens.id}><b>{lens.label}:</b> {lens.question}</li>)}</ul>
@@ -603,6 +603,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
          onChange={event=>setCreativeComment(event.target.value)} placeholder="Почему эта версия работает или что необходимо изменить до съёмки?" />
      </label>
      <button type="button" className="ghost" disabled={hasPendingChanges||creativeComment.trim().length<20} onClick={saveCreativeReview}>Сохранить художественную оценку текущей редакции</button>
+     {isApproved&&<p className="personaScenarioHint" role="status">Сценарий уже утверждён. Если вы передумали, выберите «Не снимать — доработать» и сохраните аргументы. Разрешение на съёмку будет отозвано, но прежние версии и материалы сохранятся.</p>}
      <p className="personaScenarioHint">Изменение сценария делает предыдущую художественную оценку устаревшей. Без нового осознанного решения следующая версия не утверждается.</p>
    </div>}
    {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasPendingChanges||review?.status!=='ready_for_author'||creativeReviewSignoff?.decision!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
