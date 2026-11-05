@@ -114,6 +114,19 @@ export function isScenarioCreativeApprovedForShooting(workspace:PersonaScenarioW
   latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId));
 }
 
+/** New video projects must finish script AND brief approval before media intake.
+ * Existing saved media plans remain accessible for legacy editing and recovery.
+ * This is a work-order gate, not a claim that any footage has been recorded.
+ */
+export function canStartPersonaVideoMediaWork(
+ workspace:PersonaScenarioWorkspace|undefined,
+ pipeline:PersonaProductionPipeline|null,
+ hasExistingMedia:boolean,
+):boolean{
+ if(hasExistingMedia)return true;
+ return buildPersonaShootPlan({title:'Pre-production check',workspace,pipeline,allowPilot:false}).status==='approved';
+}
+
 /** Take the current source of truth rather than replacing it with the demo.
  * Never inherit camera notes if a dialogue/action/duration changed.
  */
