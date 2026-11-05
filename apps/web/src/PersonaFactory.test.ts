@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, assertPersonaProductionCanBeApproved, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, assertPersonaProductionCanBeApproved, buildApprovedPersonaVideoBrief, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject,applyPersonaProductionMilestone,savePersonaProject,loadPersonaProjects,type PersonaProjectCollection } from './personaProjectStore';
 import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
@@ -183,6 +183,52 @@ describe('script revision revokes production authorization',()=>{
   expect((saved.shootingPlan as typeof approved).stage).toBe('QA');
  });
 });
+
+describe('legacy brief shortcuts preserve the approved authored script',()=>{
+ const id={id:'real-story',title:'Актёр и композитор',angle:'Конфликт актёра с собственной музыкой',
+  format:'reel' as const};
+ const now='2026-11-05T17:25:00.000Z';
+ const make=()=>{
+  const old=createActorComposerWorkingBrief(id,createPersonaProductionGuide(now,'actor_composer'));
+  const candidate=addImportedBriefScenario(undefined,old,now);
+  const script=approveScenarioScript(candidate.script!,{
+   author:'Автор',comment:'Прочитал и согласовал сценарий перед съёмкой.',
+   approvedAt:'2026-11-05T17:26:00.000Z',
+  });
+  return {workspace:{...candidate,script}};
+ };
+ it('rejects unreviewed or rescinded versions and never replaces the full script with a template',()=>{
+  const {workspace}=make();
+  expect(()=>buildApprovedPersonaVideoBrief(id,workspace)).toThrow(/утвердите текущий сценарий/);
+  const decision={revisionId:workspace.script.currentRevisionId,reviewer:'author' as const,
+   decision:'ready_for_author' as const,
+   comment:'Проверил конфликт, хук, актёрские действия, музыку и финал.',
+   createdAt:'2026-11-05T17:27:00.000Z'};
+  const signed={...workspace,creativeReviews:[decision]};
+  const brief=buildApprovedPersonaVideoBrief(id,signed);
+  expect(brief.script).toEqual(signed.script.currentRevision.beats.map((beat,i)=>({
+   order:i+1,line:beat.line,action:beat.action,durationSec:beat.durationSec,
+  })));
+  expect(brief.preEditPlan?.origin).toBe('scenario_revision');
+  expect(brief.preEditPlan?.sourceRevisionId).toBe(signed.script.currentRevisionId);
+  expect(brief.preEditPlan?.scenes.map(item=>item.editIntent)).toEqual(
+   signed.script.currentRevision.beats.map(item=>item.editIntent));
+  expect(brief.hook.firstSeconds).toBe(signed.script.currentRevision.beats[0].line);
+  const generic=buildPersonaProductionWorkflow({...id,score:0}).materials.productionBrief!;
+  expect(brief.script).not.toEqual(generic.script);
+  expect(brief.preEditPlan?.publicationApproved).toBe(false);
+  expect(()=>buildApprovedPersonaVideoBrief({...id,format:'photo'},signed))
+   .toThrow(/видеоформатов/);
+  const withdrawn={...signed,creativeReviews:[...signed.creativeReviews,{
+   ...decision,decision:'needs_revision' as const,
+   comment:'Отзываю решение: финальный поворот слабый, актёрская задача требует доработки.',
+   createdAt:'2026-11-05T17:28:00.000Z',
+  }]};
+  expect(()=>buildApprovedPersonaVideoBrief(id,withdrawn))
+   .toThrow(/утвердите текущий сценарий/);
+ });
+});
+
 describe('brief import identity',()=>{
  it('lets an empty quick-start project adopt a validated candidate identity without changing its project ID',()=>{
   expect(ideaForImportedBrief(quick,candidate,true)).toMatchObject({id:'local-project',title:candidate.sourceTitle,angle:candidate.sourceAngle,format:'reel',source:'imported-brief'});
