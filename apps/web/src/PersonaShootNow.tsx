@@ -77,8 +77,8 @@ export function PersonaShootNow({
  return <section className="personaShootNow" aria-label="Снять ролик сейчас">
   <header className="personaShootNowHead">
    <div>
-    <small>PERSONA / СЪЁМКА СЕГОДНЯ</small>
-    <h3>Вот что снимать прямо сейчас</h3>
+    <small>{plan.status==='approved'?'PERSONA / СЪЁМКА СЕГОДНЯ':'PERSONA / ТВОРЧЕСКАЯ ПОДГОТОВКА'}</small>
+    <h3>{plan.status==='approved'?'Вот что снимать прямо сейчас':'Сначала доведём сценарий до съёмки'}</h3>
     <p>{plan.title}</p>
    </div>
    <span className="personaShootNowTime">{totalDuration} сек. · {plan.scenes.length} кадров</span>
@@ -193,9 +193,9 @@ export function PersonaShootNow({
     <p>Запиши 10 секунд тишины комнаты, проверь голос и музыкальный акцент, отдельно сними реакции и руки на клавишах. Затем переходи к монтажу только после просмотра дублей.</p>
     <div className="personaShootNowActions">
      {onSavePilot&&plan.status==='example'&&<button type="button" className="primary" onClick={onSavePilot}>
-      Сохранить эти 7 сцен в сценарии проекта
+      Сохранить старый пример как неутверждённый черновик
      </button>}
-     {onOpenEdit&&<button type="button" className="primary" onClick={onOpenEdit}>
+     {onOpenEdit&&plan.status==='approved'&&<button type="button" className="primary" onClick={onOpenEdit}>
       Открыть реальные дубли в монтаже
      </button>}
      <button type="button" className="secondary" onClick={downloadSheet}>Скачать весь съёмочный лист</button>
