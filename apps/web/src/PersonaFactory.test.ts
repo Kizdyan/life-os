@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, canNavigateFromPersonaGuide, registerPersonaExitFlush } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject,applyPersonaProductionMilestone,savePersonaProject,loadPersonaProjects,type PersonaProjectCollection } from './personaProjectStore';
 import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
@@ -262,5 +262,19 @@ describe('Persona empty workspace server rendering',()=>{
    vi.stubGlobal('localStorage',oldLocalStorage);
    vi.unstubAllGlobals();
   }
+ });
+});
+
+
+describe('Persona preproduction stage order',()=>{
+ it('places idea and script before shoot guide, assets, editing and output for every video format',()=>{
+  for(const format of ['reel','short','story'] as const){
+   const steps=workspaceStepsFor(format).map(([id])=>id);
+   expect(steps).toEqual(['idea','script','guide','assets','edit','review','export']);
+  }
+ });
+ it('keeps asset-first workflow for still photographs and carousel posts',()=>{
+  expect(workspaceStepsFor('photo').map(([id])=>id)).toEqual(['assets','edit','review','export']);
+  expect(workspaceStepsFor('carousel').map(([id])=>id)).toEqual(['assets','edit','review','export']);
  });
 });
