@@ -3,7 +3,9 @@ import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import PersonaAiCouncilPanel from './PersonaAiCouncilPanel';
 import PersonaCreativeDevelopmentPanel from './PersonaCreativeDevelopmentPanel';
-import {assertPersonaCreativeReviewSignoff,personaCreativeLenses} from './personaCreativeDevelopment';
+import {assertPersonaCreativeReviewSignoff,personaCreativeLenses,
+ latestPersonaCreativeReview,recordPersonaCreativeReview} from './personaCreativeDevelopment';
+import {isActorComposerPilot} from './personaProductionGuide';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
  readPersonaScenarioDraft,readPersonaScenarioDraftRaw,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
@@ -130,8 +132,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
  const creativeRisks=script?assessScenarioCreativeRisks({...script.currentRevision,beats}):null;
- const creativeReviewSignoff=(workspace.creativeReviews??[])
-  .filter(item=>item.revisionId===script?.currentRevision.id).slice(-1)[0];
+ const creativeReviewSignoff=script?
+  latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevision.id):undefined;
  const preEditPlan=script&&beats.length&&beats.every(beat=>beat.line.trim()&&beat.action.trim()&&Number.isFinite(beat.durationSec)&&beat.durationSec>0)
   ?buildScenarioPreEditPlan({...script.currentRevision,beats},script.idea,workspace.research):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
@@ -282,10 +284,13 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   if(!script)return;
   if(hasPendingChanges){setError('Сначала сохраните все правки этой редакции сценария.');return}
   if(creativeComment.trim().length<20){setError('Для художественной оценки необходимо не менее 20 символов с конкретными аргументами.');return}
-  const item={revisionId:script.currentRevision.id,reviewer:'author' as const,
-   decision:creativeDecision,comment:creativeComment.trim(),createdAt:new Date().toISOString()};
-  update({creativeReviews:[...(workspace.creativeReviews??[]),item].slice(-60)});
-  setError('');
+  try{
+   assertNoPendingDraftRecord();
+   const item={revisionId:script.currentRevision.id,reviewer:'author' as const,
+    decision:creativeDecision,comment:creativeComment.trim(),createdAt:new Date().toISOString()};
+   update({creativeReviews:recordPersonaCreativeReview(workspace.creativeReviews,item)});
+   setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Творческий отзыв не сохранён.')}
  };
  const approveScript=()=>{
   if(!script)return;
@@ -451,7 +456,10 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    </article>
   </div>
   <PersonaAiCouncilPanel project={project} workspace={workspace} creativeProfile={effectiveProfile} onChange={onChange}/>
-  <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange} blocked={hasPendingChanges}/>
+  {isActorComposerPilot({title:project.title,angle:project.sourceIdea})&&
+   <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange}
+    blocked={hasPendingChanges}/>}
+
   <section className="personaScenarioIdeas"><div><h4>Локальные идеи без нейросети</h4><p>Бесплатная резервная функция создаёт шаблонные варианты. Это не реальное исследование Perplexity и не AI-генерация.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 шаблонные идеи</button></section>
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='ai_generated'?('AI-идея: '+idea.aiProvenance?.model+' · ещё не утверждена'):
  idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
