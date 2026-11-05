@@ -99,14 +99,36 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   if(words&&choice?.beat===beatNumber&&finite(choice.startSec)&&finite(choice.durationSec)){
    if(words.some(word=>word.startSec<choice.startSec-0.02||word.endSec>choice.startSec+choice.durationSec+0.02))
     fail('Whisper caption timing is outside selected clip at beat '+beatNumber);
-   cues.push(...wordCues(words,choice,cursor,clip.durationSec,beatNumber));
+   const beatCues=wordCues(words,choice,cursor,clip.durationSec,beatNumber);
+   if(musicCue(shot)){
+    const boundary=choice?.speechBoundaryConfidence==='word'?choice?.speechEndSec:choice?.manualMusicBoundarySec;
+    if(choice?.postSpeechMusicPreserved!==true||!finite(boundary)||
+       boundary<=choice.startSec+0.02||boundary>=choice.startSec+clip.durationSec-0.02)
+     fail('Music-tail subtitle lacks a trusted speech boundary for beat '+beatNumber);
+    const endMs=Math.round((cursor+boundary-choice.startSec)*1000);
+    for(const cue of beatCues){
+     cue.endMs=Math.min(cue.endMs,endMs);
+     if(cue.endMs<=cue.startMs)fail('Music-tail caption crosses its speech boundary at beat '+beatNumber);
+    }
+   }
+   cues.push(...beatCues);
    if(words.some(word=>word.timing!=='word')){
     timingKinds.add('segment');
     warnings.push('Beat '+beatNumber+': Whisper supplied only segment-level timing; verify every word before release.');
    }else timingKinds.add('word');
   }else if(musicCue(shot)){
    timingKinds.add('estimated');
-   warnings.push('Beat '+beatNumber+': no usable Whisper timing. Subtitle end must be adjusted manually; caption omitted so it cannot remain on the post-speech music tail.');
+   const boundary=choice?.speechBoundaryConfidence==='manual'&&choice?.postSpeechMusicPreserved===true?
+    choice.manualMusicBoundarySec:null;
+   if(finite(boundary)&&finite(choice?.startSec)&&finite(choice?.durationSec)&&
+      finite(clip.startSec)&&Math.abs(clip.startSec-choice.startSec)<0.002&&
+      Math.abs(clip.durationSec-choice.durationSec)<0.002&&
+      boundary>choice.startSec+0.02&&boundary<choice.startSec+clip.durationSec-0.02){
+    const startMs=Math.round(cursor*1000),endMs=Math.round((cursor+boundary-choice.startSec)*1000);
+    if(endMs<=startMs)fail('Manual speech boundary creates an empty music-tail caption');
+    cues.push({beat:beatNumber,startMs,endMs,text:safeCaptionText(script.line)});
+    warnings.push('Beat '+beatNumber+': speech caption ends at the manually confirmed boundary, not at the music tail; exact timing and audible words still require final author review.');
+   }else warnings.push('Beat '+beatNumber+': no usable Whisper timing. Subtitle end must be adjusted manually; caption omitted so it cannot remain on the post-speech music tail.');
   }else{
    timingKinds.add('estimated');
    if(choices)warnings.push('Beat '+beatNumber+': no usable Whisper timing; caption uses estimated clip boundaries and requires manual timing review.');
