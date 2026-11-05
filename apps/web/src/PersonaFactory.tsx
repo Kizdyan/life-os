@@ -815,7 +815,7 @@ export default function PersonaFactory(){
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}
   {chosen&&workspaceStep==='edit'&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&
    (videoMediaUnlocked?
-    <PersonaVideoTimeline key={`video-timeline:${activeProjectId??chosen.id}`} projectId={activeProjectId??chosen.id} initialTimeline={timeline} onTimelineChange={setTimeline}/>
+    <PersonaVideoTimeline key={`video-timeline:${activeProjectId??chosen.id}`} projectId={activeProjectId??chosen.id} initialTimeline={timeline} canProduce={canImportPersonaVideoMedia(scenarioWorkspace,production)} onTimelineChange={setTimeline}/>
     :<section className="captureCard" aria-label="Монтаж пока недоступен">
       <h3>Сначала сценарий и съёмочный план</h3>
       <p>Для нового видео загрузка исходников и монтаж открываются только после художественного утверждения сценария и отдельного одобрения съёмочного брифа. Старые проекты с сохранёнными клипами остаются доступны.</p>
