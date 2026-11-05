@@ -615,6 +615,10 @@ export default function PersonaFactory(){
  function createScenarioProductionBrief(brief:PersonaProductionBrief){
   if(!chosen)return;
   try{
+   if(!isScenarioCreativeApprovedForShooting(scenarioWorkspace))
+    throw Error('Текущая версия сценария не получила художественное и авторское утверждение.');
+   if(!productionBriefMatchesBeats(brief,scenarioWorkspace?.script?.currentRevision.beats))
+    throw Error('Съёмочный бриф расходится с утверждёнными репликами, действиями или длительностями.');
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Есть несохранённый ввод в прежнем съёмочном брифе. Сначала сохраните или разрешите черновик.');
    const next=importPersonaProductionBrief({brief,selectedIdea:{id:chosen.id,title:chosen.title,angle:chosen.angle,format:chosen.format}});
