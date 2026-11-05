@@ -223,3 +223,59 @@ test('file-based prepare/apply preserves original decisions and refuses overwrit
   await assert.rejects(()=>readFile(extraPack,'utf8'),/ENOENT/);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+
+test('B03 selected via human review retains word-level speech/music boundary through decisions',()=>{
+ const musicBrief=structuredClone(brief);
+ musicBrief.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ musicBrief.shots[1].durationSec=3;
+ const pack=buildCandidatePack(musicBrief,sources,decisions);
+ const b03=pack.beats[1].candidates[0];
+ assert.equal(pack.beats[1].requiresPostSpeechMusic,true);
+ assert.equal(b03.postSpeechMusicPreserved,true);
+ assert.equal(b03.speechBoundaryConfidence,'word');
+ assert.ok(b03.speechEndSec>b03.startSec&&b03.speechEndSec<b03.startSec+b03.durationSec);
+ const selection=createSelectionTemplate(pack);
+ for(const row of selection.selections){row.reviewed=true;row.reason='Просмотр и проверка выбранного дубля';}
+ const updated=applySelections(pack,selection,decisions,evidence,musicBrief).decisions;
+ assert.equal(updated.choices[1].postSpeechMusicPreserved,true);
+ assert.equal(updated.choices[1].speechBoundaryConfidence,'word');
+ assert.equal(updated.choices[1].speechEndSec,b03.speechEndSec);
+ const coarse=sources.map(src=>src.id==='B01_take01'?{
+  ...src,segments:src.segments.map(segment=>({...segment,timing:'segment'}))
+ }:src);
+ const coarsePack=buildCandidatePack(musicBrief,coarse,decisions);
+ assert.equal(coarsePack.beats[1].candidates.length,0,
+  'coarse timings require manual Recovery Review, not guessed music boundary');
+});
+
+test('B03 manual Recovery Review refuses missing or outside music boundaries',()=>{
+ const musicBrief=structuredClone(brief);
+ musicBrief.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ musicBrief.shots[1].durationSec=3;
+ const noAsr=[source('A01_take01',aWords,'a'),source('B01_take01',[],'d')];
+ const pack=buildCandidatePack(musicBrief,noAsr,{...decisions,mode:'preview',
+  choices:decisions.choices.slice(0,1),missingBeats:[2]});
+ assert.equal(pack.beats[1].candidates.length,0);
+ const selection=createSelectionTemplate(pack);
+ selection.selections[0].reviewed=true;
+ selection.selections[0].reason='Проверил произнесённый текст';
+ selection.selections[1]={beat:2,candidateId:null,reviewed:true,
+  reason:'Реплика прослушана и музыкальный хвост отделён',rejected:[],
+  recovery:{kind:'persona-manual-segment-v1',sourceId:'B01_take01',
+   sourceSha256:sha('d'),startSec:.2,durationSec:3.1,
+   transcript:'И у нас есть проблема.',confirmed:true,
+   reason:'Лично проверил слова и границы исходника'}};
+ const analysis={kind:'persona-evidence-v1',sources:noAsr};
+ assert.throws(()=>applySelections(pack,selection,decisions,analysis,musicBrief),
+  /Manual post-speech music boundary missing or invalid/);
+ selection.selections[1].recovery.manualMusicBoundarySec=4.0;
+ assert.throws(()=>applySelections(pack,selection,decisions,analysis,musicBrief),
+  /Manual post-speech music boundary missing or invalid/);
+ selection.selections[1].recovery.manualMusicBoundarySec=1.75;
+ const out=applySelections(pack,selection,decisions,analysis,musicBrief).decisions.choices[1];
+ assert.equal(out.postSpeechMusicPreserved,true);
+ assert.equal(out.speechBoundaryConfidence,'manual');
+ assert.equal(out.manualMusicBoundarySec,1.75);
+ assert.equal(out.transcriptSource,'manual-review');
+});
