@@ -1,10 +1,15 @@
 import React from 'react';
+import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootProgressKey,shootTimecode} from './personaShootNow';
 import {exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
+
+const canonicalFirstReel=JSON.parse(readFileSync(
+ new URL('../../../docs/persona-first-reel-production-brief-2026-10-29.json',import.meta.url),'utf8',
+)) as {script:Array<{durationSec:number;line:string;action:string}>};
 
 const preset={
  title:'Актёр и композитор',
@@ -28,6 +33,11 @@ describe('Persona model-provenance visibility',()=>{
 });
 
 describe('Persona direct filming experience',()=>{
+ it('keeps the opt-in shooting page verbatim with the canonical approved seven-scene brief',()=>{
+  expect(exampleActorComposerBeats.map(({seconds,line,action})=>({seconds,line,action}))).toEqual(
+   canonicalFirstReel.script.map(({durationSec,line,action})=>({seconds:durationSec,line,action})),
+  );
+ });
  it('shows a real seven-scene shoot-ready EXAMPLE with lines, camera, acting and montage cues',()=>{
   const plan=buildPersonaShootPlan(preset);
   expect(plan.status).toBe('example');
@@ -47,6 +57,12 @@ describe('Persona direct filming experience',()=>{
   expect(html).toContain('Как поставить камеру');
   expect(html).toContain('Сохранить эти 7 сцен');
   expect(html).toContain('Публикация не разрешена автоматически');
+ });
+ it('keeps the pre-edit cues consistent with the approved words and B03 music range',()=>{
+  const plan=buildPersonaShootPlan(preset);
+  expect(plan.scenes[2].edit).toContain('«текст»');
+  expect(plan.scenes[5].edit).toContain('2–3 секунды');
+  expect(plan.scenes[5].edit).not.toContain('2,12');
  });
  it('does not pretend an unknown project has invented scenes',()=>{
   const plan=buildPersonaShootPlan({...preset,title:'Собственный Reels',allowPilot:false});
