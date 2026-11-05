@@ -2,7 +2,7 @@ import {
  buildPersonaProductionBrief,
  type PersonaProductionBrief,
  type PersonaProductionIdea,
-} from './persona-production-brief';
+} from './persona-production-brief.js';
 
 export type PersonaDirectorScene={
  durationSec:number;line:string;action:string;
