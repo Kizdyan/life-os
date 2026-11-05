@@ -212,8 +212,19 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
  const base=createActorComposerWorkingBrief({id:'revision-safe',title:'Актёр и композитор',
   angle:'Первый ролик',format:'reel'},guide);
  const currentId='scenario-r2';
- const brief={...base,preEditPlan:{...base.preEditPlan!,
-  origin:'scenario_revision' as const,sourceRevisionId:currentId}};
+ const brief:PersonaProductionBrief={...base,preEditPlan:{
+  version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',
+  origin:'scenario_revision',sourceRevisionId:currentId,
+  researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Только редакторский замысел'},
+  scenes:base.script.map((scene,i)=>({
+   order:scene.order,line:scene.line,durationSec:scene.durationSec,
+   editIntent:'Кадр '+(i+1)+': точная проверенная склейка.',
+   audioIntent:'Оригинальная музыка по утверждённой монтажной карте.',
+   subtitleIntent:'Субтитры завершаются вместе с речью.',
+   mediaStatus:'awaiting_author_footage',
+  })),
+  publicationApproved:false,
+ }};
  const pipeline={stage:'READY_FOR_SHOOT',materials:{
   productionBrief:brief,editorialDecision:{decision:'approved'},
  }} as unknown as PersonaProductionPipeline;
