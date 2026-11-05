@@ -51,11 +51,11 @@ describe('Persona direct filming experience',()=>{
   expect(shootTimecode(plan,6)).toBe('00:27');
   const html=renderToStaticMarkup(<PersonaShootNow projectId="test-pilot" plan={plan}
    onOpenScript={()=>{}} onSavePilot={()=>{}}/>);
-  expect(html).toContain('Вот что снимать прямо сейчас');
+  expect(html).toContain('Сначала доведём сценарий до съёмки');
   expect(html).toContain('СКАЖИ В КАДРЕ');
   expect(html).toContain('Я актёр. И ещё пишу музыку.');
   expect(html).toContain('Как поставить камеру');
-  expect(html).toContain('Сохранить эти 7 сцен');
+  expect(html).toContain('Сохранить старый пример как неутверждённый черновик');
   expect(html).toContain('Публикация не разрешена автоматически');
  });
  it('keeps the pre-edit cues consistent with the approved words and B03 music range',()=>{
@@ -118,15 +118,18 @@ describe('Persona direct filming experience',()=>{
 it('does not let an unapproved example masquerade as a filming checklist',()=>{
  const example=buildPersonaShootPlan(preset);
  const html=renderToStaticMarkup(<PersonaShootNow projectId="creative-preproduction"
-  plan={example} onOpenScript={()=>{}} onSavePilot={()=>{}}/>);
+  plan={example} onOpenScript={()=>{}} onOpenEdit={()=>{}} onSavePilot={()=>{}}/>);
  expect(html).toContain('Сначала сценарий, потом съёмка');
  expect(html).toContain('Перейти к творческой проверке и сценарию');
  expect(html).toContain('Просмотри покадровый черновик');
+ expect(html).not.toContain('Открыть реальные дубли в монтаже');
  expect(html).toContain('Отметки реальных дублей откроются только после утверждения');
  expect(html).toMatch(/type="checkbox"[^>]*disabled=""/);
  const signed=renderToStaticMarkup(<PersonaShootNow projectId="creative-approved"
-  plan={{...example,status:'approved'}} onOpenScript={()=>{}}/>);
+  plan={{...example,status:'approved'}} onOpenScript={()=>{}} onOpenEdit={()=>{}}/>);
  expect(signed).toContain('2. Снимай кадры по порядку');
+ expect(signed).toContain('Вот что снимать прямо сейчас');
+ expect(signed).toContain('Открыть реальные дубли в монтаже');
  expect(signed).not.toContain('Сначала сценарий, потом съёмка');
  expect(signed).not.toMatch(/type="checkbox"[^>]*disabled=""/);
 });
