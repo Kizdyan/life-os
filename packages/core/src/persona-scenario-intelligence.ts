@@ -204,6 +204,8 @@ export interface ScenarioScriptRevision {
   reason?: string;
   beats: ScenarioScriptBeat[];
   sourceFacts: string[];
+  /** Creative premise valid for this exact revision; older projects omit it. */
+  ideaSnapshot?: ScenarioIdea;
   review?: ScenarioScriptReview;
 }
 
@@ -524,9 +526,20 @@ export function createScenarioScript(
 /** Adds an immutable revision and deliberately removes approval of the prior wording. */
 export function reviseScenarioScript(
   script: ScenarioScript,
-  input: { createdAt: string; beats: ScenarioScriptBeat[]; reason: string },
+  input: { createdAt: string; beats: ScenarioScriptBeat[]; reason: string; idea?: ScenarioIdea },
 ): ScenarioScript {
   const current = requireCurrentRevision(script);
+  // A new dramatic concept changes the creative premise, never the stable project identity.
+  const nextIdea = input.idea
+    ? {...input.idea,id:script.idea.id,referenceIds:[...input.idea.referenceIds]}
+    : {...script.idea,referenceIds:[...script.idea.referenceIds]};
+  // Backfill original story metadata before switching concepts, so restoring a
+  // prior version restores its original producer/director context too.
+  const prior = input.idea ? script.revisions.map(item=>({
+    ...item,ideaSnapshot:item.ideaSnapshot??
+      {...script.idea,referenceIds:[...script.idea.referenceIds]},
+  })) : script.revisions;
+  const previousIdea=current.ideaSnapshot;
   const revision = createRevision({
     id: `${current.id.replace(/-r\d+$/u, "")}-r${current.number + 1}`,
     number: current.number + 1,
@@ -534,11 +547,13 @@ export function reviseScenarioScript(
     reason: input.reason,
     beats: input.beats,
     sourceFacts: current.sourceFacts,
+    ...(input.idea ? {ideaSnapshot:nextIdea}
+      : previousIdea ? {ideaSnapshot:previousIdea} : {}),
   });
   return {
     ...script,
-    idea: { ...script.idea, referenceIds: [...script.idea.referenceIds] },
-    revisions: [...script.revisions, revision],
+    idea: nextIdea,
+    revisions: [...prior, revision],
     currentRevisionId: revision.id,
     currentRevision: revision,
     approval: undefined,
