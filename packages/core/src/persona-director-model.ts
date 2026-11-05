@@ -41,17 +41,32 @@ export function readPersonaDirectorProposal(value:unknown,ideaId:string):Persona
   !Array.isArray(value.scenes)||value.scenes.length<4||value.scenes.length>8)
   return null;
  let total=0;
- const unique=new Set<string>();
+ const repetitions=new Map<string,Array<{action:string;performance:string;edit:string}>>();
+ const normalize=(value:string)=>value.normalize('NFKC').toLocaleLowerCase('ru-RU')
+  .replace(/\s+/gu,' ').trim();
  for(const shot of value.scenes){
   if(!obj(shot)||typeof shot.durationSec!=='number'||!Number.isInteger(shot.durationSec)||shot.durationSec<2||shot.durationSec>12||
    !text(shot.line,2,180)||!text(shot.action,6,320)||
    !['close-up','medium','detail'].includes(String(shot.framing))||
    !text(shot.camera,5,450)||!text(shot.lighting,5,450)||
    !text(shot.performance,5,450)||!text(shot.edit,5,450))return null;
-  const normalized=(shot.line as string).trim().toLowerCase().replace(/\s+/g,' ');
-  if(unique.has(normalized))return null;
-  unique.add(normalized);
+  const line=normalize(shot.line as string);
+  const same=repetitions.get(line)??[];
+  same.push({action:normalize(shot.action as string),
+   performance:normalize(shot.performance as string),
+   edit:normalize(shot.edit as string)});
+  repetitions.set(line,same);
   total+=shot.durationSec as number;
+ }
+ // A three- or four-part refrain can be an intentional genre study.
+ // Allow it only when each action, acting task and cut is distinct.
+ // This structural allowance never implies artistic or author approval.
+ for(const parts of repetitions.values()){
+  if(parts.length===1)continue;
+  if(parts.length<3||parts.length>4||
+   new Set(parts.map(part=>part.action)).size!==parts.length||
+   new Set(parts.map(part=>part.performance)).size!==parts.length||
+   new Set(parts.map(part=>part.edit)).size!==parts.length)return null;
  }
  if(total<15||total>70)return null;
  return value as PersonaDirectorProposal;
