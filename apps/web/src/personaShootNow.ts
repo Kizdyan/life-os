@@ -1,5 +1,5 @@
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
-import {latestPersonaCreativeReview} from './personaCreativeDevelopment';
+import {assertPersonaCreativeReviewSignoff,latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {
  actorComposerShotDirections,createPersonaProductionGuide,exampleActorComposerBeats,
@@ -110,7 +110,11 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
 export function isScenarioCreativeApprovedForShooting(workspace:PersonaScenarioWorkspace|undefined):boolean{
  const script=workspace?.script;
  if(!script||script.approval?.revisionId!==script.currentRevisionId)return false;
- return latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId)?.decision==='ready_for_author';
+ try{
+  assertPersonaCreativeReviewSignoff(script.currentRevisionId,
+   latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId));
+  return true;
+ }catch{return false;}
 }
 
 /** Take the current source of truth rather than replacing it with the demo.
@@ -128,7 +132,9 @@ export function buildPersonaShootPlan(input:{
  const beats=script?.currentRevision.beats;
  const sameAsBrief=Boolean(brief&&beats&&beats.length===brief.script.length&&beats.every((beat,i)=>
   beat.line===brief.script[i]?.line&&beat.action===brief.script[i]?.action&&
-  beat.durationSec===brief.script[i]?.durationSec));
+  beat.durationSec===brief.script[i]?.durationSec&&
+  (beat.editIntent===undefined||
+   beat.editIntent===brief.preEditPlan?.scenes[i]?.editIntent)));
  const useBrief=Boolean(brief&&(!beats?.length||sameAsBrief));
  const isExample=allowPilot&&!brief&&!beats?.length;
  const source=beats?.length?beats.map((beat,i)=>({
@@ -175,7 +181,10 @@ export function buildPersonaShootPlan(input:{
   };
  });
  const scriptApproved=isScenarioCreativeApprovedForShooting(workspace);
- const briefApproved=Boolean(brief&&useBrief&&pipeline?.stage==='READY_FOR_SHOOT'&&
+ const currentBriefVersion=brief?.preEditPlan?.origin!=='scenario_revision'||
+  Boolean(script&&brief?.preEditPlan?.sourceRevisionId===script.currentRevisionId);
+ const briefApproved=Boolean(brief&&useBrief&&currentBriefVersion&&
+  pipeline?.stage==='READY_FOR_SHOOT'&&
   pipeline.materials.editorialDecision?.decision==='approved');
  return {
   title,status:isExample?'example':scriptApproved&&briefApproved?'approved':'draft',
