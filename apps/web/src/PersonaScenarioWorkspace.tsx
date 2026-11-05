@@ -140,7 +140,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
  const hasPendingChanges=Boolean(script&&personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason))||Boolean(staleDraft||corruptDraft);
  const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
- const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasPendingChanges);
+ const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&
+  creativeReviewSignoff?.decision==='ready_for_author'&&!hasPendingChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
  const assertNoPendingDraftRecord=()=>assertNoPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
@@ -418,7 +419,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const createBrief=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('В бриф нельзя переносить несохранённый черновик: сначала сохраните новую версию и утвердите её.');return}
-  try{assertNoPendingDraftRecord();onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType},workspace.research));setError('');}
+  try{
+    assertNoPendingDraftRecord();
+    assertPersonaCreativeReviewSignoff(script.currentRevision.id,creativeReviewSignoff);
+    onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType},workspace.research));
+    setError('');
+   }
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{
