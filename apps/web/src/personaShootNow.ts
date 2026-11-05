@@ -150,6 +150,14 @@ export function buildPersonaShootPlan(input:{
     item.seconds===exampleActorComposerBeats[j].seconds);
   const directions=pilot?actorComposerShotDirections[exampleActorComposerBeats[i].id]:null;
   const shotEvidence=useBrief&&brief?productionGuideScenes(brief)[i]:null;
+  // Preserve the exact per-scene pre-edit intent from the matching script.
+  // Do not inherit old music edits after the author changes the revision.
+  const preEdit=useBrief&&brief?.preEditPlan&&
+   (!script||brief.preEditPlan.origin!=='scenario_revision'||
+    brief.preEditPlan.sourceRevisionId===script.currentRevisionId)&&
+   brief.preEditPlan.scenes.length===source.length?brief.preEditPlan.scenes[i]:null;
+  const exactEdit=preEdit?.order===i+1&&preEdit.line===scene.line&&
+   preEdit.durationSec===scene.seconds?preEdit.editIntent?.trim():undefined;
   const saved=guideShotNoteForScene(guide,{
    ...scene,source:shotEvidence?'brief':'example',
   }).note;
@@ -161,7 +169,7 @@ export function buildPersonaShootPlan(input:{
    framing:scene.framing,lighting:safeNote?.lighting||scene.lighting,
    camera:safeNote?.camera||directions?.camera||scene.angle||guide.fields.camera,
    performance:safeNote?.performance||directions?.performance||scene.action,
-   edit:safeNote?.edit||directions?.edit||guide.fields.editing,
+   edit:safeNote?.edit||directions?.edit||exactEdit||guide.fields.editing,
    sourceFileName:pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:
     'S'+String(i+1).padStart(2,'0')+'_take01.mp4',
   };
