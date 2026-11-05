@@ -189,7 +189,20 @@ describe('legacy brief shortcuts preserve the approved authored script',()=>{
   format:'reel' as const};
  const now='2026-11-05T17:25:00.000Z';
  const make=()=>{
-  const old=createActorComposerWorkingBrief(id,createPersonaProductionGuide(now,'actor_composer'));
+  const initial=createActorComposerWorkingBrief(id,createPersonaProductionGuide(now,'actor_composer'));
+  const old={...initial,preEditPlan:{
+   version:1 as const,kind:'persona-pre-edit-plan-v1' as const,status:'intent_only' as const,
+   origin:'scenario_revision' as const,sourceRevisionId:'source-before-import',
+   researchEvidence:{level:'hypothesis_only' as const,sourceUrls:[],note:'Unverified planning notes'},
+   scenes:initial.script.map((beat,i)=>({
+    order:beat.order,line:beat.line,durationSec:beat.durationSec,
+    editIntent:'Специальная склейка кадра '+(i+1)+' после реплики.',
+    audioIntent:'Оригинальная музыка только по подтверждённому сценарию.',
+    subtitleIntent:'Текст только на произнесённые слова.',
+    mediaStatus:'awaiting_author_footage' as const,
+   })),
+   publicationApproved:false as const,
+  }};
   const candidate=addImportedBriefScenario(undefined,old,now);
   const script=approveScenarioScript(candidate.script!,{
    author:'Автор',comment:'Прочитал и согласовал сценарий перед съёмкой.',
