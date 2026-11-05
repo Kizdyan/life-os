@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
-import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
+import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
@@ -47,6 +47,8 @@ describe('Persona video media intake follows the approved shooting plan',()=>{
    personaFirstReelConcepts[0],'2026-11-05T20:10:00.000Z');
   expect(canStartPersonaVideoMediaWork(before,null,false)).toBe(false);
   expect(canStartPersonaVideoMediaWork(before,null,true)).toBe(true);
+  expect(canImportPersonaVideoMedia(undefined,null)).toBe(false);
+  expect(canImportPersonaVideoMedia(before,null)).toBe(false);
  });
 });
 
@@ -260,6 +262,7 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
  const approved=buildPersonaShootPlan({title:'Проверка',workspace,pipeline,allowPilot:false});
  expect(approved.status).toBe('approved');
  expect(canStartPersonaVideoMediaWork(workspace,pipeline,false)).toBe(true);
+ expect(canImportPersonaVideoMedia(workspace,pipeline)).toBe(true);
  const stalePipeline={...pipeline,materials:{...pipeline.materials,productionBrief:{
   ...brief,preEditPlan:{...brief.preEditPlan,sourceRevisionId:'old-r1'},
  }}} as PersonaProductionPipeline;
@@ -274,6 +277,8 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
  expect(buildPersonaShootPlan({title:'Проверка',workspace:modifiedScript,
   pipeline,allowPilot:false}).status).toBe('draft');
  expect(canStartPersonaVideoMediaWork(modifiedScript,pipeline,false)).toBe(false);
+ expect(canStartPersonaVideoMediaWork(modifiedScript,pipeline,true)).toBe(true);
+ expect(canImportPersonaVideoMedia(modifiedScript,pipeline)).toBe(false);
  const malformed={...workspace,creativeReviews:[{...decision,comment:'кратко'}]};
  expect(isScenarioCreativeApprovedForShooting(malformed)).toBe(false);
  expect(canStartPersonaVideoMediaWork(malformed,pipeline,false)).toBe(false);
