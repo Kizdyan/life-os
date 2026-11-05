@@ -293,16 +293,16 @@ describe('Persona timeline approval enforcement',()=>{
  it('keeps the existing timeline visible but disables new media intake and export on stale approval',()=>{
   const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="stale-approval" canProduce={false}/>);
   expect(view).toContain('Сценарий или съёмочный бриф изменены');
-  expect(view).toMatch(/aria-label="Добавить видеофрагменты"[^>]*disabled/);
-  expect(view).toMatch(/aria-label="Выбрать музыкальную дорожку"[^>]*disabled/);
-  expect(view).toMatch(/class="primary"[^>]*disabled/);
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Добавить видеофрагменты")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать музыкальную дорожку")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+  expect(view).toMatch(/(?=<button\b)(?=[^>]*class="primary")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
   expect(view).toContain('Смотреть последовательность');
  });
  it('allows media intake when the current shooting plan is approved',()=>{
   const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="approved-approval" canProduce={true}/>);
   expect(view).not.toContain('Сценарий или съёмочный бриф изменены');
   expect(view).toMatch(/aria-label="Добавить видеофрагменты"/);
-  expect(view).not.toMatch(/aria-label="Добавить видеофрагменты"[^>]*disabled/);
+  expect(view).not.toMatch(/(?=<input\b)(?=[^>]*aria-label="Добавить видеофрагменты")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
  });
 });
 
@@ -311,11 +311,11 @@ describe('Persona color comparison approval enforcement',()=>{
  it('preserves read-only comparison access while blocking new uploads on stale approval',()=>{
   const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-stale" record={null} onSave={()=>true} canProduce={false}/>);
   expect(view).toContain('Утверждение устарело');
-  expect(view).toMatch(/aria-label="Выбрать оригинал, три MP4 и COMPARISON.json"[^>]*disabled/);
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать оригинал, три MP4 и COMPARISON.json")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
  });
  it('permits comparison upload controls after approval',()=>{
   const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-approved" record={null} onSave={()=>true} canProduce={true}/>);
   expect(view).not.toContain('Утверждение устарело');
-  expect(view).not.toMatch(/aria-label="Выбрать оригинал, три MP4 и COMPARISON.json"[^>]*disabled/);
+  expect(view).not.toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать оригинал, три MP4 и COMPARISON.json")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
  });
 });
