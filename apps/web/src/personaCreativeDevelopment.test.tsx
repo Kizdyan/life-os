@@ -10,6 +10,7 @@ import {
   latestPersonaCreativeReview,recordPersonaCreativeReview,
 } from "./personaCreativeDevelopment";
 import {createPersonaProject,validatePersonaProjectCollection,type PersonaScenarioWorkspace} from "./personaProjectStore";
+import {actorComposerPilot} from "./personaProductionGuide";
 
 const now="2026-11-05T15:00:00.000Z";
 const empty:PersonaScenarioWorkspace={version:1,research:[],analyses:[],ideas:[]};
@@ -141,4 +142,27 @@ describe("withdrawal of author creative approval",()=>{
     expect(()=>recordPersonaCreativeReview(reviews,
       {...accepted,comment:"Слишком коротко"})).toThrow(/Invalid author creative review/);
   });
+});
+
+
+describe("First actor-composer creative selection is usable with an existing scenario",()=>{
+ it("shows a non-destructive new-revision action instead of trapping the user in the old seven-scene brief",()=>{
+  const proposal=personaFirstReelConcepts[0];
+  const workspace=stagePersonaCreativeConcept(empty,proposal,now);
+  const direct=renderToString(<PersonaCreativeDevelopmentPanel
+   workspace={workspace} onChange={()=>undefined} onCreateRevision={()=>undefined}/>);
+  expect(direct).toContain("Создать НОВУЮ неутверждённую редакцию из этой концепции");
+  const project=createPersonaProject({
+   id:"actor-composer-creative-test",title:actorComposerPilot.title,
+   sourceIdea:actorComposerPilot.angle,contentType:"reel",now,
+  });
+  const html=renderToString(<PersonaScenarioWorkspace
+   project={project} workspace={workspace}
+   creativeProfile={{priorities:[],constraints:[]}}
+   onChange={()=>undefined} onCreateBrief={()=>undefined}/>);
+  expect(html).toContain("Создать НОВУЮ неутверждённую редакцию из этой концепции");
+  expect(html).toContain("Творческое сравнение первого ролика");
+  expect(html).toContain("Не снимать — доработать");
+  expect(html).not.toContain("Снять ролик сейчас");
+ });
 });
