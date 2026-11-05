@@ -57,6 +57,25 @@ describe('Persona AI Director canonical handoff',()=>{
   expect(brief.factReferences).toEqual([]);
   expect('approval' in brief).toBe(false);
  });
+ it('accepts an intentional three-genre refrain with different acting and musical intentions',()=>{
+  const repeated={...proposal,title:'Один текст — три жанра',
+   scenes:proposal.scenes.map(scene=>({...scene,line:'Ты всё-таки пришёл.'}))};
+  const result=readPersonaDirectorProposal(repeated,idea.id);
+  expect(result).not.toBeNull();
+  const brief=personaDirectorToBrief(idea,repeated);
+  expect(brief.script.map(beat=>beat.line)).toEqual(Array(4).fill('Ты всё-таки пришёл.'));
+  expect(new Set(brief.preEditPlan?.scenes.map(beat=>beat.editIntent)).size).toBe(4);
+  expect(brief.preEditPlan?.publicationApproved).toBe(false);
+  const duplicateAction={...repeated,scenes:repeated.scenes.map((scene,index)=>
+   index===1?{...scene,action:repeated.scenes[0].action}:scene)};
+  expect(readPersonaDirectorProposal(duplicateAction,idea.id)).toBeNull();
+  const duplicatePerformance={...repeated,scenes:repeated.scenes.map((scene,index)=>
+   index===2?{...scene,performance:repeated.scenes[0].performance}:scene)};
+  expect(readPersonaDirectorProposal(duplicatePerformance,idea.id)).toBeNull();
+  const duplicateEdit={...repeated,scenes:repeated.scenes.map((scene,index)=>
+   index===3?{...scene,edit:repeated.scenes[0].edit}:scene)};
+  expect(readPersonaDirectorProposal(duplicateEdit,idea.id)).toBeNull();
+ });
  it('refuses templates, fake publication approval, alien project, repeated lines and bogus timings',()=>{
   expect(readPersonaDirectorProposal({...proposal,executionMode:'template'},idea.id)).toBeNull();
   expect(readPersonaDirectorProposal({...proposal,publicationApproved:true},idea.id)).toBeNull();
