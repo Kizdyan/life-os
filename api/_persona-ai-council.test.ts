@@ -74,6 +74,9 @@ describe('Persona Council API paid-call and identity guarantees',()=>{
   expect(network).not.toHaveBeenCalled();
  });
  it('executes Perplexity Agent research, distinct ideator and editor only after opt-in',async()=>{
+  // Mocked localhost calls must not inherit the real Vercel preview security env.
+  vi.stubEnv('VERCEL_ENV','');
+  vi.stubEnv('PERSONA_AI_COUNCIL_ACCESS_TOKEN','');
   vi.stubEnv('PERSONA_AI_COUNCIL_ENABLED','true');
   vi.stubEnv('PERSONA_AI_COUNCIL_MODELS_JSON',JSON.stringify(registry));
   vi.stubEnv('PERPLEXITY_API_KEY','test-only-token-do-not-use');
@@ -109,6 +112,21 @@ describe('Persona Council API paid-call and identity guarantees',()=>{
   expect(result.totalReportedCostUsd).toBeCloseTo(0.003);
   expect(network).toHaveBeenCalledTimes(3);
   expect(JSON.stringify(result)).not.toContain('test-only-token-do-not-use');
+ });
+ it('requires an access token on Vercel preview without attempting paid inference',async()=>{
+  vi.stubEnv('VERCEL_ENV','preview');
+  vi.stubEnv('PERSONA_AI_COUNCIL_ENABLED','true');
+  vi.stubEnv('PERSONA_AI_COUNCIL_ACCESS_TOKEN','');
+  vi.stubEnv('PERSONA_AI_COUNCIL_MODELS_JSON',JSON.stringify(registry));
+  vi.stubEnv('PERPLEXITY_API_KEY','test-only-token-do-not-use');
+  const network=vi.fn();vi.stubGlobal('fetch',network);
+  const status=await handler.fetch(new Request(url));
+  expect((await status.json()).state).toBe('access_token_missing');
+  const response=await handler.fetch(new Request(url,{method:'POST',
+   headers:{Origin:'http://localhost','Content-Type':'application/json'},
+   body:JSON.stringify({action:'run',confirmedSpend:true,creativeProfile:{priorities:[],constraints:[]}})}));
+  expect(response.status).toBe(403);
+  expect(network).not.toHaveBeenCalled();
  });
  it('refuses cross-origin calls before any paid request',async()=>{
   vi.stubEnv('PERSONA_AI_COUNCIL_ENABLED','true');
