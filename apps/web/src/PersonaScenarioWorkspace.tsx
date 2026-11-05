@@ -4,7 +4,8 @@ import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import PersonaAiCouncilPanel from './PersonaAiCouncilPanel';
 import PersonaCreativeDevelopmentPanel from './PersonaCreativeDevelopmentPanel';
 import {assertPersonaCreativeReviewSignoff,personaCreativeLenses,
- latestPersonaCreativeReview,recordPersonaCreativeReview} from './personaCreativeDevelopment';
+ latestPersonaCreativeReview,recordPersonaCreativeReview,
+ type PersonaCreativeConcept} from './personaCreativeDevelopment';
 import {isActorComposerPilot} from './personaProductionGuide';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
@@ -311,6 +312,23 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   }
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
  };
+ const chooseCreativeConcept=(concept:PersonaCreativeConcept)=>{
+  if(!script)return;
+  if(hasPendingChanges){setError('Сначала сохраните или разрешите все несохранённые правки сценария.');return}
+  try{
+   assertNoPendingDraftRecord();
+   assertPersonaAuthorLockedLines(workspace,concept.beats,script.idea.id);
+   const next=reviseScenarioScript(script,{
+    createdAt:new Date().toISOString(),beats:concept.beats,idea:concept.idea,
+    reason:'Новая творческая концепция «'+concept.title+'». Старая версия сохранена, художественное утверждение сброшено.',
+   });
+   const nextIdeas=workspace.ideas.some(idea=>idea.id===concept.id)?
+    workspace.ideas:[...workspace.ideas,concept.idea];
+   update({script:next,ideas:nextIdeas,selectedIdeaId:concept.id});
+   setSelectedIdeaId(concept.id);setBeats(next.currentRevision.beats);
+   setRevisionReason('');setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Альтернативная редакция не создана.')}
+ };
  const rejectWithFeedback=()=>{
   if(!script||rejectionFeedback.trim().length<12){setError('Укажите конкретную причину отклонения (не менее 12 символов).');return}
   const current=script.currentRevision.id;
@@ -458,7 +476,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   <PersonaAiCouncilPanel project={project} workspace={workspace} creativeProfile={effectiveProfile} onChange={onChange}/>
   {isActorComposerPilot({title:project.title,angle:project.sourceIdea})&&
    <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange}
-    blocked={hasPendingChanges}/>}
+    onCreateRevision={chooseCreativeConcept} blocked={hasPendingChanges}/>}
 
   <section className="personaScenarioIdeas"><div><h4>Локальные идеи без нейросети</h4><p>Бесплатная резервная функция создаёт шаблонные варианты. Это не реальное исследование Perplexity и не AI-генерация.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 шаблонные идеи</button></section>
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='ai_generated'?('AI-идея: '+idea.aiProvenance?.model+' · ещё не утверждена'):
