@@ -240,7 +240,7 @@ function projectStage(value:unknown):Stage{return value==='strategy'||value==='n
 function contentTypeLabel(value:PersonaContentType|undefined){return value==='photo'?'Фото':value==='carousel'?'Карусель':value==='short'?'Shorts':value==='story'?'Stories':'Reels'}
 function stageLabel(value:Stage){return ({strategy:'Идея',needs_assets:'Исходники',production:'В работе',marketing_qa:'Проверка',media_qa:'Проверка медиа',final_qa:'Проверка',approval:'Готово к съёмке'} as Record<Stage,string>)[value]}
 function screenFromHash():PersonaScreen{const hash=typeof location==='undefined'?'':location.hash;return hash.startsWith('#persona/projects')?'projects':hash.startsWith('#persona/project')?'project':'home'}
-function workspaceStepsFor(format:PersonaContentType|undefined):[WorkspaceStep,string][]{
+export function workspaceStepsFor(format:PersonaContentType|undefined):[WorkspaceStep,string][]{
  if(format==='photo')return [['assets','Исходник'],['edit','Обработка'],['review','Проверка'],['export','Экспорт']];
  if(format==='carousel')return [['assets','Изображения'],['edit','Оформление'],['review','Проверка'],['export','Экспорт']];
  return [['idea','Идея'],['script','Сценарий'],['guide','План съёмки'],['assets','Исходники'],['edit','Монтаж'],['review','Проверка'],['export','Экспорт']];
