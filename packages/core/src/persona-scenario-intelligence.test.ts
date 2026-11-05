@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import {readFileSync} from "node:fs";
 import {
   analyseScenarioReference,
   approveScenarioScript,
@@ -400,4 +401,26 @@ describe("Pre-shoot editing plan / research evidence gate",()=>{
   expect(plan.researchEvidence.sourceUrls).toEqual([]);
   expect(plan.scenes.every(s=>s.mediaStatus==="awaiting_author_footage")).toBe(true);
  });
+
+  it("flags the actual seven-scene actor-composer brief's expository hook, vague setup and late ending without inventing a retention score",()=>{
+    const brief=JSON.parse(readFileSync(new URL("../../../docs/persona-first-reel-production-brief-2026-10-29.json",import.meta.url),"utf8")) as {
+      script:Array<{line:string;action:string;durationSec:number}>;
+    };
+    const revision={id:"canonical-first-reel-review",beats:brief.script.map((item,index)=>({
+      purpose:(index===0?"hook":index===brief.script.length-1?"ending":"development") as "hook"|"development"|"ending",
+      line:item.line,action:item.action,durationSec:item.durationSec,
+    }))};
+    const result=assessScenarioCreativeRisks(revision);
+    expect(result.findings.map(f=>f.category)).toEqual(expect.arrayContaining([
+      "expository_dialogue","generic_dialogue","late_payoff"
+    ]));
+    expect(result.findings.every(f=>f.severity!=="needs_revision")).toBe(true);
+    expect(result.notice).toContain("не измеряет художественную силу");
+    const hook=result.findings.find(f=>f.category==="expository_dialogue")!;
+    expect(hook.beatOrders).toEqual([1]);
+    const payoff=result.findings.find(f=>f.category==="late_payoff")!;
+    expect(payoff.beatOrders).toEqual([7]);
+    expect(payoff.explanation).toMatch(/не доказательство низкого удержания/);
+  });
+
 });
