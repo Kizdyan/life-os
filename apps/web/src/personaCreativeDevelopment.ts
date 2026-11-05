@@ -1,4 +1,5 @@
-import type { ScenarioIdea, ScenarioScriptBeat } from "../../../packages/core/src/persona-scenario-intelligence";
+import {createScenarioScript,type ScenarioIdea,type ScenarioScriptBeat} from "../../../packages/core/src/persona-scenario-intelligence";
+import type {PersonaScenarioWorkspace} from "./personaProjectStore";
 
 export type PersonaCreativeLens = "producer" | "dramaturg" | "director" | "reels" | "marketing";
 
@@ -140,4 +141,26 @@ export function assertPersonaCreativeReviewSignoff(
     review.decision!=="ready_for_author"||review.comment.trim().length<20||
     !Number.isFinite(Date.parse(review.createdAt)))
     throw new Error("Перед утверждением сценария нужна осознанная авторская оценка творческих рисков текущей редакции.");
+}
+
+
+/**
+ * Pure, non-destructive import into an existing project. A real existing script
+ * and its approval can never be overwritten by choosing an alternative card.
+ */
+export function stagePersonaCreativeConcept(
+  workspace:PersonaScenarioWorkspace,
+  selected:PersonaCreativeConcept,
+  createdAt:string,
+):PersonaScenarioWorkspace {
+  if(!personaFirstReelConcepts.some(item=>item.id===selected.id))
+    throw Error("Unrecognized creative concept");
+  if(workspace.ideas.some(item=>item.id===selected.id))return workspace;
+  const ideas=[...workspace.ideas,selected.idea];
+  if(workspace.script)return {...workspace,ideas};
+  const script=createScenarioScript(selected.idea,{
+    createdAt,beats:selected.beats,
+    sourceFacts:["Авторская редакторская гипотеза. Популярность и реальная съёмка не проверены."],
+  });
+  return {...workspace,ideas,selectedIdeaId:selected.idea.id,script};
 }
