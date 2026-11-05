@@ -20,7 +20,7 @@ async function fingerprintFile(file:File):Promise<string|undefined>{
 }
 function newClipId(){return typeof crypto.randomUUID==='function'?crypto.randomUUID():'clip-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
 
-export default function PersonaVideoTimeline({projectId,initialTimeline,onTimelineChange}:{projectId:string;initialTimeline?:unknown;onTimelineChange?:(timeline:PersonaTimelineSettings)=>void}) {
+export default function PersonaVideoTimeline({projectId,initialTimeline,onTimelineChange,canProduce=true}:{projectId:string;initialTimeline?:unknown;onTimelineChange?:(timeline:PersonaTimelineSettings)=>void;canProduce?:boolean}) {
  const storageKey='persona:timeline:draft:v1:'+projectId;
  const initial=useRef<PersonaTimelineSettings|null>(null);if(initial.current===null)initial.current=timelineFrom(initialTimeline,legacyClips(storageKey));
  const urls=useRef(new Map<string,string>());
@@ -49,6 +49,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
   if(!files.length)return;
+  if(!canProduce){setError('Требуется повторное утверждение сценария и съёмочного брифа. Импорт заблокирован.');event.target.value='';return}
   const additions:Clip[]=[];
   for(const file of files) {
    if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
@@ -75,19 +76,20 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   event.target.value='';
  }
  function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
- function removeClip(id:string){setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
- function change(id:string,patch:Pick<Clip,'startSec'>|Pick<Clip,'durationSec'>){setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?constrainPersonaTimelineClip(item,patch):item))}
- function move(index:number,delta:number){setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
+ function removeClip(id:string){if(!canProduce)return;setPlaySequence(false);const url=urls.current.get(id);if(url)URL.revokeObjectURL(url);urls.current.delete(id);filesById.current.delete(id);if(previewId===id)setPreviewId(null);setClips(items=>items.filter(item=>item.id!==id))}
+ function change(id:string,patch:Pick<Clip,'startSec'>|Pick<Clip,'durationSec'>){if(!canProduce)return;setPlaySequence(false);setClips(items=>items.map(item=>item.id===id?constrainPersonaTimelineClip(item,patch):item))}
+ function move(index:number,delta:number){if(!canProduce)return;setPlaySequence(false);const next=index+delta;if(next<0||next>=clips.length)return;setClips(items=>{const result=[...items];[result[index],result[next]]=[result[next],result[index]];return result})}
  const timelineDuration=clips.reduce((sum,clip)=>sum+clip.durationSec,0);
- function addCaption(){
+ function addCaption(){if(!canProduce)return;
   if(timelineDuration<0.1){setError('Сначала добавь видеофрагмент для субтитров');return}
   setCaptions(items=>[...items,{id:newClipId(),text:'Новый титр',startSec:0,endSec:Number(Math.min(2,timelineDuration).toFixed(3))}]);
  }
  function changeCaption(id:string,patch:Pick<PersonaTimelineCaption,'startSec'>|Pick<PersonaTimelineCaption,'endSec'>){
+  if(!canProduce)return;
   setCaptions(items=>items.map(caption=>caption.id===id?constrainPersonaTimelineCaption(caption,patch,timelineDuration):caption));
  }
  async function analyzeMusic(file:File|undefined){
-  if(!file)return;
+  if(!file||!canProduce)return;
   musicFile.current=null;
   setError('');setMusicStatus('Анализ аудио…');setMusicAccents([]);
   try{
@@ -127,7 +129,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
    setMusicAccents(times);setMusicStatus('Найдено музыкальных акцентов: '+times.length+'. Это кандидаты, а не обязательные склейки.');
   }catch(e){setMusicStatus('');setError(e instanceof Error?e.message:'Не удалось проанализировать музыку')}
  }
- function alignCutsToMusic(){
+ function alignCutsToMusic(){if(!canProduce)return;
   if(!musicAccents.length||clips.length<2){setError('Нет музыкальных акцентов или недостаточно клипов');return}
   const total=clips.reduce((s,c)=>s+c.durationSec,0);
   const boundaries:number[]=[];let cumulative=0;
@@ -150,7 +152,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   setError('');setMusicStatus('Границы клипов скорректированы по музыкальным акцентам. Проверь монтаж перед рендером.');
  }
  async function renderLocal(){
-  if(rendering)return;
+  if(rendering||!canProduce)return;
   if(clips.length<2||clips.some(c=>!filesById.current.has(c.id))){setError('Загрузи все исходники перед рендером');return}
   if(clips.some(c=>c.durationSec<=0||c.startSec<0||c.startSec+c.durationSec>c.sourceDuration+0.01)){setError('Проверь тайминги');return}
   setRendering(true);setError('');
@@ -189,6 +191,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   finally{if(sessionId){try{await request('/session/'+sessionId,{method:'DELETE'})}catch{}}setRendering(false)}
  }
  function download() {
+  if(!canProduce){setError('Экспорт нового монтажного плана требует актуального утверждения.');return}
   if(clips.length<2){setError('Нужно минимум два видеофрагмента');return}
   if(clips.some(clip=>!urls.current.has(clip.id))){setError('После перезагрузки исходники недоступны. Повторно выберите исходные файлы.');return}
   if(clips.some(clip=>clip.durationSec<=0||clip.startSec<0||clip.startSec+clip.durationSec>clip.sourceDuration+0.01)){setError('Проверь временные границы клипов');return}
@@ -201,10 +204,11 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  }
  return <section className="captureCard" aria-label="Монтажная последовательность Persona">
   <h3>Монтажная последовательность</h3>
+  {!canProduce&&<p role="alert">Сценарий или съёмочный бриф изменены. Доступен просмотр ранее сохранённых материалов; импорт, монтаж и экспорт заблокированы до повторного утверждения.</p>}
   <p>Добавь видео, выбери порядок и настрой длину клипов. Монтажный план сохраняется на этом устройстве.</p>
-  <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" onChange={e=>void addFiles(e)}/>
-  <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
-  <button type="button" disabled={!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
+  <input type="file" multiple accept="video/*" aria-label="Добавить видеофрагменты" disabled={!canProduce} onChange={e=>void addFiles(e)}/>
+  <div><label>Музыка для анализа ритма <input type="file" accept="audio/*" aria-label="Выбрать музыкальную дорожку" disabled={!canProduce} onChange={e=>void analyzeMusic(e.target.files?.[0])}/></label>
+  <button type="button" disabled={!canProduce||!musicAccents.length||clips.length<2} onClick={alignCutsToMusic}>Подстроить склейки под музыку</button>
   {musicStatus&&<p role="status">{musicStatus}</p>}
   <label>Музыка: {Math.round(musicVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={e=>{const volume=Number(e.target.value);setMusicVolume(volume);setMusicMeta(meta=>meta?{...meta,volume}:meta)}}/></label>
   <label>Исходный звук: {Math.round(originalVolume*100)}% <input type="range" min="0" max="1" step="0.05" value={originalVolume} onChange={e=>{const volume=Number(e.target.value);setOriginalVolume(volume);setMusicMeta(meta=>meta?{...meta,originalVolume:volume}:meta)}}/></label>
@@ -216,10 +220,10 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
    <label>Начало, сек. <input type="number" min="0" max={clip.sourceDuration} step="0.1" value={clip.startSec} onChange={e=>change(clip.id,{startSec:Number(e.target.value)})}/></label>
    <label>Длительность, сек. <input type="number" min="0.1" max={clip.sourceDuration} step="0.1" value={clip.durationSec} onChange={e=>change(clip.id,{durationSec:Number(e.target.value)})}/></label>
    <div style={{display:'flex',gap:8}}>
-    <button type="button" disabled={index===0} onClick={()=>move(index,-1)}>Выше</button>
-    <button type="button" disabled={index===clips.length-1} onClick={()=>move(index,1)}>Ниже</button>
+    <button type="button" disabled={!canProduce||index===0} onClick={()=>move(index,-1)}>Выше</button>
+    <button type="button" disabled={!canProduce||index===clips.length-1} onClick={()=>move(index,1)}>Ниже</button>
     <button type="button" disabled={!urls.current.has(clip.id)} onClick={()=>setPreviewId(clip.id)}>Предпросмотр</button>
-    <button type="button" onClick={()=>removeClip(clip.id)}>Удалить</button>
+    <button type="button" disabled={!canProduce} onClick={()=>removeClip(clip.id)}>Удалить</button>
    </div>
   </div>)}
   <button type="button" onClick={()=>{setPlaySequence(true);setPreviewId(clips[0]?.id??null)}} disabled={clips.length<2||clips.some(c=>!urls.current.has(c.id))}>Смотреть последовательность</button>
@@ -227,14 +231,14 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   {previewId!==null&&urls.current.has(previewId)&&<div><p>Исходник (не готовый монтаж)</p><video key={previewId} controls playsInline autoPlay={playSequence} preload="metadata" onLoadedMetadata={e=>{if(playSequence){const clip=clips.find(c=>c.id===previewId);if(clip)e.currentTarget.currentTime=clip.startSec}}} onTimeUpdate={e=>{if(!playSequence)return;const clip=clips.find(c=>c.id===previewId);if(clip&&e.currentTarget.currentTime>=clip.startSec+clip.durationSec-0.04){e.currentTarget.pause();advanceSequence()}}} onEnded={()=>{if(playSequence)advanceSequence()}} src={urls.current.get(previewId)} style={{width:'100%',maxWidth:360,maxHeight:440}}/></div>}
   <p>Предпросмотр не является готовым MP4: переходы между файлами могут иметь паузы.</p>
   <p>Итого: {timelineDuration.toFixed(1)} сек.</p>
-  <section className="personaCaptionEditor" aria-label="Субтитры"><h4>Субтитры</h4><p>Добавь текст и время показа. Субтитры сохраняются в плане; текущий локальный рендер пока не прожигает их в MP4.</p><button type="button" disabled={timelineDuration<0.1} onClick={addCaption}>Добавить субтитр</button>{captions.map((caption,index)=><div className="personaCaptionItem" key={caption.id}><label>Текст {index+1}<textarea value={caption.text} onChange={e=>setCaptions(items=>items.map(item=>item.id===caption.id?{...item,text:e.target.value}:item))}/></label><div><label>С {caption.startSec.toFixed(1)} сек.<input type="number" min="0" max={timelineDuration} step="0.1" value={caption.startSec} onChange={e=>changeCaption(caption.id,{startSec:Number(e.target.value)})}/></label><label>До {caption.endSec.toFixed(1)} сек.<input type="number" min="0.1" max={timelineDuration} step="0.1" value={caption.endSec} onChange={e=>changeCaption(caption.id,{endSec:Number(e.target.value)})}/></label></div><button type="button" onClick={()=>setCaptions(items=>items.filter(item=>item.id!==caption.id))}>Удалить субтитр</button></div>)}</section>
+  <section className="personaCaptionEditor" aria-label="Субтитры"><h4>Субтитры</h4><p>Добавь текст и время показа. Субтитры сохраняются в плане; текущий локальный рендер пока не прожигает их в MP4.</p><button type="button" disabled={!canProduce||timelineDuration<0.1} onClick={addCaption}>Добавить субтитр</button>{captions.map((caption,index)=><div className="personaCaptionItem" key={caption.id}><label>Текст {index+1}<textarea value={caption.text} onChange={e=>setCaptions(items=>items.map(item=>item.id===caption.id?{...item,text:e.target.value}:item))}/></label><div><label>С {caption.startSec.toFixed(1)} сек.<input type="number" min="0" max={timelineDuration} step="0.1" value={caption.startSec} onChange={e=>changeCaption(caption.id,{startSec:Number(e.target.value)})}/></label><label>До {caption.endSec.toFixed(1)} сек.<input type="number" min="0.1" max={timelineDuration} step="0.1" value={caption.endSec} onChange={e=>changeCaption(caption.id,{endSec:Number(e.target.value)})}/></label></div><button type="button" onClick={()=>setCaptions(items=>items.filter(item=>item.id!==caption.id))}>Удалить субтитр</button></div>)}</section>
   <label>Ширина <select value={width} onChange={e=>{const w=Number(e.target.value);setWidth(w);setHeight(w===1080?1920:1080)}}><option value={1080}>Вертикальное 1080×1920</option><option value={1920}>Горизонтальное 1920×1080</option></select></label>
   <label>FPS <select value={fps} onChange={e=>setFps(Number(e.target.value))}><option value={25}>25</option><option value={30}>30</option><option value={60}>60</option></select></label>
-  <button type="button" className="primary" onClick={download}>Сохранить монтажный план</button>
+  <button type="button" className="primary" disabled={!canProduce} onClick={download}>Сохранить монтажный план</button>
   <p>Экспорт MP4 на iPhone пока недоступен. План можно продолжить на совместимом компьютере.</p>
   {renderState&&<p role="status">{renderState}</p>}
   <p>После перезагрузки выбери исходные видео повторно: браузер хранит их названия, порядок и тайминги, но не сами файлы.</p>
-  <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
+  <details className="personaDeveloperDisclosure"><summary>Для разработчика</summary><p>Локальный FFmpeg bridge доступен только на компьютере и не используется на iPhone.</p><button type="button" disabled={!canProduce||rendering} onClick={()=>void renderLocal()}>{rendering?'Создание MP4…':'Проверить локальный FFmpeg bridge'}</button></details>
   {error&&<p role="alert">{error}</p>}
  </section>;
 }
