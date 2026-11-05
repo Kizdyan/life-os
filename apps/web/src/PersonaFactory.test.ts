@@ -41,6 +41,25 @@ describe('script revision revokes production authorization',()=>{
   const workspace=addImportedBriefScenario(undefined,brief,now);
   return {brief,approved,workspace};
  };
+ it('revokes a previously approved shoot when the SAME creative revision is explicitly rejected',()=>{
+  const {brief,approved,workspace}=production();
+  const rejectedReview={revisionId:workspace.script!.currentRevisionId,
+   reviewer:'author' as const,decision:'needs_revision' as const,
+   comment:'После внимательной проверки комедийный поворот и музыка не работают, нужно исправить.',
+   createdAt:'2026-11-05T16:20:00.000Z'};
+  expect(reconcilePersonaProductionWithScenario(approved,{...workspace,
+   creativeReviews:[{...rejectedReview,revisionId:'unrelated-revision'}]}))
+   .toBe(approved);
+  const rejected={...workspace,creativeReviews:[rejectedReview]};
+  const invalidated=reconcilePersonaProductionWithScenario(approved,rejected);
+  expect(invalidated).not.toBe(approved);
+  expect(invalidated?.stage).toBe('QA');
+  expect(invalidated?.statuses.READY_FOR_SHOOT).toBe('pending');
+  expect(invalidated?.materials.editorialDecision).toBeUndefined();
+  expect(invalidated?.materials.productionBrief?.script).toEqual(brief.script);
+  expect(invalidated?.materials.qa).toEqual(approved.materials.qa);
+  expect(reconcilePersonaProductionWithScenario(invalidated,rejected)).toBe(invalidated);
+ });
  it('reopens QA and removes an older human approval after a spoken line changes',()=>{
   const {brief,approved,workspace}=production();
   expect(approved.stage).toBe('READY_FOR_SHOOT');
