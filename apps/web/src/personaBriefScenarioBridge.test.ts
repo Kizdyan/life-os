@@ -22,6 +22,34 @@ describe('Production Brief to Scenario Workspace', () => {
     expect(loadPersonaProjects(storage, () => 'unused').projects[0].scenarioWorkspace?.script?.currentRevision.beats).toHaveLength(7);
   });
 
+
+  it('preserves only scene-aligned audio and cut cues, never invented or stale ones',()=>{
+    const expected=checked.script.map((beat,i)=>({
+      order:beat.order,line:beat.line,durationSec:beat.durationSec,
+      editIntent:'Сцена '+(i+1)+': отдельная авторская монтажная пауза после последнего слова.',
+      audioIntent:'Своя музыка, только после проверенной речи.',
+      subtitleIntent:'Не ставить субтитры поверх музыки.',
+      mediaStatus:'awaiting_author_footage' as const,
+    }));
+    const detailed={...checked,preEditPlan:{
+      version:1 as const,kind:'persona-pre-edit-plan-v1' as const,status:'intent_only' as const,
+      origin:'scenario_revision' as const,sourceRevisionId:'imported-external-snapshot',
+      researchEvidence:{level:'hypothesis_only' as const,sourceUrls:[],note:'Не подтверждено реальными видео'},
+      scenes:expected,publicationApproved:false as const,
+    }};
+    const imported=addImportedBriefScenario(undefined,detailed,'2026-11-05T17:35:00.000Z');
+    expect(imported.script?.approval).toBeUndefined();
+    expect(imported.script?.currentRevision.beats.map(beat=>beat.editIntent))
+      .toEqual(expected.map(beat=>beat.editIntent));
+    const stale={...detailed,preEditPlan:{...detailed.preEditPlan,
+      scenes:detailed.preEditPlan.scenes.map((cue,i)=>i===5?{
+        ...cue,line:'Чужая реплика B03 — не переносить её музыкальные указания'
+      }:cue),
+    }};
+    const repaired=addImportedBriefScenario(undefined,stale,'2026-11-05T17:36:00.000Z');
+    expect(repaired.script?.currentRevision.beats[5].editIntent).toBeUndefined();
+    expect(repaired.script?.currentRevision.beats[4].editIntent).toBe(expected[4].editIntent);
+  });
   it('turns the V2 author markers into persisted A01/B01 locks', () => {
     const editorialProject = createPersonaProject({ id: 'actor-composer-v2', title: editorialBrief.sourceTitle, contentType: 'reel', sourceIdea: editorialBrief.sourceAngle, now: '2026-11-01T10:00:00.000Z' });
     const editorial = importPersonaProductionBrief({ brief: editorialBrief, selectedIdea: { id: editorialProject.id, title: editorialProject.title, angle: editorialProject.sourceIdea, format: editorialProject.contentType } }).materials.productionBrief!;
