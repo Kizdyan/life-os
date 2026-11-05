@@ -187,10 +187,14 @@ describe("shoot brief conversion is blocked by a withdrawn creative signoff",()=
     onChange={()=>undefined} onCreateBrief={()=>undefined}/>);
   const before=render([reviewed]);
   expect(before).toContain("Создать съёмочный бриф");
+  expect(before).toContain("Творческая приёмка");
+  expect(before).toContain("Сценарий уже утверждён");
+  expect(before).toContain("Не снимать — доработать");
   const after=render([reviewed,{...reviewed,decision:"needs_revision" as const,
    comment:"Переоценил сценарий: шутка объясняется словами, музыкальная идея не раскрыта.",
    createdAt:"2026-11-05T15:07:00.000Z"}]);
   expect(after).not.toContain("Создать съёмочный бриф");
+  expect(after).not.toContain("Сценарий уже утверждён");
   expect(after).toContain("Художественная приёмка");
   expect(after).toContain("Ещё не одобрен автором");
   expect(after).toContain("Нужна переработка");
