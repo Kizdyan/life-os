@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
+import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, assertPersonaProductionCanBeApproved, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject,applyPersonaProductionMilestone,savePersonaProject,loadPersonaProjects,type PersonaProjectCollection } from './personaProjectStore';
 import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide} from './personaProductionGuide';
 import {addImportedBriefScenario} from './personaBriefScenarioBridge';
+import {approveScenarioScript} from '../../../packages/core/src/persona-scenario-intelligence';
 
 const quick={id:'local-project',title:'Новый Reels',angle:'Создать материал из собственных исходников',format:'reel' as const,score:0,source:'quick-start'};
 const candidate={sourceTitle:'Один день между театром и музыкой',sourceAngle:'Две профессии одной историей',sourceFormat:'reel'};
@@ -41,6 +42,43 @@ describe('script revision revokes production authorization',()=>{
   const workspace=addImportedBriefScenario(undefined,brief,now);
   return {brief,approved,workspace};
  };
+ it('blocks final shooting approval if the author creative decision is missing, withdrawn or stale',()=>{
+  const {approved,brief,workspace}=production();
+  const script=approveScenarioScript(workspace.script!,{
+   author:'Автор',comment:'Проверена структура и формальная версия.',
+   approvedAt:'2026-11-05T17:05:00.000Z',
+  });
+  const baseline={...workspace,script};
+  expect(()=>assertPersonaProductionCanBeApproved(approved,workspace))
+   .toThrow(/художественная оценка/);
+  expect(()=>assertPersonaProductionCanBeApproved(approved,baseline))
+   .toThrow(/художественная оценка/);
+  const signed={...baseline,creativeReviews:[{
+   revisionId:script.currentRevisionId,reviewer:'author' as const,
+   decision:'ready_for_author' as const,
+   comment:'Художественно проверил конфликт, реплики, музыку и финал.',
+   createdAt:'2026-11-05T17:06:00.000Z',
+  }]};
+  expect(()=>assertPersonaProductionCanBeApproved(approved,signed)).not.toThrow();
+  const withdrawn={...signed,creativeReviews:[...signed.creativeReviews,{
+   ...signed.creativeReviews[0],decision:'needs_revision' as const,
+   comment:'После повторной проверки драматургический конфликт слабый.',
+   createdAt:'2026-11-05T17:07:00.000Z',
+  }]};
+  expect(()=>assertPersonaProductionCanBeApproved(approved,withdrawn))
+   .toThrow(/художественная оценка/);
+  const outdated={...approved,materials:{...approved.materials,productionBrief:{
+   ...brief,preEditPlan:{...brief.preEditPlan!,origin:'scenario_revision' as const,
+    sourceRevisionId:'old-r1'},
+  }}};
+  expect(()=>assertPersonaProductionCanBeApproved(outdated,signed))
+   .toThrow(/прежней редакции/);
+  const changed={...approved,materials:{...approved.materials,productionBrief:{
+   ...brief,script:brief.script.map((item,i)=>i===0?{...item,line:'Изменённая реплика'}:item),
+  }}};
+  expect(()=>assertPersonaProductionCanBeApproved(changed,signed))
+   .toThrow(/не соответствует/);
+ });
  it('revokes a previously approved shoot when the SAME creative revision is explicitly rejected',()=>{
   const {brief,approved,workspace}=production();
   const rejectedReview={revisionId:workspace.script!.currentRevisionId,
