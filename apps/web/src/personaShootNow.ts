@@ -127,6 +127,17 @@ export function canStartPersonaVideoMediaWork(
  return buildPersonaShootPlan({title:'Pre-production check',workspace,pipeline,allowPilot:false}).status==='approved';
 }
 
+/** Importing new footage is never grandfathered in by already attached media.
+ * Legacy clips may remain viewable, but a new import requires the current
+ * scenario revision and production brief to be approved.
+ */
+export function canImportPersonaVideoMedia(
+ workspace:PersonaScenarioWorkspace|undefined,
+ pipeline:PersonaProductionPipeline|null,
+):boolean{
+ return buildPersonaShootPlan({title:'Pre-production check',workspace,pipeline,allowPilot:false}).status==='approved';
+}
+
 /** Take the current source of truth rather than replacing it with the demo.
  * Never inherit camera notes if a dialogue/action/duration changed.
  */
