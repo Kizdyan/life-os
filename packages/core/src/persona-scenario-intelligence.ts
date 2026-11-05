@@ -175,6 +175,7 @@ export type ScenarioCreativeFailureCategory =
   | "predictable_payoff"
   | "unplayable_actor_action"
   | "expository_dialogue"
+  | "late_payoff"
   | "unshootable_scene"
   | "unverified_fact"
   | "source_imitation"
@@ -239,6 +240,37 @@ export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevisio
       severity: "human_review",
       explanation: "Все кадры имеют одинаковую длительность. Это не доказывает плохой ритм, но требует ручной проверки пауз, хука, реакции и финала.",
       proposedFix: "Проверьте монтаж по действию: короткий хук, достаточная пауза для реакции и длительность, оправданная музыкой или репликой, а не шаблоном.",
+    });
+  }
+  const firstLine=(revision.beats[0]?.line??"").normalize("NFKC")
+    .toLocaleLowerCase("ru-RU").replaceAll("ё","е").trim();
+  if (/^(?:я|мы)\s+(?:актер|композитор|музыкант|режиссер|блогер)\b/u.test(firstLine)) {
+    findings.push({
+      category:"expository_dialogue",beatOrders:[1],
+      fragment:revision.beats[0].line,severity:"human_review",
+      explanation:"Первая реплика представляет профессию автора, а не обязательно показывает событие. Для незнакомого зрителя это возможный риск слабого хука, но не доказательство плохого сценария.",
+      proposedFix:"Попробуйте начать с действия, звука или конфликта, раскрывая профессию через поведение героя; сознательно оставьте знакомство, только если оно драматургически необходимо.",
+    });
+  }
+  if (revision.beats.some(beat=>/^(?:и\s+)?у\s+нас\s+есть\s+проблема[.!?\s]*$/iu.test(beat.line.trim()))) {
+    const orders=revision.beats.flatMap((beat,index)=>
+      /^(?:и\s+)?у\s+нас\s+есть\s+проблема[.!?\s]*$/iu.test(beat.line.trim())?[index+1]:[]);
+    findings.push({
+      category:"generic_dialogue",beatOrders:orders,fragment:"У нас есть проблема",
+      severity:"human_review",
+      explanation:"Реплика обозначает проблему, но сама по себе не даёт зрителю конкретного нового обстоятельства. Такая интрига может работать только при выразительном действии рядом.",
+      proposedFix:"Дайте предметное препятствие прямо в кадре или замените абстрактное сообщение на действие, которое меняет ситуацию.",
+    });
+  }
+  const total=durations.reduce((sum,value)=>sum+value,0);
+  const endingStart=total-(durations.at(-1)??0);
+  if (durations.length>=4&&total>=20&&endingStart/total>0.8) {
+    findings.push({
+      category:"late_payoff",beatOrders:[durations.length],
+      fragment:`Финальный блок начинается приблизительно на ${Math.round(endingStart/total*100)}% длительности`,
+      severity:"human_review",
+      explanation:"Финальная сцена начинается после четырёх пятых ролика. Это измеренный факт структуры, но не доказательство низкого удержания: нужно проверить, есть ли повороты раньше.",
+      proposedFix:"Проверьте, возникают ли самостоятельные события в первых секундах; при необходимости перенесите один поворот вперёд или сократите служебную экспозицию.",
     });
   }
   return {
