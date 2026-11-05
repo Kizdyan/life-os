@@ -3,9 +3,11 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
-import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
+import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
+import {approveScenarioScript,reviseScenarioScript} from '../../../packages/core/src/persona-scenario-intelligence';
+import {personaFirstReelConcepts,stagePersonaCreativeConcept} from './personaCreativeDevelopment';
 
 const canonicalFirstReel=JSON.parse(readFileSync(
  new URL('../../../docs/persona-first-reel-production-brief-2026-10-29.json',import.meta.url),'utf8',
@@ -132,4 +134,31 @@ it('does not let an unapproved example masquerade as a filming checklist',()=>{
  expect(signed).toContain('Открыть реальные дубли в монтаже');
  expect(signed).not.toContain('Сначала сценарий, потом съёмка');
  expect(signed).not.toMatch(/type="checkbox"[^>]*disabled=""/);
+});
+
+
+it('does not treat a structural-only or revoked creative approval as permission to shoot',()=>{
+ const initial=stagePersonaCreativeConcept(
+  {version:1,research:[],analyses:[],ideas:[]},personaFirstReelConcepts[0],
+  '2026-11-05T16:00:00.000Z');
+ const script=approveScenarioScript(initial.script!,{
+  author:'Редактор',comment:'Проверка структуры пройдена, творческое решение отдельно.',
+  approvedAt:'2026-11-05T16:01:00.000Z',
+ });
+ const workspace={...initial,script};
+ expect(isScenarioCreativeApprovedForShooting(workspace)).toBe(false);
+ const positive={revisionId:script.currentRevisionId,reviewer:'author' as const,
+  decision:'ready_for_author' as const,
+  comment:'Сценарий разобран на конфликт, актерское действие, музыку, начало и финал.',
+  createdAt:'2026-11-05T16:02:00.000Z'};
+ const accepted={...workspace,creativeReviews:[positive]};
+ expect(isScenarioCreativeApprovedForShooting(accepted)).toBe(true);
+ expect(isScenarioCreativeApprovedForShooting({...accepted,
+  creativeReviews:[positive,{...positive,decision:'needs_revision',
+   comment:'Пересмотрел решение: конфликт слишком слабый, музыкальный финал предсказуем.',
+   createdAt:'2026-11-05T16:03:00.000Z'}]})).toBe(false);
+ const newScript=reviseScenarioScript(script,{createdAt:'2026-11-05T16:04:00.000Z',
+  reason:'Отдельная новая редакция',beats:script.currentRevision.beats.map((beat,i)=>
+   i===1?{...beat,action:beat.action+' Герой отказывает собеседнику.'}:beat)});
+ expect(isScenarioCreativeApprovedForShooting({...accepted,script:newScript})).toBe(false);
 });
