@@ -7,6 +7,7 @@ import PersonaScenarioWorkspace from "./PersonaScenarioWorkspace";
 import {
   assertPersonaCreativeReviewSignoff,personaCreativeLenses,
   personaFirstReelConcepts,stagePersonaCreativeConcept,
+  latestPersonaCreativeReview,recordPersonaCreativeReview,
 } from "./personaCreativeDevelopment";
 import {createPersonaProject,validatePersonaProjectCollection,type PersonaScenarioWorkspace} from "./personaProjectStore";
 
@@ -109,5 +110,35 @@ describe("Persona Creative Development pre-production gate",()=>{
     expect(page).toContain("Не снимать — доработать");
     expect(page).toContain("Аргументы творческой оценки");
     expect(page).toContain("Утвердить сценарий");
+  });
+});
+
+
+describe("withdrawal of author creative approval",()=>{
+  const accepted={revisionId:"reel-r1",reviewer:"author" as const,
+    decision:"ready_for_author" as const,
+    comment:"Внимательно проверил хук, актерские действия, музыку, зрительский интерес и финал.",
+    createdAt:"2026-11-05T15:30:00.000Z"};
+  it("keeps only the latest decision; a rejection cannot inherit an older approval",()=>{
+    const first=recordPersonaCreativeReview([],accepted);
+    expect(latestPersonaCreativeReview(first,"reel-r1")?.decision).toBe("ready_for_author");
+    const rejection={...accepted,decision:"needs_revision" as const,
+      comment:"Финал слишком объяснительный, актёрское действие не разработано, звук нужен другой.",
+      createdAt:"2026-11-05T15:31:00.000Z"};
+    const next=recordPersonaCreativeReview(first,rejection);
+    expect(next).toHaveLength(1);
+    expect(latestPersonaCreativeReview(next,"reel-r1")?.decision).toBe("needs_revision");
+    expect(()=>assertPersonaCreativeReviewSignoff("reel-r1",
+      latestPersonaCreativeReview(next,"reel-r1"))).toThrow();
+    expect(latestPersonaCreativeReview([accepted,rejection],"reel-r1")?.decision)
+      .toBe("needs_revision","legacy duplicate records must follow latest decision");
+  });
+  it("never carries a creative signoff into a different revision",()=>{
+    const reviews=recordPersonaCreativeReview([],accepted);
+    expect(latestPersonaCreativeReview(reviews,"reel-r2")).toBeUndefined();
+    expect(()=>assertPersonaCreativeReviewSignoff("reel-r2",
+      latestPersonaCreativeReview(reviews,"reel-r2"))).toThrow();
+    expect(()=>recordPersonaCreativeReview(reviews,
+      {...accepted,comment:"Слишком коротко"})).toThrow(/Invalid author creative review/);
   });
 });
