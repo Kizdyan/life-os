@@ -29,8 +29,11 @@ function idFor(beat,c){
 function candidateFromRank(beat,rank,source,shot){
  let endSec=rank.endSec;
  if(musicAfterSpeech(shot)){
-  if(!valid(shot.durationSec)||shot.durationSec<=0) return null;
+  // Coarse Whisper timing cannot locate the spoken-to-original-music boundary.
+  if(rank.speechBoundaryConfidence!=='word'||!valid(rank.speechEndSec)||
+     !valid(shot.durationSec)||shot.durationSec<=0) return null;
   endSec=Math.max(endSec,rank.startSec+shot.durationSec);
+  if(rank.speechEndSec<=rank.startSec+0.02||rank.speechEndSec>=endSec-0.02)return null;
  }
  if(endSec>source.durationSec+0.02) return null;
  const durationSec=Number((endSec-rank.startSec).toFixed(3));
@@ -44,7 +47,9 @@ function candidateFromRank(beat,rank,source,shot){
   reason:'ASR text match '+Math.round(rank.coverage*100)+'%; technical and performance review required.',
   sourceSha256:source.sha256??null,
   technicalWarnings:source.technicalQuality?.warnings??[],
-  evidenceFrames:source.frames??[]
+  evidenceFrames:source.frames??[],
+  ...(musicAfterSpeech(shot)?{postSpeechMusicPreserved:true,
+   speechBoundaryConfidence:'word',speechEndSec:rank.speechEndSec}:{})
  };
  candidate.candidateId=idFor(beat,candidate);
  return candidate;
@@ -61,7 +66,7 @@ function recoveryForSources(sources){
  })),actions:['Просмотреть и прослушать локальный исходник','Сверить результат Whisper с речью','Вручную указать границы и текст фразы либо выбрать пересъёмку','Повторить монтаж только после явной проверки фрагмента'],
   note:'Ручная разметка хранится отдельно от Whisper и не доказывает автоматическую точность распознавания.'};
 }
-function manualRecovery(selected,source,beat,expectedLine){
+function manualRecovery(selected,source,beat,expectedLine,shot){
  const item=selected?.recovery;
  if(!item||item.kind!=='persona-manual-segment-v1'||item.confirmed!==true||
     item.sourceId!==source?.id||item.sourceSha256!==source?.sha256||
@@ -80,9 +85,17 @@ function manualRecovery(selected,source,beat,expectedLine){
     normalizeSpeech(item.transcript)!==normalizeSpeech(expectedLine))
   fail('Manual recovery transcript differs from approved script for beat '+beat+
     '; listen to the real audio, reshoot if necessary, or explicitly revise the brief');
+ const musicHold=musicAfterSpeech(shot);
+ if(musicHold&&(!valid(item.manualMusicBoundarySec)||
+    item.manualMusicBoundarySec<=item.startSec+0.02||
+    item.manualMusicBoundarySec>=item.startSec+item.durationSec-0.02))
+  fail('Manual post-speech music boundary missing or invalid for beat '+beat+
+   '; listen to the original and mark the absolute source time after the last spoken word');
  return {beat,sourceId:source.id,startSec:Number(item.startSec.toFixed(3)),durationSec:Number(item.durationSec.toFixed(3)),
   transcript:item.transcript.trim(),captionWords:[],confidence:null,sourceSha256:source.sha256,
   transcriptSource:'manual-review',manualTranscriptReview:true,
+  ...(musicHold?{postSpeechMusicPreserved:true,speechBoundaryConfidence:'manual',
+   manualMusicBoundarySec:Number(item.manualMusicBoundarySec.toFixed(3))}:{}),
   reason:item.reason.trim(),technicalWarnings:source.technicalQuality?.warnings??[]};
 }
 export function buildCandidatePack(brief,sources,planned=null){
@@ -115,7 +128,8 @@ export function buildCandidatePack(brief,sources,planned=null){
    if(alternatives.some(x=>sameTakeWindow(x,option)))continue;
    alternatives.push(option);
   }
-  beats.push({beat,scriptLine:script.line,defaultCandidateId:previous?.candidateId??alternatives[0]?.candidateId??null,
+  beats.push({beat,scriptLine:script.line,requiresPostSpeechMusic:musicAfterSpeech(shot),
+   defaultCandidateId:previous?.candidateId??alternatives[0]?.candidateId??null,
    candidates:alternatives,needsRecording:alternatives.length===0,
    ...(alternatives.length?{}:{recovery:recoveryForSources(sources)}),
    caveat:'Ranked by spoken-text coverage only; acting, humor, framing and color NOT scored.'});
@@ -184,7 +198,7 @@ export function applySelections(pack,selection,existing,analysis,brief){
   let found=item.candidates.find(c=>c.candidateId===selected.candidateId),manual=false;
   if(!found&&selected.recovery){
    const src=known.get(selected.recovery.sourceId);
-   found=manualRecovery(selected,src,beat,brief.script[i].line);manual=true;
+   found=manualRecovery(selected,src,beat,brief.script[i].line,brief.shots[i]);manual=true;
   }
   if(!found)fail('Selected candidate not in evidence pack for beat '+beat);
   const src=known.get(found.sourceId);
@@ -194,6 +208,12 @@ export function applySelections(pack,selection,existing,analysis,brief){
      (!manual&&(!valid(found.confidence)||found.confidence<0.65))||
      overlapsBlackInterval(found.startSec,found.startSec+found.durationSec,src.technicalQuality?.blackIntervals))
    fail('Selected candidate fails source or technical validation for beat '+beat);
+  if(musicAfterSpeech(brief.shots[i])){
+   const boundary=found.speechBoundaryConfidence==='word'?found.speechEndSec:found.manualMusicBoundarySec;
+   if(found.postSpeechMusicPreserved!==true||!valid(boundary)||
+      boundary<=found.startSec+0.02||boundary>=found.startSec+found.durationSec-0.02)
+    fail('Music-tail boundary missing or invalid for beat '+beat+'; no silent music normalization');
+  }
   if(used.some(x=>intersection(x,found)))fail('Selected scenes reuse overlapping source intervals');
   used.push(found);
   const rejected=selected.rejected??[];
@@ -206,7 +226,13 @@ export function applySelections(pack,selection,existing,analysis,brief){
   });
   choices.push({beat,sourceId:found.sourceId,startSec:found.startSec,durationSec:found.durationSec,
    transcript:found.transcript,captionWords:found.captionWords,
-   confidence:found.confidence,...(manual?{transcriptSource:'manual-review',manualTranscriptReview:true}:{}),
+   confidence:found.confidence,
+   ...(found.postSpeechMusicPreserved===true?{
+    postSpeechMusicPreserved:true,speechBoundaryConfidence:found.speechBoundaryConfidence,
+    ...(found.speechBoundaryConfidence==='word'?{speechEndSec:found.speechEndSec}:
+     {manualMusicBoundarySec:found.manualMusicBoundarySec})
+   }:{}),
+   ...(manual?{transcriptSource:'manual-review',manualTranscriptReview:true}:{}),
    reason:'Human reviewed take: '+selected.reason.trim()+
     (manual?'; source range and transcript were manually confirmed after ASR recovery; not an ASR accuracy claim.':'; ASR matched dialogue but acting quality not automatically assessed.')});
   events.push({beat,selectedCandidateId:found.candidateId,sourceId:found.sourceId,
