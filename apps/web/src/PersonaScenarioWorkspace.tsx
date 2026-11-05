@@ -451,7 +451,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    </article>
   </div>
   <PersonaAiCouncilPanel project={project} workspace={workspace} creativeProfile={effectiveProfile} onChange={onChange}/>
-  <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange}/>
+  <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange} blocked={hasPendingChanges}/>
   <section className="personaScenarioIdeas"><div><h4>Локальные идеи без нейросети</h4><p>Бесплатная резервная функция создаёт шаблонные варианты. Это не реальное исследование Perplexity и не AI-генерация.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 шаблонные идеи</button></section>
   <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='ai_generated'?('AI-идея: '+idea.aiProvenance?.model+' · ещё не утверждена'):
  idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
