@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
+import PersonaVideoTimeline from './PersonaVideoTimeline.tsx';
 import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
@@ -284,4 +285,22 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
  expect(canStartPersonaVideoMediaWork(malformed,pipeline,false)).toBe(false);
  expect(buildPersonaShootPlan({title:'Проверка',workspace:malformed,
   pipeline,allowPilot:false}).status).toBe('draft');
+});
+
+
+describe('Persona timeline approval enforcement',()=>{
+ it('keeps the existing timeline visible but disables new media intake and export on stale approval',()=>{
+  const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="stale-approval" canProduce={false}/>);
+  expect(view).toContain('Сценарий или съёмочный бриф изменены');
+  expect(view).toMatch(/aria-label="Добавить видеофрагменты"[^>]*disabled/);
+  expect(view).toMatch(/aria-label="Выбрать музыкальную дорожку"[^>]*disabled/);
+  expect(view).toMatch(/class="primary"[^>]*disabled/);
+  expect(view).toContain('Смотреть последовательность');
+ });
+ it('allows media intake when the current shooting plan is approved',()=>{
+  const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="approved-approval" canProduce={true}/>);
+  expect(view).not.toContain('Сценарий или съёмочный бриф изменены');
+  expect(view).toMatch(/aria-label="Добавить видеофрагменты"/);
+  expect(view).not.toMatch(/aria-label="Добавить видеофрагменты"[^>]*disabled/);
+ });
 });
