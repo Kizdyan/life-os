@@ -3,18 +3,21 @@ import {createScenarioScript} from "../../../packages/core/src/persona-scenario-
 import type {PersonaScenarioWorkspace} from "./personaProjectStore";
 import {
   personaCreativeLenses,personaFirstReelConcepts,
+  type PersonaCreativeConcept,
 } from "./personaCreativeDevelopment";
 
 type Props={
   workspace:PersonaScenarioWorkspace;
   onChange:(next:PersonaScenarioWorkspace)=>void;
+  onCreateRevision?:(concept:PersonaCreativeConcept)=>void;
+  blocked?:boolean;
 };
 
 /**
  * A transparent editorial comparison of three distinct pre-production drafts.
  * No paid inference, fake expert agents, author approval, media intake or upload.
  */
-export default function PersonaCreativeDevelopmentPanel({workspace,onChange}:Props){
+export default function PersonaCreativeDevelopmentPanel({workspace,onChange,onCreateRevision,blocked=false}:Props){
   const[activeId,setActiveId]=useState(personaFirstReelConcepts[0].id);
   const[notice,setNotice]=useState("");
   const selected=personaFirstReelConcepts.find(item=>item.id===activeId)??personaFirstReelConcepts[0];
@@ -68,10 +71,15 @@ export default function PersonaCreativeDevelopmentPanel({workspace,onChange}:Pro
         <p>{beat.action}</p>
         <small>Предмонтаж: {beat.editIntent}</small>
       </li>)}</ol>
-      <button type="button" className="ghost" onClick={add} disabled={existing}>
+      <button type="button" className="ghost" onClick={add} disabled={existing||blocked}>
         {existing?"Концепция уже сохранена":workspace.script?
          "Сохранить альтернативу, не меняя сценарий":"Создать неутверждённую редакцию из концепции"}
       </button>
+      {workspace.script&&onCreateRevision&&<button type="button" className="primary"
+        disabled={blocked} onClick={()=>onCreateRevision(selected)}>
+        Создать НОВУЮ неутверждённую редакцию из этой концепции
+      </button>}
+      {blocked&&<p role="status">Сначала сохраните или разрешите черновик сценария. Сохранённые версии не изменены.</p>}
       {notice&&<p className="personaScenarioHint" role="status">{notice}</p>}
       {workspace.script&&<p className="personaScenarioHint">Существующая редакция и авторское утверждение защищены: выбор карточки ничего не перезаписывает.</p>}
     </article>
