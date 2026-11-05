@@ -47,6 +47,34 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(assessment.findings.some((finding) => finding.category === "missing_conflict")).toBe(false);
     expect(assessment.notice).toMatch(/не измеряет художественную силу/i);
   });
+  it("flags a same-line three-genre performance as an artistic choice to review, not an automatic broken story",()=>{
+    const line="Ты всё-таки пришёл.";
+    const actions=[
+      "Герой искренне встречает партнёра после долгой разлуки.",
+      "Герой пытается остановить опасного гостя у двери.",
+      "Герой скрывает страх за официальной вежливостью.",
+      "Герой остаётся один на один с партнёром, без музыки.",
+    ];
+    const edits=[
+      "Светлая музыкальная миниатюра с первой реплики.",
+      "Тревожная гармония меняет смысл того же текста.",
+      "Комическая музыка делает героя неуверенным.",
+      "Резкая тишина обнажает настоящую актёрскую задачу.",
+    ];
+    const beats=actions.map((action,index)=>({
+      purpose:index===0?"hook" as const:index===3?"ending" as const:"development" as const,
+      line,action,durationSec:4,editIntent:edits[index],
+    }));
+    const result=assessScenarioCreativeRisks({id:"three-genres-r1",beats});
+    const repeated=result.findings.find(finding=>finding.category==="repeated_line");
+    expect(repeated?.severity).toBe("human_review");
+    expect(repeated?.explanation).toContain("жанровым контрастом");
+    expect(result.findings.every(finding=>finding.severity!=="needs_revision")).toBe(true);
+    const copied=beats.map((beat,index)=>index===2?{...beat,action:beats[1].action}:beat);
+    const broken=assessScenarioCreativeRisks({id:"copied-refrain",beats:copied});
+    expect(broken.findings.find(finding=>finding.category==="repeated_line")?.severity).toBe("needs_revision");
+  });
+
   it("keeps a manual link metadata-only and rejects a duplicate evidence URL", () => {
     const [item] = validateScenarioResearch([source]);
     expect(item.observationStatus).toBe("metadata_only");
