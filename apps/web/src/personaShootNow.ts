@@ -1,4 +1,5 @@
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
+import {latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {
  actorComposerShotDirections,createPersonaProductionGuide,exampleActorComposerBeats,
@@ -103,6 +104,15 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
  return lines.join('\n');
 }
 
+/** An old structural-only approval is not creative approval.
+ * The current script revision must have its own explicit editorial signoff.
+ */
+export function isScenarioCreativeApprovedForShooting(workspace:PersonaScenarioWorkspace|undefined):boolean{
+ const script=workspace?.script;
+ if(!script||script.approval?.revisionId!==script.currentRevisionId)return false;
+ return latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId)?.decision==='ready_for_author';
+}
+
 /** Take the current source of truth rather than replacing it with the demo.
  * Never inherit camera notes if a dialogue/action/duration changed.
  */
@@ -156,7 +166,7 @@ export function buildPersonaShootPlan(input:{
     'S'+String(i+1).padStart(2,'0')+'_take01.mp4',
   };
  });
- const scriptApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevisionId);
+ const scriptApproved=isScenarioCreativeApprovedForShooting(workspace);
  const briefApproved=Boolean(brief&&useBrief&&pipeline?.stage==='READY_FOR_SHOOT'&&
   pipeline.materials.editorialDecision?.decision==='approved');
  return {
