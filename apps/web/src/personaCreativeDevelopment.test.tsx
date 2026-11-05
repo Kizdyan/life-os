@@ -1,7 +1,7 @@
 import React from "react";
 import {renderToString} from "react-dom/server";
 import {describe,expect,it} from "vitest";
-import {approveScenarioScript,reviseScenarioScript,reviewScenarioScript} from "../../../packages/core/src/persona-scenario-intelligence";
+import {approveScenarioScript,reviseScenarioScript,reviewScenarioScript,assessScenarioCreativeRisks} from "../../../packages/core/src/persona-scenario-intelligence";
 import PersonaCreativeDevelopmentPanel from "./PersonaCreativeDevelopmentPanel";
 import PersonaScenarioWorkspace from "./PersonaScenarioWorkspace";
 import {
@@ -37,6 +37,15 @@ describe("Persona Creative Development pre-production gate",()=>{
       expect(newScript.approval).toBeUndefined();
       expect(reviewScenarioScript(newScript.currentRevision).status).toBe("ready_for_author");
     }
+  });
+
+  it("does not automatically reject the real three-genre concept for its intentional refrain",()=>{
+    const concept=personaFirstReelConcepts.find(item=>item.title==="Один текст — три жанра")!;
+    const workspace=stagePersonaCreativeConcept(empty,concept,now);
+    const assessed=assessScenarioCreativeRisks(workspace.script!.currentRevision);
+    expect(assessed.findings.find(item=>item.category==="repeated_line")?.severity).toBe("human_review");
+    expect(assessed.findings.every(item=>item.severity!=="needs_revision")).toBe(true);
+    expect(workspace.script!.approval).toBeUndefined();
   });
 
   it("never overwrites an existing approved script or silently changes it when concepts are compared",()=>{
