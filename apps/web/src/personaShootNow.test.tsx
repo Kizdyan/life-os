@@ -259,11 +259,13 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
  expect(isScenarioCreativeApprovedForShooting(workspace)).toBe(true);
  const approved=buildPersonaShootPlan({title:'Проверка',workspace,pipeline,allowPilot:false});
  expect(approved.status).toBe('approved');
+ expect(canStartPersonaVideoMediaWork(workspace,pipeline,false)).toBe(true);
  const stalePipeline={...pipeline,materials:{...pipeline.materials,productionBrief:{
   ...brief,preEditPlan:{...brief.preEditPlan,sourceRevisionId:'old-r1'},
  }}} as PersonaProductionPipeline;
  expect(buildPersonaShootPlan({title:'Проверка',workspace,pipeline:stalePipeline,
   allowPilot:false}).status).toBe('draft');
+ expect(canStartPersonaVideoMediaWork(workspace,stalePipeline,false)).toBe(false);
  const modifiedScript={...workspace,script:{...workspace.script!,
   currentRevision:{...workspace.script!.currentRevision,
    beats:workspace.script!.currentRevision.beats.map((beat,i)=>
@@ -271,8 +273,10 @@ it('refuses stale pre-edit revisions or malformed creative evidence even when li
   }}};
  expect(buildPersonaShootPlan({title:'Проверка',workspace:modifiedScript,
   pipeline,allowPilot:false}).status).toBe('draft');
+ expect(canStartPersonaVideoMediaWork(modifiedScript,pipeline,false)).toBe(false);
  const malformed={...workspace,creativeReviews:[{...decision,comment:'кратко'}]};
  expect(isScenarioCreativeApprovedForShooting(malformed)).toBe(false);
+ expect(canStartPersonaVideoMediaWork(malformed,pipeline,false)).toBe(false);
  expect(buildPersonaShootPlan({title:'Проверка',workspace:malformed,
   pipeline,allowPilot:false}).status).toBe('draft');
 });
