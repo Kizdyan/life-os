@@ -586,7 +586,7 @@ export default function PersonaFactory(){
    }};
    persistScenarioWorkspace(generatedWorkspace,newIdea,pipeline);
    setChosen(newIdea);setProduction(pipeline);setDraft(null);setQa(null);
-   setProductionFactsChecked(false);setWorkspaceStep('guide');setStage('final_qa');
+   setProductionFactsChecked(false);setWorkspaceStep('script');setStage('strategy');
    save('persona:director-hooks:v1',[...previousHooks,proposal.hook,proposal.scenes[0].line].slice(-12));
    setStatus('Реальная модель '+proposal.model+' создала '+proposal.scenes.length+
     ' новых кадров. Реплики и режиссёрские указания сохранены как НЕУТВЕРЖДЁННЫЙ сценарий. Монтаж и съёмка не выполнены.');
@@ -602,6 +602,8 @@ export default function PersonaFactory(){
  function createProductionBrief(idea=chosen,angle?:string){
   if(!idea)return;
   try{
+   if(['reel','short','story'].includes(idea.format)&&!isScenarioCreativeApprovedForShooting(scenarioWorkspace))
+    throw Error('Сначала завершите творческую проверку и утвердите сценарий, затем создавайте съёмочный бриф.');
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Сначала сохраните или разрешите незавершённую правку брифа.');
    const next=buildPersonaProductionWorkflow({...idea,angle:angle??idea.angle});
