@@ -166,3 +166,33 @@ describe("First actor-composer creative selection is usable with an existing sce
   expect(html).not.toContain("Снять ролик сейчас");
  });
 });
+
+
+describe("shoot brief conversion is blocked by a withdrawn creative signoff",()=>{
+ it("does not display an old approval after creative signoff was withdrawn",()=>{
+  const initial=stagePersonaCreativeConcept(empty,personaFirstReelConcepts[0],now);
+  const approved=approveScenarioScript(initial.script!,{
+   author:"Тестовый автор",comment:"Формально одобренная старая редакция",
+   approvedAt:"2026-11-05T15:05:00.000Z",
+  });
+  const reviewed={revisionId:approved.currentRevisionId,reviewer:"author" as const,
+   decision:"ready_for_author" as const,comment:"Конфликт, реплики, музыка и финал заслуживают внимания.",
+   createdAt:"2026-11-05T15:06:00.000Z"};
+  const project=createPersonaProject({id:"creative-withdrawal",title:actorComposerPilot.title,
+   sourceIdea:actorComposerPilot.angle,contentType:"reel",now});
+  const render=(reviews:PersonaScenarioWorkspace["creativeReviews"])=>
+   renderToString(<PersonaScenarioWorkspace project={project}
+    workspace={{...initial,script:approved,creativeReviews:reviews}}
+    creativeProfile={{priorities:[],constraints:[]}}
+    onChange={()=>undefined} onCreateBrief={()=>undefined}/>);
+  const before=render([reviewed]);
+  expect(before).toContain("Создать съёмочный бриф");
+  const after=render([reviewed,{...reviewed,decision:"needs_revision" as const,
+   comment:"Переоценил сценарий: шутка объясняется словами, музыкальная идея не раскрыта.",
+   createdAt:"2026-11-05T15:07:00.000Z"}]);
+  expect(after).not.toContain("Создать съёмочный бриф");
+  expect(after).toContain("Художественная приёмка");
+  expect(after).toContain("Ещё не одобрен автором");
+  expect(after).toContain("Нужна переработка");
+ });
+});
