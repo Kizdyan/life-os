@@ -224,13 +224,27 @@ export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevisio
   });
   for (const [line, orders] of duplicateOrders) {
     if (orders.length < 2) continue;
+    const repeated = orders.map(order => revision.beats[order - 1]);
+    const normalized = (value:string) => value.toLocaleLowerCase("ru-RU").replace(/\s+/gu," ").trim();
+    const actingTasks = repeated.map(beat => normalized(beat.action));
+    const editIntents = repeated.map(beat => normalized(beat.editIntent ?? ""));
+    // A repeated line can be an intentional genre/performance contrast. This
+    // heuristic can only check that staging is explicitly differentiated; it
+    // cannot judge whether the artistic contrast actually works on camera.
+    const intentionalContrast = editIntents.every(Boolean) &&
+      new Set(actingTasks).size === orders.length &&
+      new Set(editIntents).size === orders.length;
     findings.push({
       category: "repeated_line",
       beatOrders: orders,
       fragment: line,
-      severity: "needs_revision",
-      explanation: `Одна и та же реплика повторяется в кадрах ${orders.join(", ")}; это подтверждаемый признак, что действие сцены могло не развиться.`,
-      proposedFix: "Оставьте повтор только если он является осмысленным рефреном; иначе дайте каждому следующему кадру новый выбор, реакцию или изменение обстоятельств.",
+      severity: intentionalContrast ? "human_review" : "needs_revision",
+      explanation: intentionalContrast
+        ? `Реплика повторена в кадрах ${orders.join(", ")}, но действия и монтаж различаются. Это может быть намеренным жанровым контрастом; художественную убедительность должен оценить автор.`
+        : `Реплика повторена в кадрах ${orders.join(", ")} без явно различающихся действий и монтажных задач; возможно, развитие ситуации остановилось.`,
+      proposedFix: intentionalContrast
+        ? "Сыграйте три версии с разными намерениями, проверьте, меняет ли авторская музыка смысл каждого повтора, и утвердите приём осознанно."
+        : "Разведите повторы по игровым целям, партнёру и музыкальному или монтажному повороту либо уберите лишнюю реплику.",
     });
   }
   const durations = revision.beats.map((beat) => beat.durationSec);
