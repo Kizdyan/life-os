@@ -164,3 +164,30 @@ export function stagePersonaCreativeConcept(
   });
   return {...workspace,ideas,selectedIdeaId:selected.idea.id,script};
 }
+
+
+/** Legacy records can contain more than one decision for a revision.
+ * The latest explicit author decision always wins; older decisions never
+ * silently resurrect approval after the author has withdrawn it.
+ */
+export function latestPersonaCreativeReview(
+  reviews:readonly PersonaCreativeReviewSignoff[]|undefined,revisionId:string,
+):PersonaCreativeReviewSignoff|undefined{
+  if(!reviews)return undefined;
+  for(let i=reviews.length-1;i>=0;i--)if(reviews[i].revisionId===revisionId)return reviews[i];
+  return undefined;
+}
+
+/** Bounded, revision-scoped replacement, not a second conflicting signoff. */
+export function recordPersonaCreativeReview(
+  reviews:readonly PersonaCreativeReviewSignoff[]|undefined,
+  entry:PersonaCreativeReviewSignoff,
+):PersonaCreativeReviewSignoff[]{
+  if(typeof entry.revisionId!=="string"||!entry.revisionId.trim()||
+     entry.reviewer!=="author"||
+     !["needs_revision","ready_for_author"].includes(entry.decision)||
+     typeof entry.comment!=="string"||entry.comment.trim().length<20||
+     !Number.isFinite(Date.parse(entry.createdAt)))
+    throw Error("Invalid author creative review");
+  return [...(reviews??[]).filter(x=>x.revisionId!==entry.revisionId),entry].slice(-60);
+}
