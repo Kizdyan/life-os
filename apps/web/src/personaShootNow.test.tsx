@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
-import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
+import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
@@ -33,6 +33,20 @@ describe('Persona model-provenance visibility',()=>{
   const later=renderToStaticMarkup(<PersonaShootNow projectId="test-ai" plan={plan}
    onOpenScript={()=>{}} generation={meta} generationCurrent={false}/>);
   expect(later).toContain('Сценарий после генерации редактировался');
+ });
+});
+
+describe('Persona video media intake follows the approved shooting plan',()=>{
+ it('blocks new video files until script and brief are approved while preserving legacy media access',()=>{
+  expect(canStartPersonaVideoMediaWork(undefined,null,false)).toBe(false);
+  expect(canStartPersonaVideoMediaWork(undefined,null,true)).toBe(true);
+  const pilot=buildPersonaShootPlan(preset);
+  expect(pilot.status).toBe('example');
+  expect(canStartPersonaVideoMediaWork(undefined,null,false)).toBe(false);
+  const before=stagePersonaCreativeConcept({version:1,research:[],analyses:[],ideas:[]},
+   personaFirstReelConcepts[0],'2026-11-05T20:10:00.000Z');
+  expect(canStartPersonaVideoMediaWork(before,null,false)).toBe(false);
+  expect(canStartPersonaVideoMediaWork(before,null,true)).toBe(true);
  });
 });
 
