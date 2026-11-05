@@ -187,3 +187,65 @@ test('B03 music tail requires a word timestamp or an explicit manual boundary',a
   assert.deepEqual(timeline.clips[0].audioTreatment,{speechDurationSec:1.25,preserveMusicTail:true,boundarySource:'manual'});
  }finally{await rm(d,{recursive:true,force:true})}
 });
+
+
+test('direct strict montage rejects a full B04 near-miss even with high bag-of-words overlap',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-b04-full-line-gate-'));
+ try{
+  const a=join(d,'a.mov'),b=join(d,'b.mov');
+  const bytes=Buffer.alloc(2048,7);
+  await writeFile(a,bytes);await writeFile(b,bytes);
+  const sig=createHash('sha256').update(bytes).digest('hex');
+  const brief=join(d,'brief.json'),analysis=join(d,'analysis.json'),decisions=join(d,'choices.json');
+  const script=['Я актёр. И ещё пишу музыку.','Это колыбельная? Это финал триллера.'];
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:script.map((line,i)=>({order:i+1,line,durationSec:2})),
+   shots:script.map((line,i)=>({order:i+1,durationSec:2,action:'Сухая реплика'}))});
+  await mk(analysis,{version:1,kind:'persona-evidence-v1',
+   sources:[{id:'a',path:a,bytes:bytes.length,sha256:sig,durationSec:6},
+    {id:'b',path:b,bytes:bytes.length,sha256:sig,durationSec:6}]});
+  const make=(transcript)=>({version:1,mode:'strict',analysisPath:analysis,briefPath:brief,
+   choices:[{beat:1,sourceId:'a',startSec:0,durationSec:1.7,confidence:.9,
+    transcript:script[0],reason:'Original line and source were verified'},
+   {beat:2,sourceId:'b',startSec:1,durationSec:2,confidence:.95,
+    transcript,reason:'ASR matching text is not audible ground truth'}]});
+  await mk(decisions,make('Эта колыбельная? Это финал триллера.'));
+  await assert.rejects(()=>assemble(decisions,join(d,'blocked.json')),/FULL approved script/);
+  await mk(decisions,make('Это колыбельная? Это финал триллера.'));
+  const result=await assemble(decisions,join(d,'accepted.json'));
+  assert.equal(result.clips,2);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
+
+test('direct B03 montage cannot silently flatten original music when a reviewed choice loses its boundary',async()=>{
+ const d=await mkdtemp(join(tmpdir(),'persona-b03-no-silent-loss-'));
+ try{
+  const source=join(d,'source.mov'),bytes=Buffer.alloc(2048,7);
+  await writeFile(source,bytes);
+  const sha=createHash('sha256').update(bytes).digest('hex');
+  const brief=join(d,'brief.json'),analysis=join(d,'analysis.json'),decisions=join(d,'choices.json');
+  await mk(brief,{version:1,sourceFormat:'reel',
+   script:[{order:1,line:'Почему? Сейчас напишу колыбельную.',durationSec:4},
+    {order:2,line:'Финал.',durationSec:1}],
+   shots:[{order:1,durationSec:4,action:'После реплики 2 секунды собственной музыки'},
+    {order:2,durationSec:1,action:'Сухая реплика'}]});
+  await mk(analysis,{version:1,kind:'persona-evidence-v1',sources:[
+   {id:'a',path:source,bytes:bytes.length,sha256:sha,durationSec:6},
+   {id:'b',path:source,bytes:bytes.length,sha256:sha,durationSec:6}]});
+  const choices=[{beat:1,sourceId:'a',startSec:.2,durationSec:4,confidence:.9,
+   transcript:'Почему? Сейчас напишу колыбельную.',reason:'Reviewed original and music segment'},
+  {beat:2,sourceId:'b',startSec:.2,durationSec:1,confidence:.9,
+   transcript:'Финал.',reason:'Reviewed original final speech'}];
+  await mk(decisions,{version:1,mode:'strict',analysisPath:analysis,briefPath:brief,choices});
+  await assert.rejects(()=>assemble(decisions,join(d,'blocked.json')),/Post-speech original music requires a verified boundary/);
+  choices[0].postSpeechMusicPreserved=true;
+  choices[0].speechBoundaryConfidence='manual';
+  choices[0].manualMusicBoundarySec=1.9;
+  await mk(decisions,{version:1,mode:'strict',analysisPath:analysis,briefPath:brief,choices});
+  const assembled=await assemble(decisions,join(d,'ready.json'));
+  assert.equal(assembled.clips,2);
+  const project=JSON.parse(await readFile(assembled.project,'utf8'));
+  assert.equal(project.clips[0].audioTreatment.speechDurationSec,1.7);
+  assert.equal(project.clips[0].audioTreatment.preserveMusicTail,true);
+ }finally{await rm(d,{recursive:true,force:true})}
+});
