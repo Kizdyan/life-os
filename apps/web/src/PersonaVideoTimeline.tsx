@@ -128,6 +128,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     if(selected.every(other=>Math.abs(other.time-point.time)>=0.2))selected.push(point);
    }
    const times=selected.map(p=>Number(p.time.toFixed(3))).sort((a,b)=>a-b);
+   if(!canProduceRef.current){setMusicStatus('');setError('Утверждение изменилось во время анализа музыки. Результат отменён.');return;}
    musicFile.current=file;
    setMusicMeta({name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,volume:musicVolume,originalVolume});
    setMusicAccents(times);setMusicStatus('Найдено музыкальных акцентов: '+times.length+'. Это кандидаты, а не обязательные склейки.');
