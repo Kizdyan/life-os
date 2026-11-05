@@ -246,7 +246,7 @@ export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevisio
   }
   const firstLine=(revision.beats[0]?.line??"").normalize("NFKC")
     .toLocaleLowerCase("ru-RU").replaceAll("ё","е").trim();
-  if (/^(?:я|мы)\s+(?:актер|композитор|музыкант|режиссер|блогер)\b/u.test(firstLine)) {
+  if (/^(?:я|мы)\s+(?:актер|композитор|музыкант|режиссер|блогер)(?=$|[^\p{L}\p{N}])/u.test(firstLine)) {
     findings.push({
       category:"expository_dialogue",beatOrders:[1],
       fragment:revision.beats[0].line,severity:"human_review",
