@@ -190,7 +190,7 @@ it('keeps exact revision-bound sound and cut directions for a new concept',()=>{
  const pipeline={stage:'QA',materials:{productionBrief:brief}} as PersonaProductionPipeline;
  const beats=script.map((beat,i)=>({...beat,
   purpose:i===0?'hook':i===script.length-1?'ending':'development'}));
- const workspace={version:1,research:[],analyses:[],ideas:[],
+ const workspace={version:1,research:[],analyses:[],ideas:[],preProductionGuide:guide,
   script:{currentRevisionId:'current-r3',currentRevision:{beats}}} as unknown as PersonaScenarioWorkspace;
  const plan=buildPersonaShootPlan({
   title:'Новый сценарий',workspace,pipeline,allowPilot:false});
