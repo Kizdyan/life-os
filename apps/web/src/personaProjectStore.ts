@@ -3,6 +3,7 @@ import type { FormatMemoryObservation } from '../../../packages/core/src/format-
 import type { AiCouncilResult,AiCouncilOutcome } from '../../../api/_persona-ai-council';
 import {validatePersonaProductionGuide,type PersonaProductionGuide} from './personaProductionGuide';
 import type {PersonaColorComparisonRecord} from './personaColorComparison';
+import type {PersonaCreativeReviewSignoff} from './personaCreativeDevelopment';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -62,6 +63,8 @@ export type PersonaScenarioWorkspace={
  aiCouncilReport?:AiCouncilResult;
  /** Author-reviewed observations for routing; not independent model benchmarks. */
  aiCouncilOutcomes?:AiCouncilOutcome[];
+ /** Auditable author review tied to the exact script revision; not an AI verdict. */
+ creativeReviews?:PersonaCreativeReviewSignoff[];
 };
 
 export type PersonaProjectStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -74,6 +77,14 @@ function isStage(value:unknown):value is PersonaProjectStage{return value==='str
 function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
  if(!value||typeof value!=='object')return false;
  const workspace=value as Partial<PersonaScenarioWorkspace>;
+ if(workspace.creativeReviews!==undefined&&(
+   !Array.isArray(workspace.creativeReviews)||workspace.creativeReviews.length>60||
+   workspace.creativeReviews.some(item=>!item||typeof item.revisionId!=='string'||
+     item.revisionId.length<1||item.revisionId.length>200||
+     item.reviewer!=='author'||!['needs_revision','ready_for_author'].includes(item.decision)||
+     typeof item.comment!=='string'||item.comment.trim().length<20||item.comment.length>2000||
+     typeof item.createdAt!=='string'||!Number.isFinite(Date.parse(item.createdAt)))
+  ))return false;
  if(workspace.aiCouncilOutcomes!==undefined&&(
    !Array.isArray(workspace.aiCouncilOutcomes)||workspace.aiCouncilOutcomes.length>50||
    workspace.aiCouncilOutcomes.some(x=>!x||typeof x.modelId!=="string"||
