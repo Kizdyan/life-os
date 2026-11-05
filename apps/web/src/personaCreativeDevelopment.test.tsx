@@ -7,7 +7,7 @@ import PersonaScenarioWorkspace from "./PersonaScenarioWorkspace";
 import {
   assertPersonaCreativeReviewSignoff,personaCreativeLenses,
   personaFirstReelConcepts,stagePersonaCreativeConcept,
-  latestPersonaCreativeReview,recordPersonaCreativeReview,
+  latestPersonaCreativeReview,recordPersonaCreativeReview,isPersonaCreativeReviewApproved,
 } from "./personaCreativeDevelopment";
 import {createPersonaProject,validatePersonaProjectCollection,type PersonaScenarioWorkspace} from "./personaProjectStore";
 import {actorComposerPilot} from "./personaProductionGuide";
@@ -76,6 +76,15 @@ describe("Persona Creative Development pre-production gate",()=>{
       ...signoff,comment:"ОК"
     })).toThrow(/авторская оценка/);
     expect(()=>assertPersonaCreativeReviewSignoff(script.currentRevisionId,signoff)).not.toThrow();
+    expect(isPersonaCreativeReviewApproved(script.currentRevisionId,signoff)).toBe(true);
+    expect(isPersonaCreativeReviewApproved('other-revision',signoff)).toBe(false);
+    expect(isPersonaCreativeReviewApproved(script.currentRevisionId,{...signoff,comment:'ОК'})).toBe(false);
+    expect(isPersonaCreativeReviewApproved(script.currentRevisionId,{
+      ...signoff,comment:undefined as unknown as string,
+    })).toBe(false);
+    expect(isPersonaCreativeReviewApproved(script.currentRevisionId,{
+      ...signoff,createdAt:'invalid date',
+    })).toBe(false);
     const changed=reviseScenarioScript(script,{
       createdAt:"2026-11-05T15:05:00.000Z",
       reason:"Новое актёрское действие",
@@ -199,6 +208,10 @@ describe("shoot brief conversion is blocked by a withdrawn creative signoff",()=
   expect(before).toContain("Творческая приёмка");
   expect(before).toContain("Сценарий уже утверждён");
   expect(before).toContain("Не снимать — доработать");
+  const invalid=render([{...reviewed,comment:'ОК'}]);
+  expect(invalid).not.toContain("Создать съёмочный бриф");
+  expect(invalid).toContain("Ещё не одобрен автором");
+  expect(invalid).toContain("Нужна переработка или исправление художественной оценки");
   const after=render([reviewed,{...reviewed,decision:"needs_revision" as const,
    comment:"Переоценил сценарий: шутка объясняется словами, музыкальная идея не раскрыта.",
    createdAt:"2026-11-05T15:07:00.000Z"}]);
