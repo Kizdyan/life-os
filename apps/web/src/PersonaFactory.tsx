@@ -16,7 +16,7 @@ import PersonaScenarioWorkspace from './PersonaScenarioWorkspace';
 import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {personaDirectorToBrief,readPersonaDirectorProposal} from '../../../packages/core/src/persona-director-model';
-import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork} from './personaShootNow';
+import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia} from './personaShootNow';
 import {latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
@@ -751,7 +751,7 @@ export default function PersonaFactory(){
    Boolean(timeline?.clips?.length||asset||colorComparison||localRenderReview));
  function onAsset(e:React.ChangeEvent<HTMLInputElement>){
   const file=e.target.files?.[0];if(!file)return;
-  if(!videoMediaUnlocked){
+  if(!videoMediaUnlocked || (['reel','short','story'].includes(chosen?.format??'') && !canImportPersonaVideoMedia(scenarioWorkspace,production))){
    e.target.value='';
    setStatus('Новый видеопроект: сначала утвердите сценарий и съёмочный бриф. Существующие клипы не удалены.');
    return;
