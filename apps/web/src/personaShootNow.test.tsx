@@ -205,3 +205,49 @@ it('keeps exact revision-bound sound and cut directions for a new concept',()=>{
  expect(stale.scenes.map(scene=>scene.edit)).not.toContain(editIntents[1]);
  expect(stale.scenes[1].edit).toBe(guide.fields.editing);
 });
+
+
+it('refuses stale pre-edit revisions or malformed creative evidence even when lines match',()=>{
+ const guide=createPersonaProductionGuide('2026-11-05T17:10:00.000Z','actor_composer');
+ const base=createActorComposerWorkingBrief({id:'revision-safe',title:'Актёр и композитор',
+  angle:'Первый ролик',format:'reel'},guide);
+ const currentId='scenario-r2';
+ const brief={...base,preEditPlan:{...base.preEditPlan!,
+  origin:'scenario_revision' as const,sourceRevisionId:currentId}};
+ const pipeline={stage:'READY_FOR_SHOOT',materials:{
+  productionBrief:brief,editorialDecision:{decision:'approved'},
+ }} as unknown as PersonaProductionPipeline;
+ const script={currentRevisionId:currentId,currentRevision:{
+  id:currentId,beats:brief.script.map((scene,i)=>({
+   purpose:i===0?'hook':i===brief.script.length-1?'ending':'development',
+   line:scene.line,action:scene.action,durationSec:scene.durationSec,
+   editIntent:brief.preEditPlan.scenes[i].editIntent,
+  })),
+ },approval:{revisionId:currentId}};
+ const decision={revisionId:currentId,reviewer:'author' as const,
+  decision:'ready_for_author' as const,
+  comment:'Принят весь сценарий: конфликт, игра, оригинальная музыка и финал.',
+  createdAt:'2026-11-05T17:12:00.000Z'};
+ const workspace={version:1,research:[],analyses:[],ideas:[],
+  script,creativeReviews:[decision],preProductionGuide:guide,
+ } as unknown as PersonaScenarioWorkspace;
+ expect(isScenarioCreativeApprovedForShooting(workspace)).toBe(true);
+ const approved=buildPersonaShootPlan({title:'Проверка',workspace,pipeline,allowPilot:false});
+ expect(approved.status).toBe('approved');
+ const stalePipeline={...pipeline,materials:{...pipeline.materials,productionBrief:{
+  ...brief,preEditPlan:{...brief.preEditPlan,sourceRevisionId:'old-r1'},
+ }}} as PersonaProductionPipeline;
+ expect(buildPersonaShootPlan({title:'Проверка',workspace,pipeline:stalePipeline,
+  allowPilot:false}).status).toBe('draft');
+ const modifiedScript={...workspace,script:{...workspace.script!,
+  currentRevision:{...workspace.script!.currentRevision,
+   beats:workspace.script!.currentRevision.beats.map((beat,i)=>
+    i===0?{...beat,editIntent:'Другая склейка и музыкальный акцент'}:beat),
+  }}};
+ expect(buildPersonaShootPlan({title:'Проверка',workspace:modifiedScript,
+  pipeline,allowPilot:false}).status).toBe('draft');
+ const malformed={...workspace,creativeReviews:[{...decision,comment:'кратко'}]};
+ expect(isScenarioCreativeApprovedForShooting(malformed)).toBe(false);
+ expect(buildPersonaShootPlan({title:'Проверка',workspace:malformed,
+  pipeline,allowPilot:false}).status).toBe('draft');
+});
