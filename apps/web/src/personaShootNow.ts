@@ -1,5 +1,5 @@
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
-import {assertPersonaCreativeReviewSignoff,latestPersonaCreativeReview} from './personaCreativeDevelopment';
+import {isPersonaCreativeReviewApproved,latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {
  actorComposerShotDirections,createPersonaProductionGuide,exampleActorComposerBeats,
@@ -110,11 +110,8 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
 export function isScenarioCreativeApprovedForShooting(workspace:PersonaScenarioWorkspace|undefined):boolean{
  const script=workspace?.script;
  if(!script||script.approval?.revisionId!==script.currentRevisionId)return false;
- try{
-  assertPersonaCreativeReviewSignoff(script.currentRevisionId,
-   latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId));
-  return true;
- }catch{return false;}
+ return isPersonaCreativeReviewApproved(script.currentRevisionId,
+  latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId));
 }
 
 /** Take the current source of truth rather than replacing it with the demo.
