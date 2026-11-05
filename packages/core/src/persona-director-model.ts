@@ -74,8 +74,13 @@ export function personaDirectorToBrief(
   lighting:scene.lighting,action:scene.action,
  }));
  const durationSec=script.reduce((sum,s)=>sum+s.durationSec,0);
- const adaptations=Object.fromEntries(Object.entries(base.adaptations)
-  .map(([key,adaptation])=>[key,{...adaptation,durationSec}])) as PersonaProductionBrief['adaptations'];
+ // Stable, explicitly typed variants for TypeScript NodeNext serverless builds.
+ // Object.entries can widen values to unknown and reject object spread.
+ const adaptations:PersonaProductionBrief['adaptations']={
+  reels:{...base.adaptations.reels,durationSec},
+  shorts:{...base.adaptations.shorts,durationSec},
+  vkClips:{...base.adaptations.vkClips,durationSec},
+ };
  return {
   ...base,hook:{firstSeconds:p.hook,visual:p.scenes[0].action,
    delivery:p.scenes[0].performance},
