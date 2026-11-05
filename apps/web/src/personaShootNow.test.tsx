@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
-import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootProgressKey,shootTimecode} from './personaShootNow';
+import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 
@@ -87,11 +87,18 @@ describe('Persona direct filming experience',()=>{
   expect(plan.scenes[0].sourceFileName).toBe('S01_take01.mp4');
   expect(plan.scenes[0].sourceFileName).not.toContain('A01');
  });
- it('tracks take completion only in this project and invalidates on changed script',()=>{
-  const plan=buildPersonaShootPlan(preset);
+ it('tracks takes only for approved projects and invalidates on changed script or status',()=>{
+  const example=buildPersonaShootPlan(preset);
+  const plan={...example,status:'approved' as const};
+  expect(readShootProgress({version:1,fingerprint:shootPlanFingerprint(plan),
+   completedIds:['A01'],updatedAt:'2026-11-03T15:00:00.000Z'},example)).toBeNull();
+  expect(()=>markShootTake(example,null,'A01',true,'2026-11-03T15:00:00.000Z'))
+   .toThrow(/unapproved shooting plan/);
+  expect(shootPlanFingerprint(example)).not.toBe(shootPlanFingerprint(plan));
   const marked=markShootTake(plan,null,'A01',true,'2026-11-03T15:00:00.000Z');
   expect(marked.completedIds).toEqual(['A01']);
   expect(readShootProgress(marked,plan)).toEqual(marked);
+  expect(readShootProgress(marked,{...plan,status:'draft'})).toBeNull();
   const more=markShootTake(plan,marked,'B01',true,'2026-11-03T15:01:00.000Z');
   expect(more.completedIds).toEqual(['A01','B01']);
   expect(markShootTake(plan,more,'A01',false,'2026-11-03T15:02:00.000Z').completedIds)
@@ -101,7 +108,9 @@ describe('Persona direct filming experience',()=>{
   expect(()=>markShootTake(plan,marked,'unknown',true,'2026-11-03T15:00:00.000Z')).toThrow();
   expect(shootProgressKey('first')).not.toBe(shootProgressKey('second'));
   expect(makeShootSheet(plan)).toContain('Камера: Штатив');
-  expect(makeShootSheet(plan)).toContain('РАБОЧИЙ ПЛАН');
+  expect(makeShootSheet(example)).toContain('РАБОЧИЙ ПЛАН');
+  expect(makeShootSheet(example)).toContain('сначала художественное утверждение');
+  expect(makeShootSheet(plan)).toContain('Что снимать по порядку');
  });
 });
 
