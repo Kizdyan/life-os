@@ -55,6 +55,25 @@ export function productionBriefMatchesBeats(
   beat.action===brief.script[i]?.action&&beat.durationSec===brief.script[i]?.durationSec&&
   (beat.editIntent===undefined||brief.preEditPlan?.scenes[i]?.editIntent===beat.editIntent));
 }
+/**
+ * Enforce the author's current-REVISION creative signoff when making the
+ * final shooting decision, not only while creating the Production Brief.
+ * An imported/legacy brief can be reviewed but cannot bypass this gate.
+ */
+export function assertPersonaProductionCanBeApproved(
+ pipeline:PersonaProductionPipeline,
+ workspace:ScenarioWorkspace|undefined,
+):void{
+ if(!['reel','short','story'].includes(pipeline.input.idea.format))return;
+ if(!isScenarioCreativeApprovedForShooting(workspace))
+  throw Error('Перед разрешением съёмки нужна утверждённая автором художественная оценка текущей редакции сценария.');
+ const brief=pipeline.materials.productionBrief;
+ if(!brief||!productionBriefMatchesBeats(brief,workspace?.script?.currentRevision.beats))
+  throw Error('Съёмочный бриф не соответствует текущему утверждённому сценарию.');
+ if(brief.preEditPlan?.origin==='scenario_revision'&&
+    brief.preEditPlan.sourceRevisionId!==workspace?.script?.currentRevisionId)
+  throw Error('Монтажный замысел относится к прежней редакции сценария. Обновите съёмочный бриф.');
+}
 /** A new saved script revision revokes any earlier human shoot approval without
  * mutating the brief or losing revision history. */
 export function reconcilePersonaProductionWithScenario(
@@ -675,6 +694,7 @@ export default function PersonaFactory(){
   try{
    if(activeProjectId&&productionInputDraftExists(resolvePersonaScenarioDraftStorage(),activeProjectId))
     throw Error('Есть незавершённая правка съёмочного брифа. Сначала сохраните или разрешите её.');
+   if(decision==='approved')assertPersonaProductionCanBeApproved(production,scenarioWorkspace);
    if(decision==='approved'&&production.materials.qa?.status==='needs_revision')throw new Error('Нельзя утвердить бриф с ошибками QA.');
    if(decision==='approved'&&!productionBriefMatchesBeats(production.materials.productionBrief,scenarioWorkspace?.script?.currentRevision.beats))throw new Error('Сценарий изменился после создания брифа. Сначала перенесите актуальные реплики и кадры в Production Brief.');
    if(decision==='approved'&&(production.input.idea.angle.trim()!==production.materials.productionBrief?.sourceAngle||production.input.idea.title.trim()!==production.materials.productionBrief?.sourceTitle||production.input.idea.format!==production.materials.productionBrief?.sourceFormat))throw new Error('Сценарий устарел: сначала обновите бриф после правки.');
