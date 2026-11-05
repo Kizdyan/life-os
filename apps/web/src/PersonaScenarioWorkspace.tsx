@@ -3,7 +3,7 @@ import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import PersonaAiCouncilPanel from './PersonaAiCouncilPanel';
 import PersonaCreativeDevelopmentPanel from './PersonaCreativeDevelopmentPanel';
-import {assertPersonaCreativeReviewSignoff,personaCreativeLenses,
+import {assertPersonaCreativeReviewSignoff,isPersonaCreativeReviewApproved,personaCreativeLenses,
  latestPersonaCreativeReview,recordPersonaCreativeReview,
  type PersonaCreativeConcept} from './personaCreativeDevelopment';
 import {isActorComposerPilot} from './personaProductionGuide';
@@ -141,7 +141,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const hasPendingChanges=Boolean(script&&personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason))||Boolean(staleDraft||corruptDraft);
  const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
  const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&
-  creativeReviewSignoff?.decision==='ready_for_author'&&!hasPendingChanges);
+  isPersonaCreativeReviewApproved(script.currentRevision.id,creativeReviewSignoff)&&!hasPendingChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
  const assertNoPendingDraftRecord=()=>assertNoPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
@@ -591,7 +591,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p>Script Doctor проверил структуру, но не доказал интерес зрителя, актёрское качество или будущие просмотры. Оцените редакцию с пяти профессиональных сторон. Это вопросы для автора, а не фиктивное заключение пяти AI-моделей.</p>
      <ul>{personaCreativeLenses.map(lens=><li key={lens.id}><b>{lens.label}:</b> {lens.question}</li>)}</ul>
      {creativeRisks?.findings.length?<p>Зафиксированных эвристических рисков: {creativeRisks.findings.length}. Каждый требует рассмотрения, но сам по себе не доказывает слабую художественную ценность.</p>:null}
-     {creativeReviewSignoff&&<p><b>Сохранённое решение для этой редакции:</b> {creativeReviewSignoff.decision==='ready_for_author'?'Разрешить автору утверждение':'Нужна переработка'}. {creativeReviewSignoff.comment}</p>}
+     {creativeReviewSignoff&&<p><b>Сохранённое решение для этой редакции:</b> {isPersonaCreativeReviewApproved(script.currentRevision.id,creativeReviewSignoff)?'Разрешить автору утверждение':'Нужна переработка или исправление художественной оценки'}. {creativeReviewSignoff.comment}</p>}
      <label>Редакторское решение
        <select aria-label="Решение о творческой готовности" value={creativeDecision} onChange={event=>setCreativeDecision(event.target.value as 'needs_revision'|'ready_for_author')}>
          <option value="needs_revision">Не снимать — доработать</option>
