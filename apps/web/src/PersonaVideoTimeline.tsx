@@ -46,7 +46,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
  const [height,setHeight]=useState<1920|1080>(()=>initial.current?.height??1920);
  useEffect(()=>{
   const snapshot={...createPersonaTimelineSettings(clips,{width,height,fps}),music:musicMeta,captions:captions.filter(caption=>caption.text.trim().length>0)};
-  onTimelineChange?.(validatePersonaTimelineSettings(snapshot));
+  if(canProduceRef.current)onTimelineChange?.(validatePersonaTimelineSettings(snapshot));
  },[clips,width,height,fps,musicMeta,captions,onTimelineChange]);
  async function addFiles(event:React.ChangeEvent<HTMLInputElement>) {
   const files=Array.from(event.target.files||[]).slice(0,30);
@@ -173,20 +173,24 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   try{
    setRenderState('Подключение к локальному FFmpeg...');
    const health=await (await request('/health')).json();
+   if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
    if(!health.ok||typeof health.token!=='string')throw new Error('Локальный обработчик не готов');
    token=health.token;
    const project={version:1,width,height,fps,clips:clips.map(c=>({startSec:c.startSec,durationSec:c.durationSec})),...(musicFile.current?{soundtrack:{startSec:0,volume:musicVolume,originalVolume}}:{})};
    const created=await (await request('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(project)})).json();
    sessionId=created.id;
    for(let i=0;i<clips.length;i++){
+    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
     setRenderState('Загрузка исходника '+(i+1)+' из '+clips.length);
     await request('/session/'+created.id+'/clip/'+i,{method:'PUT',body:filesById.current.get(clips[i].id)!});
    }
    if(musicFile.current){setRenderState('Передача музыкальной дорожки...');await request('/session/'+created.id+'/music',{method:'PUT',body:musicFile.current});}
+   if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
    setRenderState('FFmpeg собирает MP4...');
    await request('/session/'+created.id+'/render',{method:'POST'});
    setRenderState('Получение готового видео...');
    const video=await (await request('/session/'+created.id+'/download')).blob();
+   if(!canProduceRef.current)throw new Error('Утверждение изменилось. Выдача MP4 отменена.');
    const url=URL.createObjectURL(video),link=document.createElement('a');
    link.href=url;link.download='persona-render.mp4';document.body.appendChild(link);link.click();link.remove();
    window.setTimeout(()=>URL.revokeObjectURL(url),60000);
