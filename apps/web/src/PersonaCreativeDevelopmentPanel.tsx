@@ -1,8 +1,7 @@
 import React,{useState} from "react";
-import {createScenarioScript} from "../../../packages/core/src/persona-scenario-intelligence";
 import type {PersonaScenarioWorkspace} from "./personaProjectStore";
 import {
-  personaCreativeLenses,personaFirstReelConcepts,
+  personaCreativeLenses,personaFirstReelConcepts,stagePersonaCreativeConcept,
   type PersonaCreativeConcept,
 } from "./personaCreativeDevelopment";
 
@@ -24,17 +23,13 @@ export default function PersonaCreativeDevelopmentPanel({workspace,onChange,onCr
   const existing=workspace.ideas.some(item=>item.id===selected.id);
   const add=()=>{
     if(existing){setNotice("Эта концепция уже есть среди идей проекта. Исходный сценарий не изменён.");return;}
-    const ideas=[...workspace.ideas,selected.idea];
+    if(blocked){setNotice("Есть несохранённая версия или открытый черновик; импорт остановлен.");return}
     if(workspace.script){
-      onChange({...workspace,ideas,version:1});
+      onChange(stagePersonaCreativeConcept(workspace,selected,new Date().toISOString()));
       setNotice("Концепция сохранена для сравнения. Существующий сценарий и его утверждение не изменены; для новой версии сперва сохраните отдельную редакцию по собственному решению.");
       return;
     }
-    const script=createScenarioScript(selected.idea,{
-      createdAt:new Date().toISOString(),beats:selected.beats,
-      sourceFacts:["Авторская редакторская гипотеза, без исследования охватов и без готовых исходных видео."],
-    });
-    onChange({...workspace,ideas,selectedIdeaId:selected.idea.id,script,version:1});
+    onChange(stagePersonaCreativeConcept(workspace,selected,new Date().toISOString()));
     setNotice("Создана НЕУТВЕРЖДЁННАЯ редакция. Проверьте реплики и действия в редакторе сценария, затем отдельно оцените творческие риски.");
   };
   return <section className="personaScenarioCard" aria-label="Творческое сравнение первого ролика">
