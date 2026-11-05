@@ -133,13 +133,23 @@ export interface PersonaCreativeReviewSignoff {
   createdAt:string;
 }
 
+/** The single editorial approval predicate for UI, shooting gate and export.
+ * The guard must fail closed for malformed legacy local-storage records.
+ */
+export function isPersonaCreativeReviewApproved(
+  revisionId:string,
+  review:PersonaCreativeReviewSignoff|undefined,
+):boolean{
+  return Boolean(review&&review.revisionId===revisionId&&review.reviewer==="author"&&
+    review.decision==="ready_for_author"&&typeof review.comment==="string"&&
+    review.comment.trim().length>=20&&typeof review.createdAt==="string"&&
+    Number.isFinite(Date.parse(review.createdAt)));
+}
 export function assertPersonaCreativeReviewSignoff(
   revisionId:string,
   review:PersonaCreativeReviewSignoff|undefined,
 ):void {
-  if(!review||review.revisionId!==revisionId||review.reviewer!=="author"||
-    review.decision!=="ready_for_author"||review.comment.trim().length<20||
-    !Number.isFinite(Date.parse(review.createdAt)))
+  if(!isPersonaCreativeReviewApproved(revisionId,review))
     throw new Error("Перед утверждением сценария нужна осознанная авторская оценка творческих рисков текущей редакции.");
 }
 
