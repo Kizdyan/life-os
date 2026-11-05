@@ -4,6 +4,7 @@ import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import PersonaVideoTimeline from './PersonaVideoTimeline.tsx';
+import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio.tsx';
 import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
@@ -302,5 +303,19 @@ describe('Persona timeline approval enforcement',()=>{
   expect(view).not.toContain('Сценарий или съёмочный бриф изменены');
   expect(view).toMatch(/aria-label="Добавить видеофрагменты"/);
   expect(view).not.toMatch(/aria-label="Добавить видеофрагменты"[^>]*disabled/);
+ });
+});
+
+
+describe('Persona color comparison approval enforcement',()=>{
+ it('preserves read-only comparison access while blocking new uploads on stale approval',()=>{
+  const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-stale" record={null} onSave={()=>true} canProduce={false}/>);
+  expect(view).toContain('Утверждение устарело');
+  expect(view).toMatch(/aria-label="Выбрать оригинал, три MP4 и COMPARISON.json"[^>]*disabled/);
+ });
+ it('permits comparison upload controls after approval',()=>{
+  const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-approved" record={null} onSave={()=>true} canProduce={true}/>);
+  expect(view).not.toContain('Утверждение устарело');
+  expect(view).not.toMatch(/aria-label="Выбрать оригинал, три MP4 и COMPARISON.json"[^>]*disabled/);
  });
 });
