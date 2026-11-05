@@ -393,6 +393,9 @@ export default function PersonaFactory(){
    const saved=live.projects.find(project=>project.id===activeProjectId);
    if(live.activeProjectId!==activeProjectId||!saved||saved.contentType!=='reel')
     throw Error('Был открыт другой проект или выбран неподходящий формат.');
+   const savedPipeline=saved.shootingPlan as PersonaProductionPipeline|null;
+   if(!canImportPersonaVideoMedia(saved.scenarioWorkspace,savedPipeline))
+    throw Error('Утверждение сценария или съёмочного плана изменилось. Новые решения Comparison Studio заблокированы.');
    const previous=readPersonaColorComparisonRecord(saved.colorComparison);
    if(saved.colorComparison!==undefined&&!previous)
     throw Error('Сохранённая запись Comparison Studio повреждена. Исходные данные сохранены в проекте; заменять их новым импортом нельзя до восстановления или резервного копирования.');
