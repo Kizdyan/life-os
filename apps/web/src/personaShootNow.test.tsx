@@ -4,7 +4,9 @@ import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
-import {exampleActorComposerBeats} from './personaProductionGuide';
+import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
+import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
+import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
 import {approveScenarioScript,reviseScenarioScript} from '../../../packages/core/src/persona-scenario-intelligence';
 import {personaFirstReelConcepts,stagePersonaCreativeConcept} from './personaCreativeDevelopment';
@@ -161,4 +163,45 @@ it('does not treat a structural-only or revoked creative approval as permission 
   reason:'Отдельная новая редакция',beats:script.currentRevision.beats.map((beat,i)=>
    i===1?{...beat,action:beat.action+' Герой отказывает собеседнику.'}:beat)});
  expect(isScenarioCreativeApprovedForShooting({...accepted,script:newScript})).toBe(false);
+});
+
+
+it('keeps exact revision-bound sound and cut directions for a new concept',()=>{
+ const guide=createPersonaProductionGuide('2026-11-05T16:30:00.000Z','actor_composer');
+ const original=createActorComposerWorkingBrief({id:'new-creative-concept',title:'Новый сценарий',
+  angle:'Оригинальная музыка переворачивает сцену',format:'reel'},guide);
+ const script=original.script.slice(0,3);
+ const editIntents=script.map((beat,i)=>
+  'Кадр '+(i+1)+': музыкальный акцент и склейка только на окончании произнесённых слов.');
+ const brief={...original,script,shots:original.shots.slice(0,3),
+  preEditPlan:{
+   version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',
+   origin:'scenario_revision',sourceRevisionId:'current-r3',
+   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Творческий замысел, не измеренный тренд'},
+   scenes:script.map((beat,i)=>({
+    order:i+1,line:beat.line,durationSec:beat.durationSec,
+    editIntent:editIntents[i],audioIntent:'Оригинальная музыка',
+    subtitleIntent:'Субтитры только для речи',
+    mediaStatus:'awaiting_author_footage',
+   })),
+   publicationApproved:false,
+  },
+ } as PersonaProductionBrief;
+ const pipeline={stage:'QA',materials:{productionBrief:brief}} as PersonaProductionPipeline;
+ const beats=script.map((beat,i)=>({...beat,
+  purpose:i===0?'hook':i===script.length-1?'ending':'development'}));
+ const workspace={version:1,research:[],analyses:[],ideas:[],
+  script:{currentRevisionId:'current-r3',currentRevision:{beats}}} as unknown as PersonaScenarioWorkspace;
+ const plan=buildPersonaShootPlan({
+  title:'Новый сценарий',workspace,pipeline,allowPilot:false});
+ expect(plan.status).toBe('draft');
+ expect(plan.scenes).toHaveLength(3);
+ expect(plan.scenes.map(scene=>scene.edit)).toEqual(editIntents);
+ expect(makeShootSheet(plan)).toContain(editIntents[1]);
+ const stale=buildPersonaShootPlan({
+  title:'Новый сценарий',
+  workspace:{...workspace,script:{...workspace.script!,currentRevisionId:'changed-revision'}},
+  pipeline,allowPilot:false});
+ expect(stale.scenes.map(scene=>scene.edit)).not.toContain(editIntents[1]);
+ expect(stale.scenes[1].edit).toBe(guide.fields.editing);
 });
