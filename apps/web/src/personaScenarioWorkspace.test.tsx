@@ -93,7 +93,14 @@ describe("Persona Scenario workspace", () => {
 
   it("shows an approved version as ready for the existing Production Brief hand-off", () => {
     const approved = approveScenarioScript(draft, { author: "Kostya", comment: "Готово к съёмочному брифу.", approvedAt: "2026-10-30T10:05:00.000Z" });
-    const markup = render({ version: 1, research, analyses: [], ideas: [idea], selectedIdeaId: idea.id, script: approved });
+    const noCreativeReview = render({ version: 1, research, analyses: [], ideas: [idea], selectedIdeaId: idea.id, script: approved });
+    expect(noCreativeReview).not.toContain("Создать съёмочный бриф");
+    expect(noCreativeReview).toContain("Ещё не одобрен автором");
+    const markup = render({ version: 1, research, analyses: [], ideas: [idea], selectedIdeaId: idea.id, script: approved,
+      creativeReviews:[{revisionId:approved.currentRevisionId,reviewer:"author",
+        decision:"ready_for_author",
+        comment:"Лично проверил начало, конфликт, актёрское действие, музыку и финал.",
+        createdAt:"2026-10-30T10:04:00.000Z"}] });
 
     expect(markup).toContain("Версия 1 одобрена");
     expect(markup).toContain("Создать съёмочный бриф");
