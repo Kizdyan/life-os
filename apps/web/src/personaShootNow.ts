@@ -153,8 +153,8 @@ export function buildPersonaShootPlan(input:{
   // Preserve the exact per-scene pre-edit intent from the matching script.
   // Do not inherit old music edits after the author changes the revision.
   const preEdit=useBrief&&brief?.preEditPlan&&
-   (!script||brief.preEditPlan.origin!=='scenario_revision'||
-    brief.preEditPlan.sourceRevisionId===script.currentRevisionId)&&
+   (brief.preEditPlan.origin!=='scenario_revision'||
+    Boolean(script&&brief.preEditPlan.sourceRevisionId===script.currentRevisionId))&&
    brief.preEditPlan.scenes.length===source.length?brief.preEditPlan.scenes[i]:null;
   const exactEdit=preEdit?.order===i+1&&preEdit.line===scene.line&&
    preEdit.durationSec===scene.seconds?preEdit.editIntent?.trim():undefined;
