@@ -17,6 +17,7 @@ import {PersonaProductionGuide} from './PersonaProductionGuide.tsx';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import {personaDirectorToBrief,readPersonaDirectorProposal} from '../../../packages/core/src/persona-director-model';
 import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting} from './personaShootNow';
+import {latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import {actorComposerPilot,isActorComposerPilot,createActorComposerWorkingBrief,createPersonaProductionGuide,updateGuideShotNote,migrateActorComposerShotNotes,applyPersonaGuideToBrief,type PersonaProductionGuide as ProductionGuide} from './personaProductionGuide';
 import { addImportedBriefScenario } from './personaBriefScenarioBridge';
 import { personaScenarioDraftExists, resolvePersonaScenarioDraftStorage } from './personaScenarioDraftJournal';
@@ -63,7 +64,13 @@ export function reconcilePersonaProductionWithScenario(
  const plan=pipeline.materials.productionBrief.preEditPlan;
  const correctRevision=plan?.origin!=='scenario_revision'||
    plan.sourceRevisionId===workspace.script.currentRevisionId;
- if(correctRevision&&productionBriefMatchesBeats(
+ // A later explicit author rejection withdraws even a previously approved
+ // shooting brief. Legacy projects without a review retain their history,
+ // but cannot become shoot-ready without a new explicit signoff.
+ const creative=latestPersonaCreativeReview(
+   workspace.creativeReviews,workspace.script.currentRevisionId);
+ const creativeWithdrawn=creative?.decision==='needs_revision';
+ if(correctRevision&&!creativeWithdrawn&&productionBriefMatchesBeats(
    pipeline.materials.productionBrief,workspace.script.currentRevision.beats))return pipeline;
  if(pipeline.stage==='QA'&&pipeline.statuses.QA==='needs_revision'&&
   !pipeline.materials.editorialDecision)return pipeline;
