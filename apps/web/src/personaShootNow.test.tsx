@@ -104,3 +104,20 @@ describe('Persona direct filming experience',()=>{
   expect(makeShootSheet(plan)).toContain('РАБОЧИЙ ПЛАН');
  });
 });
+
+
+it('does not let an unapproved example masquerade as a filming checklist',()=>{
+ const example=buildPersonaShootPlan(preset);
+ const html=renderToStaticMarkup(<PersonaShootNow projectId="creative-preproduction"
+  plan={example} onOpenScript={()=>{}} onSavePilot={()=>{}}/>);
+ expect(html).toContain('Сначала сценарий, потом съёмка');
+ expect(html).toContain('Перейти к творческой проверке и сценарию');
+ expect(html).toContain('Просмотри покадровый черновик');
+ expect(html).toContain('Отметки реальных дублей откроются только после утверждения');
+ expect(html).toMatch(/type="checkbox"[^>]*disabled=""/);
+ const signed=renderToStaticMarkup(<PersonaShootNow projectId="creative-approved"
+  plan={{...example,status:'approved'}} onOpenScript={()=>{}}/>);
+ expect(signed).toContain('2. Снимай кадры по порядку');
+ expect(signed).not.toContain('Сначала сценарий, потом съёмка');
+ expect(signed).not.toMatch(/type="checkbox"[^>]*disabled=""/);
+});
