@@ -37,9 +37,11 @@ export function shootProgressKey(projectId:string):string{
 }
 /** Stable, collision-resistant enough for UI version invalidation (not a cryptographic proof). */
 export function shootPlanFingerprint(plan:PersonaShootPlan):string{
- return JSON.stringify(plan.scenes.map(s=>[s.id,s.seconds,s.line,s.action,s.framing,s.camera,s.lighting,s.performance,s.edit]));
+ // Draft or demonstration take marks must never be revived after approval.
+ return JSON.stringify([plan.status,plan.scenes.map(s=>[s.id,s.seconds,s.line,s.action,s.framing,s.camera,s.lighting,s.performance,s.edit])]);
 }
 export function readShootProgress(raw:unknown,plan:PersonaShootPlan):PersonaShootProgress|null{
+ if(plan.status!=='approved')return null;
  if(!isObject(raw)||raw.version!==1||raw.fingerprint!==shootPlanFingerprint(plan)||
   !Array.isArray(raw.completedIds)||raw.completedIds.length>plan.scenes.length||
   typeof raw.updatedAt!=='string'||!Number.isFinite(Date.parse(raw.updatedAt)))return null;
@@ -53,6 +55,7 @@ export function readShootProgress(raw:unknown,plan:PersonaShootPlan):PersonaShoo
 export function markShootTake(
  plan:PersonaShootPlan,current:PersonaShootProgress|null,id:string,completed:boolean,now:string,
 ):PersonaShootProgress{
+ if(plan.status!=='approved')throw Error('Cannot record a take against an unapproved shooting plan');
  if(!plan.scenes.some(s=>s.id===id)||!Number.isFinite(Date.parse(now)))throw Error('Invalid take mark');
  const base=readShootProgress(current,plan);
  const completedIds=new Set(base?.completedIds??[]);
@@ -80,7 +83,7 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
   'Костюм/реквизит: '+plan.setup.wardrobe,
   'Расстановка: '+plan.setup.arrangement,
   '',
-  '## Что снимать по порядку',
+  plan.status==='approved'?'## Что снимать по порядку':'## Черновая раскадровка — сначала художественное утверждение',
   ...plan.scenes.flatMap((s,index)=>[
    '### '+(index+1)+'. '+s.id+' · '+shootTimecode(plan,index)+' · '+s.seconds+' с',
    'Сказать: '+s.line,
