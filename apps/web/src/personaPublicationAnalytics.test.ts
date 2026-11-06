@@ -13,6 +13,11 @@ describe('publication analytics',()=>{
   const result=comparePublicationFormats([example,{...example,id:'p2',reach:3000,saves:30,shares:30,profileVisits:20,follows:4}]);
   expect(result.find(row=>row.format==='carousel')).toMatchObject({count:2,saveRate:0.02,followConversion:0.2});
  });
+ it('keeps actual views distinct from reach and uses actual engagement counts',()=>{
+  const result=evaluatePublication({...example,reach:1000,views:4000,likes:50,comments:5,shares:10,saves:20});
+  expect(result.engagementRate).toBe(0.085);
+  expect(result.saveRate).toBe(0.02);
+ });
  it('rejects invalid input',()=>{
   expect(()=>evaluatePublication({...example,reach:-1})).toThrow();
  });
