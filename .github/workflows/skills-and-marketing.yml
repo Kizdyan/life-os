@@ -9,6 +9,7 @@ on:
       - "tools/persona-production-brief*.mjs"
       - "tools/persona-experiment-planner*.mjs"
       - "tools/persona-marketing-production*.mjs"
+      - "tools/persona-task-*.mjs"
       - "package.json"
       - ".github/workflows/skills-and-marketing.yml"
 permissions:
