@@ -12,6 +12,7 @@ const root=path.resolve(process.env.PERSONA_WORKER_DATA||'/tmp/persona-video-wor
 const maxBytes=Number(process.env.PERSONA_MAX_UPLOAD_BYTES||524288000);
 const jobs=new Map();
 const queue=[];
+const maxQueuedJobs=Number(process.env.PERSONA_MAX_QUEUED_JOBS||20);
 let busy=false;
 if(!secret||secret.length<32)throw Error('PERSONA_WORKER_TOKEN must be at least 32 characters');
 if(!Number.isInteger(port)||port<1||port>65535)throw Error('Invalid PORT');
@@ -67,6 +68,7 @@ const server=http.createServer(async(req,res)=>{
    if(!['natural','warm','neutral'].includes(preset))return reply(res,400,{error:'invalid_preset'});
    const declared=Number(req.headers['content-length']);
    if(!Number.isSafeInteger(declared)||declared<1||declared>maxBytes)return reply(res,413,{error:'invalid_upload_size'});
+   if(queue.length>=maxQueuedJobs)return reply(res,429,{error:'queue_full'});
    const id=randomUUID();const dir=path.join(root,id);await mkdir(dir);
    let received=0;
    try{
