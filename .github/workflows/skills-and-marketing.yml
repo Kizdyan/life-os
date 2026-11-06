@@ -8,6 +8,7 @@ on:
       - "tools/persona-marketing-audit*.mjs"
       - "tools/persona-production-brief*.mjs"
       - "tools/persona-experiment-planner*.mjs"
+      - "tools/persona-marketing-production*.mjs"
       - "package.json"
       - ".github/workflows/skills-and-marketing.yml"
 permissions:
