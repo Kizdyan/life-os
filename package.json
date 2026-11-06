@@ -70,7 +70,9 @@
     "tasks:journal": "node tools/persona-task-journal.mjs",
     "release:gate": "node tools/persona-release-gate.mjs",
     "release:gate:test": "node --test tools/persona-release-gate.test.mjs",
-    "tasks:e2e:test": "node --test tools/persona-orchestration-e2e.test.mjs"
+    "tasks:e2e:test": "node --test tools/persona-orchestration-e2e.test.mjs",
+    "verify:local:smoke": "node scripts/persona-local-smoke.mjs",
+    "verify:local:full": "node scripts/persona-verify-independent.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
