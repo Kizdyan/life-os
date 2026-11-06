@@ -29,3 +29,15 @@ Use the exported `updateBoard` API from `tools/persona-task-journal.mjs` to chan
 
 ## Limitations
 No cloud task worker, agent API integration, secure secret broker, scheduling service, database-backed distributed locking or automatic production execution is provided. This release intentionally stops before granting execution permissions.
+
+## Exact-commit release gate
+```bash
+node scripts/persona-verify-independent.mjs
+npm run release:gate -- --input artifacts/persona-verification/latest.json --sha FULL_40_CHAR_SHA --output artifacts/release-gate-001
+```
+The release gate refuses stale SHAs, dry-runs, missing suites and unsuccessful commands. A successful gate means **eligible for human review**, not approval to merge or deploy.
+
+**Trust boundary:** a JSON report can be edited. This gate validates internal consistency and completeness; it does not cryptographically attest that an independent runner actually executed the commands. For stronger assurance, run verification in a trusted isolated runner and retain immutable logs and commit provenance. Do not treat a locally edited JSON as authoritative.
+
+## Current verification status
+GitHub Actions previously reported failures with missing step details. Until the exact current commit passes independent verification, the release is **not verified**. New code and new tests in GitHub are not themselves proof of successful execution.
