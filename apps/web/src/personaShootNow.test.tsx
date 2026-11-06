@@ -326,6 +326,8 @@ describe('Persona local render approval gate',()=>{
  it('does not permit a new MP4 import without current approval',()=>{
   const html=renderToStaticMarkup(<PersonaLocalRenderReview projectId="stale" pipeline={null} record={null} onSave={()=>true} canProduce={false}/>);
   expect(html).toContain('Утверждение сценария устарело');
-  expect(html).toContain('disabled');
+  expect(html).toMatch(/<input(?=[^>]*aria-label="Загрузить RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json")(?=[^>]*disabled)[^>]*>/);
+  expect(html).not.toContain('Импорт результата сохранён');
+
  });
 });
