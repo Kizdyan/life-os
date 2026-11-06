@@ -64,7 +64,10 @@
     "marketing:plan": "node tools/persona-experiment-planner.mjs",
     "production:brief": "node tools/persona-production-brief.mjs",
     "production:brief:test": "node --test tools/persona-production-brief.test.mjs",
-    "marketing:production": "node tools/persona-marketing-production.mjs"
+    "marketing:production": "node tools/persona-marketing-production.mjs",
+    "tasks:test": "node --test tools/persona-task-operations.test.mjs",
+    "tasks:dispatch": "node tools/persona-task-dispatcher.mjs",
+    "tasks:journal": "node tools/persona-task-journal.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
