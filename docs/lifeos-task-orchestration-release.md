@@ -58,3 +58,10 @@ Dispatcher and release-gate outputs now require a **new, nonexistent directory**
 
 ## CI diagnostic
 An earlier GitHub Actions run (42280275194) had an `audit` job with `conclusion=failure`, `steps=null` and no logs URL in the API response. That is insufficient to attribute the failure to a particular code line or test. A new, successful run at the current SHA is still required.
+
+## Independent CI workflow
+`.github/workflows/persona-independent-verification.yml` checks out the PR commit, uses Node 22 and `npm ci`, runs `scripts/persona-verify-independent.mjs` with `PERSONA_COMMIT_SHA`, and uploads `artifacts/persona-verification/latest.json` even on a failed run if it exists. This workflow has read-only repository permissions and does not deploy or merge.
+
+The verifier now fails closed if the checked-out Git SHA cannot be established or if any mandatory package script is absent. Previously it silently filtered out missing scripts.
+
+**Acceptance rule:** only mark a commit verified when a real run for that exact commit has a complete PASS report. The presence of a workflow file or a test file does not meet this rule.
