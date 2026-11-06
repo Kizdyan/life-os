@@ -5,6 +5,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
 import PersonaVideoTimeline from './PersonaVideoTimeline.tsx';
 import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio.tsx';
+import {PersonaLocalRenderReview} from './PersonaLocalRenderReview.tsx';
 import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
 import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
@@ -317,5 +318,14 @@ describe('Persona color comparison approval enforcement',()=>{
   const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-approved" record={null} onSave={()=>true} canProduce={true}/>);
   expect(view).not.toContain('Утверждение устарело');
   expect(view).not.toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать оригинал, три MP4 и COMPARISON.json")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+ });
+});
+
+
+describe('Persona local render approval gate',()=>{
+ it('does not permit a new MP4 import without current approval',()=>{
+  const html=renderToStaticMarkup(<PersonaLocalRenderReview projectId="stale" pipeline={null} record={null} onSave={()=>true} canProduce={false}/>);
+  expect(html).toContain('Утверждение сценария устарело');
+  expect(html).toContain('disabled');
  });
 });
