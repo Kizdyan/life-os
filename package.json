@@ -59,7 +59,8 @@
     "persona:delivery:sources": "node tools/persona-delivery-source-folder.mjs",
     "persona:delivery:test": "node --test tools/persona-delivery-animatic.test.mjs tools/persona-delivery-source-folder.test.mjs",
     "persona:pilot": "node tools/persona-real-pilot.mjs",
-    "web:typecheck": "tsc --noEmit --jsx react-jsx --types vite/client --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --target ES2022 --strict --skipLibCheck apps/web/src/PersonaGrowthDashboard.tsx apps/web/src/personaPublicationAnalytics.ts apps/web/src/personaGrowthReview.ts"
+    "web:typecheck": "tsc --noEmit --jsx react-jsx --types vite/client --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --target ES2022 --strict --skipLibCheck apps/web/src/PersonaGrowthDashboard.tsx apps/web/src/personaPublicationAnalytics.ts apps/web/src/personaGrowthReview.ts",
+    "persona:verify:local": "node scripts/persona-verify-local.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
