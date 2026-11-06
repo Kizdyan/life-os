@@ -293,3 +293,13 @@ describe('Persona project storage',()=>{
   expect(storage.getItem('lifeos:persona:projects:v1')).toBeNull();
  });
 });
+
+describe('consecutive project revisions',()=>{
+ it('rejects revision gaps',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'gap',title:'Original',contentType:'reel',sourceIdea:'Idea',now:'2026-11-06T00:00:00Z'});
+  savePersonaProject(storage,project);
+  expect(()=>savePersonaProject(storage,{...project,revision:3})).toThrow('persona_project_stale_save');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].revision).toBe(1);
+ });
+});
