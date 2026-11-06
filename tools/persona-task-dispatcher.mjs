@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const validStatuses=new Set(['QUEUED','READY','RUNNING','BLOCKED','DONE','FAILED']);
@@ -25,9 +25,13 @@ export function dispatch(board,{maxConcurrent=3}={}){
 }
 export async function run({input,output,maxConcurrent=3}){
  const raw=await readFile(resolve(input),'utf8');if(Buffer.byteLength(raw)>1000000)throw Error('Oversized board');
- const result=dispatch(JSON.parse(raw),{maxConcurrent});await mkdir(resolve(output),{recursive:true});
- await writeFile(join(resolve(output),'dispatch.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
- await writeFile(join(resolve(output),'dispatch.md'),'# Life OS task dispatch\n\n'+result.selected.map(x=>'- '+x.id+': '+x.title+' → '+x.executor).join('\n')+'\n',{flag:'wx'});return result;
+ const result=dispatch(JSON.parse(raw),{maxConcurrent});const dir=resolve(output);
+ await mkdir(dir);
+ try{
+  await writeFile(join(dir,'dispatch.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+  await writeFile(join(dir,'dispatch.md'),'# Life OS task dispatch\n\n'+result.selected.map(x=>'- '+x.id+': '+x.title+' → '+x.executor).join('\n')+'\n',{flag:'wx'});
+ }catch(error){await rm(dir,{recursive:true,force:true}).catch(()=>{});throw error}
+ return result;
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
