@@ -43,3 +43,20 @@ test('release gate CLI blocks dry-run and stale commit',async()=>{
   assert.equal(report.status,'BLOCKED');assert.equal(report.mergeApproved,false);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+test('report writers refuse existing directories without modifying existing data',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'lifeos-no-overwrite-'));
+ try{
+  const board=join(dir,'board.json'),out=join(dir,'existing');
+  await writeFile(board,JSON.stringify({schemaVersion:1,tasks:[task('A','READY')]}));
+  const {mkdir}=await import('node:fs/promises');
+  await mkdir(out);await writeFile(join(out,'sentinel.txt'),'keep me');
+  const result=run('persona-task-dispatcher.mjs',['--input',board,'--output',out]);
+  assert.notEqual(result.status,0);
+  assert.equal(await readFile(join(out,'sentinel.txt'),'utf8'),'keep me');
+  const report=join(dir,'report.json');await writeFile(report,JSON.stringify({commit:'a'.repeat(40),dryRun:true,overall:'PASS',results:[]}));
+  const gate=run('persona-release-gate.mjs',['--input',report,'--sha','a'.repeat(40),'--output',out]);
+  assert.notEqual(gate.status,0);
+  assert.equal(await readFile(join(out,'sentinel.txt'),'utf8'),'keep me');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
