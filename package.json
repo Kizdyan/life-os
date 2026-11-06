@@ -80,7 +80,9 @@
     "tasks:batch:local": "node tools/persona-local-batch.mjs",
     "tasks:batch:test": "node --test tools/persona-local-batch.test.mjs",
     "media:remotion:handoff": "node tools/persona-remotion-handoff.mjs",
-    "media:remotion:test": "node --test tools/persona-remotion-handoff.test.mjs"
+    "media:remotion:test": "node --test tools/persona-remotion-handoff.test.mjs",
+    "media:remotion:stage": "node tools/persona-remotion-stage.mjs",
+    "media:remotion:stage:test": "node --test tools/persona-remotion-stage.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
