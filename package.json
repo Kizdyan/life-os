@@ -57,7 +57,10 @@
     "persona:delivery:check": "node docs/persona-delivery/check.mjs",
     "persona:delivery:animatic": "node tools/persona-delivery-animatic.mjs",
     "persona:delivery:sources": "node tools/persona-delivery-source-folder.mjs",
-    "persona:delivery:test": "node --test tools/persona-delivery-animatic.test.mjs tools/persona-delivery-source-folder.test.mjs"
+    "persona:delivery:test": "node --test tools/persona-delivery-animatic.test.mjs tools/persona-delivery-source-folder.test.mjs",
+    "skills:validate": "node scripts/validate-workflow-skills.mjs",
+    "marketing:audit": "node tools/persona-marketing-audit.mjs",
+    "marketing:test": "node --test tools/persona-marketing-audit.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
