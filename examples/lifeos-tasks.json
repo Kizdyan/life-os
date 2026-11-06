@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "revision": 0,
+  "tasks": [
+    {
+      "id": "CI-001",
+      "title": "Reproduce full tests at exact PR SHA",
+      "kind": "engineering",
+      "priority": "P0",
+      "status": "READY",
+      "dependsOn": [],
+      "estimatedMinutes": 120,
+      "acceptance": "Independent test report with exact SHA and logs"
+    },
+    {
+      "id": "PERSONA-001",
+      "title": "Finish one Persona reel with real video QA",
+      "kind": "production",
+      "priority": "P0",
+      "status": "QUEUED",
+      "dependsOn": [
+        "CI-001"
+      ],
+      "estimatedMinutes": 240,
+      "acceptance": "Rendered MP4, measured QA and author review"
+    },
+    {
+      "id": "MKT-001",
+      "title": "Validate Persona analytics with authentic platform export",
+      "kind": "marketing",
+      "priority": "P1",
+      "status": "READY",
+      "dependsOn": [],
+      "estimatedMinutes": 90,
+      "acceptance": "Reconciled authentic metrics and production brief"
+    },
+    {
+      "id": "REVIEW-001",
+      "title": "Independent creative and technical assessment",
+      "kind": "review",
+      "priority": "P1",
+      "status": "QUEUED",
+      "dependsOn": [
+        "PERSONA-001"
+      ],
+      "estimatedMinutes": 60,
+      "acceptance": "Recorded visual, audio, editorial and technical findings"
+    }
+  ]
+}
