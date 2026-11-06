@@ -80,3 +80,16 @@ npm run media:remotion:test
 ```
 
 This is **not** a Remotion render, not an installed third-party Skill, and not a replacement for Persona video QA. Before any actual Remotion runtime is installed, inspect its source, license, dependency tree and Windows compatibility; test visual equivalence on the same clips. The adapter is a reversible integration boundary so a Remotion renderer can be connected later without rewriting the Persona timeline engine. No remote services or paid calls are involved.
+
+## Optional Remotion runtime (isolated; not installed by default)
+
+A minimal Remotion composition now lives under `integrations/remotion/` with a separate package manifest, React composition, and registration entrypoint. No dependencies are added to the Life OS root package.
+
+To prepare a standalone workspace with copies of existing source media:
+
+```sh
+npm run media:remotion:stage -- --input path/to/timeline.json --output artifacts/remotion-workspace-unique
+npm run media:remotion:stage:test
+```
+
+Staging writes a `remotion-handoff.json`, composition source, package manifest and media copies to `public/media`. It does not alter originals, install packages, render video, upload media or publish. The workspace can subsequently be opened and rendered **only after an explicit dependency review and local installation** (`npm install` within the staged directory). Remotion version and platform compatibility must be checked before installing. Actual visual QA and comparison against the FFmpeg baseline remain mandatory. Do not treat synthetic media fixture tests as a verified rendered video.
