@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {evaluatePublication,comparePublicationFormats,type PublicationMetrics} from './personaPublicationAnalytics';
+import {createPublicationMetrics,evaluatePublication,comparePublicationFormats,type PublicationMetrics} from './personaPublicationAnalytics';
 const example:PublicationMetrics={id:'p1',format:'carousel',topic:'acting',publishedAt:'2026-11-06',reach:1000,views:1200,likes:100,comments:10,shares:20,saves:50,profileVisits:80,follows:16};
 describe('publication analytics',()=>{
  it('calculates separate conversion, save, share and engagement rates',()=>{
@@ -17,6 +17,12 @@ describe('publication analytics',()=>{
   const result=evaluatePublication({...example,reach:1000,views:4000,likes:50,comments:5,shares:10,saves:20});
   expect(result.engagementRate).toBe(0.085);
   expect(result.saveRate).toBe(0.02);
+ });
+ it('validates actual publication values before storage',()=>{
+  expect(createPublicationMetrics(example).views).toBe(1200);
+  expect(()=>createPublicationMetrics({...example,views:-1})).toThrow();
+  expect(()=>createPublicationMetrics({...example,likes:1.5})).toThrow();
+  expect(()=>createPublicationMetrics({...example,topic:'   '})).toThrow();
  });
  it('rejects invalid input',()=>{
   expect(()=>evaluatePublication({...example,reach:-1})).toThrow();
