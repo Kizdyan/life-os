@@ -287,6 +287,11 @@ export function workspaceStepsFor(format:PersonaContentType|undefined):[Workspac
  return [['idea','Идея'],['script','Сценарий'],['guide','План съёмки'],['assets','Исходники'],['edit','Монтаж'],['review','Проверка'],['export','Экспорт']];
 }
 function workspaceStepFrom(value:unknown,format:PersonaContentType|undefined):WorkspaceStep{const steps=workspaceStepsFor(format);return steps.some(([id])=>id===value)?value as WorkspaceStep:steps[0][0]}
+export function personaAutosaveApprovalSnapshotMatches(savedScenario:unknown,savedPlan:unknown,visibleScenario:unknown,visiblePlan:unknown):boolean{
+ return JSON.stringify(savedScenario??null)===JSON.stringify(visibleScenario??null)&&
+  JSON.stringify(savedPlan??null)===JSON.stringify(visiblePlan??null);
+}
+
 export default function PersonaFactory(){
  const projectBootstrap=useRef<PersonaProjectCollection|null>(null);if(projectBootstrap.current===null)projectBootstrap.current=loadPersonaProjects(resolvePersonaScenarioDraftStorage(),newProjectId);const initialProject=projectBootstrap.current.projects.find(project=>project.id===projectBootstrap.current?.activeProjectId)??null;
  const lastOwnSavedRevision=useRef<{id:string;revision:number}|null>(initialProject?{id:initialProject.id,revision:initialProject.revision}:null);
@@ -337,8 +342,7 @@ export default function PersonaFactory(){
    // Autosave must never replace an independently committed script or editorial decision
    // with a stale React snapshot. Explicit scenario/milestone saves are atomic above.
    if(!preserveApprovedMediaBase&&!nextScenarioWorkspace&&!importedProduction&&!milestone&&
-    (JSON.stringify(previous.scenarioWorkspace??null)!==JSON.stringify(scenarioWorkspace??null)||
-     JSON.stringify(previous.shootingPlan??null)!==JSON.stringify(production??null)))
+    (!personaAutosaveApprovalSnapshotMatches(previous.scenarioWorkspace,previous.shootingPlan,scenarioWorkspace,production)))
     throw new Error('persona_autosave_stale_approval_snapshot');
    const candidate:PersonaProject=preserveApprovedMediaBase
     ?{...previous,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,updatedAt:now,revision:previous.revision+1}
