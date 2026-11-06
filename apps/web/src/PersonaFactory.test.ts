@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import PersonaFactory, { PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, assertPersonaProductionCanBeApproved, buildApprovedPersonaVideoBrief, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
+import PersonaFactory, { personaAutosaveApprovalSnapshotMatches, PersonaProductionBriefPanel, buildPersonaProductionWorkflow, ideaForImportedBrief, selectedPersonaProjectSnapshot, personaScenarioWorkspaceMountKey, productionBriefMatchesBeats, reconcilePersonaProductionWithScenario, assertPersonaProductionCanBeApproved, buildApprovedPersonaVideoBrief, canNavigateFromPersonaGuide, registerPersonaExitFlush, workspaceStepsFor } from './PersonaFactory';
 import {productionBriefSnapshot,saveProductionInputDraft} from './personaProductionInputJournal';
 import { createPersonaProject,applyPersonaProductionMilestone,savePersonaProject,loadPersonaProjects,type PersonaProjectCollection } from './personaProjectStore';
 import {importPersonaProductionBrief,recordPersonaEditorialDecision} from '../../../packages/core/src/persona-production-pipeline';
@@ -392,5 +392,15 @@ describe('Persona preproduction stage order',()=>{
  it('keeps asset-first workflow for still photographs and carousel posts',()=>{
   expect(workspaceStepsFor('photo').map(([id])=>id)).toEqual(['assets','edit','review','export']);
   expect(workspaceStepsFor('carousel').map(([id])=>id)).toEqual(['assets','edit','review','export']);
+ });
+});
+
+describe('Persona autosave approval isolation',()=>{
+ it('rejects stale scenario and production snapshots but permits matching values',()=>{
+  const savedScenario={version:1,script:{revision:'current'}};
+  const savedPlan={materials:{editorialDecision:{decision:'approved'}}};
+  expect(personaAutosaveApprovalSnapshotMatches(savedScenario,savedPlan,{...savedScenario},{...savedPlan})).toBe(true);
+  expect(personaAutosaveApprovalSnapshotMatches(savedScenario,savedPlan,{version:1,script:{revision:'old'}},savedPlan)).toBe(false);
+  expect(personaAutosaveApprovalSnapshotMatches(savedScenario,savedPlan,savedScenario,{materials:{editorialDecision:{decision:'pending'}}})).toBe(false);
  });
 });
