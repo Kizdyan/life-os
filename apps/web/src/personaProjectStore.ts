@@ -249,7 +249,7 @@ export function savePersonaProject(storage:PersonaProjectStorage,project:Persona
  if(!isProject(project))throw new Error('invalid_persona_project');
  const current=readCollection(storage)??emptyCollection();
  const index=current.projects.findIndex(item=>item.id===project.id);
- if(index>=0&&project.revision<=current.projects[index].revision)
+ if(index>=0&&project.revision!==current.projects[index].revision+1)
   throw new Error('persona_project_stale_save');
  const projects=index<0?[...current.projects,project]:current.projects.map((item,i)=>i===index?project:item);
  const next:PersonaProjectCollection={schemaVersion:1,activeProjectId,projects};
