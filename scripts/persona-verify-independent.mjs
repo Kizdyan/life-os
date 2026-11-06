@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+// Portable Persona verification: no GitHub Actions, Vercel, paid APIs or secrets required.
+// Run from repository root: node scripts/persona-verify-independent.mjs
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const root = process.cwd();
+if (!existsSync(join(root, 'package.json'))) {
+  console.error('Run from repository root (package.json missing).');
+  process.exit(2);
+}
+const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(join(root,'package.json'),'utf8'));
+const tasks = [
+  ['typecheck', 'typecheck'],
+  ['api:typecheck', 'api:typecheck'],
+  ['unit tests', 'test'],
+  ['web build', 'web:build'],
+  ['Persona core regressions', 'persona:core:test'],
+  ['media integration', 'media:test'],
+].filter(([,script]) => Object.hasOwn(manifest.scripts ?? {}, script));
+const install = process.argv.includes('--install');
+const dry = process.argv.includes('--dry-run');
+const runMedia = process.argv.includes('--media');
+const selected = tasks.filter(([name]) => name !== 'media integration' || runMedia);
+const commands = [...(install ? [['install','npm',['ci','--no-audit','--no-fund']]] : []), ...selected.map(([name,script]) => [name,'npm',['run',script]])];
+const results = [];
+const startedAt = new Date().toISOString();
+let failed = false;
+for (const [name, bin, args] of commands) {
+  console.log('> '+bin+' '+args.join(' '));
+  if (dry) { results.push({name,status:'NOT_RUN_DRY_RUN'}); continue; }
+  const t = Date.now();
+  const result = spawnSync(process.platform === 'win32' ? bin+'.cmd' : bin,args,{cwd:root,stdio:'inherit',shell:process.platform === 'win32'});
+  const status = result.error ? 'EXECUTION_ERROR' : result.status === 0 ? 'PASS' : 'FAIL';
+  results.push({name,status,exitCode:result.status,error:result.error?.message,durationMs:Date.now()-t});
+  if (status !== 'PASS') { failed = true; break; }
+}
+const report = {schemaVersion:1,startedAt,finishedAt:new Date().toISOString(),platform:process.platform,node:process.version,commit:process.env.PERSONA_COMMIT_SHA ?? null,dryRun:dry,mediaIncluded:runMedia,results,overall:dry?'NOT_RUN':failed?'FAIL':results.length?'PASS':'NOT_RUN'};
+if (!dry) {
+  const dir=join(root,'artifacts','persona-verification');
+  mkdirSync(dir,{recursive:true});
+  writeFileSync(join(dir,'latest.json'),JSON.stringify(report,null,2)+'\n');
+  console.log('Report: artifacts/persona-verification/latest.json');
+}
+console.log('Persona independent verification: '+report.overall);
+process.exit(failed?1:0);
