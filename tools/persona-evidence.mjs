@@ -3,7 +3,8 @@
  * Offline evidence verification. No network, AI calls, publishing or execution.
  * Records SHA-256 of an existing local artifact, never asserts its quality.
  */
-import {readFile,stat,writeFile,mkdir} from 'node:fs/promises';
+import {open,writeFile,mkdir} from 'node:fs/promises';
+import {constants} from 'node:fs';
 import {createHash,randomUUID} from 'node:crypto';
 import {resolve,join,basename} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -11,10 +12,16 @@ import {pathToFileURL} from 'node:url';
 export async function inspectEvidence({input,maxBytes=25_000_000}={}){
  if(typeof input!=='string'||!input.trim())throw Error('Evidence input path required');
  const file=resolve(input);
- const info=await stat(file);
- if(!info.isFile()||info.size===0||info.size>maxBytes)throw Error('Evidence file empty, oversized or not a regular file');
- const bytes=await readFile(file);
- if(bytes.length!==info.size)throw Error('Evidence changed while reading');
+ const handle=await open(file,constants.O_RDONLY | (constants.O_NOFOLLOW??0));
+ let bytes;
+ try{
+  const before=await handle.stat();
+  if(!before.isFile()||before.size===0||before.size>maxBytes)throw Error('Evidence file empty, oversized or not a regular file');
+  bytes=await handle.readFile();
+  const after=await handle.stat();
+  if(bytes.length!==before.size||after.size!==before.size||after.mtimeMs!==before.mtimeMs)throw Error('Evidence changed while reading');
+ }finally{await handle.close();}
+
  return {schemaVersion:1,kind:'LOCAL_FILE_HASH',fileName:basename(file),sizeBytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),verified:'FILE_BYTES_ONLY',qualityApproved:false};
 }
 export async function verifyEvidence({input,record}={}){
