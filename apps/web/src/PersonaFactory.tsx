@@ -322,7 +322,7 @@ export default function PersonaFactory(){
   }
   setScreen(screenFromHash());
  };window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[activeProjectId]);
- function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone,localRenderOverride?:PersonaLocalRenderRecord,colorComparisonOverride?:PersonaColorComparisonRecord){
+ function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone,localRenderOverride?:PersonaLocalRenderRecord,colorComparisonOverride?:PersonaColorComparisonRecord,preserveApprovedMediaBase=false){
   if(!activeProjectId||!ideaForSave)return;
   try{
    const rendered=projects.find(project=>project.id===activeProjectId);
@@ -333,7 +333,8 @@ export default function PersonaFactory(){
     ?lastOwnSavedRevision.current.revision:rendered.revision;
    const previous=resolvePersonaProjectSaveBase(localStorage,{...rendered,revision:expectedRevision});
    const now=new Date().toISOString();
-   const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
+   if(preserveApprovedMediaBase&&!canImportPersonaVideoMedia(previous.scenarioWorkspace,previous.shootingPlan as PersonaProductionPipeline|null))throw new Error('Утверждение сценария или съёмочного плана изменилось до записи.');
+   const candidate:PersonaProject={...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:preserveApprovedMediaBase?previous.shootingPlan:production,editPlan:preserveApprovedMediaBase?previous.editPlan:production,timeline:preserveApprovedMediaBase?previous.timeline:timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage:preserveApprovedMediaBase?previous.stage:stage,qa:preserveApprovedMediaBase?previous.qa:qa,lastOpenStep:preserveApprovedMediaBase?previous.lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
    const next=importedProduction&&nextScenarioWorkspace
     ?applyPersonaImportedProductionBrief(candidate,importedProduction,nextScenarioWorkspace)
     :milestone?applyPersonaProductionMilestone(candidate,milestone.pipeline,
@@ -383,7 +384,7 @@ export default function PersonaFactory(){
        previousRecord.finished?.finishedSha256!==record.finished.finishedSha256)
      throw Error('Нельзя утвердить MP4, который не сохранён в этом проекте.');
    }
-   if(!saveActiveProject(undefined,chosen,undefined,undefined,record))return false;
+   if(!saveActiveProject(undefined,chosen,undefined,undefined,record,undefined,true))return false;
    setLocalRenderReview(record);
    return true;
   }catch(error){setStatus('Не удалось сохранить импорт: '+String((error as Error).message||error));return false}
@@ -406,7 +407,7 @@ export default function PersonaFactory(){
    // A new unrelated source can only be imported without inherited author review.
    if(hasAuthoredPersonaColorReview(next)&&(!previous||!samePersonaColorComparisonEvidence(previous,next)))
     throw Error('Нельзя сохранить художественную оценку, отказ или заметки от другого MP4. Импортируйте файлы заново.');
-   if(!saveActiveProject(undefined,chosen,undefined,undefined,undefined,next))return false;
+   if(!saveActiveProject(undefined,chosen,undefined,undefined,undefined,next,true))return false;
    setColorComparison(next);
    return true;
   }catch(error){
