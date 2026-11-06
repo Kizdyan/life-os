@@ -74,7 +74,9 @@
     "verify:local:smoke": "node scripts/persona-local-smoke.mjs",
     "verify:local:full": "node scripts/persona-verify-independent.mjs",
     "evidence:test": "node --test tools/persona-evidence.test.mjs",
-    "evidence:hash": "node tools/persona-evidence.mjs"
+    "evidence:hash": "node tools/persona-evidence.mjs",
+    "tasks:execute:local": "node tools/persona-local-executor.mjs",
+    "tasks:execute:test": "node --test tools/persona-local-executor.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
