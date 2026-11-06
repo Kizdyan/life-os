@@ -25,6 +25,7 @@ const suites=[
  ['artifact evidence','tools/persona-evidence.test.mjs'],
  ['local execution','tools/persona-local-executor.test.mjs'],
  ['local batch','tools/persona-local-batch.test.mjs'],
+ ['Remotion handoff','tools/persona-remotion-handoff.test.mjs'],
  ['task orchestration CLI','tools/persona-orchestration-e2e.test.mjs'],
  ['release gate','tools/persona-release-gate.test.mjs'],
  ['marketing audit','tools/persona-marketing-audit.test.mjs'],
