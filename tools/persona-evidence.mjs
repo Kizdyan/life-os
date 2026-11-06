@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+/**
+ * Offline evidence verification. No network, AI calls, publishing or execution.
+ * Records SHA-256 of an existing local artifact, never asserts its quality.
+ */
+import {readFile,stat,writeFile,mkdir} from 'node:fs/promises';
+import {createHash,randomUUID} from 'node:crypto';
+import {resolve,join,basename} from 'node:path';
+import {pathToFileURL} from 'node:url';
+
+export async function inspectEvidence({input,maxBytes=25_000_000}={}){
+ if(typeof input!=='string'||!input.trim())throw Error('Evidence input path required');
+ const file=resolve(input);
+ const info=await stat(file);
+ if(!info.isFile()||info.size===0||info.size>maxBytes)throw Error('Evidence file empty, oversized or not a regular file');
+ const bytes=await readFile(file);
+ if(bytes.length!==info.size)throw Error('Evidence changed while reading');
+ return {schemaVersion:1,kind:'LOCAL_FILE_HASH',fileName:basename(file),sizeBytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),verified:'FILE_BYTES_ONLY',qualityApproved:false};
+}
+export async function writeEvidence({input,output}={}){
+ const record=await inspectEvidence({input});
+ const dir=resolve(output);
+ await mkdir(dir);
+ await writeFile(join(dir,'evidence.json'),JSON.stringify({...record,createdAt:new Date().toISOString(),id:randomUUID()},null,2)+'\n',{flag:'wx'});
+ return record;
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+ const args=process.argv.slice(2),flag=x=>{const i=args.indexOf(x);return i<0?undefined:args[i+1]};
+ const input=flag('--input'),output=flag('--output');
+ if(!input||!output){console.error('Usage: node tools/persona-evidence.mjs --input EXISTING_FILE --output NEW_DIRECTORY');process.exitCode=2}
+ else writeEvidence({input,output}).then(x=>console.log(JSON.stringify(x))).catch(e=>{console.error(e.message);process.exitCode=1});
+}
