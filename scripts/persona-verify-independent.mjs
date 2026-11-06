@@ -39,6 +39,7 @@ const tasks = [
   ['Local artifact evidence regressions', 'evidence:test'],
   ['Local task executor regressions', 'tasks:execute:test'],
   ['Local batch executor regressions', 'tasks:batch:test'],
+  ['Remotion handoff regressions', 'media:remotion:test'],
   ['Release evidence gate regressions', 'release:gate:test'],
   ['Task orchestration end-to-end CLI', 'tasks:e2e:test'],
   ['Persona production brief regressions', 'production:brief:test'],
