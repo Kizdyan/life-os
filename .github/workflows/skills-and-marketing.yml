@@ -26,6 +26,8 @@ jobs:
       - name: Validate workflow skills
         run: node scripts/validate-workflow-skills.mjs
       - name: Test marketing calculations and report generation
-        run: node --test tools/persona-marketing-audit.test.mjs
+        run: node --test tools/persona-marketing-audit.test.mjs tools/persona-marketing-production.test.mjs tools/persona-experiment-planner.test.mjs
       - name: Test production brief and approval gate
-        run: node --test tools/persona-production-brief.test.mjs tools/persona-experiment-planner.test.mjs
+        run: node --test tools/persona-production-brief.test.mjs
+      - name: Test task orchestration and recovery
+        run: node --test tools/persona-task-operations.test.mjs
