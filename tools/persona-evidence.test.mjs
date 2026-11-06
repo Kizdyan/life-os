@@ -4,7 +4,7 @@ import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {inspectEvidence,writeEvidence} from './persona-evidence.mjs';
+import {inspectEvidence,writeEvidence,verifyEvidence} from './persona-evidence.mjs';
 import {updateBoard} from './persona-task-journal.mjs';
 
 const task=(id,status)=>({id,status,dependsOn:[],priority:'P1',kind:'engineering',title:id,acceptance:'Evidence review'});
@@ -15,6 +15,10 @@ test('offline evidence hash matches original bytes, not an approval',async()=>{
   const result=await inspectEvidence({input:file});
   assert.equal(result.sha256,createHash('sha256').update('verified test output\n').digest('hex'));
   assert.equal(result.qualityApproved,false);
+  assert.equal((await verifyEvidence({input:file,record:result})).status,'MATCH');
+  await writeFile(file,'modified output\\n');
+  assert.equal((await verifyEvidence({input:file,record:result})).status,'MISMATCH');
+  await writeFile(file,'verified test output\\n');
   await writeEvidence({input:file,output:join(dir,'record')});
   const record=JSON.parse(await readFile(join(dir,'record','evidence.json'),'utf8'));
   assert.equal(record.sha256,result.sha256);
