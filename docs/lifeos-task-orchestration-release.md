@@ -9,6 +9,13 @@ npm run tasks:dispatch -- --input examples/lifeos-tasks.json --output artifacts/
 ```
 The dispatcher writes a proposed plan, does not execute shell commands, and does not contact external providers.
 
+## Command-line state transition
+```bash
+npm run tasks:journal -- --input examples/lifeos-tasks.json --id CI-001 --to RUNNING --revision 0
+npm run tasks:journal -- --input examples/lifeos-tasks.json --id CI-001 --to DONE --revision 1 --evidence "Verified exact commit with full test report"
+```
+These commands **modify the specified JSON file**. Copy the example board to your own workspace before running them. A stale revision or missing evidence fails closed.
+
 ## Durable task transitions
 Use the exported `updateBoard` API from `tools/persona-task-journal.mjs` to change state. A revision number prevents stale writes; a local lock prevents concurrent writers; DONE requires explicit evidence. Failed/running tasks are never automatically retried. Keep the board in an authorized local worktree and back it up before state changes.
 
