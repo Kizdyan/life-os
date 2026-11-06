@@ -6,6 +6,12 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
+const git = spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'});
+const gitSha = git.status === 0 ? git.stdout.trim() : null;
+if (process.env.PERSONA_COMMIT_SHA && gitSha && process.env.PERSONA_COMMIT_SHA !== gitSha) {
+  console.error('Refusing verification: declared SHA differs from checked-out HEAD.');
+  process.exit(2);
+}
 if (!existsSync(join(root, 'package.json'))) {
   console.error('Run from repository root (package.json missing).');
   process.exit(2);
@@ -22,6 +28,15 @@ const tasks = [
 const install = process.argv.includes('--install');
 const dry = process.argv.includes('--dry-run');
 const runMedia = process.argv.includes('--media');
+if (runMedia && !dry) {
+  for (const binary of ['ffmpeg','ffprobe']) {
+    const check = spawnSync(binary,['-version'],{stdio:'ignore'});
+    if (check.status !== 0) {
+      console.error('Media verification requires '+binary+' on PATH.');
+      process.exit(2);
+    }
+  }
+}
 const selected = tasks.filter(([name]) => name !== 'media integration' || runMedia);
 const commands = [...(install ? [['install','npm',['ci','--no-audit','--no-fund']]] : []), ...selected.map(([name,script]) => [name,'npm',['run',script]])];
 const results = [];
@@ -36,7 +51,7 @@ for (const [name, bin, args] of commands) {
   results.push({name,status,exitCode:result.status,error:result.error?.message,durationMs:Date.now()-t});
   if (status !== 'PASS') { failed = true; break; }
 }
-const report = {schemaVersion:1,startedAt,finishedAt:new Date().toISOString(),platform:process.platform,node:process.version,commit:process.env.PERSONA_COMMIT_SHA ?? null,dryRun:dry,mediaIncluded:runMedia,results,overall:dry?'NOT_RUN':failed?'FAIL':results.length?'PASS':'NOT_RUN'};
+const report = {schemaVersion:1,startedAt,finishedAt:new Date().toISOString(),platform:process.platform,node:process.version,commit:gitSha,dryRun:dry,mediaIncluded:runMedia,results,overall:dry?'NOT_RUN':failed?'FAIL':results.length?'PASS':'NOT_RUN'};
 if (!dry) {
   const dir=join(root,'artifacts','persona-verification');
   mkdirSync(dir,{recursive:true});
