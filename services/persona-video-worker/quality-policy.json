@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "video": {
+    "codec": "h264",
+    "crf": 19,
+    "pixelFormat": "yuv420p",
+    "fastStart": true
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate": "192k"
+  },
+  "checks": [
+    "video_stream_present",
+    "duration_positive",
+    "output_nonempty",
+    "audio_if_source_present"
+  ]
+}
