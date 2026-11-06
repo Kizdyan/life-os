@@ -39,10 +39,11 @@ function ffmpeg(input,output,preset){
    '-c:v','libx264','-preset','medium','-crf','19','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k',
    '-movflags','+faststart','-f','mp4',output];
   const proc=spawn('ffmpeg',args,{stdio:['ignore','ignore','pipe']});
+  const timeout=setTimeout(()=>proc.kill('SIGKILL'),Number(process.env.PERSONA_RENDER_TIMEOUT_MS||900000));
   let stderr='';
   proc.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-3000)});
-  proc.on('error',reject);
-  proc.on('close',code=>code===0?resolve():reject(Error('ffmpeg exited '+code+': '+stderr)));
+  proc.on('error',error=>{clearTimeout(timeout);reject(error)});
+  proc.on('close',code=>{clearTimeout(timeout);code===0?resolve():reject(Error('ffmpeg failed or timed out '+code+': '+stderr))});
  });
 }
 async function runQueue(){
