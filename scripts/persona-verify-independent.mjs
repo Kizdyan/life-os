@@ -40,12 +40,13 @@ const tasks = [
   ['Local task executor regressions', 'tasks:execute:test'],
   ['Local batch executor regressions', 'tasks:batch:test'],
   ['Remotion handoff regressions', 'media:remotion:test'],
+  ['Remotion stage regressions', 'media:remotion:stage:test'],
   ['Release evidence gate regressions', 'release:gate:test'],
   ['Task orchestration end-to-end CLI', 'tasks:e2e:test'],
   ['Persona production brief regressions', 'production:brief:test'],
   ['media integration', 'media:test'],
 ];
-const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','evidence:test','tasks:execute:test','tasks:batch:test','release:gate:test','tasks:e2e:test','production:brief:test'];
+const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','evidence:test','tasks:execute:test','tasks:batch:test','media:remotion:test','media:remotion:stage:test','release:gate:test','tasks:e2e:test','production:brief:test'];
 const missing=mandatory.filter(script=>!Object.hasOwn(manifest.scripts??{},script));
 if(missing.length){console.error('Refusing verification: required scripts missing: '+missing.join(', '));process.exit(2)}
 const available=tasks.filter(([,script])=>Object.hasOwn(manifest.scripts??{},script));
