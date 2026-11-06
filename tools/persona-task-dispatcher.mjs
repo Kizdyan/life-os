@@ -10,7 +10,7 @@ export function validateTaskBoard(board){
  for(const t of board.tasks){
   if(!t||typeof t.id!=='string'||!/^[\w-]{1,80}$/.test(t.id)||ids.has(t.id))throw Error('Duplicate/invalid task ID');
   ids.add(t.id);
-  if(!validStatuses.has(t.status)||!['P0','P1','P2','P3'].includes(t.priority)||!Object.hasOwn(agents,t.kind)||typeof t.title!=='string'||!t.title.trim()||typeof t.acceptance!=='string'||!t.acceptance.trim()||!Array.isArray(t.dependsOn)||new Set(t.dependsOn).size!==t.dependsOn.length)throw Error('Invalid task '+t.id);
+  if(!validStatuses.has(t.status)||!['P0','P1','P2','P3'].includes(t.priority)||!Object.hasOwn(agents,t.kind)||typeof t.title!=='string'||!t.title.trim()||typeof t.acceptance!=='string'||!t.acceptance.trim()||!Array.isArray(t.dependsOn)||t.dependsOn.some(d=>typeof d!=='string')||new Set(t.dependsOn).size!==t.dependsOn.length||(t.estimatedMinutes!==undefined&&(!Number.isInteger(t.estimatedMinutes)||t.estimatedMinutes<1||t.estimatedMinutes>10080)))throw Error('Invalid task '+t.id);
  }
  const map=new Map(board.tasks.map(t=>[t.id,t])),visiting=new Set(),done=new Set();
  function walk(id){if(visiting.has(id))throw Error('Dependency cycle '+id);if(done.has(id))return;const t=map.get(id);if(!t)throw Error('Unknown dependency '+id);visiting.add(id);for(const dep of t.dependsOn)walk(dep);visiting.delete(id);done.add(id)}
