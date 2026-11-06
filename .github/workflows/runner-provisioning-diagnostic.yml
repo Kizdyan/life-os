@@ -1,0 +1,17 @@
+name: runner-provisioning-diagnostic
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/runner-provisioning-diagnostic.yml'
+permissions: {}
+jobs:
+  runner-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm runner allocation and shell execution
+        run: |
+          echo "RUNNER_ALLOCATED"
+          uname -a
+          printf 'GitHub Actions shell execution: PASS\n'
