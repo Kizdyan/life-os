@@ -65,3 +65,11 @@ An earlier GitHub Actions run (42280275194) had an `audit` job with `conclusion=
 The verifier now fails closed if the checked-out Git SHA cannot be established or if any mandatory package script is absent. Previously it silently filtered out missing scripts.
 
 **Acceptance rule:** only mark a commit verified when a real run for that exact commit has a complete PASS report. The presence of a workflow file or a test file does not meet this rule.
+
+## Verification hardening (November 2026)
+- A task cannot transition to `READY` or `RUNNING` with unfinished dependencies.
+- Journal notes and evidence must be strings within limits; malformed history is rejected.
+- The independent verifier refuses missing mandatory scripts, unavailable exact Git SHA, or uncommitted changes in tracked files.
+- The release gate additionally requires the Persona production brief regression suite.
+- Historical workflow job 128107143021 did not expose logs: the GitHub API returned HTTP 404 / BlobNotFound. Do not infer a test failure cause from that unavailable log.
+- This release remains unverified until a complete exact-commit PASS report is produced and reviewed.
