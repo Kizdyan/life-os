@@ -10,7 +10,7 @@ export function transition(board,{id,to,evidence,note='',expectedRevision}={}){
  if(!Number.isInteger(revision)||revision<0||expectedRevision!==undefined&&expectedRevision!==revision)throw Error('Revision conflict');
  const task=board.tasks.find(t=>t.id===id);if(!task)throw Error('Unknown task');
  if(!allowed[task.status]?.includes(to))throw Error('Illegal transition '+task.status+' -> '+to);
- if(to==='RUNNING'&&task.dependsOn.some(dep=>board.tasks.find(t=>t.id===dep)?.status!=='DONE'))throw Error('Dependencies incomplete');
+ if((to==='READY'||to==='RUNNING')&&task.dependsOn.some(dep=>board.tasks.find(t=>t.id===dep)?.status!=='DONE'))throw Error('Dependencies incomplete');
  if(to==='DONE'&&(!evidence||typeof evidence!=='string'||evidence.trim().length<12))throw Error('DONE requires verification evidence');
  if(typeof note!=='string'||note.length>2000||(evidence!==undefined&&(typeof evidence!=='string'||evidence.length>4000)))throw Error('Invalid or oversized evidence');
  if(board.history!==undefined&&!Array.isArray(board.history))throw Error('Invalid history');
