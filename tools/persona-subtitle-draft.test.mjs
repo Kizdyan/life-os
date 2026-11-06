@@ -51,7 +51,8 @@ test('Whisper word timestamps are translated into montage time and stop before a
   {beat:1,sourceId:'actor',startSec:10.4,durationSec:2.145,captionWords:[
    {text:'Я',startSec:10.6,endSec:10.78,timing:'word'},
    {text:'актёр.',startSec:10.8,endSec:11.2,timing:'word'}]},
-  {beat:2,sourceId:'composer',startSec:20.7,durationSec:2.2,captionWords:[
+  {beat:2,sourceId:'composer',startSec:20.7,durationSec:2.2,
+    postSpeechMusicPreserved:true,speechBoundaryConfidence:'word',speechEndSec:21.95,captionWords:[
    {text:'И',startSec:20.9,endSec:21.02,timing:'word'},
    {text:'у',startSec:21.04,endSec:21.13,timing:'word'},
    {text:'нас',startSec:21.15,endSec:21.34,timing:'word'},
@@ -60,7 +61,7 @@ test('Whisper word timestamps are translated into montage time and stop before a
  ]};
  const result=buildSubtitleDraft(updated,timeline,decisions);
  assert.match(result.srt,/00:00:00,200 --> 00:00:00,920\nЯ актёр\./u);
- assert.match(result.srt,/00:00:02,345 --> 00:00:03,515\nИ у нас есть проблема\./u);
+ assert.match(result.srt,/00:00:02,345 --> 00:00:03,395\nИ у нас есть проблема\./u);
  assert.equal(result.review.captionTiming,'word-level-from-whisper-timestamps');
  assert.ok(result.review.cues[1].endMs<4345,'caption must end before the music tail');
 });
@@ -110,4 +111,33 @@ test('preview captions include selected beats only and record the missing scenes
  assert.match(result.srt,/Я актёр\./u);
  assert.doesNotMatch(result.srt,/И у нас есть проблема/u);
  assert.deepEqual(result.review.missingBeats,[2]);
+});
+
+
+test('B03 manually confirmed boundary creates only spoken captions, never captions over original music',()=>{
+ const updated=structuredClone(brief);
+ updated.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ const choices={version:1,choices:[{beat:1,sourceId:'actor',startSec:.4,durationSec:2.145},
+  {beat:2,sourceId:'composer',startSec:.7,durationSec:2.2,
+   transcriptSource:'manual-review',postSpeechMusicPreserved:true,
+   speechBoundaryConfidence:'manual',manualMusicBoundarySec:1.45}]};
+ const result=buildSubtitleDraft(updated,timeline,choices);
+ const b03=result.review.cues.filter(cue=>cue.beat===2);
+ assert.equal(b03.length,1);
+ assert.equal(b03[0].startMs,2145);
+ assert.equal(b03[0].endMs,2895);
+ assert.equal(b03[0].text,'И у нас есть проблема.');
+ assert.match(result.review.warnings.join(' '),/manually confirmed boundary/);
+ assert.ok(!b03.some(cue=>cue.endMs>2895),'subtitle must not cover the original music tail');
+});
+
+test('B03 captions do not invent a speech/music boundary when manual evidence is missing',()=>{
+ const updated=structuredClone(brief);
+ updated.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ const result=buildSubtitleDraft(updated,timeline,{version:1,choices:[
+  {beat:1,sourceId:'actor',startSec:.4,durationSec:2.145},
+  {beat:2,sourceId:'composer',startSec:.7,durationSec:2.2}
+ ]});
+ assert.ok(!result.review.cues.some(cue=>cue.beat===2));
+ assert.match(result.review.warnings.join(' '),/caption omitted/);
 });

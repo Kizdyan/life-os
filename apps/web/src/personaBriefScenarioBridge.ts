@@ -31,10 +31,18 @@ export function assertPersonaAuthorLockedLines(
 /** Receives a brief only after the canonical Production Brief import has validated it. */
 export function addImportedBriefScenario(workspace: PersonaScenarioWorkspace | undefined, brief: PersonaProductionBrief, createdAt: string): PersonaScenarioWorkspace {
   const current = workspace ?? { version: 1 as const, research: [], analyses: [], ideas: [] };
-  const beats: ScenarioScriptBeat[] = brief.script.map((beat, index) => ({
-    purpose: index === 0 ? 'hook' : index === brief.script.length - 1 ? 'ending' : 'development',
-    line: beat.line, action: beat.action, durationSec: beat.durationSec,
-  }));
+  const beats: ScenarioScriptBeat[] = brief.script.map((beat, index) => {
+    const cue=brief.preEditPlan?.scenes[index];
+    const matchingCue=cue?.order===index+1&&cue.line===beat.line&&
+      cue.durationSec===beat.durationSec&&typeof cue.editIntent==='string'&&
+      cue.editIntent.trim().length>0;
+    return {
+      purpose: index === 0 ? 'hook' : index === brief.script.length - 1 ? 'ending' : 'development',
+      line: beat.line, action: beat.action, durationSec: beat.durationSec,
+      // This remains unapproved planning material until separate author review.
+      ...(matchingCue?{editIntent:cue.editIntent.trim()}:{}),
+    };
+  });
   if (current.script) {
     if (current.script.idea.id !== `imported-brief-${brief.ideaId}`) throw new Error('В проекте сохранён сценарий другой идеи. Импорт отклонён, история сохранена.');
     assertPersonaAuthorLockedLines(current,beats,current.script.idea.id);

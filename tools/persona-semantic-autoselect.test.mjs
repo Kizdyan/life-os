@@ -199,6 +199,53 @@ test('B04 cannot be selected from words scattered across a different spoken phra
  assert.deepEqual(preview.missingBeats,[1]);
  assert.equal(preview.choices.length,0);
 });
+test('full B04 punchline requires verbatim ASR, not just fuzzy word overlap',()=>{
+ const full='Это колыбельная? Это финал триллера.';
+ const brief={version:1,sourceFormat:'reel',
+  script:[{order:1,line:full,durationSec:4}],
+  shots:[{order:1,action:'Финальный панчлайн',durationSec:4}]};
+ const nearMisses=[
+  'Эта колыбельная? Это финал триллера.',
+  'Это колыбельная? Это финал триллера, наверное.',
+  'Это колыбельная? Это не финал триллера.',
+  'Это колыбельная? Это финал, ну, триллера.'
+ ];
+ for(const text of nearMisses){
+  const wrong=parseWhisperJson(whisper([[text,.3,2.4]]),4);
+  const input=[{id:'b04-near-miss',durationSec:4,segments:wrong}];
+  assert.throws(()=>createEditorialPlan(brief,input),/Manual review required/,
+   'reject semantically similar but different speech: '+text);
+  const preview=createEditorialPlan(brief,input,{mode:'preview'});
+  assert.deepEqual(preview.missingBeats,[1]);
+ }
+ const exact=parseWhisperJson(whisper([[full,.3,2.4]]),4);
+ assert.equal(createEditorialPlan(brief,[{id:'b04-exact',durationSec:4,segments:exact}]).choices.length,1);
+ const timed=parseWhisperJson(whisper([
+  ['Эта',.3,.45],['колыбельная?',.45,.9],['Это',1,1.2],['финал',1.3,1.55],['триллера.',1.6,2.2]
+ ]),4);
+ assert.throws(()=>createEditorialPlan(brief,[{id:'b04-wrong-vowel',durationSec:4,segments:timed}]),/Manual review required/);
+});
+
+test('B04 short phrase cannot auto-pass with extra words in a coarse ASR segment',()=>{
+ const requested={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Это колыбельная.',durationSec:3}],
+  shots:[{order:1,durationSec:3,action:'Финальная реплика'}]};
+ const nearMisses=['Это колыбельная, наверное.','Ну это колыбельная.',
+  'Это колыбельная. Ещё раз.', 'Это колыбельная, да.'];
+ for(const text of nearMisses){
+  const segments=parseWhisperJson(whisper([[text,.2,1.9]]),3);
+  const takes=[{id:'B04_extra_words',durationSec:3,segments}];
+  assert.throws(()=>createEditorialPlan(requested,takes),/Manual review required/,
+   'must not auto-match: '+text);
+  const preview=createEditorialPlan(requested,takes,{mode:'preview'});
+  assert.deepEqual(preview.missingBeats,[1]);
+  assert.equal(preview.choices.length,0);
+ }
+ // Truly verbatim speech remains available as a technical ASR proposal.
+ const exact=parseWhisperJson(whisper([['Это колыбельная.',.2,1.9]]),3);
+ assert.equal(createEditorialPlan(requested,[{id:'B04_exact',durationSec:3,segments:exact}]).choices.length,1);
+});
+
 test('whisper.cpp subword tokens are rejoined into complete Russian words',()=>{
  const data={transcription:[{text:' Композитор сочиняет.',offsets:{from:0,to:1500},tokens:[
   {text:' Компо',offsets:{from:0,to:400}},
@@ -343,18 +390,18 @@ test('One long recording can supply two non-overlapping dialogue shots',()=>{
  assert.ok(choices[0].startSec+choices[0].durationSec<choices[1].startSec,'selected source windows must not overlap');
 });
 
-test('non-greedy alternative lets two utterances share a coarse Whisper segment safely',()=>{
- const coarse= {id:'archive',durationSec:6,segments:parseWhisperJson({
+test('coarse multi-sentence Whisper segment never invents individually timed complete lines',()=>{
+ const coarse={id:'archive',durationSec:6,segments:parseWhisperJson({
   transcription:[{text:'Я актёр. И ещё пишу музыку. И у нас есть проблема.',offsets:{from:400,to:4000}}]
  },6),technicalQuality:{blackIntervals:[]}};
- const alternative={id:'other-take',durationSec:4,segments:parseWhisperJson(whisper([
+ // This alternative omitted «ещё» but was previously accepted by fuzzy scoring.
+ const incomplete={id:'alternate-missing-word',durationSec:4,segments:parseWhisperJson(whisper([
   ['Я',.4,.6],['актёр',.65,.9],['И',.95,1.05],['пишу',1.1,1.4],['музыку',1.45,1.8]
  ]),4),technicalQuality:{blackIntervals:[]}};
- const picks=chooseForBrief(brief,[coarse,alternative]);
- assert.deepEqual(picks.map(x=>x.sourceId),['other-take','archive']);
- assert.ok(picks.every(x=>x.confidence>=0.75));
- // A missing alternate must fail instead of recycling the same timeline range.
- assert.throws(()=>chooseForBrief(brief,[coarse]),/Manual review required/);
+ assert.throws(()=>chooseForBrief(brief,[coarse,incomplete]),/Manual review required/);
+ const preview=createEditorialPlan(brief,[coarse,incomplete],{mode:'preview'});
+ assert.deepEqual(preview.missingBeats,[1,2]);
+ assert.equal(preview.choices.length,0);
 });
 
 test('stores three ranked take candidates and persists a deliberate manual replacement',()=>{

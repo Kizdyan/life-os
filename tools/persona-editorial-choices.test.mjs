@@ -129,6 +129,45 @@ test('partial Preview decisions can be fully reviewed into new strict montage wi
   /schema mismatch/);
 });
 
+test('manual B04 recovery never accepts a near-miss as the approved script line',()=>{
+ const approved={version:1,sourceFormat:'reel',
+  script:[{order:1,line:'Я актёр.'},{order:2,line:'Это колыбельная.'}],
+  shots:[{order:1,action:'Реплика'},{order:2,action:'Финальная реплика'}]};
+ const first=source('A01', [['Я',.2,.4],['актёр',.5,1]],'a');
+ const disputed=source('B04', [],'b');
+ const partial={version:1,mode:'preview',analysisPath:'analysis.json',briefPath:'brief.json',
+  choices:[{beat:1,sourceId:'A01',startSec:0,durationSec:1.2,
+   transcript:'Я актёр',confidence:.9,reason:'Preview'}],missingBeats:[2]};
+ const pack=buildCandidatePack(approved,[first,disputed],partial);
+ assert.ok(pack.beats[0].candidates.length>0);
+ assert.equal(pack.beats[1].candidates.length,0);
+ const analysis={kind:'persona-evidence-v1',sources:[first,disputed]};
+ const makeSelection=transcript=>{
+  const selected=createSelectionTemplate(pack);
+  selected.selections[0].candidateId=pack.beats[0].candidates[0].candidateId;
+  selected.selections[0].reviewed=true;
+  selected.selections[0].reason='Просмотрел первый дубль';
+  selected.selections[1]={beat:2,candidateId:null,reviewed:true,
+   reason:'Прослушал B04 вручную',rejected:[],recovery:{
+    kind:'persona-manual-segment-v1',sourceId:'B04',sourceSha256:sha('b'),
+    startSec:.5,durationSec:1.2,transcript,confirmed:true,
+    reason:'Сверил с оригинальным звуком'}};
+  return selected;
+ };
+ for(const wrong of ['Эта колыбельная.','Это колыбельное.','Это не колыбельная.',
+  'Это колыбельная, наверное.']){
+  assert.throws(()=>applySelections(pack,makeSelection(wrong),partial,analysis,approved),
+   /transcript differs from approved script for beat 2/,
+   'must reject actual spoken near miss: '+wrong);
+ }
+ for(const exact of ['Это колыбельная.', ' ЭТО, КОЛЫБЕЛЬНАЯ! ']){
+  const result=applySelections(pack,makeSelection(exact),partial,analysis,approved);
+  assert.equal(result.decisions.choices[1].transcript,exact.trim());
+  assert.equal(result.decisions.choices[1].manualTranscriptReview,true);
+  assert.equal(result.memory.publicationApproved,false);
+ }
+});
+
 test('ASR recovery with no audio sources reports reshoot instead of offering a false manual transcript',()=>{
  const silent=[{...source('silent',[],'a'),hasAudio:false}];
  const pack=buildCandidatePack(brief,silent,{version:1,mode:'preview',choices:[],missingBeats:[1,2]});
@@ -183,4 +222,60 @@ test('file-based prepare/apply preserves original decisions and refuses overwrit
   assert.equal(await readFile(selectionPath,'utf8'),protectedSelection,'an existing human selection must never be deleted');
   await assert.rejects(()=>readFile(extraPack,'utf8'),/ENOENT/);
  }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+
+test('B03 selected via human review retains word-level speech/music boundary through decisions',()=>{
+ const musicBrief=structuredClone(brief);
+ musicBrief.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ musicBrief.shots[1].durationSec=3;
+ const pack=buildCandidatePack(musicBrief,sources,decisions);
+ const b03=pack.beats[1].candidates[0];
+ assert.equal(pack.beats[1].requiresPostSpeechMusic,true);
+ assert.equal(b03.postSpeechMusicPreserved,true);
+ assert.equal(b03.speechBoundaryConfidence,'word');
+ assert.ok(b03.speechEndSec>b03.startSec&&b03.speechEndSec<b03.startSec+b03.durationSec);
+ const selection=createSelectionTemplate(pack);
+ for(const row of selection.selections){row.reviewed=true;row.reason='Просмотр и проверка выбранного дубля';}
+ const updated=applySelections(pack,selection,decisions,evidence,musicBrief).decisions;
+ assert.equal(updated.choices[1].postSpeechMusicPreserved,true);
+ assert.equal(updated.choices[1].speechBoundaryConfidence,'word');
+ assert.equal(updated.choices[1].speechEndSec,b03.speechEndSec);
+ const coarse=sources.map(src=>src.id==='B01_take01'?{
+  ...src,segments:src.segments.map(segment=>({...segment,timing:'segment'}))
+ }:src);
+ const coarsePack=buildCandidatePack(musicBrief,coarse,decisions);
+ assert.equal(coarsePack.beats[1].candidates.length,0,
+  'coarse timings require manual Recovery Review, not guessed music boundary');
+});
+
+test('B03 manual Recovery Review refuses missing or outside music boundaries',()=>{
+ const musicBrief=structuredClone(brief);
+ musicBrief.shots[1].action='После реплики 2 секунды собственной оригинальной музыки';
+ musicBrief.shots[1].durationSec=3;
+ const noAsr=[source('A01_take01',aWords,'a'),source('B01_take01',[],'d')];
+ const pack=buildCandidatePack(musicBrief,noAsr,{...decisions,mode:'preview',
+  choices:decisions.choices.slice(0,1),missingBeats:[2]});
+ assert.equal(pack.beats[1].candidates.length,0);
+ const selection=createSelectionTemplate(pack);
+ selection.selections[0].reviewed=true;
+ selection.selections[0].reason='Проверил произнесённый текст';
+ selection.selections[1]={beat:2,candidateId:null,reviewed:true,
+  reason:'Реплика прослушана и музыкальный хвост отделён',rejected:[],
+  recovery:{kind:'persona-manual-segment-v1',sourceId:'B01_take01',
+   sourceSha256:sha('d'),startSec:.2,durationSec:3.1,
+   transcript:'И у нас есть проблема.',confirmed:true,
+   reason:'Лично проверил слова и границы исходника'}};
+ const analysis={kind:'persona-evidence-v1',sources:noAsr};
+ assert.throws(()=>applySelections(pack,selection,decisions,analysis,musicBrief),
+  /Manual post-speech music boundary missing or invalid/);
+ selection.selections[1].recovery.manualMusicBoundarySec=4.0;
+ assert.throws(()=>applySelections(pack,selection,decisions,analysis,musicBrief),
+  /Manual post-speech music boundary missing or invalid/);
+ selection.selections[1].recovery.manualMusicBoundarySec=1.75;
+ const out=applySelections(pack,selection,decisions,analysis,musicBrief).decisions.choices[1];
+ assert.equal(out.postSpeechMusicPreserved,true);
+ assert.equal(out.speechBoundaryConfidence,'manual');
+ assert.equal(out.manualMusicBoundarySec,1.75);
+ assert.equal(out.transcriptSource,'manual-review');
 });

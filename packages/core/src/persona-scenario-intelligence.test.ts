@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import {readFileSync} from "node:fs";
 import {
   analyseScenarioReference,
   approveScenarioScript,
   createScenarioScript,
+  buildScenarioPreEditPlan,
   addFreeTrendLeadToScenarioResearch,
   assessScenarioCreativeRisks,
   freeScenarioTrendLeads,
@@ -45,6 +47,34 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(assessment.findings.some((finding) => finding.category === "missing_conflict")).toBe(false);
     expect(assessment.notice).toMatch(/не измеряет художественную силу/i);
   });
+  it("flags a same-line three-genre performance as an artistic choice to review, not an automatic broken story",()=>{
+    const line="Ты всё-таки пришёл.";
+    const actions=[
+      "Герой искренне встречает партнёра после долгой разлуки.",
+      "Герой пытается остановить опасного гостя у двери.",
+      "Герой скрывает страх за официальной вежливостью.",
+      "Герой остаётся один на один с партнёром, без музыки.",
+    ];
+    const edits=[
+      "Светлая музыкальная миниатюра с первой реплики.",
+      "Тревожная гармония меняет смысл того же текста.",
+      "Комическая музыка делает героя неуверенным.",
+      "Резкая тишина обнажает настоящую актёрскую задачу.",
+    ];
+    const beats=actions.map((action,index)=>({
+      purpose:index===0?"hook" as const:index===3?"ending" as const:"development" as const,
+      line,action,durationSec:4,editIntent:edits[index],
+    }));
+    const result=assessScenarioCreativeRisks({id:"three-genres-r1",beats});
+    const repeated=result.findings.find(finding=>finding.category==="repeated_line");
+    expect(repeated?.severity).toBe("human_review");
+    expect(repeated?.explanation).toContain("жанровым контрастом");
+    expect(result.findings.every(finding=>finding.severity!=="needs_revision")).toBe(true);
+    const copied=beats.map((beat,index)=>index===2?{...beat,action:beats[1].action}:beat);
+    const broken=assessScenarioCreativeRisks({id:"copied-refrain",beats:copied});
+    expect(broken.findings.find(finding=>finding.category==="repeated_line")?.severity).toBe("needs_revision");
+  });
+
   it("keeps a manual link metadata-only and rejects a duplicate evidence URL", () => {
     const [item] = validateScenarioResearch([source]);
     expect(item.observationStatus).toBe("metadata_only");
@@ -106,6 +136,19 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(ideas.every((idea) => idea.referenceIds.length === 0 && idea.origin === "template_fallback")).toBe(true);
     expect(ideas.every((idea) => idea.originalConflict.length > 10)).toBe(true);
     expect(ideas.every((idea) => !("visibleMetrics" in idea))).toBe(true);
+  });
+
+  it("offers three evidence-labelled ideas with a concrete filming risk instead of a claimed popularity forecast", () => {
+    const ideas = suggestScenarioIdeas({
+      research: validateScenarioResearch([source]),
+      creativeProfile: { priorities: ["актёрская задача"], constraints: ["одна камера"] },
+      count: 3,
+    });
+
+    expect(ideas).toHaveLength(3);
+    expect(ideas.every((idea) => (idea.productionRisk??'').length > 20)).toBe(true);
+    expect(ideas.every((idea) => idea.evidenceNote?.includes("прогноз охватов") || idea.evidenceNote?.includes("Шаблонная идея"))).toBe(true);
+    expect(ideas).not.toHaveProperty("views");
   });
 
   it("allows an empty library as an openly labelled offline template fallback", () => {
@@ -229,8 +272,15 @@ describe("Persona Scenario Intelligence research core", () => {
     const approved=approveScenarioScript(script,{author:"Тест",comment:"Тестовое одобрение",approvedAt:"2026-10-30T10:01:00Z"});
     const project={id:"project-1",title:"Тестовая сцена",angle:"Сыграть конфликт в коридоре",format:"reel" as const};
     const original=scenarioScriptToProductionBrief(approved,project);
-    const modelFile={...original,script:original.script.map((line,i)=>i===1
+    const staleModelFile={...original,script:original.script.map((line,i)=>i===1
       ?{...line,line:"Я услышал шаги из соседнего зала."}:line)};
+    // A model cannot change the words and silently keep the old author edit plan.
+    expect(()=>importPersonaProductionBrief({brief:staleModelFile,selectedIdea:project})).toThrow(/stale|differs/);
+    const modelFile={...staleModelFile,preEditPlan:{...original.preEditPlan!,
+      scenes:original.preEditPlan!.scenes.map((scene,i)=>i===1?{
+        ...scene,line:"Я услышал шаги из соседнего зала.",
+        editIntent:"Рассмотреть новую реакцию после изменения реплики."
+      }:scene)}};
     const imported=importPersonaProductionBrief({brief:modelFile,selectedIdea:project});
     const text=imported.materials.productionBrief!.script;
     const next=reviseScenarioScript(approved,{createdAt:"2026-10-30T10:02:00Z",
@@ -269,7 +319,13 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(pipeline.materials.productionBrief?.script).toEqual(brief.script);
     expect(pipeline.materials.editorialDecision).toBeUndefined();
     expect(pipeline.statuses.READY_FOR_SHOOT).toBe("pending");
-    const shotChanged={...brief,script:brief.script.map((line,i)=>i===0?{...line,line:"Переписано после одобрения"}:line)};
+    const staleShotChanged={...brief,script:brief.script.map((line,i)=>i===0?{...line,line:"Переписано после одобрения"}:line)};
+    expect(()=>revisePersonaProductionBrief(pipeline,staleShotChanged)).toThrow(/stale|differs/);
+    const shotChanged={...staleShotChanged,preEditPlan:{...brief.preEditPlan!,
+      scenes:brief.preEditPlan!.scenes.map((scene,i)=>i===0?{
+        ...scene,line:"Переписано после одобрения",
+        editIntent:"Перепланировать начало после изменения хука."
+      }:scene)}};
     const revised=revisePersonaProductionBrief(pipeline,shotChanged);
     expect(revised.materials.editorialDecision).toBeUndefined();
     expect(revised.materials.qa?.status).toBe("needs_revision");
@@ -313,4 +369,86 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(analysis.evidenceUse.use).toBe("format_only");
     expect(scenarioScriptToFormatMemoryObservation(approved).userSignal).toBe("explicit_approval");
   });
+});
+
+describe("Pre-shoot editing plan / research evidence gate",()=>{
+ it("preserves exact author cut ideas before and after script approval",()=>{
+  const idea={id:"cut-idea",title:"Актёр и музыка",referenceIds:["ref-ig"],
+    originalConflict:"Смена музыкальной задачи",actingTask:"Сыграть сомнение",
+    ending:"Музыка всё меняет.",productionComplexity:"low" as const,
+    estimatedDurationSec:15,creativeProfileFit:"Подходит"};
+  const beats=[
+   {purpose:"hook" as const,line:"Что происходит?",action:"Взгляд на клавиши",durationSec:4,editIntent:"Резать точно на первый аккорд."},
+   {purpose:"development" as const,line:"Музыка меняет обстоятельства.",action:"Сыграть на клавишах",durationSec:5,editIntent:"Склейка на реакцию после музыки."},
+   {purpose:"ending" as const,line:"Это уже финал триллера.",action:"Реакция крупным планом",durationSec:6,editIntent:"Оставить короткую паузу перед панчлайном."},
+  ];
+  const script=createScenarioScript(idea,{createdAt:"2026-11-04T09:00:00.000Z",beats});
+  const research=[{id:"ref-ig",url:"https://www.instagram.com/reel/sample/",
+    platform:"instagram" as const,observedAt:"2026-11-04T08:00:00.000Z",
+    observationStatus:"metadata_only" as const,
+    evidence:{kind:"manual_link" as const,observedFields:["url" as const]}}];
+  const intent=buildScenarioPreEditPlan(script.currentRevision,idea,research);
+  expect(intent.status).toBe("intent_only");
+  expect(intent.researchEvidence.level).toBe("metadata_only");
+  expect(intent.scenes[0].editIntent).toBe(beats[0].editIntent);
+  expect(intent.scenes[0].visualIntent).toMatchObject({
+   framing:"close-up",lighting:expect.stringContaining("Мягкий"),
+  });
+  expect(intent.colorIntent).toContain("естественный тон кожи");
+  expect(intent.scenes[0].mediaStatus).toBe("awaiting_author_footage");
+  expect(intent.publicationApproved).toBe(false);
+  const approved=approveScenarioScript(script,{author:"Автор",
+    comment:"Реплики и склейки готовы к съёмке.",approvedAt:"2026-11-04T09:01:00.000Z"});
+  const project={id:"cut-idea",title:"Актёр и музыка",angle:"Смена музыкальной задачи",format:"reel" as const};
+  const brief=scenarioScriptToProductionBrief(approved,project,research);
+  expect(brief.preEditPlan?.sourceRevisionId).toBe(approved.currentRevisionId);
+  expect(brief.preEditPlan?.scenes.map(s=>s.editIntent)).toEqual(beats.map(b=>b.editIntent));
+  expect(brief.preEditPlan?.scenes[1].visualIntent?.cameraMovement).toContain("Статичный");
+  expect(brief.preEditPlan?.scenes.every(s=>!("sourcePath" in s)&&!("startSec" in s))).toBe(true);
+  expect(importPersonaProductionBrief({brief}).materials.productionBrief?.preEditPlan).toEqual(brief.preEditPlan);
+  expect(()=>importPersonaProductionBrief({brief:{...brief,
+    preEditPlan:{...brief.preEditPlan!,scenes:brief.preEditPlan!.scenes.map((s,i)=>i===0?{...s,line:"Другая реплика"}:s)}
+  }})).toThrow(/stale|differs/);
+  const revised=reviseScenarioScript(approved,{createdAt:"2026-11-04T09:02:00.000Z",
+    reason:"Другой ритм",beats:approved.currentRevision.beats.map((b,i)=>i===0?{...b,editIntent:"Резать на жест."}:b)});
+  expect(revised.approval).toBeUndefined();
+  expect(()=>scenarioScriptToProductionBrief(revised,project)).toThrow(/approval/);
+ });
+ it("marks unfounded popularity claims as hypotheses, not Instagram results",()=>{
+  const idea={id:"no-research",title:"Оригинальный формат",referenceIds:[],
+    originalConflict:"Актёр сталкивается с задачей",actingTask:"Реакция",
+    ending:"Неожиданный финал",productionComplexity:"low" as const,
+    estimatedDurationSec:15,creativeProfileFit:"Авторский эксперимент"};
+  const revision=createScenarioScript(idea,{createdAt:"2026-11-04T10:00:00Z",beats:[
+   {purpose:"hook",line:"Первый кадр",action:"Смотреть в объектив",durationSec:3},
+   {purpose:"development",line:"Развитие",action:"Показать действие",durationSec:5},
+   {purpose:"ending",line:"Финал",action:"Сделать паузу",durationSec:4},
+  ]}).currentRevision;
+  const plan=buildScenarioPreEditPlan(revision,idea);
+  expect(plan.researchEvidence.level).toBe("hypothesis_only");
+  expect(plan.researchEvidence.sourceUrls).toEqual([]);
+  expect(plan.scenes.every(s=>s.mediaStatus==="awaiting_author_footage")).toBe(true);
+ });
+
+  it("flags the actual seven-scene actor-composer brief's expository hook, vague setup and late ending without inventing a retention score",()=>{
+    const brief=JSON.parse(readFileSync(new URL("../../../docs/persona-first-reel-production-brief-2026-10-29.json",import.meta.url),"utf8")) as {
+      script:Array<{line:string;action:string;durationSec:number}>;
+    };
+    const revision={id:"canonical-first-reel-review",beats:brief.script.map((item,index)=>({
+      purpose:(index===0?"hook":index===brief.script.length-1?"ending":"development") as "hook"|"development"|"ending",
+      line:item.line,action:item.action,durationSec:item.durationSec,
+    }))};
+    const result=assessScenarioCreativeRisks(revision);
+    expect(result.findings.map(f=>f.category)).toEqual(expect.arrayContaining([
+      "expository_dialogue","generic_dialogue","late_payoff"
+    ]));
+    expect(result.findings.every(f=>f.severity!=="needs_revision")).toBe(true);
+    expect(result.notice).toContain("не измеряет художественную силу");
+    const hook=result.findings.find(f=>f.category==="expository_dialogue")!;
+    expect(hook.beatOrders).toEqual([1]);
+    const payoff=result.findings.find(f=>f.category==="late_payoff")!;
+    expect(payoff.beatOrders).toEqual([7]);
+    expect(payoff.explanation).toMatch(/не доказательство низкого удержания/);
+  });
+
 });

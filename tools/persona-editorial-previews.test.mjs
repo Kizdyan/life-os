@@ -5,6 +5,7 @@ import {mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {Script} from 'node:vm';
 import {buildReviewHtml,verifyPreviewPack,generatePreviews} from './persona-editorial-previews.mjs';
 
 const sig='a'.repeat(64);
@@ -141,6 +142,29 @@ test('ASR B04 replay controls seek to real recovery video at normal and slow spe
  }
 });
 
+test('offline Recovery Review blocks manual phrase mismatches before JSON export',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].scriptLine='Это колыбельная.';
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'B04',sourceSha256:sig,durationSec:3,hasAudio:true,asrStatus:'partial-or-unmatched'
+ }]};
+ const html=buildReviewHtml(pack,{
+  version:1,kind:'persona-editorial-selection-v1',
+  selections:[{beat:1},{beat:2}]
+ },{candidates:{'beat1-a':'beat-01-candidate-01.mp4'},
+   recovery:{B04:'source-B04-inspection.mp4'}});
+ assert.match(html,/expectedLines/,'expected script lines embedded in local, escaped data');
+ assert.match(html,/normalizeSpoken\(transcript\)!==normalizeSpoken\(template.expectedLines\[item.beat\]\)/);
+ assert.match(html,/Услышанная фраза не совпадает с утверждённой репликой/);
+ assert.match(html,/действительно услышанный текст/);
+ assert.match(html,/Пересними|пересними/);
+ assert.match(html,/Сохранить мой выбор в JSON/);
+ const generatedJs=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+ assert.ok(generatedJs,'must produce executable local script');
+ assert.doesNotThrow(()=>new Script(generatedJs),'generated browser code must parse');
+});
+
 test('Recovery Review accepts underscored scene-take proxy but rejects paths and unsafe names',()=>{
  const pack=structuredClone(minimal);
  pack.beats[1].candidates=[];
@@ -209,4 +233,25 @@ test('real FFmpeg generates a local inspection proxy for a take with no ASR cand
   assert.ok((await stat(join(target,'source-take-inspection.mp4'))).size>1000);
   assert.deepEqual(await readFile(source),bytes);
  }finally{await rm(root,{recursive:true,force:true})}
+});
+
+
+test('B03 offline Recovery Review requires a real music boundary before exporting selection',()=>{
+ const pack=structuredClone(minimal);
+ pack.beats[1].requiresPostSpeechMusic=true;
+ pack.beats[1].candidates=[];
+ pack.beats[1].recovery={status:'needs-transcript-review',availableSources:[{
+  sourceId:'B03',sourceSha256:sig,durationSec:8,hasAudio:true,asrStatus:'partial-or-unmatched'
+ }]};
+ const html=buildReviewHtml(pack,{version:1,kind:'persona-editorial-selection-v1',
+  selections:[{beat:1},{beat:2}]},{
+  candidates:{'beat1-a':'beat-01-candidate-01.mp4'},recovery:{B03:'source-B03-inspection.mp4'}
+ });
+ assert.match(html,/id="recoveryMusicBoundary2"/);
+ assert.match(html,/manualMusicBoundarySec:musicBoundary/);
+ assert.match(html,/musicBeats/);
+ assert.match(html,/B03: укажи по исходному звуку границу окончания речи/);
+ const generatedJs=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+ assert.ok(generatedJs);
+ assert.doesNotThrow(()=>new Script(generatedJs));
 });

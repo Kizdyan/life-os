@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
+import PersonaAiCouncilPanel from './PersonaAiCouncilPanel';
+import PersonaCreativeDevelopmentPanel from './PersonaCreativeDevelopmentPanel';
+import {assertPersonaCreativeReviewSignoff,isPersonaCreativeReviewApproved,personaCreativeLenses,
+ latestPersonaCreativeReview,recordPersonaCreativeReview,
+ type PersonaCreativeConcept} from './personaCreativeDevelopment';
+import {isActorComposerPilot} from './personaProductionGuide';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
 import {
  readPersonaScenarioDraft,readPersonaScenarioDraftRaw,matchingPersonaScenarioDraft,savePersonaScenarioDraft,clearPersonaScenarioDraft,
@@ -12,6 +18,8 @@ import { importPersonaProductionBrief } from '../../../packages/core/src/persona
 import {
  analyseScenarioReference,
  addFreeTrendLeadToScenarioResearch,
+ assessScenarioCreativeRisks,
+ buildScenarioPreEditPlan,
  approveScenarioScript,
  createScenarioScript,
  freeScenarioTrendLeads,
@@ -52,9 +60,9 @@ export function personaScenarioDraftIsDirty(
 
 function draftBeats(idea:ScenarioIdea):ScenarioScriptBeat[]{
  return [
-  {purpose:'hook',line:`${idea.title}: одна ситуация, которую нельзя решить красивой позой.`,action:'Крупный план, начать действие в первом кадре.',durationSec:5},
-  {purpose:'development',line:idea.originalConflict,action:'Перейти к предмету или действию, которое показывает препятствие.',durationSec:8},
-  {purpose:'ending',line:idea.ending,action:'Вернуться к реакции и оставить завершённую паузу.',durationSec:6},
+  {purpose:'hook',line:`${idea.title}: одна ситуация, которую нельзя решить красивой позой.`,action:'Крупный план, начать действие в первом кадре.',durationSec:5,editIntent:'Начать сразу с действия и хука, обрезать заставку.'},
+  {purpose:'development',line:idea.originalConflict,action:'Перейти к предмету или действию, которое показывает препятствие.',durationSec:8,editIntent:'Склейка на предмет или действие, оставить смысловую паузу.'},
+  {purpose:'ending',line:idea.ending,action:'Вернуться к реакции и оставить завершённую паузу.',durationSec:6,editIntent:'Вернуться к реакции крупным планом и закончить после панчлайна.'},
  ];
 }
 
@@ -72,6 +80,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const[revisionReason,setRevisionReason]=useState(()=>
   matchingPersonaScenarioDraft(draftStorage,project.id,received?.script)?.reason??'');
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
+ const[creativeDecision,setCreativeDecision]=useState<'needs_revision'|'ready_for_author'>('needs_revision');
+ const[creativeComment,setCreativeComment]=useState('');
  const[unlockAuthor,setUnlockAuthor]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>
@@ -122,10 +132,16 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  },[project.id,script?.currentRevisionId,editingRevisionId,beats,revisionReason]);
  const selected=workspace.ideas.find(idea=>idea.id===selectedIdeaId)??null;
  const review=script?reviewScenarioScript(script.currentRevision):null;
+ const creativeRisks=script?assessScenarioCreativeRisks({...script.currentRevision,beats}):null;
+ const creativeReviewSignoff=script?
+  latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevision.id):undefined;
+ const preEditPlan=script&&beats.length&&beats.every(beat=>beat.line.trim()&&beat.action.trim()&&Number.isFinite(beat.durationSec)&&beat.durationSec>0)
+  ?buildScenarioPreEditPlan({...script.currentRevision,beats},script.idea,workspace.research):null;
  const hasUnsavedChanges=Boolean(script&&JSON.stringify(beats)!==JSON.stringify(script.currentRevision.beats));
  const hasPendingChanges=Boolean(script&&personaScenarioDraftIsDirty(beats,script.currentRevision.beats,revisionReason))||Boolean(staleDraft||corruptDraft);
  const lockedForScript=(workspace.authorLockedLines??[]).filter(lock=>lock.ideaId===script?.idea.id);
- const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&!hasPendingChanges);
+ const isApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevision.id&&
+  isPersonaCreativeReviewApproved(script.currentRevision.id,creativeReviewSignoff)&&!hasPendingChanges);
  const effectiveProfile=workspace.creativeProfile??creativeProfile;
  const update=(change:Partial<Workspace>)=>onChange({...workspace,...change,version:1});
  const assertNoPendingDraftRecord=()=>assertNoPersonaScenarioDraft(draftStorage,project.id,draftRawRef.current);
@@ -223,7 +239,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить источник.');}
  };
  const buildIdeas=()=>{
-  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile:{...effectiveProfile,constraints:[...effectiveProfile.constraints,...(workspace.editorialFeedback??[]).slice(-3).map(item=>'Автор ранее отклонил сценарий: '+item.comment)]},count:5});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
+  try{const ideas=suggestScenarioIdeas({research:workspace.research,analyses:workspace.analyses,creativeProfile:{...effectiveProfile,constraints:[...effectiveProfile.constraints,...(workspace.editorialFeedback??[]).slice(-3).map(item=>'Автор ранее отклонил сценарий: '+item.comment)]},count:3});update({ideas,selectedIdeaId:ideas[0]?.id});setSelectedIdeaId(ideas[0]?.id??'');setError('');}
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала добавьте проверяемую ссылку.');}
  };
  const selectIdea=(id:string)=>{setSelectedIdeaId(id);update({selectedIdeaId:id});};
@@ -266,17 +282,63 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   }
   catch(cause){setError(cause instanceof Error?cause.message:'Правки не сохранены.');}
  };
+ const saveCreativeReview=()=>{
+  if(!script)return;
+  if(hasPendingChanges){setError('Сначала сохраните все правки этой редакции сценария.');return}
+  if(creativeComment.trim().length<20){setError('Для художественной оценки необходимо не менее 20 символов с конкретными аргументами.');return}
+  try{
+   assertNoPendingDraftRecord();
+   const item={revisionId:script.currentRevision.id,reviewer:'author' as const,
+    decision:creativeDecision,comment:creativeComment.trim(),createdAt:new Date().toISOString()};
+   update({creativeReviews:recordPersonaCreativeReview(workspace.creativeReviews,item)});
+   setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Творческий отзыв не сохранён.')}
+ };
  const approveScript=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('Сначала сохраните или разрешите несохранённый черновик, включая причину редакции.');return}
-  try{assertNoPendingDraftRecord();const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});const memory=scenarioScriptToFormatMemoryObservation(next);update({script:next,formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory]});setError('');}
+  try{
+   assertNoPendingDraftRecord();
+   assertPersonaCreativeReviewSignoff(script.currentRevision.id,creativeReviewSignoff);
+   const next=approveScenarioScript(script,{author,comment,approvedAt:new Date().toISOString()});
+   const memory=scenarioScriptToFormatMemoryObservation(next);
+   const ai=script.idea.aiProvenance;
+   const previous=workspace.aiCouncilOutcomes??[];
+   const outcome=ai&&!previous.some(x=>x.revisionId===script.currentRevisionId)
+    ?[{modelId:ai.modelId,task:'ideation' as const,accepted:true,revisionId:script.currentRevisionId}]:[];
+   update({script:next,
+    formatMemory:[...(workspace.formatMemory??[]).filter(item=>item.sourceAssetId!==memory.sourceAssetId),memory],
+    ...(outcome.length?{aiCouncilOutcomes:[...previous,...outcome].slice(-50)}:{})});
+   setError('');
+  }
   catch(cause){setError(cause instanceof Error?cause.message:'Сценарий пока нельзя утвердить.');}
+ };
+ const chooseCreativeConcept=(concept:PersonaCreativeConcept)=>{
+  if(!script)return;
+  if(hasPendingChanges){setError('Сначала сохраните или разрешите все несохранённые правки сценария.');return}
+  try{
+   assertNoPendingDraftRecord();
+   assertPersonaAuthorLockedLines(workspace,concept.beats,script.idea.id);
+   const next=reviseScenarioScript(script,{
+    createdAt:new Date().toISOString(),beats:concept.beats,idea:concept.idea,
+    reason:'Новая творческая концепция «'+concept.title+'». Старая версия сохранена, художественное утверждение сброшено.',
+   });
+   const nextIdeas=workspace.ideas.some(idea=>idea.id===concept.id)?
+    workspace.ideas:[...workspace.ideas,concept.idea];
+   update({script:next,ideas:nextIdeas,selectedIdeaId:concept.id});
+   setSelectedIdeaId(concept.id);setBeats(next.currentRevision.beats);
+   setRevisionReason('');setError('');
+  }catch(cause){setError(cause instanceof Error?cause.message:'Альтернативная редакция не создана.')}
  };
  const rejectWithFeedback=()=>{
   if(!script||rejectionFeedback.trim().length<12){setError('Укажите конкретную причину отклонения (не менее 12 символов).');return}
   const current=script.currentRevision.id;
   const feedback={revisionId:current,comment:rejectionFeedback.trim(),createdAt:new Date().toISOString()};
-  update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback]});
+  const ai=script.idea.aiProvenance,previous=workspace.aiCouncilOutcomes??[];
+  const outcome=ai&&!previous.some(x=>x.revisionId===current)
+   ?[{modelId:ai.modelId,task:'ideation' as const,accepted:false,revisionId:current}]:[];
+  update({editorialFeedback:[...(workspace.editorialFeedback??[]),feedback],
+   ...(outcome.length?{aiCouncilOutcomes:[...previous,...outcome].slice(-50)}:{})});
   setRejectionFeedback('');setError('Критика сохранена отдельно от одобрений; следующий набор идей получит эту причину как ограничение.');
  };
  const exportLocalAiTask=()=>{
@@ -335,7 +397,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
    if(!brief||brief.script.length<3||brief.script.length>12)throw new Error('Ожидается 3–12 сценарных частей.');
    const beats:ScenarioScriptBeat[]=brief.script.map((beat,index)=>({
     purpose:index===0?'hook':index===brief.script.length-1?'ending':'development',
-    line:beat.line,action:beat.action,durationSec:beat.durationSec
+    line:beat.line,action:beat.action,durationSec:beat.durationSec,
+    ...(brief.preEditPlan?.scenes[index]?.editIntent
+      ?{editIntent:brief.preEditPlan.scenes[index].editIntent}
+      :script.currentRevision.beats[index]?.line===beat.line&&
+       script.currentRevision.beats[index]?.action===beat.action&&
+       script.currentRevision.beats[index]?.durationSec===beat.durationSec&&
+       script.currentRevision.beats[index]?.editIntent
+        ?{editIntent:script.currentRevision.beats[index].editIntent}:{})
    }));
    assertPersonaAuthorLockedLines(workspace,beats,script.idea.id);
    const candidate=reviseScenarioScript(script,{
@@ -350,7 +419,12 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
  const createBrief=()=>{
   if(!script)return;
   if(hasPendingChanges){setError('В бриф нельзя переносить несохранённый черновик: сначала сохраните новую версию и утвердите её.');return}
-  try{assertNoPendingDraftRecord();onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType}));setError('');}
+  try{
+    assertNoPendingDraftRecord();
+    assertPersonaCreativeReviewSignoff(script.currentRevision.id,creativeReviewSignoff);
+    onCreateBrief(scenarioScriptToProductionBrief(script,{id:project.id,title:project.title,angle:project.sourceIdea,format:project.contentType},workspace.research));
+    setError('');
+   }
   catch(cause){setError(cause instanceof Error?cause.message:'Сначала утвердите текущую версию сценария.');}
  };
  const addAnalysis=()=>{
@@ -378,7 +452,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить проверяемый разбор.')}
  };
  return <section className="personaScenario" aria-label="Сценарий и референсы">
-  <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">Perplexity отключён · Ollama только через CLI на Windows</span></header>
+  <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">AI-провайдеры проверяются отдельно · без скрытых платных вызовов</span></header>
   <section className="personaTrendLeads"><div><h4>Бесплатные сигналы формата</h4><p>Датированные публичные источники. Это не метрики Reels и не доказательство просмотра конкретного ролика.</p></div>{freeScenarioTrendLeads.map((lead,index)=><article key={lead.id}><div><b>{lead.title}</b><p>{lead.mechanism}</p><small>{lead.publishedAt} · {lead.sourceTitle} · {lead.dateKind==='observed'?'дата проверки':'дата публикации'}</small><p><a href={lead.sourceUrl} target="_blank" rel="noreferrer">Открыть источник</a></p><small>{lead.limitation}</small></div><button type="button" className="ghost" onClick={()=>addTrendLead(index)}>Добавить в проект</button></article>)}</section>
   <details className="personaScenarioCard"><summary>Творческий профиль проекта · редактировать</summary>
     <p>Сохранённые требования этого проекта, а не выдуманная биография. Настрой свои приоритеты и ограничения для следующих идей.</p>
@@ -405,8 +479,14 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
      <p className="personaScenarioHint">{workspace.analyses.length?`Сохранено разборов: ${workspace.analyses.length}.`:'Нет содержательного разбора. Без него Idea Engine выдаёт только явно обозначенные шаблонные варианты.'}</p>
    </article>
   </div>
-  <section className="personaScenarioIdeas"><div><h4>Оригинальные идеи</h4><p>Локальные варианты опираются на выбранные ссылки и ограничения Creative Profile. Это не прогноз охватов и не копирование чужих сцен.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 5 идей</button></section>
-  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек.</small><small>{idea.evidenceNote}</small></button>)}</div>
+  <PersonaAiCouncilPanel project={project} workspace={workspace} creativeProfile={effectiveProfile} onChange={onChange}/>
+  {isActorComposerPilot({title:project.title,angle:project.sourceIdea})&&
+   <PersonaCreativeDevelopmentPanel workspace={workspace} onChange={onChange}
+    onCreateRevision={chooseCreativeConcept} blocked={hasPendingChanges}/>}
+
+  <section className="personaScenarioIdeas"><div><h4>Локальные идеи без нейросети</h4><p>Бесплатная резервная функция создаёт шаблонные варианты. Это не реальное исследование Perplexity и не AI-генерация.</p></div><button type="button" className="ghost" onClick={buildIdeas}>Собрать 3 шаблонные идеи</button></section>
+  <div className="personaScenarioIdeaList">{workspace.ideas.map(idea=><button type="button" key={idea.id} className={selectedIdeaId===idea.id?'selected':''} onClick={()=>selectIdea(idea.id)}><b>{idea.title}</b><span>{idea.originalConflict}</span><small>{idea.origin==='ai_generated'?('AI-идея: '+idea.aiProvenance?.model+' · ещё не утверждена'):
+ idea.origin==='reviewed_reference'?`Механика просмотренного референса: ${idea.referenceIds.join(', ')}`:'Шаблонный fallback · без подтверждённого источника'} · {idea.estimatedDurationSec} сек. · Сложность: {idea.productionComplexity}</small><small>Соответствие профилю: {idea.creativeProfileFit}</small><small>Риск съёмки: {idea.productionRisk??'Проверьте снимаемость действий, речи и звука до утверждения.'}</small><small>{idea.evidenceNote}</small></button>)}</div>
   {selected&&!script&&<div className="personaScenarioAction"><p>Выбрана идея: <b>{selected.title}</b></p><button type="button" className="primary" onClick={startScript}>Создать редактируемый сценарий</button><small>Создаётся локальный структурный черновик, не результат платного ИИ.</small></div>}
   {corruptDraft&&<div role="alert" className="personaScenarioWarning">
     <p>В браузере обнаружена повреждённая страховочная копия сценария. Она не удалена и не заменена новым текстом. Сначала сохраните её на компьютер, затем можно удалить запись из браузера и продолжить работу.</p>
@@ -430,6 +510,7 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       {lockedForScript.some(lock=>lock.index===index)?'🔒 Закреплена автором · снять закрепление':'Закрепить реплику'}
      </button>
      <label>Действие<textarea aria-label={`Действие сценария ${index+1}`} value={beat.action} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,action:event.target.value}:item))}/></label><label>Длительность, сек.<input aria-label={`Длительность сценария ${index+1}`} type="number" min="0.1" step="0.1" value={beat.durationSec} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,durationSec:Number(event.target.value)}:item))}/></label>
+     <label>Будущий монтаж и звук<textarea aria-label={`Монтаж сцены ${index+1}`} value={beat.editIntent??''} onChange={event=>editBeats(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,editIntent:event.target.value}:item))} placeholder="Когда склеить, какую реакцию сохранить, где войдёт музыка?"/></label>
      {beat.purpose==='development'&&<div className="personaScenarioBeatActions">
        <button type="button" className="ghost" disabled={beats[index-1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,-1)}>Выше</button>
        <button type="button" className="ghost" disabled={beats[index+1]?.purpose!=='development'} onClick={()=>moveDevelopmentBeat(index,1)}>Ниже</button>
@@ -485,8 +566,47 @@ export default function PersonaScenarioWorkspace({project,workspace:received,cre
       <button type="button" className="ghost" onClick={rejectWithFeedback} disabled={rejectionFeedback.trim().length<12}>Сохранить причину отклонения</button>
       {(workspace.editorialFeedback??[]).length>0&&<p className="personaScenarioHint">Сохранено критических замечаний: {workspace.editorialFeedback?.length}. Они будут учитываться как ограничения при следующем формировании идей.</p>}
     </div>
+   {preEditPlan&&<section className="personaScenarioReview" aria-label="Предмонтаж до утверждения">
+     <h5>Продюсерское обоснование выбора</h5>
+     <p><b>Основание:</b> {script.idea.evidenceNote||'Исследование результатов Instagram не подтверждено; это творческая гипотеза.'}</p>
+     <p><b>Конфликт:</b> {script.idea.originalConflict}. <b>Актёрская задача:</b> {script.idea.actingTask}. <b>Планируемый финал:</b> {script.idea.ending}.</p>
+     {creativeRisks&&creativeRisks.findings.length>0&&<div><b>Редакторские риски до утверждения:</b><ul>{creativeRisks.findings.map((finding,i)=><li key={`${finding.category}-${i}`}>{finding.explanation} Рекомендация: {finding.proposedFix}</li>)}</ul></div>}
+     <h5>Предмонтаж спроектирован до съёмки</h5>
+     <p>Реплики и будущие склейки проектируются вместе. После утверждения замысел переходит в Production Brief без повторной генерации. Реальных таймкодов и исходников пока нет.</p>
+     <p>{preEditPlan.researchEvidence.note}</p>
+     {preEditPlan.researchEvidence.sourceUrls.length>0&&<ul>{preEditPlan.researchEvidence.sourceUrls.map(url=><li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>}
+     {preEditPlan.colorIntent&&<p><b>Цветовой замысел:</b> {preEditPlan.colorIntent} <small>Это направление для сравнения после съёмки, не применённый фильтр.</small></p>}
+     <ol>{preEditPlan.scenes.map(scene=>{
+      const visual=scene.visualIntent;
+      return <li key={scene.order}><b>Кадр {scene.order} · {scene.durationSec} сек.</b>
+       {visual&&<><p><b>Камера:</b> {visual.framing} · {visual.angle} {visual.cameraMovement}</p><p><b>Свет:</b> {visual.lighting}</p><p><b>Актёрская задача:</b> {visual.performance}</p></>}
+       <p><b>Монтаж:</b> {scene.editIntent}</p><p><b>Звук:</b> {scene.audioIntent}</p><p><b>Субтитры:</b> {scene.subtitleIntent}</p>
+       <small>Таймкоды и соответствующие исходники выбираются только после съёмки.</small></li>;
+     })}</ol>
+     <p><small>Популярность в Instagram не доказана без фактических данных. Финальный монтаж утверждается после съёмки.</small></p>
+    </section>}
    {review&&<div className="personaScenarioReview"><h5>Script Doctor</h5><ul>{review.findings.map(finding=><li key={`${finding.role}-${finding.code}`} className={finding.severity}>{finding.role}: {finding.message}</li>)}</ul></div>}
-   {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasPendingChanges||review?.status!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
+   {script&&<div className="personaScenarioReview" aria-label="Художественная приёмка редакции">
+     <h5>Творческая приёмка · до съёмки</h5>
+     <p>Script Doctor проверил структуру, но не доказал интерес зрителя, актёрское качество или будущие просмотры. Оцените редакцию с пяти профессиональных сторон. Это вопросы для автора, а не фиктивное заключение пяти AI-моделей.</p>
+     <ul>{personaCreativeLenses.map(lens=><li key={lens.id}><b>{lens.label}:</b> {lens.question}</li>)}</ul>
+     {creativeRisks?.findings.length?<p>Зафиксированных эвристических рисков: {creativeRisks.findings.length}. Каждый требует рассмотрения, но сам по себе не доказывает слабую художественную ценность.</p>:null}
+     {creativeReviewSignoff&&<p><b>Сохранённое решение для этой редакции:</b> {isPersonaCreativeReviewApproved(script.currentRevision.id,creativeReviewSignoff)?'Разрешить автору утверждение':'Нужна переработка или исправление художественной оценки'}. {creativeReviewSignoff.comment}</p>}
+     <label>Редакторское решение
+       <select aria-label="Решение о творческой готовности" value={creativeDecision} onChange={event=>setCreativeDecision(event.target.value as 'needs_revision'|'ready_for_author')}>
+         <option value="needs_revision">Не снимать — доработать</option>
+         <option value="ready_for_author">Готово к отдельному авторскому утверждению</option>
+       </select>
+     </label>
+     <label>Конкретные аргументы и оставшиеся риски
+       <textarea aria-label="Аргументы творческой оценки" value={creativeComment}
+         onChange={event=>setCreativeComment(event.target.value)} placeholder="Почему эта версия работает или что необходимо изменить до съёмки?" />
+     </label>
+     <button type="button" className="ghost" disabled={hasPendingChanges||creativeComment.trim().length<20} onClick={saveCreativeReview}>Сохранить художественную оценку текущей редакции</button>
+     {isApproved&&<p className="personaScenarioHint" role="status">Сценарий уже утверждён. Если вы передумали, выберите «Не снимать — доработать» и сохраните аргументы. Разрешение на съёмку будет отозвано, но прежние версии и материалы сохранятся.</p>}
+     <p className="personaScenarioHint">Изменение сценария делает предыдущую художественную оценку устаревшей. Без нового осознанного решения следующая версия не утверждается.</p>
+   </div>}
+   {!isApproved&&<div className="personaScenarioApproval"><h5>Авторское утверждение</h5><label>Автор<input aria-label="Автор сценария" value={author} onChange={event=>setAuthor(event.target.value)} placeholder="Ваше имя"/></label><label>Комментарий<textarea aria-label="Комментарий автора" value={comment} onChange={event=>setComment(event.target.value)} placeholder="Что вы подтверждаете для съёмки"/></label><button type="button" className="primary" disabled={hasPendingChanges||review?.status!=='ready_for_author'||creativeReviewSignoff?.decision!=='ready_for_author'||!author.trim()||!comment.trim()} onClick={approveScript}>Утвердить сценарий</button></div>}
    {isApproved&&<><p className="personaScenarioHint">В памяти форматов сохранены только одобренные вами приёмы, без выдуманных охватов: {workspace.formatMemory?.length??0}.</p><button type="button" className="primary" onClick={createBrief}>Создать съёмочный бриф</button></>}
   </section>}
   {error&&<p className="personaScenarioError" role="alert">{error}</p>}

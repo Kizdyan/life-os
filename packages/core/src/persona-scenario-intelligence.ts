@@ -1,4 +1,4 @@
-import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea } from "./persona-production-brief.js";
+import { buildPersonaProductionBrief, type PersonaProductionBrief, type PersonaProductionBriefInput, type PersonaProductionIdea, type PersonaPreEditPlan } from "./persona-production-brief.js";
 import { buildFormatObservation, type FormatMemoryObservation } from "./format-memory.js";
 import { assessReferenceInsight, type ReferenceInsightAssessment } from "./reference-evidence.js";
 
@@ -50,10 +50,15 @@ export interface ScenarioIdea {
   actingTask: string;
   ending: string;
   productionComplexity: "low" | "medium" | "high";
+  /** Practical risk to resolve before shooting, never a forecast of reach.
+   * Optional for scripts saved before this field existed. */
+  productionRisk?: string;
   estimatedDurationSec: number;
   creativeProfileFit: string;
   /** How the concept was actually produced, not a prediction of audience success. */
-  origin?: "reviewed_reference" | "template_fallback";
+  origin?: "reviewed_reference" | "template_fallback" | "ai_generated";
+  /** Actual provider/model of proposed concept; NEVER publication approval. */
+  aiProvenance?: {provider:"perplexity_agent"|"ollama";model:string;modelId:string;runId:string;status:"unapproved"};
   evidenceNote?: string;
 }
 
@@ -119,6 +124,24 @@ export interface ScenarioScriptBeat {
   line: string;
   action: string;
   durationSec: number;
+  /** Author's planned cut, sound or reaction, versioned together with the words. */
+  editIntent?: string;
+}
+
+function defaultPreEditVisualIntent(
+  beat: ScenarioScriptBeat,
+  index: number,
+  idea: ScenarioIdea,
+): NonNullable<PersonaPreEditPlan["scenes"][number]["visualIntent"]> {
+  return {
+    framing: index === 0 || beat.purpose === "ending" ? "close-up" : "medium",
+    angle: index === 0
+      ? "На уровне глаз; первое физическое действие читается в кадре."
+      : "Ракурс выбирается по действию героя; не терять лицо и значимый реквизит.",
+    cameraMovement: "Статичный дубль; движение камеры только если оно усиливает уже запланированное действие.",
+    lighting: "Мягкий фронтальный источник чуть выше глаз; не смешивать дневной и холодный искусственный свет.",
+    performance: `Актёрская задача: ${idea.actingTask} Действие кадра: ${beat.action}`,
+  };
 }
 
 export interface ScenarioScriptFinding {
@@ -152,6 +175,7 @@ export type ScenarioCreativeFailureCategory =
   | "predictable_payoff"
   | "unplayable_actor_action"
   | "expository_dialogue"
+  | "late_payoff"
   | "unshootable_scene"
   | "unverified_fact"
   | "source_imitation"
@@ -180,6 +204,8 @@ export interface ScenarioScriptRevision {
   reason?: string;
   beats: ScenarioScriptBeat[];
   sourceFacts: string[];
+  /** Creative premise valid for this exact revision; older projects omit it. */
+  ideaSnapshot?: ScenarioIdea;
   review?: ScenarioScriptReview;
 }
 
@@ -198,13 +224,27 @@ export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevisio
   });
   for (const [line, orders] of duplicateOrders) {
     if (orders.length < 2) continue;
+    const repeated = orders.map(order => revision.beats[order - 1]);
+    const normalized = (value:string) => value.toLocaleLowerCase("ru-RU").replace(/\s+/gu," ").trim();
+    const actingTasks = repeated.map(beat => normalized(beat.action));
+    const editIntents = repeated.map(beat => normalized(beat.editIntent ?? ""));
+    // A repeated line can be an intentional genre/performance contrast. This
+    // heuristic can only check that staging is explicitly differentiated; it
+    // cannot judge whether the artistic contrast actually works on camera.
+    const intentionalContrast = editIntents.every(Boolean) &&
+      new Set(actingTasks).size === orders.length &&
+      new Set(editIntents).size === orders.length;
     findings.push({
       category: "repeated_line",
       beatOrders: orders,
       fragment: line,
-      severity: "needs_revision",
-      explanation: `Одна и та же реплика повторяется в кадрах ${orders.join(", ")}; это подтверждаемый признак, что действие сцены могло не развиться.`,
-      proposedFix: "Оставьте повтор только если он является осмысленным рефреном; иначе дайте каждому следующему кадру новый выбор, реакцию или изменение обстоятельств.",
+      severity: intentionalContrast ? "human_review" : "needs_revision",
+      explanation: intentionalContrast
+        ? `Реплика повторена в кадрах ${orders.join(", ")}, но действия и монтаж различаются. Это может быть намеренным жанровым контрастом; художественную убедительность должен оценить автор.`
+        : `Реплика повторена в кадрах ${orders.join(", ")} без явно различающихся действий и монтажных задач; возможно, развитие ситуации остановилось.`,
+      proposedFix: intentionalContrast
+        ? "Сыграйте три версии с разными намерениями, проверьте, меняет ли авторская музыка смысл каждого повтора, и утвердите приём осознанно."
+        : "Разведите повторы по игровым целям, партнёру и музыкальному или монтажному повороту либо уберите лишнюю реплику.",
     });
   }
   const durations = revision.beats.map((beat) => beat.durationSec);
@@ -216,6 +256,37 @@ export function assessScenarioCreativeRisks(revision: Pick<ScenarioScriptRevisio
       severity: "human_review",
       explanation: "Все кадры имеют одинаковую длительность. Это не доказывает плохой ритм, но требует ручной проверки пауз, хука, реакции и финала.",
       proposedFix: "Проверьте монтаж по действию: короткий хук, достаточная пауза для реакции и длительность, оправданная музыкой или репликой, а не шаблоном.",
+    });
+  }
+  const firstLine=(revision.beats[0]?.line??"").normalize("NFKC")
+    .toLocaleLowerCase("ru-RU").replaceAll("ё","е").trim();
+  if (/^(?:я|мы)\s+(?:актер|композитор|музыкант|режиссер|блогер)(?=$|[^\p{L}\p{N}])/u.test(firstLine)) {
+    findings.push({
+      category:"expository_dialogue",beatOrders:[1],
+      fragment:revision.beats[0].line,severity:"human_review",
+      explanation:"Первая реплика представляет профессию автора, а не обязательно показывает событие. Для незнакомого зрителя это возможный риск слабого хука, но не доказательство плохого сценария.",
+      proposedFix:"Попробуйте начать с действия, звука или конфликта, раскрывая профессию через поведение героя; сознательно оставьте знакомство, только если оно драматургически необходимо.",
+    });
+  }
+  if (revision.beats.some(beat=>/^(?:и\s+)?у\s+нас\s+есть\s+проблема[.!?\s]*$/iu.test(beat.line.trim()))) {
+    const orders=revision.beats.flatMap((beat,index)=>
+      /^(?:и\s+)?у\s+нас\s+есть\s+проблема[.!?\s]*$/iu.test(beat.line.trim())?[index+1]:[]);
+    findings.push({
+      category:"generic_dialogue",beatOrders:orders,fragment:"У нас есть проблема",
+      severity:"human_review",
+      explanation:"Реплика обозначает проблему, но сама по себе не даёт зрителю конкретного нового обстоятельства. Такая интрига может работать только при выразительном действии рядом.",
+      proposedFix:"Дайте предметное препятствие прямо в кадре или замените абстрактное сообщение на действие, которое меняет ситуацию.",
+    });
+  }
+  const total=durations.reduce((sum,value)=>sum+value,0);
+  const endingStart=total-(durations.at(-1)??0);
+  if (durations.length>=4&&total>=20&&endingStart/total>0.8) {
+    findings.push({
+      category:"late_payoff",beatOrders:[durations.length],
+      fragment:`Финальный блок начинается приблизительно на ${Math.round(endingStart/total*100)}% длительности`,
+      severity:"human_review",
+      explanation:"Финальная сцена начинается после четырёх пятых ролика. Это измеренный факт структуры, но не доказательство низкого удержания: нужно проверить, есть ли повороты раньше.",
+      proposedFix:"Проверьте, возникают ли самостоятельные события в первых секундах; при необходимости перенесите один поворот вперёд или сократите служебную экспозицию.",
     });
   }
   return {
@@ -348,8 +419,8 @@ export function suggestScenarioIdeas(input: {
   creativeProfile: ScenarioCreativeProfile;
   count: number;
 }): ScenarioIdea[] {
-  if (!Number.isInteger(input.count) || input.count < 5 || input.count > 10) {
-    throw new Error("Idea count must be between 5 and 10");
+  if (!Number.isInteger(input.count) || input.count < 2 || input.count > 10) {
+    throw new Error("Idea count must be between 2 and 10");
   }
   // A fully empty research inbox can still create clearly labelled fallback ideas.
   const references = input.research.length ? validateScenarioResearch(input.research) : [];
@@ -395,6 +466,9 @@ export function suggestScenarioIdeas(input: {
         ? `${seedEnding} Проверить, как найденный принцип завершения «${observation.payoff}» применим к оригинальному герою.`
         : seedEnding,
       productionComplexity: index%3===0 ? "medium" : "low",
+      productionRisk: index%3===0
+        ? "Нужны различимые реакции и два контрастных действия; без них поворот останется только в тексте."
+        : "Проверьте, что действие и звук читаются с первого дубля; не заменяйте отсутствующую реакцию декоративной склейкой.",
       estimatedDurationSec: 20 + index%3*5,
       creativeProfileFit:profileFit,
       origin,
@@ -403,6 +477,49 @@ export function suggestScenarioIdeas(input: {
         : "Шаблонная идея: референс не просмотрен и не разобран; исследовательская связь не заявляется.",
     };
   });
+}
+
+/** Pre-shoot edit intentions are created from the SCRIPT REVISION, not from ASR or
+ * nonexistent footage. Evidence is linked by real reference IDs, without claims
+ * about viral performance or measured Instagram retention.
+ */
+export function buildScenarioPreEditPlan(
+  revision: Pick<ScenarioScriptRevision,"id"|"beats">,
+  idea: ScenarioIdea,
+  research: readonly ScenarioResearchItem[] = [],
+): PersonaPreEditPlan {
+  if (!revision.id.trim() || !revision.beats.length) throw new Error("Pre-edit plan needs a script revision");
+  const linked=research.filter(item=>idea.referenceIds.includes(item.id)&&item.observationStatus!=="unavailable");
+  const reviewed=linked.filter(item=>item.observationStatus==="user_reviewed"&&Boolean(item.reviewedAt));
+  const level:PersonaPreEditPlan["researchEvidence"]["level"]=
+    reviewed.length?"reviewed_reference":linked.length?"metadata_only":"hypothesis_only";
+  const note=level==="reviewed_reference"
+    ?"Сохранён разбор просмотренного референса. Это наблюдение о творческом приёме, не доказательство охватов или успеха."
+    :level==="metadata_only"
+    ?"Есть только ссылки или метаданные. Содержание и эффективность конкретных Reels не подтверждены."
+    :"Нет подтверждённого исследования Instagram для этой идеи. Это творческая гипотеза, а не проверенный тренд.";
+  return {
+    version:1,kind:"persona-pre-edit-plan-v1",status:"intent_only",origin:"scenario_revision",
+    sourceRevisionId:revision.id,
+    researchEvidence:{level,sourceUrls:linked.map(item=>item.url),note},
+    scenes:revision.beats.map((beat,index)=>{
+      if(!beat.line.trim()||!beat.action.trim()||!Number.isFinite(beat.durationSec)||beat.durationSec<=0)
+        throw new Error("Pre-edit planning needs complete, timed scenes");
+      const fallback=beat.purpose==="hook"
+        ?"Начать с действия и реплики, без вступительной заставки; резать по смыслу."
+        :beat.purpose==="ending"
+        ?"Выдержать реакцию и закончить на подтверждённом панчлайне."
+        :"Склейка по реакции или действию, с сохранением смысловой паузы.";
+      return {order:index+1,line:beat.line,durationSec:beat.durationSec,
+        editIntent:beat.editIntent?.trim()||fallback,
+        audioIntent:"Сохранить реальную речь; музыкальные акценты — только по утверждённому плану и при наличии записанного звука.",
+        subtitleIntent:"Синхронизировать с фактическими словами, с учётом безопасных полей Reels.",
+        visualIntent:defaultPreEditVisualIntent(beat,index,idea),
+        mediaStatus:"awaiting_author_footage" as const};
+    }),
+    colorIntent:"Natural Clean как исходное направление: нейтральный баланс белого, естественный тон кожи и без изменения лица, очков или геометрии.",
+    publicationApproved:false,
+  };
 }
 
 /** Starts a versioned scenario script; content remains an author draft until approval. */
@@ -423,9 +540,20 @@ export function createScenarioScript(
 /** Adds an immutable revision and deliberately removes approval of the prior wording. */
 export function reviseScenarioScript(
   script: ScenarioScript,
-  input: { createdAt: string; beats: ScenarioScriptBeat[]; reason: string },
+  input: { createdAt: string; beats: ScenarioScriptBeat[]; reason: string; idea?: ScenarioIdea },
 ): ScenarioScript {
   const current = requireCurrentRevision(script);
+  // A new dramatic concept changes the creative premise, never the stable project identity.
+  const nextIdea = input.idea
+    ? {...input.idea,id:script.idea.id,referenceIds:[...input.idea.referenceIds]}
+    : {...script.idea,referenceIds:[...script.idea.referenceIds]};
+  // Backfill original story metadata before switching concepts, so restoring a
+  // prior version restores its original producer/director context too.
+  const prior = input.idea ? script.revisions.map(item=>({
+    ...item,ideaSnapshot:item.ideaSnapshot??
+      {...script.idea,referenceIds:[...script.idea.referenceIds]},
+  })) : script.revisions;
+  const previousIdea=current.ideaSnapshot;
   const revision = createRevision({
     id: `${current.id.replace(/-r\d+$/u, "")}-r${current.number + 1}`,
     number: current.number + 1,
@@ -433,11 +561,13 @@ export function reviseScenarioScript(
     reason: input.reason,
     beats: input.beats,
     sourceFacts: current.sourceFacts,
+    ...(input.idea ? {ideaSnapshot:nextIdea}
+      : previousIdea ? {ideaSnapshot:previousIdea} : {}),
   });
   return {
     ...script,
-    idea: { ...script.idea, referenceIds: [...script.idea.referenceIds] },
-    revisions: [...script.revisions, revision],
+    idea: nextIdea,
+    revisions: [...prior, revision],
     currentRevisionId: revision.id,
     currentRevision: revision,
     approval: undefined,
@@ -521,6 +651,7 @@ export function scenarioScriptToProductionBriefInput(script: ScenarioScript): Pe
 export function scenarioScriptToProductionBrief(
   script: ScenarioScript,
   selectedProject: PersonaProductionIdea,
+  research: readonly ScenarioResearchItem[] = [],
 ): PersonaProductionBrief {
   const current = requireCurrentRevision(script);
   if (!script.approval || script.approval.revisionId !== current.id) {
@@ -543,16 +674,20 @@ export function scenarioScriptToProductionBrief(
     action: beat.action,
     durationSec: beat.durationSec,
   }));
-  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => ({
-    order: beat.order,
-    durationSec: beat.durationSec,
-    framing: index === 0 || index === authored.length - 1 ? "close-up" : "medium",
-    angle: index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя",
-    cameraMovement: "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
-    lighting: base.capture.lighting,
-    // The authored physical action is copied exactly, never a generated summary.
-    action: beat.action,
-  }));
+  const preEditPlan = buildScenarioPreEditPlan(current,script.idea,research);
+  const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => {
+    const visual=preEditPlan.scenes[index].visualIntent;
+    return {
+      order: beat.order,
+      durationSec: beat.durationSec,
+      framing: visual?.framing ?? (index === 0 || index === authored.length - 1 ? "close-up" : "medium"),
+      angle: visual?.angle ?? (index === 0 ? "На уровне глаз, проверить первое визуальное действие" : "Выбрать ракурс по движению героя"),
+      cameraMovement: visual?.cameraMovement ?? "Проверить, нужна ли камера в движении; по умолчанию статичный дубль",
+      lighting: visual?.lighting ?? base.capture.lighting,
+      // The authored physical action is copied exactly, never a generated summary.
+      action: beat.action,
+    };
+  });
   const durationSec = authored.reduce((sum, beat) => sum + beat.durationSec, 0);
   return {
     ...base,
@@ -563,11 +698,13 @@ export function scenarioScriptToProductionBrief(
     },
     script: authored,
     shots,
+    preEditPlan,
     adaptations: {
       reels: { ...base.adaptations.reels, durationSec },
       shorts: { ...base.adaptations.shorts, durationSec },
       vkClips: { ...base.adaptations.vkClips, durationSec },
     },
+    postProduction: {...base.postProduction,color:preEditPlan.colorIntent??base.postProduction.color},
   };
 }
 
@@ -612,7 +749,11 @@ function createRevision(input: Omit<ScenarioScriptRevision, "review">): Scenario
     if (!beat || !["hook", "development", "ending"].includes(beat.purpose) || !nonEmpty(beat.line) || !Number.isFinite(beat.durationSec) || beat.durationSec <= 0) {
       throw new Error(`Script beat ${index + 1} is invalid`);
     }
-    return { ...beat, line: beat.line.trim(), action: typeof beat.action === "string" ? beat.action.trim() : "" };
+    if(beat.editIntent!==undefined&&typeof beat.editIntent!=="string")
+      throw new Error("Pre-edit note must be text");
+    const {editIntent,...rest}=beat;
+    return {...rest,line:beat.line.trim(),action:typeof beat.action==="string"?beat.action.trim():"",
+      ...(editIntent?.trim()?{editIntent:editIntent.trim()}:{})};
   });
   const sourceFacts = input.sourceFacts.map((fact, index) => requireText(fact, `sourceFacts[${index}]`));
   return { ...input, id: input.id.trim(), reason: input.reason?.trim(), beats, sourceFacts };

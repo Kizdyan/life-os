@@ -1,4 +1,5 @@
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
+import {isPersonaCreativeReviewApproved,latestPersonaCreativeReview} from './personaCreativeDevelopment';
 import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {
  actorComposerShotDirections,createPersonaProductionGuide,exampleActorComposerBeats,
@@ -37,9 +38,11 @@ export function shootProgressKey(projectId:string):string{
 }
 /** Stable, collision-resistant enough for UI version invalidation (not a cryptographic proof). */
 export function shootPlanFingerprint(plan:PersonaShootPlan):string{
- return JSON.stringify(plan.scenes.map(s=>[s.id,s.seconds,s.line,s.action,s.framing,s.camera,s.lighting,s.performance,s.edit]));
+ // Draft or demonstration take marks must never be revived after approval.
+ return JSON.stringify([plan.status,plan.scenes.map(s=>[s.id,s.seconds,s.line,s.action,s.framing,s.camera,s.lighting,s.performance,s.edit])]);
 }
 export function readShootProgress(raw:unknown,plan:PersonaShootPlan):PersonaShootProgress|null{
+ if(plan.status!=='approved')return null;
  if(!isObject(raw)||raw.version!==1||raw.fingerprint!==shootPlanFingerprint(plan)||
   !Array.isArray(raw.completedIds)||raw.completedIds.length>plan.scenes.length||
   typeof raw.updatedAt!=='string'||!Number.isFinite(Date.parse(raw.updatedAt)))return null;
@@ -53,6 +56,7 @@ export function readShootProgress(raw:unknown,plan:PersonaShootPlan):PersonaShoo
 export function markShootTake(
  plan:PersonaShootPlan,current:PersonaShootProgress|null,id:string,completed:boolean,now:string,
 ):PersonaShootProgress{
+ if(plan.status!=='approved')throw Error('Cannot record a take against an unapproved shooting plan');
  if(!plan.scenes.some(s=>s.id===id)||!Number.isFinite(Date.parse(now)))throw Error('Invalid take mark');
  const base=readShootProgress(current,plan);
  const completedIds=new Set(base?.completedIds??[]);
@@ -80,7 +84,7 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
   'Костюм/реквизит: '+plan.setup.wardrobe,
   'Расстановка: '+plan.setup.arrangement,
   '',
-  '## Что снимать по порядку',
+  plan.status==='approved'?'## Что снимать по порядку':'## Черновая раскадровка — сначала художественное утверждение',
   ...plan.scenes.flatMap((s,index)=>[
    '### '+(index+1)+'. '+s.id+' · '+shootTimecode(plan,index)+' · '+s.seconds+' с',
    'Сказать: '+s.line,
@@ -100,6 +104,40 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
  return lines.join('\n');
 }
 
+/** An old structural-only approval is not creative approval.
+ * The current script revision must have its own explicit editorial signoff.
+ */
+export function isScenarioCreativeApprovedForShooting(workspace:PersonaScenarioWorkspace|undefined):boolean{
+ const script=workspace?.script;
+ if(!script||script.approval?.revisionId!==script.currentRevisionId)return false;
+ return isPersonaCreativeReviewApproved(script.currentRevisionId,
+  latestPersonaCreativeReview(workspace.creativeReviews,script.currentRevisionId));
+}
+
+/** New video projects must finish script AND brief approval before media intake.
+ * Existing saved media plans remain accessible for legacy editing and recovery.
+ * This is a work-order gate, not a claim that any footage has been recorded.
+ */
+export function canStartPersonaVideoMediaWork(
+ workspace:PersonaScenarioWorkspace|undefined,
+ pipeline:PersonaProductionPipeline|null,
+ hasExistingMedia:boolean,
+):boolean{
+ if(hasExistingMedia)return true;
+ return buildPersonaShootPlan({title:'Pre-production check',workspace,pipeline,allowPilot:false}).status==='approved';
+}
+
+/** Importing new footage is never grandfathered in by already attached media.
+ * Legacy clips may remain viewable, but a new import requires the current
+ * scenario revision and production brief to be approved.
+ */
+export function canImportPersonaVideoMedia(
+ workspace:PersonaScenarioWorkspace|undefined,
+ pipeline:PersonaProductionPipeline|null,
+):boolean{
+ return buildPersonaShootPlan({title:'Pre-production check',workspace,pipeline,allowPilot:false}).status==='approved';
+}
+
 /** Take the current source of truth rather than replacing it with the demo.
  * Never inherit camera notes if a dialogue/action/duration changed.
  */
@@ -115,7 +153,9 @@ export function buildPersonaShootPlan(input:{
  const beats=script?.currentRevision.beats;
  const sameAsBrief=Boolean(brief&&beats&&beats.length===brief.script.length&&beats.every((beat,i)=>
   beat.line===brief.script[i]?.line&&beat.action===brief.script[i]?.action&&
-  beat.durationSec===brief.script[i]?.durationSec));
+  beat.durationSec===brief.script[i]?.durationSec&&
+  (beat.editIntent===undefined||
+   beat.editIntent===brief.preEditPlan?.scenes[i]?.editIntent)));
  const useBrief=Boolean(brief&&(!beats?.length||sameAsBrief));
  const isExample=allowPilot&&!brief&&!beats?.length;
  const source=beats?.length?beats.map((beat,i)=>({
@@ -137,6 +177,14 @@ export function buildPersonaShootPlan(input:{
     item.seconds===exampleActorComposerBeats[j].seconds);
   const directions=pilot?actorComposerShotDirections[exampleActorComposerBeats[i].id]:null;
   const shotEvidence=useBrief&&brief?productionGuideScenes(brief)[i]:null;
+  // Preserve the exact per-scene pre-edit intent from the matching script.
+  // Do not inherit old music edits after the author changes the revision.
+  const preEdit=useBrief&&brief?.preEditPlan&&
+   (brief.preEditPlan.origin!=='scenario_revision'||
+    Boolean(script&&brief.preEditPlan.sourceRevisionId===script.currentRevisionId))&&
+   brief.preEditPlan.scenes.length===source.length?brief.preEditPlan.scenes[i]:null;
+  const exactEdit=preEdit?.order===i+1&&preEdit.line===scene.line&&
+   preEdit.durationSec===scene.seconds?preEdit.editIntent?.trim():undefined;
   const saved=guideShotNoteForScene(guide,{
    ...scene,source:shotEvidence?'brief':'example',
   }).note;
@@ -148,13 +196,16 @@ export function buildPersonaShootPlan(input:{
    framing:scene.framing,lighting:safeNote?.lighting||scene.lighting,
    camera:safeNote?.camera||directions?.camera||scene.angle||guide.fields.camera,
    performance:safeNote?.performance||directions?.performance||scene.action,
-   edit:safeNote?.edit||directions?.edit||guide.fields.editing,
+   edit:safeNote?.edit||directions?.edit||exactEdit||guide.fields.editing,
    sourceFileName:pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:
     'S'+String(i+1).padStart(2,'0')+'_take01.mp4',
   };
  });
- const scriptApproved=Boolean(script?.approval&&script.approval.revisionId===script.currentRevisionId);
- const briefApproved=Boolean(brief&&useBrief&&pipeline?.stage==='READY_FOR_SHOOT'&&
+ const scriptApproved=isScenarioCreativeApprovedForShooting(workspace);
+ const currentBriefVersion=brief?.preEditPlan?.origin!=='scenario_revision'||
+  Boolean(script&&brief?.preEditPlan?.sourceRevisionId===script.currentRevisionId);
+ const briefApproved=Boolean(brief&&useBrief&&currentBriefVersion&&
+  pipeline?.stage==='READY_FOR_SHOOT'&&
   pipeline.materials.editorialDecision?.decision==='approved');
  return {
   title,status:isExample?'example':scriptApproved&&briefApproved?'approved':'draft',

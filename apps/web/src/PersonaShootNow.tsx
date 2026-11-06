@@ -77,8 +77,8 @@ export function PersonaShootNow({
  return <section className="personaShootNow" aria-label="Снять ролик сейчас">
   <header className="personaShootNowHead">
    <div>
-    <small>PERSONA / СЪЁМКА СЕГОДНЯ</small>
-    <h3>Вот что снимать прямо сейчас</h3>
+    <small>{plan.status==='approved'?'PERSONA / СЪЁМКА СЕГОДНЯ':'PERSONA / ТВОРЧЕСКАЯ ПОДГОТОВКА'}</small>
+    <h3>{plan.status==='approved'?'Вот что снимать прямо сейчас':'Сначала доведём сценарий до съёмки'}</h3>
     <p>{plan.title}</p>
    </div>
    <span className="personaShootNowTime">{totalDuration} сек. · {plan.scenes.length} кадров</span>
@@ -124,10 +124,17 @@ export function PersonaShootNow({
   </div>:<>
    <p className="personaShootNowStatus">
     {plan.status==='approved'?'Сценарий и съёмочный бриф утверждены в проекте.':
-     plan.status==='example'?'Это готовый пример на 7 сцен. Он ещё не сохранён как сценарий проекта.':
+     plan.status==='example'?'Это предварительный пример на 7 сцен, а не утверждённый сценарий для съёмки.':
      'Рабочий сценарий сохранён, но ещё не утверждён для съёмки.'}
     {' '}Публикация не разрешена автоматически.
    </p>
+   {plan.status!=='approved'&&<div className="personaShootNowStatus" role="status">
+    <strong>Сначала сценарий, потом съёмка.</strong>
+    <p>Этот вариант не прошёл художественное утверждение. Сравни три концепции, проверь конфликт, реплики и актёрские задачи, затем утверди новую редакцию и съёмочный бриф. Пока это пример для обсуждения, не команда записывать дубли.</p>
+    <button type="button" className="primary" onClick={onOpenScript}>
+     Перейти к творческой проверке и сценарию
+    </button>
+   </div>}
    <div className="personaShootNowSetup">
     <strong>1. За 5 минут подготовь площадку</strong>
     <p><b>Где:</b> {plan.setup.location}</p>
@@ -141,7 +148,7 @@ export function PersonaShootNow({
     </details>
    </div>
    <div className="personaShootNowProgress">
-    <strong>2. Снимай кадры по порядку</strong>
+    <strong>{plan.status==='approved'?'2. Снимай кадры по порядку':'2. Просмотри покадровый черновик'}</strong>
     <span>{recordedCount} из {plan.scenes.length} отмечено тобой</span>
    </div>
    <div className="personaShootNowSceneNav" role="group" aria-label="Перейти к кадру">
@@ -166,9 +173,11 @@ export function PersonaShootNow({
     <p><b>Что учесть для монтажа:</b> {current.edit}</p>
     {current.sourceFileName&&<p><b>Назови дубль:</b> <code>{current.sourceFileName}</code></p>}
     <label className="personaShootNowCheck">
-     <input type="checkbox" checked={completed.has(current.id)}
+     <input type="checkbox" checked={plan.status==='approved'&&completed.has(current.id)}
+      disabled={plan.status!=='approved'}
       onChange={event=>toggleRecorded(current.id,event.currentTarget.checked)}/>
-     Я записал хотя бы один дубль этого кадра
+     {plan.status==='approved'?'Я записал хотя бы один дубль этого кадра':
+      'Отметки реальных дублей откроются только после утверждения сценария и съёмочного плана'}
     </label>
    </article>
    <div className="personaShootNowActions">
@@ -184,9 +193,9 @@ export function PersonaShootNow({
     <p>Запиши 10 секунд тишины комнаты, проверь голос и музыкальный акцент, отдельно сними реакции и руки на клавишах. Затем переходи к монтажу только после просмотра дублей.</p>
     <div className="personaShootNowActions">
      {onSavePilot&&plan.status==='example'&&<button type="button" className="primary" onClick={onSavePilot}>
-      Сохранить эти 7 сцен в сценарии проекта
+      Сохранить старый пример как неутверждённый черновик
      </button>}
-     {onOpenEdit&&<button type="button" className="primary" onClick={onOpenEdit}>
+     {onOpenEdit&&plan.status==='approved'&&<button type="button" className="primary" onClick={onOpenEdit}>
       Открыть реальные дубли в монтаже
      </button>}
      <button type="button" className="secondary" onClick={downloadSheet}>Скачать весь съёмочный лист</button>

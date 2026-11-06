@@ -1,10 +1,22 @@
 import React from 'react';
+import {readFileSync} from 'node:fs';
 import {describe,expect,it} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PersonaShootNow} from './PersonaShootNow.tsx';
-import {buildPersonaShootPlan,makeShootSheet,markShootTake,readShootProgress,shootProgressKey,shootTimecode} from './personaShootNow';
-import {exampleActorComposerBeats} from './personaProductionGuide';
+import PersonaVideoTimeline from './PersonaVideoTimeline.tsx';
+import {PersonaColorComparisonStudio} from './PersonaColorComparisonStudio.tsx';
+import {PersonaLocalRenderReview} from './PersonaLocalRenderReview.tsx';
+import {buildPersonaShootPlan,isScenarioCreativeApprovedForShooting,canStartPersonaVideoMediaWork,canImportPersonaVideoMedia,makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,shootProgressKey,shootTimecode} from './personaShootNow';
+import {createActorComposerWorkingBrief,createPersonaProductionGuide,exampleActorComposerBeats} from './personaProductionGuide';
+import type {PersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
+import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import type {PersonaScenarioWorkspace} from './personaProjectStore';
+import {approveScenarioScript,reviseScenarioScript} from '../../../packages/core/src/persona-scenario-intelligence';
+import {personaFirstReelConcepts,stagePersonaCreativeConcept} from './personaCreativeDevelopment';
+
+const canonicalFirstReel=JSON.parse(readFileSync(
+ new URL('../../../docs/persona-first-reel-production-brief-2026-10-29.json',import.meta.url),'utf8',
+)) as {script:Array<{durationSec:number;line:string;action:string}>};
 
 const preset={
  title:'Актёр и композитор',
@@ -27,7 +39,28 @@ describe('Persona model-provenance visibility',()=>{
  });
 });
 
+describe('Persona video media intake follows the approved shooting plan',()=>{
+ it('blocks new video files until script and brief are approved while preserving legacy media access',()=>{
+  expect(canStartPersonaVideoMediaWork(undefined,null,false)).toBe(false);
+  expect(canStartPersonaVideoMediaWork(undefined,null,true)).toBe(true);
+  const pilot=buildPersonaShootPlan(preset);
+  expect(pilot.status).toBe('example');
+  expect(canStartPersonaVideoMediaWork(undefined,null,false)).toBe(false);
+  const before=stagePersonaCreativeConcept({version:1,research:[],analyses:[],ideas:[]},
+   personaFirstReelConcepts[0],'2026-11-05T20:10:00.000Z');
+  expect(canStartPersonaVideoMediaWork(before,null,false)).toBe(false);
+  expect(canStartPersonaVideoMediaWork(before,null,true)).toBe(true);
+  expect(canImportPersonaVideoMedia(undefined,null)).toBe(false);
+  expect(canImportPersonaVideoMedia(before,null)).toBe(false);
+ });
+});
+
 describe('Persona direct filming experience',()=>{
+ it('keeps the opt-in shooting page verbatim with the canonical approved seven-scene brief',()=>{
+  expect(exampleActorComposerBeats.map(({seconds,line,action})=>({seconds,line,action}))).toEqual(
+   canonicalFirstReel.script.map(({durationSec,line,action})=>({seconds:durationSec,line,action})),
+  );
+ });
  it('shows a real seven-scene shoot-ready EXAMPLE with lines, camera, acting and montage cues',()=>{
   const plan=buildPersonaShootPlan(preset);
   expect(plan.status).toBe('example');
@@ -41,12 +74,18 @@ describe('Persona direct filming experience',()=>{
   expect(shootTimecode(plan,6)).toBe('00:27');
   const html=renderToStaticMarkup(<PersonaShootNow projectId="test-pilot" plan={plan}
    onOpenScript={()=>{}} onSavePilot={()=>{}}/>);
-  expect(html).toContain('Вот что снимать прямо сейчас');
+  expect(html).toContain('Сначала доведём сценарий до съёмки');
   expect(html).toContain('СКАЖИ В КАДРЕ');
   expect(html).toContain('Я актёр. И ещё пишу музыку.');
   expect(html).toContain('Как поставить камеру');
-  expect(html).toContain('Сохранить эти 7 сцен');
+  expect(html).toContain('Сохранить старый пример как неутверждённый черновик');
   expect(html).toContain('Публикация не разрешена автоматически');
+ });
+ it('keeps the pre-edit cues consistent with the approved words and B03 music range',()=>{
+  const plan=buildPersonaShootPlan(preset);
+  expect(plan.scenes[2].edit).toContain('«текст»');
+  expect(plan.scenes[5].edit).toContain('2–3 секунды');
+  expect(plan.scenes[5].edit).not.toContain('2,12');
  });
  it('does not pretend an unknown project has invented scenes',()=>{
   const plan=buildPersonaShootPlan({...preset,title:'Собственный Reels',allowPilot:false});
@@ -71,11 +110,18 @@ describe('Persona direct filming experience',()=>{
   expect(plan.scenes[0].sourceFileName).toBe('S01_take01.mp4');
   expect(plan.scenes[0].sourceFileName).not.toContain('A01');
  });
- it('tracks take completion only in this project and invalidates on changed script',()=>{
-  const plan=buildPersonaShootPlan(preset);
+ it('tracks takes only for approved projects and invalidates on changed script or status',()=>{
+  const example=buildPersonaShootPlan(preset);
+  const plan={...example,status:'approved' as const};
+  expect(readShootProgress({version:1,fingerprint:shootPlanFingerprint(plan),
+   completedIds:['A01'],updatedAt:'2026-11-03T15:00:00.000Z'},example)).toBeNull();
+  expect(()=>markShootTake(example,null,'A01',true,'2026-11-03T15:00:00.000Z'))
+   .toThrow(/unapproved shooting plan/);
+  expect(shootPlanFingerprint(example)).not.toBe(shootPlanFingerprint(plan));
   const marked=markShootTake(plan,null,'A01',true,'2026-11-03T15:00:00.000Z');
   expect(marked.completedIds).toEqual(['A01']);
   expect(readShootProgress(marked,plan)).toEqual(marked);
+  expect(readShootProgress(marked,{...plan,status:'draft'})).toBeNull();
   const more=markShootTake(plan,marked,'B01',true,'2026-11-03T15:01:00.000Z');
   expect(more.completedIds).toEqual(['A01','B01']);
   expect(markShootTake(plan,more,'A01',false,'2026-11-03T15:02:00.000Z').completedIds)
@@ -85,6 +131,203 @@ describe('Persona direct filming experience',()=>{
   expect(()=>markShootTake(plan,marked,'unknown',true,'2026-11-03T15:00:00.000Z')).toThrow();
   expect(shootProgressKey('first')).not.toBe(shootProgressKey('second'));
   expect(makeShootSheet(plan)).toContain('Камера: Штатив');
-  expect(makeShootSheet(plan)).toContain('РАБОЧИЙ ПЛАН');
+  expect(makeShootSheet(example)).toContain('РАБОЧИЙ ПЛАН');
+  expect(makeShootSheet(example)).toContain('сначала художественное утверждение');
+  expect(makeShootSheet(plan)).toContain('Что снимать по порядку');
+ });
+});
+
+
+it('does not let an unapproved example masquerade as a filming checklist',()=>{
+ const example=buildPersonaShootPlan(preset);
+ const html=renderToStaticMarkup(<PersonaShootNow projectId="creative-preproduction"
+  plan={example} onOpenScript={()=>{}} onOpenEdit={()=>{}} onSavePilot={()=>{}}/>);
+ expect(html).toContain('Сначала сценарий, потом съёмка');
+ expect(html).toContain('Перейти к творческой проверке и сценарию');
+ expect(html).toContain('Просмотри покадровый черновик');
+ expect(html).not.toContain('Открыть реальные дубли в монтаже');
+ expect(html).toContain('Отметки реальных дублей откроются только после утверждения');
+ expect(html).toMatch(/type="checkbox"[^>]*disabled=""/);
+ const signed=renderToStaticMarkup(<PersonaShootNow projectId="creative-approved"
+  plan={{...example,status:'approved'}} onOpenScript={()=>{}} onOpenEdit={()=>{}}/>);
+ expect(signed).toContain('2. Снимай кадры по порядку');
+ expect(signed).toContain('Вот что снимать прямо сейчас');
+ expect(signed).toContain('Открыть реальные дубли в монтаже');
+ expect(signed).not.toContain('Сначала сценарий, потом съёмка');
+ expect(signed).not.toMatch(/type="checkbox"[^>]*disabled=""/);
+});
+
+
+it('does not treat a structural-only or revoked creative approval as permission to shoot',()=>{
+ const initial=stagePersonaCreativeConcept(
+  {version:1,research:[],analyses:[],ideas:[]},personaFirstReelConcepts[0],
+  '2026-11-05T16:00:00.000Z');
+ const script=approveScenarioScript(initial.script!,{
+  author:'Редактор',comment:'Проверка структуры пройдена, творческое решение отдельно.',
+  approvedAt:'2026-11-05T16:01:00.000Z',
+ });
+ const workspace={...initial,script};
+ expect(isScenarioCreativeApprovedForShooting(workspace)).toBe(false);
+ const positive={revisionId:script.currentRevisionId,reviewer:'author' as const,
+  decision:'ready_for_author' as const,
+  comment:'Сценарий разобран на конфликт, актерское действие, музыку, начало и финал.',
+  createdAt:'2026-11-05T16:02:00.000Z'};
+ const accepted={...workspace,creativeReviews:[positive]};
+ expect(isScenarioCreativeApprovedForShooting(accepted)).toBe(true);
+ expect(isScenarioCreativeApprovedForShooting({...accepted,
+  creativeReviews:[positive,{...positive,decision:'needs_revision',
+   comment:'Пересмотрел решение: конфликт слишком слабый, музыкальный финал предсказуем.',
+   createdAt:'2026-11-05T16:03:00.000Z'}]})).toBe(false);
+ const newScript=reviseScenarioScript(script,{createdAt:'2026-11-05T16:04:00.000Z',
+  reason:'Отдельная новая редакция',beats:script.currentRevision.beats.map((beat,i)=>
+   i===1?{...beat,action:beat.action+' Герой отказывает собеседнику.'}:beat)});
+ expect(isScenarioCreativeApprovedForShooting({...accepted,script:newScript})).toBe(false);
+});
+
+
+it('keeps exact revision-bound sound and cut directions for a new concept',()=>{
+ const guide=createPersonaProductionGuide('2026-11-05T16:30:00.000Z','actor_composer');
+ const original=createActorComposerWorkingBrief({id:'new-creative-concept',title:'Новый сценарий',
+  angle:'Оригинальная музыка переворачивает сцену',format:'reel'},guide);
+ const script=original.script.slice(0,3);
+ const editIntents=script.map((beat,i)=>
+  'Кадр '+(i+1)+': музыкальный акцент и склейка только на окончании произнесённых слов.');
+ const brief={...original,script,shots:original.shots.slice(0,3),
+  preEditPlan:{
+   version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',
+   origin:'scenario_revision',sourceRevisionId:'current-r3',
+   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Творческий замысел, не измеренный тренд'},
+   scenes:script.map((beat,i)=>({
+    order:i+1,line:beat.line,durationSec:beat.durationSec,
+    editIntent:editIntents[i],audioIntent:'Оригинальная музыка',
+    subtitleIntent:'Субтитры только для речи',
+    mediaStatus:'awaiting_author_footage',
+   })),
+   publicationApproved:false,
+  },
+ } as PersonaProductionBrief;
+ const pipeline={stage:'QA',materials:{productionBrief:brief}} as PersonaProductionPipeline;
+ const beats=script.map((beat,i)=>({...beat,
+  purpose:i===0?'hook':i===script.length-1?'ending':'development'}));
+ const workspace={version:1,research:[],analyses:[],ideas:[],preProductionGuide:guide,
+  script:{currentRevisionId:'current-r3',currentRevision:{beats}}} as unknown as PersonaScenarioWorkspace;
+ const plan=buildPersonaShootPlan({
+  title:'Новый сценарий',workspace,pipeline,allowPilot:false});
+ expect(plan.status).toBe('draft');
+ expect(plan.scenes).toHaveLength(3);
+ expect(plan.scenes.map(scene=>scene.edit)).toEqual(editIntents);
+ expect(makeShootSheet(plan)).toContain(editIntents[1]);
+ const stale=buildPersonaShootPlan({
+  title:'Новый сценарий',
+  workspace:{...workspace,script:{...workspace.script!,currentRevisionId:'changed-revision'}},
+  pipeline,allowPilot:false});
+ expect(stale.scenes.map(scene=>scene.edit)).not.toContain(editIntents[1]);
+ expect(stale.scenes[1].edit).toBe(guide.fields.editing);
+});
+
+
+it('refuses stale pre-edit revisions or malformed creative evidence even when lines match',()=>{
+ const guide=createPersonaProductionGuide('2026-11-05T17:10:00.000Z','actor_composer');
+ const base=createActorComposerWorkingBrief({id:'revision-safe',title:'Актёр и композитор',
+  angle:'Первый ролик',format:'reel'},guide);
+ const currentId='scenario-r2';
+ const brief:PersonaProductionBrief={...base,preEditPlan:{
+  version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',
+  origin:'scenario_revision',sourceRevisionId:currentId,
+  researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Только редакторский замысел'},
+  scenes:base.script.map((scene,i)=>({
+   order:scene.order,line:scene.line,durationSec:scene.durationSec,
+   editIntent:'Кадр '+(i+1)+': точная проверенная склейка.',
+   audioIntent:'Оригинальная музыка по утверждённой монтажной карте.',
+   subtitleIntent:'Субтитры завершаются вместе с речью.',
+   mediaStatus:'awaiting_author_footage',
+  })),
+  publicationApproved:false,
+ }};
+ const pipeline={stage:'READY_FOR_SHOOT',materials:{
+  productionBrief:brief,editorialDecision:{decision:'approved'},
+ }} as unknown as PersonaProductionPipeline;
+ const script={currentRevisionId:currentId,currentRevision:{
+  id:currentId,beats:brief.script.map((scene,i)=>({
+   purpose:i===0?'hook':i===brief.script.length-1?'ending':'development',
+   line:scene.line,action:scene.action,durationSec:scene.durationSec,
+   editIntent:brief.preEditPlan.scenes[i].editIntent,
+  })),
+ },approval:{revisionId:currentId}};
+ const decision={revisionId:currentId,reviewer:'author' as const,
+  decision:'ready_for_author' as const,
+  comment:'Принят весь сценарий: конфликт, игра, оригинальная музыка и финал.',
+  createdAt:'2026-11-05T17:12:00.000Z'};
+ const workspace={version:1,research:[],analyses:[],ideas:[],
+  script,creativeReviews:[decision],preProductionGuide:guide,
+ } as unknown as PersonaScenarioWorkspace;
+ expect(isScenarioCreativeApprovedForShooting(workspace)).toBe(true);
+ const approved=buildPersonaShootPlan({title:'Проверка',workspace,pipeline,allowPilot:false});
+ expect(approved.status).toBe('approved');
+ expect(canStartPersonaVideoMediaWork(workspace,pipeline,false)).toBe(true);
+ expect(canImportPersonaVideoMedia(workspace,pipeline)).toBe(true);
+ const stalePipeline={...pipeline,materials:{...pipeline.materials,productionBrief:{
+  ...brief,preEditPlan:{...brief.preEditPlan,sourceRevisionId:'old-r1'},
+ }}} as PersonaProductionPipeline;
+ expect(buildPersonaShootPlan({title:'Проверка',workspace,pipeline:stalePipeline,
+  allowPilot:false}).status).toBe('draft');
+ expect(canStartPersonaVideoMediaWork(workspace,stalePipeline,false)).toBe(false);
+ const modifiedScript={...workspace,script:{...workspace.script!,
+  currentRevision:{...workspace.script!.currentRevision,
+   beats:workspace.script!.currentRevision.beats.map((beat,i)=>
+    i===0?{...beat,editIntent:'Другая склейка и музыкальный акцент'}:beat),
+  }}};
+ expect(buildPersonaShootPlan({title:'Проверка',workspace:modifiedScript,
+  pipeline,allowPilot:false}).status).toBe('draft');
+ expect(canStartPersonaVideoMediaWork(modifiedScript,pipeline,false)).toBe(false);
+ expect(canStartPersonaVideoMediaWork(modifiedScript,pipeline,true)).toBe(true);
+ expect(canImportPersonaVideoMedia(modifiedScript,pipeline)).toBe(false);
+ const malformed={...workspace,creativeReviews:[{...decision,comment:'кратко'}]};
+ expect(isScenarioCreativeApprovedForShooting(malformed)).toBe(false);
+ expect(canStartPersonaVideoMediaWork(malformed,pipeline,false)).toBe(false);
+ expect(buildPersonaShootPlan({title:'Проверка',workspace:malformed,
+  pipeline,allowPilot:false}).status).toBe('draft');
+});
+
+
+describe('Persona timeline approval enforcement',()=>{
+ it('keeps the existing timeline visible but disables new media intake and export on stale approval',()=>{
+  const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="stale-approval" canProduce={false}/>);
+  expect(view).toContain('Сценарий или съёмочный бриф изменены');
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Добавить видеофрагменты")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать музыкальную дорожку")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+  expect(view).toMatch(/(?=<button\b)(?=[^>]*class="primary")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+  expect(view).toContain('Смотреть последовательность');
+ });
+ it('allows media intake when the current shooting plan is approved',()=>{
+  const view=renderToStaticMarkup(<PersonaVideoTimeline projectId="approved-approval" canProduce={true}/>);
+  expect(view).not.toContain('Сценарий или съёмочный бриф изменены');
+  expect(view).toMatch(/aria-label="Добавить видеофрагменты"/);
+  expect(view).not.toMatch(/(?=<input\b)(?=[^>]*aria-label="Добавить видеофрагменты")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+ });
+});
+
+
+describe('Persona color comparison approval enforcement',()=>{
+ it('preserves read-only comparison access while blocking new uploads on stale approval',()=>{
+  const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-stale" record={null} onSave={()=>true} canProduce={false}/>);
+  expect(view).toContain('Утверждение устарело');
+  expect(view).toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать оригинал, три MP4 и COMPARISON.json")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+ });
+ it('permits comparison upload controls after approval',()=>{
+  const view=renderToStaticMarkup(<PersonaColorComparisonStudio projectId="color-approved" record={null} onSave={()=>true} canProduce={true}/>);
+  expect(view).not.toContain('Утверждение устарело');
+  expect(view).not.toMatch(/(?=<input\b)(?=[^>]*aria-label="Выбрать оригинал, три MP4 и COMPARISON.json")(?=[^>]*\bdisabled(?:=""|\b))[^>]*>/);
+ });
+});
+
+
+describe('Persona local render approval gate',()=>{
+ it('does not permit a new MP4 import without current approval',()=>{
+  const html=renderToStaticMarkup(<PersonaLocalRenderReview projectId="stale" pipeline={null} record={null} onSave={()=>true} canProduce={false}/>);
+  expect(html).toContain('Утверждение сценария устарело');
+  expect(html).toMatch(/<input(?=[^>]*aria-label="Загрузить RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json")(?=[^>]*disabled)[^>]*>/);
+  expect(html).not.toContain('Импорт результата сохранён');
+
  });
 });

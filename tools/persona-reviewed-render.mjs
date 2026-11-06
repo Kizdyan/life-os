@@ -155,7 +155,8 @@ export async function renderReviewedReel({draftDir,selectionPath,outputDir,ffmpe
    originalDraft:p.mode==='recovery'?null:join(p.draft,'draft-reel.mp4'),
    recoveredFromAsr:p.mode==='recovery',
    output:mp4,qaPath,decisionsPath,memoryPath,
-   timelinePath:assembled.project,subtitleDraft:captions,creativeReviewTemplate:creative.reviewPath,
+   timelinePath:assembled.project,renderManifestPath:mp4+'.persona.json',
+   subtitleDraft:captions,creativeReviewTemplate:creative.reviewPath,
    steps:stage,caveat:'Selected clips were human-chosen; Creative QA still requires viewing the final MP4. No publication approval.'};
   await writeFile(join(p.output,'REVIEWED-RESULT.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
   await writeFile(join(p.output,'REVIEWED-RESULT.md'),formatReviewedResult(report),{flag:'wx'});

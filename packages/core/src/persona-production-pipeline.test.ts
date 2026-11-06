@@ -1,11 +1,42 @@
 import { describe, expect, it } from "vitest";
 import {
   advancePersonaProductionPipeline,
+  importPersonaProductionBrief,
   recordPersonaEditorialDecision,
   startPersonaProductionPipeline,
 } from "./persona-production-pipeline";
 
 describe("Persona production pipeline", () => {
+  it("preserves optional pre-shoot visual and colour intent through a JSON import without rejecting legacy briefs", () => {
+    let pipeline = startPersonaProductionPipeline({
+      idea: { id: "preedit-import", title: "План до съёмки", angle: "Проверка сохранности", format: "reel" },
+    });
+    for (let step = 0; step < 4; step += 1) pipeline = advancePersonaProductionPipeline(pipeline);
+    const brief = pipeline.materials.productionBrief!;
+    const withPlan = {
+      ...brief,
+      preEditPlan: {
+        version: 1, kind: "persona-pre-edit-plan-v1", status: "intent_only", origin: "scenario_revision",
+        sourceRevisionId: null, publicationApproved: false,
+        researchEvidence: { level: "hypothesis_only", sourceUrls: [], note: "Творческая гипотеза; метрики не заявлены." },
+        colorIntent: "Natural Clean: нейтральный белый и естественная кожа.",
+        scenes: brief.script.map((beat, index) => ({
+          order: beat.order, line: beat.line, durationSec: beat.durationSec,
+          editIntent: "Склейка по действию.", audioIntent: "Сохранить фактическую речь.", subtitleIntent: "Проверить safe area.",
+          visualIntent: {
+            framing: index === 0 ? "close-up" : "medium", angle: "На уровне глаз.", cameraMovement: "Штатив.",
+            lighting: "Мягкий источник.", performance: "Сыграть реакцию через действие.",
+          }, mediaStatus: "awaiting_author_footage",
+        })),
+      },
+    };
+    const imported = importPersonaProductionBrief({ brief: JSON.parse(JSON.stringify(withPlan)) });
+    const importedPlan = imported.materials.productionBrief?.preEditPlan;
+    expect(importedPlan?.colorIntent).toBe("Natural Clean: нейтральный белый и естественная кожа.");
+    expect(importedPlan?.scenes[0]?.visualIntent).toMatchObject({ framing: "close-up", lighting: "Мягкий источник." });
+    expect(importPersonaProductionBrief({ brief: JSON.parse(JSON.stringify(brief)) }).materials.productionBrief?.preEditPlan).toBeUndefined();
+  });
+
   it("requires an explicit fact-aware editorial approval after structural QA", () => {
     let pipeline = startPersonaProductionPipeline({
       idea: {

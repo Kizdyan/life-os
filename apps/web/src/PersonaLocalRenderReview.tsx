@@ -36,13 +36,16 @@ async function videoMetadata(file:File):Promise<{durationSec:number;width:number
  }finally{video.removeAttribute('src');video.load();URL.revokeObjectURL(url)}
 }
 
-export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
+export function PersonaLocalRenderReview({projectId,pipeline,record,onSave,canProduce=true}:{
  projectId:string;pipeline:PersonaProductionPipeline|null;record:PersonaLocalRenderRecord|null;
- onSave:(value:PersonaLocalRenderRecord)=>boolean;
+ onSave:(value:PersonaLocalRenderRecord)=>boolean;canProduce?:boolean;
 }){
+ const canProduceRef=useRef(canProduce);
+ canProduceRef.current=canProduce;
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const [preview,setPreview]=useState<string|null>(null);
  const lastUrl=useRef<string|null>(null),generation=useRef(0);
+ useEffect(()=>{if(!canProduce){generation.current++;setBusy(false)}},[canProduce]);
  useEffect(()=>()=>{generation.current++;if(lastUrl.current)URL.revokeObjectURL(lastUrl.current)},[]);
  const brief=pipeline?.materials.productionBrief;
  const handoff=pipeline?assessPersonaLocalHandoff(pipeline,productionInputDraftExists(resolvePersonaScenarioDraftStorage(),projectId)):null;
@@ -58,7 +61,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  const isStale=Boolean(record&&!current);
  const oldApprovalEpoch=Boolean(isStale&&matchesBrief&&handoff?.allowed);
  function downloadFinishTemplate(){
-  if(!current){setMessage('Сначала импортируйте и проверьте MP4.');return}
+  if(!canProduceRef.current||!current){setMessage('Для нового экспорта требуется актуальное утверждение сценария и MP4.');return}
   try{
    const data=buildPersonaFinishOptionsTemplate(current);
    const blob=new Blob([JSON.stringify(data,null,2)+'\n'],{type:'application/json'});
@@ -69,7 +72,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
   }catch(error){setMessage('Настройки не подготовлены: '+String((error as Error).message||error))}
  }
  async function importLocalFiles(files:FileList|null){
-  if(!files||busy)return;
+  if(!files||busy||!canProduceRef.current)return;
   const task=++generation.current;
   setBusy(true);setMessage('');
   try{
@@ -84,12 +87,13 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    const [result,qa,quality,fingerprint,metadata,sha256]=await Promise.all([
     readJson(resultFile),readJson(qaFile),qualityFile?readJson(qualityFile):Promise.resolve(undefined),
     briefHash(brief),videoMetadata(videoFile),fileHash(videoFile)]);
-   if(task!==generation.current)return;
+   if(task!==generation.current||!canProduceRef.current)return;
    const imported=inspectPersonaLocalRenderImport({
     projectId,brief,briefFingerprintSha256:fingerprint,result,qa,quality,
     video:{name:videoFile.name,size:videoFile.size,sha256,...metadata},importedAt:new Date().toISOString(),
    });
    const merged=mergePersonaDraftReimport(current,imported);
+   if(!canProduceRef.current)return;
    if(!onSave(merged))throw Error('Проект изменился в другой вкладке или хранилище недоступно. Результат не сохранён.');
    if(lastUrl.current)URL.revokeObjectURL(lastUrl.current);
    const url=URL.createObjectURL(videoFile);lastUrl.current=url;setPreview(url);
@@ -99,9 +103,10 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
  }
  return <section className="personaRenderReturn" aria-label="Возврат локального монтажа в Persona">
   <h3>Черновой монтаж · авторский просмотр</h3>
+  {!canProduce&&<p role="status">Утверждение сценария устарело: новый импорт и художественная приёмка заблокированы.</p>}
   <p>После запуска локального runner выбери RESULT.json, qa.json, draft-reel.mp4 и, если создан, video-quality.json. Persona проверит SHA-256 реального файла, соответствие отчётов и точную версию сценария.</p>
   <label className="personaRenderReturnPicker">Импорт результата с компьютера
-   <input type="file" multiple accept=".json,.mp4,application/json,video/mp4" disabled={busy||!handoff?.allowed}
+   <input type="file" multiple accept=".json,.mp4,application/json,video/mp4" disabled={!canProduce||busy||!handoff?.allowed}
     aria-label="Загрузить RESULT.json, qa.json, draft-reel.mp4 и необязательный video-quality.json"
     onChange={event=>{void importLocalFiles(event.currentTarget.files);event.currentTarget.value=''}}/>
   </label>
@@ -147,7 +152,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave}:{
    <pre>{'npm run media:finish:reel -- "<ПАПКА_ЧЕРНОВИКА>" "<finish-options.json>" "<НОВАЯ_ПАПКА>" "<ПАПКА_FFMPEG_BIN>"'}</pre>
    <p>Результат: finished-candidate.mp4, finish-qa.json и FINISH-RESULT.json. Это не утверждение или публикация.</p>
   </details>}
-  {current&&<PersonaFinishedRenderReview key={projectId+':'+current.mp4Sha256} draft={current} onSave={onSave} canImport={Boolean(handoff?.allowed)}/>}
+  {current&&<PersonaFinishedRenderReview key={projectId+':'+current.mp4Sha256} draft={current} onSave={onSave} canImport={canProduce&&Boolean(handoff?.allowed)}/>}
   {preview&&current&&<video className="personaRenderReturnVideo" controls playsInline preload="metadata" src={preview}/>}
   <p className="personaRenderReturnWarning">Перед финализацией лично оцени актёрскую игру, свет, цвет кожи, сохранность внешности, баланс голоса и музыки, ритм и точность субтитров. Импорт не включает автопубликацию и не означает финального утверждения.</p>
  </section>;

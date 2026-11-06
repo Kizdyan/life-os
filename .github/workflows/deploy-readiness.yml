@@ -28,6 +28,7 @@ jobs:
           node-version: "22"
       - run: npm ci --no-audit --no-fund
       - run: npm run api:typecheck
+      - run: npm run web:typecheck
       - run: npm run web:build
       - name: Verify deploy artifact
         run: test -f apps/web/dist/index.html

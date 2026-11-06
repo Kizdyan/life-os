@@ -113,13 +113,15 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(segments.slice(i,j).some(part=>part.transcriptConflict===true))continue;
       const {text,coverage,f1,score}=modelScore(line,segments,i,j);
       if(coverage<0.75||f1<0.57)continue;
-      // Bag-of-words scoring alone can falsely match "Это колыбельная"
-      // inside "Эта колыбельная. Это совсем другое." because both words
-      // appear somewhere. Short scripted lines require exact word order and
-      // adjacency before they can become even a provisional ASR candidate.
+      // Every approved scene, including the FULL B04 "Это колыбельная?
+      // Это финал триллера", requires the exact ordered normalized words.
+      // Fuzzy bag-of-words only ranks confirmed exact candidates; it must
+      // never validate a different vowel, missing word or extra filler.
+      // Timed tokens can form an exact sub-window; one coarse ASR segment
+      // with surrounding speech CANNOT be trimmed without human review.
       const expectedWords=normalize(line),heardWords=normalize(text);
-      if(expectedWords.length<=3 &&
-         !heardWords.some((_,k)=>expectedWords.every((w,j)=>heardWords[k+j]===w)))
+      if(heardWords.length!==expectedWords.length ||
+         expectedWords.some((word,index)=>heardWords[index]!==word))
         continue;
       const startSec=Math.max(0,segments[i].startSec-0.16);
       const endSec=segments[j-1].endSec+0.18;

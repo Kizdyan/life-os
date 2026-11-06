@@ -359,6 +359,7 @@ function parsePersonaProductionBrief(value: unknown): PersonaProductionBrief {
         processing: text(audio.processing, "capture.audio.processing"),
       },
     },
+    ...(record.preEditPlan===undefined?{}:{preEditPlan:parsePreEditPlan(record.preEditPlan,script)}),
     postProduction: {
       transitions: text(postProduction.transitions, "postProduction.transitions"),
       subtitles: {
@@ -372,6 +373,69 @@ function parsePersonaProductionBrief(value: unknown): PersonaProductionBrief {
   };
   assertTimelineConsistency(brief);
   return brief;
+}
+
+function parsePreEditPlan(
+  value: unknown, script: PersonaProductionBrief["script"],
+): NonNullable<PersonaProductionBrief["preEditPlan"]> {
+  const plan=asRecord(value,"preEditPlan");
+  if(plan.version!==1||plan.kind!=="persona-pre-edit-plan-v1"||
+    plan.status!=="intent_only"||plan.publicationApproved!==false||
+    !["scenario_revision","ai_director"].includes(String(plan.origin))||
+    !(plan.sourceRevisionId===null||
+      typeof plan.sourceRevisionId==="string"&&plan.sourceRevisionId.trim()))
+    throw new Error("Pre-edit plan provenance is invalid");
+  const evidence=asRecord(plan.researchEvidence,"preEditPlan.researchEvidence");
+  if(!["reviewed_reference","metadata_only","hypothesis_only"].includes(String(evidence.level)))
+    throw new Error("Pre-edit research evidence is invalid");
+  const sources=array(evidence.sourceUrls,"preEditPlan.researchEvidence.sourceUrls")
+    .map((item,i)=>text(item,"preEditPlan.sourceUrls["+i+"]"));
+  const scenes=array(plan.scenes,"preEditPlan.scenes").map((item,i)=>{
+    const scene=asRecord(item,"preEditPlan.scenes["+i+"]");
+    if(scene.mediaStatus!=="awaiting_author_footage")
+      throw new Error("Pre-edit plan may not claim real media");
+    const beat=script[i];
+    if(!beat||scene.order!==i+1||scene.line!==beat.line||
+      scene.durationSec!==beat.durationSec)
+      throw new Error("Pre-edit plan is stale or differs from the approved script");
+    const visualIntent=scene.visualIntent===undefined?undefined:parsePreEditVisualIntent(scene.visualIntent,i);
+    return {
+      order:i+1,line:beat.line,durationSec:beat.durationSec,
+      editIntent:text(scene.editIntent,"preEditPlan.scenes.editIntent"),
+      audioIntent:text(scene.audioIntent,"preEditPlan.scenes.audioIntent"),
+      subtitleIntent:text(scene.subtitleIntent,"preEditPlan.scenes.subtitleIntent"),
+      ...(visualIntent?{visualIntent}:{}),
+      mediaStatus:"awaiting_author_footage" as const,
+    };
+  });
+  if(scenes.length!==script.length)throw new Error("Pre-edit plan is incomplete");
+  return {
+    version:1,kind:"persona-pre-edit-plan-v1",status:"intent_only",
+    origin:plan.origin as "scenario_revision"|"ai_director",
+    sourceRevisionId:plan.sourceRevisionId as string|null,
+    researchEvidence:{
+      level:evidence.level as "reviewed_reference"|"metadata_only"|"hypothesis_only",
+      sourceUrls:sources,
+      note:text(evidence.note,"preEditPlan.researchEvidence.note"),
+    },
+    scenes,
+    ...(plan.colorIntent===undefined?{}:{colorIntent:text(plan.colorIntent,"preEditPlan.colorIntent")}),
+    publicationApproved:false,
+  };
+}
+
+function parsePreEditVisualIntent(value: unknown, index: number): NonNullable<PersonaProductionBrief["preEditPlan"]>["scenes"][number]["visualIntent"] {
+  const visual=asRecord(value,`preEditPlan.scenes[${index}].visualIntent`);
+  const framing=visual.framing;
+  if(framing!=="close-up"&&framing!=="medium"&&framing!=="detail")
+    throw new Error(`preEditPlan.scenes[${index}].visualIntent.framing is invalid`);
+  return {
+    framing,
+    angle:text(visual.angle,`preEditPlan.scenes[${index}].visualIntent.angle`),
+    cameraMovement:text(visual.cameraMovement,`preEditPlan.scenes[${index}].visualIntent.cameraMovement`),
+    lighting:text(visual.lighting,`preEditPlan.scenes[${index}].visualIntent.lighting`),
+    performance:text(visual.performance,`preEditPlan.scenes[${index}].visualIntent.performance`),
+  };
 }
 
 function assertTimelineConsistency(brief: PersonaProductionBrief): void {

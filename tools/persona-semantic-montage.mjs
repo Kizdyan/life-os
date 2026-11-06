@@ -100,12 +100,32 @@ async function analyze(inputArg, outputArg) {
 }
 function words(line){return new Set(String(line||'').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/u).filter(x=>x.length>2));}
 function sharedWords(briefLine, transcript){const expected=words(briefLine),spoken=words(transcript);if(!expected.size)return 1;return [...expected].filter(x=>spoken.has(x)).length/expected.size;}
+const normalizeLine=text=>String(text??'').normalize('NFKC').toLowerCase().replaceAll('ё','е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const musicAfterSpeech=shot=>/(?:после реплики|после слов|затем).{0,90}(?:музык|мелод|фортепиан|клавиш|пианино)/iu.test(String(shot?.action||''));
 async function assemble(decisionsArg, projectArg) {
   const decisionsFile = resolve(decisionsArg),base=dirname(decisionsFile),d=await readJson(decisionsFile);
   assert(d?.version===1 && typeof d.analysisPath==='string' && typeof d.briefPath==='string', 'Missing analysis/brief paths');
   const analysis=await readJson(absolute(base,d.analysisPath)),brief=await readJson(absolute(base,d.briefPath));
   assert(analysis?.kind==='persona-evidence-v1' && analysis.version===1 && Array.isArray(analysis.sources), 'Unrecognized analysis packet');
   assert(brief?.version===1 && brief.sourceFormat==='reel' && Array.isArray(brief.script) && brief.script.length>=2 && brief.script.length<=30, 'Invalid original Persona Reel brief');
+  // A human approved the editing IDEA before filming. Actual clip times are
+  // new measurements and remain unapproved until source-level creative review.
+  // Never discard, regenerate or silently reinterpret that frozen intent.
+  const preEditPlan=brief.preEditPlan??null;
+  if(preEditPlan){
+    assert(preEditPlan.version===1&&preEditPlan.kind==='persona-pre-edit-plan-v1'&&
+      preEditPlan.status==='intent_only'&&preEditPlan.publicationApproved===false&&
+      Array.isArray(preEditPlan.scenes)&&preEditPlan.scenes.length===brief.script.length,
+      'Pre-edit plan provenance or scene count invalid');
+    for(const [i,scene] of preEditPlan.scenes.entries()){
+      const beat=brief.script[i];
+      assert(scene?.order===beat.order&&scene.line===beat.line&&
+        scene.durationSec===beat.durationSec&&
+        scene.mediaStatus==='awaiting_author_footage'&&
+        typeof scene.editIntent==='string'&&scene.editIntent.trim(),
+        'Pre-edit plan stale: return to scenario review before rendering');
+    }
+  }
   const mode=d.mode??'strict';
   assert(['strict','preview'].includes(mode), 'Invalid editorial decision mode');
   assert(Array.isArray(brief.shots) && brief.shots.length===brief.script.length && Array.isArray(d.choices) && d.choices.length>=1 && d.choices.length<=brief.script.length, 'Every rendered choice must be timed');
@@ -131,6 +151,8 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
     const overlap=sharedWords(beat.line,c.transcript);
     assert(overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
+    if(mode==='strict')assert(normalizeLine(beat.line)===normalizeLine(c.transcript),
+     'Beat '+beatNumber+' timed transcript differs from FULL approved script; stop montage and review or reshoot');
     const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
     assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
@@ -141,16 +163,22 @@ async function assemble(decisionsArg, projectArg) {
     }
     usedIntervals.push({id:c.sourceId,startSec:c.startSec,endSec:c.startSec+c.durationSec});
     const musicHold=c.postSpeechMusicPreserved===true;
+    if(musicAfterSpeech(shot))assert(musicHold,
+     'Post-speech original music requires a verified boundary; never normalize its tail as dialogue');
     let audioTreatment;
     if(musicHold){
       assert(c.speechBoundaryConfidence==='word'||Number.isFinite(c.manualMusicBoundarySec), 'Post-speech music needs word timing or manual boundary');
       const boundary=c.speechBoundaryConfidence==='word'?c.speechEndSec:c.manualMusicBoundarySec;
-      assert(finite(boundary,c.startSec,c.startSec+c.durationSec), 'Invalid post-speech music boundary');
+      assert(finite(boundary,c.startSec+0.02,c.startSec+c.durationSec-0.02),
+       'Invalid post-speech music boundary');
       audioTreatment={speechDurationSec:Number((boundary-c.startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
     }
     clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{})});
     audit.push({beat:beatNumber,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,
-      transcriptSource:manuallyConfirmed?'manual-review':'whisper',reason:c.reason,...(audioTreatment?{audioTreatment}:{})});
+      transcriptSource:manuallyConfirmed?'manual-review':'whisper',reason:c.reason,
+      ...(preEditPlan?{approvedPreEditIntent:preEditPlan.scenes[beatNumber-1].editIntent,
+        preEditMatchStatus:'requires-human-creative-review'}:{}),
+      ...(audioTreatment?{audioTreatment}:{})});
   }
   const output=resolve(projectArg);
   assert(extname(output).toLowerCase()==='.json', 'Render project must be JSON');
@@ -160,7 +188,16 @@ async function assemble(decisionsArg, projectArg) {
   await access(reviewPath).then(()=>{throw Error('Review report exists');},()=>{});
   const project={version:1,width:1080,height:1920,fps:30,mode,missingBeats,clips};
   const hasManualTranscript=audit.some(c=>c.transcriptSource==='manual-review');
-  const review={version:1,kind:'persona-semantic-draft-v1',status:'needs-human-review',mode,missingBeats,sourceBrief:absolute(base,d.briefPath),sourceAnalysis: absolute(base,d.analysisPath),originalSourceHashesVerified:true,notes:'Timed words/choices and rationale were supplied by a separate editor/model, not generated or validated as ground truth by this CLI.'+(hasManualTranscript?' At least one manual transcript was author-confirmed after ASR recovery; it is not an automatic Whisper accuracy claim.':'')+' Visual, acting, sound, subtitles and publication require human review.',cuts:audit};
+  const review={version:1,kind:'persona-semantic-draft-v1',status:'needs-human-review',mode,missingBeats,sourceBrief:absolute(base,d.briefPath),sourceAnalysis: absolute(base,d.analysisPath),originalSourceHashesVerified:true,
+    ...(preEditPlan?{preEditPlan:{
+      origin:preEditPlan.origin,
+      sourceRevisionId:preEditPlan.sourceRevisionId,
+      status:'intent_preserved_not_verified',
+      researchEvidence:preEditPlan.researchEvidence,
+      allScenes:preEditPlan.scenes,
+      note:'Exact script-approved edit intentions retained. Choices require real-source timing and author review, not autonomous re-authoring.'
+    }}:{}),
+    notes:'Timed words/choices and rationale were supplied by a separate editor/model, not generated or validated as ground truth by this CLI.'+(hasManualTranscript?' At least one manual transcript was author-confirmed after ASR recovery; it is not an automatic Whisper accuracy claim.':'')+' Visual, acting, sound, subtitles and publication require human review.',cuts:audit};
   await writeFile(output,JSON.stringify(project,null,2)+'\n',{flag:'wx'});
   try{await writeFile(reviewPath,JSON.stringify(review,null,2)+'\n',{flag:'wx'});}
   catch(e){await rm(output,{force:true});throw e;}
