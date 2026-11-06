@@ -1,0 +1,36 @@
+name: persona-independent-verification
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/persona-task-*.mjs'
+      - 'tools/persona-orchestration-e2e.test.mjs'
+      - 'tools/persona-release-gate*.mjs'
+      - 'scripts/persona-verify-independent.mjs'
+      - 'package.json'
+      - '.github/workflows/persona-independent-verification.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify exact checked-out commit
+        env:
+          PERSONA_COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/persona-verify-independent.mjs
+      - name: Upload independent verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-verification-${{ github.run_id }}
+          path: artifacts/persona-verification/latest.json
+          if-no-files-found: warn
