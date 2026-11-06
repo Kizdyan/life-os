@@ -13,7 +13,7 @@ export function transition(board,{id,to,evidence,note='',expectedRevision}={}){
  if((to==='READY'||to==='RUNNING')&&task.dependsOn.some(dep=>board.tasks.find(t=>t.id===dep)?.status!=='DONE'))throw Error('Dependencies incomplete');
  if(to==='DONE'&&(!evidence||typeof evidence!=='string'||evidence.trim().length<12))throw Error('DONE requires verification evidence');
  if(typeof note!=='string'||note.length>2000||(evidence!==undefined&&(typeof evidence!=='string'||evidence.length>4000)))throw Error('Invalid or oversized evidence');
- if(board.history!==undefined&&!Array.isArray(board.history))throw Error('Invalid history');
+ if(board.history!==undefined&&(!Array.isArray(board.history)||board.history.length!==revision||board.history.some((event,i)=>!event||event.sequence!==i+1||typeof event.taskId!=='string'||!board.tasks.some(t=>t.id===event.taskId))))throw Error('Invalid history');
  const next=structuredClone(board);next.revision=revision+1;next.tasks.find(t=>t.id===id).status=to;
  const event={sequence:next.revision,taskId:id,from:task.status,to,evidence:evidence??null,note,recordedAt:new Date().toISOString()};
  next.history=[...(next.history??[]),event];if(next.history.length>10000)throw Error('History too large');
