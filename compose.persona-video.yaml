@@ -1,0 +1,22 @@
+# Portable Persona video worker
+
+services:
+  persona-video-worker:
+    build:
+      context: .
+      dockerfile: services/persona-video-worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      PERSONA_WORKER_TOKEN: "${PERSONA_WORKER_TOKEN:?Set a private token with at least 32 characters}"
+      PERSONA_WORKER_DATA: /var/lib/persona-video-worker
+      PERSONA_MAX_UPLOAD_BYTES: "${PERSONA_MAX_UPLOAD_BYTES:-524288000}"
+      PERSONA_MAX_QUEUED_JOBS: "${PERSONA_MAX_QUEUED_JOBS:-20}"
+      PERSONA_RENDER_TIMEOUT_MS: "${PERSONA_RENDER_TIMEOUT_MS:-900000}"
+    volumes:
+      - persona-video-data:/var/lib/persona-video-worker
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  persona-video-data:
