@@ -36,6 +36,6 @@ export function recovery(board){
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  const args=process.argv.slice(2),flag=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1]};
  const input=flag('--input'),id=flag('--id'),to=flag('--to'),evidence=flag('--evidence'),revision=flag('--revision');
- if(!input||!id||!to||revision===undefined||!/^\\d+$/.test(revision)){console.error('Usage: npm run tasks:journal -- --input board.json --id TASK-001 --to RUNNING --revision 0 [--evidence proof]');process.exitCode=2}
+ if(!input||!id||!to||revision===undefined||!/^[0-9]+$/.test(revision)){console.error('Usage: npm run tasks:journal -- --input board.json --id TASK-001 --to RUNNING --revision 0 [--evidence proof]');process.exitCode=2}
  else updateBoard({input,id,to,evidence,expectedRevision:Number(revision),note:flag('--note')??''}).then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(e.message);process.exitCode=1});
 }
