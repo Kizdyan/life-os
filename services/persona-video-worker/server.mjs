@@ -46,13 +46,34 @@ function ffmpeg(input,output,preset){
   proc.on('close',code=>{clearTimeout(timeout);code===0?resolve():reject(Error('ffmpeg failed or timed out '+code+': '+stderr))});
  });
 }
+function probe(file){
+ return new Promise((resolve,reject)=>{
+  const proc=spawn('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',file],{stdio:['ignore','pipe','pipe']});
+  let output='';
+  proc.stdout.on('data',chunk=>{output+=chunk.toString()});
+  proc.on('error',reject);
+  proc.on('close',code=>{
+   if(code!==0)return reject(Error('ffprobe failed'));
+   try{
+    const data=JSON.parse(output);
+    const video=data.streams?.find(stream=>stream.codec_type==='video');
+    const duration=Number(data.format?.duration);
+    if(!video||!video.width||!video.height||!(duration>0))throw Error('Invalid video stream');
+    resolve({width:video.width,height:video.height,durationSeconds:duration,hasAudio:data.streams.some(stream=>stream.codec_type==='audio')});
+   }catch(error){reject(error)}
+  });
+ });
+}
 async function runQueue(){
  if(busy)return;
  busy=true;
  while(queue.length){
   const job=queue.shift();job.status='processing';job.updatedAt=new Date().toISOString();
   try{
+   job.source=await probe(path.join(root,job.id,'input'));
    await ffmpeg(path.join(root,job.id,'input'),path.join(root,job.id,'output.mp4'),job.preset);
+   job.output=await probe(path.join(root,job.id,'output.mp4'));
+   if(job.source.hasAudio&&!job.output.hasAudio)throw Error('Output audio missing');
    job.status='completed';
   }catch(error){job.status='failed';job.error=String(error).slice(0,500)}
   job.updatedAt=new Date().toISOString();
