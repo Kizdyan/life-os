@@ -24,3 +24,10 @@ All report buildPlan `starter`. This field alone does not establish actual billi
 
 ## Decision boundary
 No new paid Render service, no changes to existing Render deployments, no main merge and no production release without explicit approval.
+
+## Executor discovery update (2026-11-06)
+- AppDeploy account: free plan, monthly credits available, two existing Life OS apps. AppDeploy deployment is not proven to support executing this private GitHub repository's full test suite; no credits consumed.
+- Replit account: one existing unrelated app. No confirmed free isolated private-repository CI executor from the connected actions; no app created.
+- GitHub Actions deploy-readiness run 42265698294 job 128056900036: conclusion failure, logs_url null, steps null. Still not evidence of a code/test failure.
+- No existing Render site was repointed; no billable service created.
+- **Blocker:** need an executor with private-repo access, logs, and confirmed zero additional charge. Do not treat a static preview builder as a substitute for all six validation commands.
