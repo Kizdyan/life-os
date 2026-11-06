@@ -31,3 +31,15 @@ No new paid Render service, no changes to existing Render deployments, no main m
 - GitHub Actions deploy-readiness run 42265698294 job 128056900036: conclusion failure, logs_url null, steps null. Still not evidence of a code/test failure.
 - No existing Render site was repointed; no billable service created.
 - **Blocker:** need an executor with private-repo access, logs, and confirmed zero additional charge. Do not treat a static preview builder as a substitute for all six validation commands.
+
+## Confirmed historical cloud validation (Vercel)
+The Vercel deployment `dpl_HVZzzAnBRpRmhuiGja748MCcG58T` for exact commit `82ef5b5285f6763026492ddd5b375e6e47f3abe4` is **READY**. Its build events explicitly include:
+- `typecheck`, `web:typecheck`, `api:typecheck`
+- `Test Files 109 passed (109)`
+- `Tests 584 passed (584)`
+- `✓ built in 2.34s`
+- `Build Completed in /vercel/output [46s]`
+
+Evidence: https://vercel.com/umrikhinactor-2023/life-os-web/HVZzzAnBRpRmhuiGja748MCcG58T
+
+This establishes a verified baseline through that commit and disproves the blanket statement that no cloud verification has ever passed. It does **not** verify commits after `82ef5b5` or end-to-end iPhone video production. No additional hosting was created. Avoid generating gratuitous commits while the Vercel Hobby build rate limit is active. Next: inspect the post-baseline diff, then seek one verified build of the final SHA when provider quota permits.
