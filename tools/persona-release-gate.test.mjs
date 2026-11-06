@@ -14,3 +14,8 @@ test('malformed provenance blocks release eligibility',()=>{
  const bad=report();bad.finishedAt='2026-11-06T23:00:00.000Z';
  assert.match(evaluateRelease(bad,{expectedSha:sha}).errors.join(' '),/timestamps/);
 });
+
+test('real Node v22 provenance is accepted',()=>{
+ const result=evaluateRelease(report(),{expectedSha:sha});
+ assert.equal(result.status,'ELIGIBLE_FOR_HUMAN_REVIEW',result.errors.join('; '));
+});
