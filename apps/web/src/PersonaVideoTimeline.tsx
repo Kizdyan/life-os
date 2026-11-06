@@ -185,10 +185,15 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     setRenderState('Загрузка исходника '+(i+1)+' из '+clips.length);
     await request('/session/'+created.id+'/clip/'+i,{method:'PUT',body:filesById.current.get(clips[i].id)!});
    }
-   if(musicFile.current){setRenderState('Передача музыкальной дорожки...');await request('/session/'+created.id+'/music',{method:'PUT',body:musicFile.current});}
+   if(musicFile.current){
+    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
+    setRenderState('Передача музыкальной дорожки...');
+    await request('/session/'+created.id+'/music',{method:'PUT',body:musicFile.current});
+   }
    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
    setRenderState('FFmpeg собирает MP4...');
    await request('/session/'+created.id+'/render',{method:'POST'});
+   if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
    setRenderState('Получение готового видео...');
    const video=await (await request('/session/'+created.id+'/download')).blob();
    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Выдача MP4 отменена.');
