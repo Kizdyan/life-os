@@ -16,9 +16,9 @@ test('offline evidence hash matches original bytes, not an approval',async()=>{
   assert.equal(result.sha256,createHash('sha256').update('verified test output\n').digest('hex'));
   assert.equal(result.qualityApproved,false);
   assert.equal((await verifyEvidence({input:file,record:result})).status,'MATCH');
-  await writeFile(file,'modified output\\n');
+  await writeFile(file,'modified output\n');
   assert.equal((await verifyEvidence({input:file,record:result})).status,'MISMATCH');
-  await writeFile(file,'verified test output\\n');
+  await writeFile(file,'verified test output\n');
   await writeEvidence({input:file,output:join(dir,'record')});
   const record=JSON.parse(await readFile(join(dir,'record','evidence.json'),'utf8'));
   assert.equal(record.sha256,result.sha256);
