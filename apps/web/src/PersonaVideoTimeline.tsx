@@ -54,6 +54,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   if(!canProduceRef.current){setError('Требуется повторное утверждение сценария и съёмочного брифа. Импорт заблокирован.');event.target.value='';return}
   const additions:Clip[]=[];
   const reattachments: {id:string;file:File;candidate:Partial<Clip>}[]=[];
+  const stagedAdditions=new Map<string,{url:string;file:File}>();
   for(const file of files) {
    if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
    try {
@@ -67,10 +68,11 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
     const id=newClipId();
     additions.push({id,...candidate,startSec:0,durationSec:timelineClipDuration(duration)});
-    urls.current.set(id,URL.createObjectURL(file));filesById.current.set(id,file);
+    stagedAdditions.set(id,{url:URL.createObjectURL(file),file});
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
   }
-  if(!canProduceRef.current){for(const clip of additions){const url=urls.current.get(clip.id);if(url)URL.revokeObjectURL(url);urls.current.delete(clip.id);filesById.current.delete(clip.id);}event.target.value='';return;}
+  if(!canProduceRef.current){for(const item of stagedAdditions.values())URL.revokeObjectURL(item.url);event.target.value='';return;}
+  for(const [id,item] of stagedAdditions){urls.current.set(id,item.url);filesById.current.set(id,item.file);}
   for(const item of reattachments){urls.current.set(item.id,URL.createObjectURL(item.file));filesById.current.set(item.id,item.file);}
   if(additions.length||reattachments.length)setPreviewId(additions[0]?.id??reattachments[0].id);
   if(additions.length||reattachments.length)setClips(old=>[...old.map(clip=>{const item=reattachments.find(entry=>entry.id===clip.id);return item?{...clip,...item.candidate}:clip;}),...additions]);
