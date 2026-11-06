@@ -6,6 +6,7 @@ on:
       - ".agents/skills/**"
       - "scripts/validate-workflow-skills.mjs"
       - "tools/persona-marketing-audit*.mjs"
+      - "tools/persona-production-brief*.mjs"
       - "tools/persona-experiment-planner*.mjs"
       - "package.json"
       - ".github/workflows/skills-and-marketing.yml"
@@ -23,4 +24,6 @@ jobs:
       - name: Validate workflow skills
         run: node scripts/validate-workflow-skills.mjs
       - name: Test marketing calculations and report generation
-        run: node --test tools/persona-marketing-audit.test.mjs tools/persona-experiment-planner.test.mjs
+        run: node --test tools/persona-marketing-audit.test.mjs
+      - name: Test production brief and approval gate
+        run: node --test tools/persona-production-brief.test.mjs tools/persona-experiment-planner.test.mjs
