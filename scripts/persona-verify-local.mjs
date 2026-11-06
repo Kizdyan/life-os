@@ -5,7 +5,7 @@ const commands = [
   ['npm', ['run', 'typecheck']],
   ['npm', ['run', 'web:typecheck']],
   ['npm', ['run', 'api:typecheck']],
-  ['npm', ['test', '--', '--run']],
+  ['npm', ['test']],
   ['npm', ['run', 'web:build']],
 ];
 
