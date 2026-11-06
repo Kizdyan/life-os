@@ -72,7 +72,9 @@
     "release:gate:test": "node --test tools/persona-release-gate.test.mjs",
     "tasks:e2e:test": "node --test tools/persona-orchestration-e2e.test.mjs",
     "verify:local:smoke": "node scripts/persona-local-smoke.mjs",
-    "verify:local:full": "node scripts/persona-verify-independent.mjs"
+    "verify:local:full": "node scripts/persona-verify-independent.mjs",
+    "evidence:test": "node --test tools/persona-evidence.test.mjs",
+    "evidence:hash": "node tools/persona-evidence.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
