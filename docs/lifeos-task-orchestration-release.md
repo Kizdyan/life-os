@@ -73,3 +73,14 @@ The verifier now fails closed if the checked-out Git SHA cannot be established o
 - The release gate additionally requires the Persona production brief regression suite.
 - Historical workflow job 128107143021 did not expose logs: the GitHub API returned HTTP 404 / BlobNotFound. Do not infer a test failure cause from that unavailable log.
 - This release remains unverified until a complete exact-commit PASS report is produced and reviewed.
+
+## Runner provisioning diagnostic
+A minimal workflow is available at `.github/workflows/runner-provisioning-diagnostic.yml`. It requests an Ubuntu runner and executes only shell commands (no checkout, npm, secrets, or external services). If it also fails with no job steps, investigate GitHub Actions runner provisioning, repository Actions settings, organization policy, billing/usage restrictions, and GitHub service health before attributing failures to application code.
+
+The diagnostic is **not a replacement** for application tests. A passing runner smoke test proves only that a runner can start and execute shell commands.
+
+## Release report provenance
+The release gate requires schema version 1, valid chronological start/end timestamps, and a Node runtime identifier, in addition to exact commit SHA and the full mandatory test suite. This remains a consistency check, not an attestation against fabricated JSON.
+
+## Latest correction
+The task journal's `READY` dependency check was previously described as applied, but the source still guarded only `RUNNING`. This discrepancy was corrected in commit `cd63c5fe21a25ab8609548de6b2d3a5ed57833d3`; the regression test now checks both transitions. Test execution at the latest SHA remains unconfirmed.
