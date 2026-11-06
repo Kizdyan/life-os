@@ -8,7 +8,11 @@ import { join } from 'node:path';
 const root = process.cwd();
 const git = spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'});
 const gitSha = git.status === 0 ? git.stdout.trim() : null;
-if (process.env.PERSONA_COMMIT_SHA && gitSha && process.env.PERSONA_COMMIT_SHA !== gitSha) {
+if (!gitSha || !/^[a-f0-9]{40}$/.test(gitSha)) {
+  console.error('Refusing verification: exact Git HEAD SHA unavailable.');
+  process.exit(2);
+}
+if (process.env.PERSONA_COMMIT_SHA && process.env.PERSONA_COMMIT_SHA !== gitSha) {
   console.error('Refusing verification: declared SHA differs from checked-out HEAD.');
   process.exit(2);
 }
@@ -31,7 +35,11 @@ const tasks = [
   ['Task orchestration end-to-end CLI', 'tasks:e2e:test'],
   ['Persona production brief regressions', 'production:brief:test'],
   ['media integration', 'media:test'],
-].filter(([,script]) => Object.hasOwn(manifest.scripts ?? {}, script));
+];
+const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test','tasks:e2e:test'];
+const missing=mandatory.filter(script=>!Object.hasOwn(manifest.scripts??{},script));
+if(missing.length){console.error('Refusing verification: required scripts missing: '+missing.join(', '));process.exit(2)}
+const available=tasks.filter(([,script])=>Object.hasOwn(manifest.scripts??{},script));
 const install = process.argv.includes('--install');
 const dry = process.argv.includes('--dry-run');
 const runMedia = process.argv.includes('--media');
@@ -44,7 +52,7 @@ if (runMedia && !dry) {
     }
   }
 }
-const selected = tasks.filter(([name]) => name !== 'media integration' || runMedia);
+const selected = available.filter(([name]) => name !== 'media integration' || runMedia);
 const commands = [...(install ? [['install','npm',['ci','--no-audit','--no-fund']]] : []), ...selected.map(([name,script]) => [name,'npm',['run',script]])];
 const results = [];
 const startedAt = new Date().toISOString();
