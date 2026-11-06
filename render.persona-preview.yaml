@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: persona-cloud-preview
+    runtime: static
+    repo: https://github.com/Kizdyan/life-os
+    branch: fix/persona-manual-verbatim-b04-20261104
+    autoDeployTrigger: off
+    buildCommand: npm ci --no-audit --no-fund && npm run typecheck && npm run web:typecheck && npm run api:typecheck && npm test && npm run web:build
+    staticPublishPath: apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
