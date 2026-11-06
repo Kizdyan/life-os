@@ -36,6 +36,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave,canProduce
  const generation=useRef(0);
  const qcGeneration=useRef(0);
  const ownedUrls=useRef<string[]>([]);
+ useEffect(()=>{if(!canProduce){generation.current++;qcGeneration.current++;setBusy(false)}},[canProduce]);
  useEffect(()=>()=>{generation.current++;qcGeneration.current++;ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));ownedUrls.current=[]},[]);
  useEffect(()=>{setComment(record?.comment??'')},[record?.sourceSha256,record?.selectedVariantId,record?.comment]);
  useEffect(()=>{setActive(record?.selectedVariantId??'natural-clean')},[record?.sourceSha256,record?.selectedVariantId]);
@@ -71,7 +72,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave,canProduce
    const next=keepDecision?record:imported;
    if(!canProduceRef.current)return;
    if(!keepDecision&&!onSave(next))throw Error('Результат не сохранился; проверьте текущий проект и повторите импорт.');
-   if(generation.current!==task)return;
+   if(generation.current!==task||!canProduceRef.current)return;
    const nextOwned:string[]=[];
    let nextUrls:VideoUrls;
    try{
@@ -86,6 +87,7 @@ export function PersonaColorComparisonStudio({projectId,record,onSave,canProduce
     }
     nextUrls={source,variants};
    }catch(error){nextOwned.forEach(url=>URL.revokeObjectURL(url));throw error;}
+   if(generation.current!==task||!canProduceRef.current){nextOwned.forEach(url=>URL.revokeObjectURL(url));return;}
    ownedUrls.current.forEach(url=>URL.revokeObjectURL(url));
    ownedUrls.current=nextOwned;
    setUrls(nextUrls);
