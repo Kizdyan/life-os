@@ -16,3 +16,12 @@ test('persistent journal and dispatcher',async()=>{const dir=await mkdtemp(join(
 
 test('capacity saturation is reported rather than silently dropping ready tasks',()=>{const b={schemaVersion:1,tasks:[t('A','READY'),t('B','READY'),t('C','RUNNING')]};const result=dispatch(b,{maxConcurrent:1});assert.equal(result.selected.length,0);assert.equal(result.waiting.length,2);assert.ok(result.waiting.every(x=>x.reason==='CAPACITY'))});
 test('missing dependency fails closed',()=>{assert.throws(()=>dispatch({schemaVersion:1,tasks:[t('A','QUEUED',['MISSING'])]}),/Unknown dependency/)});
+
+test('reject malformed effort, non-string dependencies, and zero concurrency',()=>{
+ assert.throws(()=>dispatch({schemaVersion:1,tasks:[{...t('A'),estimatedMinutes:-5}]}),/Invalid task/);
+ assert.throws(()=>dispatch({schemaVersion:1,tasks:[{...t('A'),dependsOn:[null]}]}),/Invalid task/);
+ assert.throws(()=>dispatch(board(),{maxConcurrent:0}),/Invalid concurrency/);
+});
+test('missing required acceptance evidence is invalid',()=>{
+ assert.throws(()=>dispatch({schemaVersion:1,tasks:[{...t('A'),acceptance:''}]}),/Invalid task/);
+});
