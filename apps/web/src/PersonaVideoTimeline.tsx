@@ -61,9 +61,9 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     const fingerprint=await fingerprintFile(file).catch(()=>undefined);
     if(!canProduceRef.current){setError('Утверждение изменилось во время чтения файла. Импорт отменён.');break;}
     const candidate={name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,sourceDuration:duration,fingerprint};
-    const old=clips.find(clip=>!urls.current.has(clip.id)&&matchesPersonaTimelineSource(clip,candidate));
+    const old=clips.find(clip=>!urls.current.has(clip.id)&&!reattachments.some(item=>item.id===clip.id)&&matchesPersonaTimelineSource(clip,candidate));
     if(old){reattachments.push({id:old.id,file,candidate});continue;}
-    if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' не совпадает с сохранённым исходником. Переименуйте его или создайте отдельный клип.');continue}
+    if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)||reattachments.some(item=>item.file.name===file.name)){setError('Файл '+file.name+' не совпадает с сохранённым исходником. Переименуйте его или создайте отдельный клип.');continue}
     if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
     const id=newClipId();
     additions.push({id,...candidate,startSec:0,durationSec:timelineClipDuration(duration)});
@@ -192,6 +192,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
    await request('/session/'+created.id+'/render',{method:'POST'});
    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Рендер отменён.');
    setRenderState('Получение готового видео...');
+   if(!canProduceRef.current)throw new Error('Утверждение изменилось. Получение MP4 отменено.');
    const video=await (await request('/session/'+created.id+'/download')).blob();
    if(!canProduceRef.current)throw new Error('Утверждение изменилось. Выдача MP4 отменена.');
    const url=URL.createObjectURL(video),link=document.createElement('a');
