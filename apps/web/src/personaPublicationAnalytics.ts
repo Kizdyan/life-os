@@ -3,6 +3,13 @@ export interface PublicationMetrics {
  reach:number;views:number;likes:number;comments:number;shares:number;saves:number;
  profileVisits:number;follows:number;
 }
+export function createPublicationMetrics(input: PublicationMetrics): PublicationMetrics {
+ for (const key of ['reach','views','likes','comments','shares','saves','profileVisits','follows'] as const) {
+  if (!Number.isSafeInteger(input[key]) || input[key] < 0) throw Error('Invalid metric: ' + key);
+ }
+ if (!input.topic.trim() || !['reel','carousel'].includes(input.format)) throw Error('Invalid publication');
+ return {...input};
+}
 export interface PublicationRates {
  id:string;format:'reel'|'carousel';topic:string;
  followConversion:number|null;saveRate:number|null;shareRate:number|null;engagementRate:number|null;
