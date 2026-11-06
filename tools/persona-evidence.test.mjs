@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -38,5 +38,16 @@ test('journal distinguishes text-only claims from file-backed evidence',async()=
   assert.equal(data.history[0].evidenceVerification.qualityApproved,false);
   assert.equal(data.history[1].evidenceVerification.verified,false);
   assert.equal(data.history[1].evidenceVerification.kind,'USER_TEXT_ONLY');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('symlink evidence is rejected on platforms with O_NOFOLLOW',async(t)=>{
+ if(process.platform==='win32'){t.skip('Windows symlink semantics differ');return}
+ const dir=await mkdtemp(join(tmpdir(),'persona-evidence-link-'));
+ try{
+  const target=join(dir,'target.txt'),link=join(dir,'link.txt');
+  await writeFile(target,'not trusted');
+  await symlink(target,link);
+  await assert.rejects(inspectEvidence({input:link}),/ELOOP|symbolic link|not a regular file/i);
  }finally{await rm(dir,{recursive:true,force:true})}
 });
