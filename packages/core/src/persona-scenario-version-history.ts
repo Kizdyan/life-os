@@ -61,5 +61,6 @@ export function restorePersonaScenarioRevision(
     createdAt,
     beats:previous.beats.map(beat=>({...beat})),
     reason:`Author restored historical version ${previous.number} as an unapproved new revision.`,
+    ...(previous.ideaSnapshot ? {idea:previous.ideaSnapshot} : {}),
   });
 }
