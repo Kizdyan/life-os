@@ -1,5 +1,5 @@
 import React,{useState} from 'react';
-import {evaluatePublication,type PublicationMetrics} from './personaPublicationAnalytics';
+import {createPublicationMetrics,evaluatePublication,type PublicationMetrics} from './personaPublicationAnalytics';
 const storageKey='persona-growth-metrics-v1';
 function readRows():PublicationMetrics[]{
  try{const value=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(value)?value.filter(row=>row&&typeof row.id==='string'&&typeof row.topic==='string'&&['reel','carousel'].includes(row.format)&&['reach','views','likes','comments','shares','saves','profileVisits','follows'].every(key=>Number.isSafeInteger(row[key])&&row[key]>=0)):[]}catch{return []}
@@ -22,7 +22,8 @@ export default function PersonaGrowthDashboard(){
   const numbers=inputs.map(Number);
   if(!topic.trim()||numbers.some((n,i)=>!Number.isSafeInteger(n)||n<0||!inputs[i].trim())){setError('Заполни тему и показатели целыми неотрицательными числами');return}
   const [r,viewCount,likeCount,commentCount,s,sh,v,f]=numbers;
-  const next=[...rows,{id:Date.now().toString(36)+'-'+rows.length,format,topic,publishedAt:new Date().toISOString(),reach:r,views:viewCount,likes:likeCount,comments:commentCount,shares:sh,saves:s,profileVisits:v,follows:f}];
+  const record=createPublicationMetrics({id:Date.now().toString(36)+'-'+rows.length,format,topic:topic.trim(),publishedAt:new Date().toISOString(),reach:r,views:viewCount,likes:likeCount,comments:commentCount,shares:sh,saves:s,profileVisits:v,follows:f});
+  const next=[...rows,record];
   try{localStorage.setItem(storageKey,JSON.stringify(next));setRows(next);setTopic('');setError('')}catch{setError('Не удалось сохранить статистику на устройстве')}
  }
  const percentage=(v:number|null)=>v===null?'Нет данных':(100*v).toFixed(1)+'%';
