@@ -25,3 +25,10 @@ test('reject malformed effort, non-string dependencies, and zero concurrency',()
 test('missing required acceptance evidence is invalid',()=>{
  assert.throws(()=>dispatch({schemaVersion:1,tasks:[{...t('A'),acceptance:''}]}),/Invalid task/);
 });
+
+test('journal rejects invalid evidence types and malformed history',()=>{
+ const a=transition(board(),{id:'A',to:'RUNNING',expectedRevision:0});
+ assert.throws(()=>transition(a.board,{id:'A',to:'DONE',evidence:123456789012}),/evidence/);
+ assert.throws(()=>transition(a.board,{id:'A',to:'DONE',evidence:'All tests passed',note:null}),/Invalid or oversized evidence/);
+ assert.throws(()=>transition({...a.board,history:{}},{id:'A',to:'DONE',evidence:'All tests passed'}),/Invalid history/);
+});
