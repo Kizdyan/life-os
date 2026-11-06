@@ -32,3 +32,9 @@ test('journal rejects invalid evidence types and malformed history',()=>{
  assert.throws(()=>transition(a.board,{id:'A',to:'DONE',evidence:'All tests passed',note:null}),/Invalid or oversized evidence/);
  assert.throws(()=>transition({...a.board,history:{}},{id:'A',to:'DONE',evidence:'All tests passed'}),/Invalid history/);
 });
+
+test('journal rejects inconsistent revision history',()=>{
+ const a=transition(board(),{id:'A',to:'RUNNING',expectedRevision:0});
+ assert.throws(()=>transition({...a.board,history:[]},{id:'A',to:'DONE',evidence:'All tests passed'}),/Invalid history/);
+ assert.throws(()=>transition({...a.board,history:[{sequence:1,taskId:'MISSING'}]},{id:'A',to:'DONE',evidence:'All tests passed'}),/Invalid history/);
+});
