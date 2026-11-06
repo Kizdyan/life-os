@@ -10,6 +10,7 @@ on:
       - "tools/persona-experiment-planner*.mjs"
       - "tools/persona-marketing-production*.mjs"
       - "tools/persona-task-*.mjs"
+      - "tools/persona-release-gate*.mjs"
       - "package.json"
       - ".github/workflows/skills-and-marketing.yml"
 permissions:
@@ -31,3 +32,5 @@ jobs:
         run: node --test tools/persona-production-brief.test.mjs
       - name: Test task orchestration and recovery
         run: node --test tools/persona-task-operations.test.mjs
+      - name: Test release evidence gate
+        run: node --test tools/persona-release-gate.test.mjs
