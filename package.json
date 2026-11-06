@@ -60,10 +60,11 @@
     "persona:delivery:test": "node --test tools/persona-delivery-animatic.test.mjs tools/persona-delivery-source-folder.test.mjs",
     "skills:validate": "node scripts/validate-workflow-skills.mjs",
     "marketing:audit": "node tools/persona-marketing-audit.mjs",
-    "marketing:test": "node --test tools/persona-marketing-audit.test.mjs tools/persona-experiment-planner.test.mjs",
+    "marketing:test": "node --test tools/persona-marketing-audit.test.mjs tools/persona-experiment-planner.test.mjs tools/persona-marketing-production.test.mjs",
     "marketing:plan": "node tools/persona-experiment-planner.mjs",
     "production:brief": "node tools/persona-production-brief.mjs",
-    "production:brief:test": "node --test tools/persona-production-brief.test.mjs"
+    "production:brief:test": "node --test tools/persona-production-brief.test.mjs",
+    "marketing:production": "node tools/persona-marketing-production.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
