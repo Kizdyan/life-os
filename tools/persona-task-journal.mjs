@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import {readFile,writeFile,rename,unlink,open} from 'node:fs/promises';
 import {resolve,dirname,join} from 'node:path';
-import {randomUUID,createHash} from 'node:crypto';
-import {stat} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {inspectEvidence} from './persona-evidence.mjs';
 import {pathToFileURL} from 'node:url';
 import {validateTaskBoard,dispatch} from './persona-task-dispatcher.mjs';
 const allowed={QUEUED:['READY','BLOCKED'],READY:['RUNNING','BLOCKED'],RUNNING:['DONE','FAILED','BLOCKED'],FAILED:['READY','BLOCKED'],BLOCKED:['READY'],DONE:[]};
@@ -28,11 +28,8 @@ export async function updateBoard({input,id,to,evidence,note,expectedRevision,ev
   let evidenceRecord=null;
   if(evidenceFile!==undefined){
    if(to!=='DONE')throw Error('Evidence file is only allowed for DONE');
-   const artifact=resolve(evidenceFile),info=await stat(artifact);
-   if(!info.isFile()||info.size===0||info.size>25_000_000)throw Error('Invalid evidence artifact');
-   const bytes=await readFile(artifact);
-   if(bytes.length!==info.size)throw Error('Evidence changed during read');
-   evidenceRecord={kind:'LOCAL_FILE_HASH',fileName:artifact.split(/[\\/]/).pop(),sizeBytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),qualityApproved:false};
+   evidenceRecord=await inspectEvidence({input:evidenceFile});
+
   }
   const result=transition(JSON.parse(raw),{id,to,evidence,note,expectedRevision});
   if(to==='DONE'){
