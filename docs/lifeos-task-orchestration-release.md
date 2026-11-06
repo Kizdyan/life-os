@@ -52,3 +52,9 @@ node scripts/persona-verify-independent.mjs
 The E2E suite starts the real Node CLI programs in isolated temporary directories. It checks dispatch, journal state transitions, evidence requirements, dependency unblocking, refusal to overwrite reports and the release gate's dry-run rejection.
 
 **Important:** tests have been committed but a successful run at the current GitHub SHA is not yet established. CI workflow configuration is not evidence that CI ran. The independent verifier must run on a checked-out exact commit before a release can be called verified.
+
+## Report write protection
+Dispatcher and release-gate outputs now require a **new, nonexistent directory**. They refuse existing paths and remove their newly created directory on write failure. This protects existing reports against accidental overwrite. The output directory can briefly be visible while files are being written, so this is **not a transactional multi-file publish**; downstream consumers should read reports only after successful process exit. The journal uses a local lock and same-directory temporary file before rename; distributed/multi-host writes are not supported.
+
+## CI diagnostic
+An earlier GitHub Actions run (42280275194) had an `audit` job with `conclusion=failure`, `steps=null` and no logs URL in the API response. That is insufficient to attribute the failure to a particular code line or test. A new, successful run at the current SHA is still required.
