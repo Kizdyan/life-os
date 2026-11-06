@@ -53,6 +53,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
   if(!files.length)return;
   if(!canProduceRef.current){setError('Требуется повторное утверждение сценария и съёмочного брифа. Импорт заблокирован.');event.target.value='';return}
   const additions:Clip[]=[];
+  const reattachments: {id:string;file:File;candidate:Partial<Clip>}[]=[];
   for(const file of files) {
    if(!file.type.startsWith('video/')||file.size>250*1024*1024){setError('Поддерживаются видео до 250 МБ для локального предпросмотра');continue}
    try {
@@ -61,12 +62,7 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
     if(!canProduceRef.current){setError('Утверждение изменилось во время чтения файла. Импорт отменён.');break;}
     const candidate={name:file.name,bytes:file.size,mime:file.type,lastModified:file.lastModified,sourceDuration:duration,fingerprint};
     const old=clips.find(clip=>!urls.current.has(clip.id)&&matchesPersonaTimelineSource(clip,candidate));
-    if(old){
-      urls.current.set(old.id,URL.createObjectURL(file));filesById.current.set(old.id,file);
-      setClips(items=>items.map(clip=>clip.id===old.id?{...clip,...candidate}:clip));
-      setPreviewId(old.id);
-      continue;
-    }
+    if(old){reattachments.push({id:old.id,file,candidate});continue;}
     if(clips.some(clip=>clip.name===file.name)||additions.some(clip=>clip.name===file.name)){setError('Файл '+file.name+' не совпадает с сохранённым исходником. Переименуйте его или создайте отдельный клип.');continue}
     if(clips.length+additions.length>=30){setError('Достигнут лимит в 30 клипов');continue}
     const id=newClipId();
@@ -75,8 +71,9 @@ export default function PersonaVideoTimeline({projectId,initialTimeline,onTimeli
    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка чтения файла')}
   }
   if(!canProduceRef.current){for(const clip of additions){const url=urls.current.get(clip.id);if(url)URL.revokeObjectURL(url);urls.current.delete(clip.id);filesById.current.delete(clip.id);}event.target.value='';return;}
-  if(additions.length)setPreviewId(additions[0].id);
-  setClips(old=>[...old,...additions]);
+  for(const item of reattachments){urls.current.set(item.id,URL.createObjectURL(item.file));filesById.current.set(item.id,item.file);}
+  if(additions.length||reattachments.length)setPreviewId(additions[0]?.id??reattachments[0].id);
+  if(additions.length||reattachments.length)setClips(old=>[...old.map(clip=>{const item=reattachments.find(entry=>entry.id===clip.id);return item?{...clip,...item.candidate}:clip;}),...additions]);
   event.target.value='';
  }
  function advanceSequence(){const i=clips.findIndex(c=>c.id===previewId);if(i+1<clips.length)setPreviewId(clips[i+1].id);else setPlaySequence(false)}
