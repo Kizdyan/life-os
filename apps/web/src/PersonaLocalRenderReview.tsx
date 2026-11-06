@@ -45,6 +45,7 @@ export function PersonaLocalRenderReview({projectId,pipeline,record,onSave,canPr
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const [preview,setPreview]=useState<string|null>(null);
  const lastUrl=useRef<string|null>(null),generation=useRef(0);
+ useEffect(()=>{if(!canProduce){generation.current++;setBusy(false)}},[canProduce]);
  useEffect(()=>()=>{generation.current++;if(lastUrl.current)URL.revokeObjectURL(lastUrl.current)},[]);
  const brief=pipeline?.materials.productionBrief;
  const handoff=pipeline?assessPersonaLocalHandoff(pipeline,productionInputDraftExists(resolvePersonaScenarioDraftStorage(),projectId)):null;
