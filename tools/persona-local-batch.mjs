@@ -8,6 +8,7 @@ import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {dispatch} from './persona-task-dispatcher.mjs';
 import {validateExecution,executeLocalTest} from './persona-local-executor.mjs';
+import {updateBoard} from './persona-task-journal.mjs';
 
 export async function runBatch({input,output,maxTasks=10}={}){
  if(!Number.isInteger(maxTasks)||maxTasks<1||maxTasks>50)throw Error('Invalid batch limit');
@@ -27,7 +28,12 @@ export async function runBatch({input,output,maxTasks=10}={}){
   try{validateExecution(task)}
   catch(error){results.push({id:item.id,status:'BLOCKED_UNSUPPORTED',error:error.message});break}
   try{
-   const result=await executeLocalTest({input:boardPath,id:item.id,output:join(out,'task-'+String(i+1).padStart(3,'0')),expectedRevision:board.revision??0});
+   let revision=board.revision??0;
+   if(task.status==='QUEUED'){
+    const ready=await updateBoard({input:boardPath,id:item.id,to:'READY',expectedRevision:revision});
+    revision=ready.revision;
+   }
+   const result=await executeLocalTest({input:boardPath,id:item.id,output:join(out,'task-'+String(i+1).padStart(3,'0')),expectedRevision:revision});
    results.push({id:item.id,status:result.status,revision:result.revision});
    if(result.status!=='PASS')break;
   }catch(error){results.push({id:item.id,status:'EXECUTION_ERROR',error:error.message});break}
