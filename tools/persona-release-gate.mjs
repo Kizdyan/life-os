@@ -10,6 +10,9 @@ import {createHash} from 'node:crypto';
 const required=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test','tasks:e2e:test','production:brief:test'];
 export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}){
  const errors=[];
+ if(report?.schemaVersion!==1)errors.push('Invalid verification report schema');
+ if(typeof report?.startedAt!=='string'||!Number.isFinite(Date.parse(report.startedAt))||typeof report?.finishedAt!=='string'||!Number.isFinite(Date.parse(report.finishedAt))||Date.parse(report.finishedAt)<Date.parse(report.startedAt))errors.push('Invalid verification timestamps');
+ if(typeof report?.node!=='string'||!/^v[0-9]+\\./.test(report.node))errors.push('Missing Node runtime provenance');
  if(!/^[a-f0-9]{40}$/.test(expectedSha??''))errors.push('Expected exact 40-character Git SHA required');
  if(!report||typeof report!=='object'||report.dryRun!==false)errors.push('Dry-run or missing report');
  if(report?.commit!==expectedSha)errors.push('Commit mismatch');
