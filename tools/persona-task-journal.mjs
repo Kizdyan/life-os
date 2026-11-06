@@ -2,6 +2,7 @@
 import {readFile,writeFile,rename,unlink,open} from 'node:fs/promises';
 import {resolve,dirname,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
 import {validateTaskBoard,dispatch} from './persona-task-dispatcher.mjs';
 const allowed={QUEUED:['READY','BLOCKED'],READY:['RUNNING','BLOCKED'],RUNNING:['DONE','FAILED','BLOCKED'],FAILED:['READY','BLOCKED'],BLOCKED:['READY'],DONE:[]};
 export function transition(board,{id,to,evidence,note='',expectedRevision}={}){
@@ -30,4 +31,11 @@ export async function updateBoard({input,id,to,evidence,note,expectedRevision}){
 export function recovery(board){
  validateTaskBoard(board);
  return {status:'HUMAN_REVIEW_REQUIRED',running:board.tasks.filter(t=>t.status==='RUNNING').map(t=>t.id),failed:board.tasks.filter(t=>t.status==='FAILED').map(t=>t.id),plan:dispatch(board),actionsExecuted:0};
+}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+ const args=process.argv.slice(2),flag=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1]};
+ const input=flag('--input'),id=flag('--id'),to=flag('--to'),evidence=flag('--evidence'),revision=flag('--revision');
+ if(!input||!id||!to||revision===undefined||!/^\\d+$/.test(revision)){console.error('Usage: npm run tasks:journal -- --input board.json --id TASK-001 --to RUNNING --revision 0 [--evidence proof]');process.exitCode=2}
+ else updateBoard({input,id,to,evidence,expectedRevision:Number(revision),note:flag('--note')??''}).then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(e.message);process.exitCode=1});
 }
