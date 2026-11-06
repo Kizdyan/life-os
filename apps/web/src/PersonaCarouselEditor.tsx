@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import {reviewCarouselGrowth,type GrowthGoal} from './personaGrowthReview';
 
 export interface CarouselSlide { eyebrow: string; title: string; body: string }
 interface Props { initialSlides?: CarouselSlide[]; title?: string }
@@ -41,6 +42,8 @@ export default function PersonaCarouselEditor({initialSlides,title}:Props) {
  const [active,setActive]=useState(0);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
+ const [growthGoal,setGrowthGoal]=useState<GrowthGoal>('followers');
+ const growthReview=reviewCarouselGrowth(slides,growthGoal);
  const current=slides[Math.min(active,slides.length-1)];
  function update(field:keyof CarouselSlide,value:string) {
   setSlides(items=>items.map((slide,i)=>i===active?{...slide,[field]:value}:slide));
@@ -70,6 +73,15 @@ export default function PersonaCarouselEditor({initialSlides,title}:Props) {
   <label>Рубрика<input value={current.eyebrow} maxLength={80} onChange={e=>update('eyebrow',e.target.value)}/></label>
   <label>Заголовок<input value={current.title} maxLength={160} onChange={e=>update('title',e.target.value)}/></label>
   <label>Текст<textarea value={current.body} maxLength={700} onChange={e=>update('body',e.target.value)}/></label>
+  <div className="captureCard" aria-label="Предпубликационная оценка карусели">
+   <h4>Проверка потенциала публикации · {growthReview.score}/100</h4>
+   <p>Редакторский чек-лист, не прогноз охватов и не гарантия вирусности.</p>
+   <label>Цель публикации <select value={growthGoal} onChange={e=>setGrowthGoal(e.target.value as GrowthGoal)}>
+    <option value="followers">Новые подписчики</option><option value="reach">Охваты и просмотры</option><option value="saves">Сохранения</option>
+   </select></label>
+   <ul>{growthReview.checks.map(check=><li key={check.id}>{check.passed?'✓':'○'} {check.label} (+{check.weight})</li>)}</ul>
+   {growthReview.recommendations.length>0&&<><strong>Что улучшить перед публикацией</strong><ul>{growthReview.recommendations.map((item,i)=><li key={i}>{item}</li>)}</ul></>}
+  </div>
   <button type="button" className="primary" disabled={busy} onClick={()=>void exportAll()}>{busy?'Экспорт…':`Экспортировать ${slides.length} PNG`}</button>
   {error&&<p role="alert">{error}</p>}
  </section>;
