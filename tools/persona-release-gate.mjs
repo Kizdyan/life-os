@@ -7,7 +7,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
-const required=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test'];
+const required=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test','tasks:e2e:test'];
 export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}){
  const errors=[];
  if(!/^[a-f0-9]{40}$/.test(expectedSha??''))errors.push('Expected exact 40-character Git SHA required');
@@ -15,7 +15,7 @@ export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}
  if(report?.commit!==expectedSha)errors.push('Commit mismatch');
  if(report?.overall!=='PASS')errors.push('Verification did not PASS');
  if(!Array.isArray(report?.results))errors.push('Missing execution results');
- const scriptLabels={'typecheck':'typecheck','api:typecheck':'api:typecheck','unit tests':'test','web build':'web:build','Persona core regressions':'persona:core:test','Persona scenario and delivery regressions':'persona:scenario:delivery:test','Workflow skill validation':'skills:validate','Persona marketing audit regressions':'marketing:test','Life OS task orchestration regressions':'tasks:test','Release evidence gate regressions':'release:gate:test'};
+ const scriptLabels={'typecheck':'typecheck','api:typecheck':'api:typecheck','unit tests':'test','web build':'web:build','Persona core regressions':'persona:core:test','Persona scenario and delivery regressions':'persona:scenario:delivery:test','Workflow skill validation':'skills:validate','Persona marketing audit regressions':'marketing:test','Life OS task orchestration regressions':'tasks:test','Release evidence gate regressions':'release:gate:test','Task orchestration end-to-end CLI':'tasks:e2e:test'};
  const results=Array.isArray(report?.results)?report.results:[];
  for(const script of requiredScripts){
   const matching=results.filter(r=>scriptLabels[r?.name]===script);
