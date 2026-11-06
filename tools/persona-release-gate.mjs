@@ -7,7 +7,7 @@ import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
-const required=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','evidence:test','tasks:execute:test','tasks:batch:test','release:gate:test','tasks:e2e:test','production:brief:test'];
+const required=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','evidence:test','tasks:execute:test','tasks:batch:test','media:remotion:test','release:gate:test','tasks:e2e:test','production:brief:test'];
 export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}){
  const errors=[];
  if(report?.schemaVersion!==1)errors.push('Invalid verification report schema');
@@ -19,7 +19,7 @@ export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}
  if(report?.overall!=='PASS')errors.push('Verification did not PASS');
  if(!Array.isArray(report?.results))errors.push('Missing execution results');
  if(report?.kind==='LOCAL_SMOKE_ONLY')errors.push('Smoke report cannot authorize release review');
- const scriptLabels={'typecheck':'typecheck','api:typecheck':'api:typecheck','unit tests':'test','web build':'web:build','Persona core regressions':'persona:core:test','Persona scenario and delivery regressions':'persona:scenario:delivery:test','Workflow skill validation':'skills:validate','Persona marketing audit regressions':'marketing:test','Life OS task orchestration regressions':'tasks:test','Local artifact evidence regressions':'evidence:test','Local task executor regressions':'tasks:execute:test','Local batch executor regressions':'tasks:batch:test','Release evidence gate regressions':'release:gate:test','Task orchestration end-to-end CLI':'tasks:e2e:test','Persona production brief regressions':'production:brief:test'};
+ const scriptLabels={'typecheck':'typecheck','api:typecheck':'api:typecheck','unit tests':'test','web build':'web:build','Persona core regressions':'persona:core:test','Persona scenario and delivery regressions':'persona:scenario:delivery:test','Workflow skill validation':'skills:validate','Persona marketing audit regressions':'marketing:test','Life OS task orchestration regressions':'tasks:test','Local artifact evidence regressions':'evidence:test','Local task executor regressions':'tasks:execute:test','Local batch executor regressions':'tasks:batch:test','Remotion handoff regressions':'media:remotion:test','Release evidence gate regressions':'release:gate:test','Task orchestration end-to-end CLI':'tasks:e2e:test','Persona production brief regressions':'production:brief:test'};
  const results=Array.isArray(report?.results)?report.results:[];
  for(const script of requiredScripts){
   const matching=results.filter(r=>scriptLabels[r?.name]===script);
