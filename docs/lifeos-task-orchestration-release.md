@@ -41,3 +41,14 @@ The release gate refuses stale SHAs, dry-runs, missing suites and unsuccessful c
 
 ## Current verification status
 GitHub Actions previously reported failures with missing step details. Until the exact current commit passes independent verification, the release is **not verified**. New code and new tests in GitHub are not themselves proof of successful execution.
+
+## End-to-end CLI acceptance
+```bash
+npm run tasks:test
+npm run tasks:e2e:test
+npm run release:gate:test
+node scripts/persona-verify-independent.mjs
+```
+The E2E suite starts the real Node CLI programs in isolated temporary directories. It checks dispatch, journal state transitions, evidence requirements, dependency unblocking, refusal to overwrite reports and the release gate's dry-run rejection.
+
+**Important:** tests have been committed but a successful run at the current GitHub SHA is not yet established. CI workflow configuration is not evidence that CI ran. The independent verifier must run on a checked-out exact commit before a release can be called verified.
