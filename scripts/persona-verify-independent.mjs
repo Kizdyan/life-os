@@ -26,6 +26,7 @@ const tasks = [
   ['Persona scenario and delivery regressions', 'persona:scenario:delivery:test'],
   ['Workflow skill validation', 'skills:validate'],
   ['Persona marketing audit regressions', 'marketing:test'],
+  ['Life OS task orchestration regressions', 'tasks:test'],
   ['Persona production brief regressions', 'production:brief:test'],
   ['media integration', 'media:test'],
 ].filter(([,script]) => Object.hasOwn(manifest.scripts ?? {}, script));
