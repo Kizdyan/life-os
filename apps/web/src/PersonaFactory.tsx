@@ -334,6 +334,12 @@ export default function PersonaFactory(){
    const previous=resolvePersonaProjectSaveBase(localStorage,{...rendered,revision:expectedRevision});
    const now=new Date().toISOString();
    if(preserveApprovedMediaBase&&!canImportPersonaVideoMedia(previous.scenarioWorkspace,previous.shootingPlan as PersonaProductionPipeline|null))throw new Error('Утверждение сценария или съёмочного плана изменилось до записи.');
+   // Autosave must never replace an independently committed script or editorial decision
+   // with a stale React snapshot. Explicit scenario/milestone saves are atomic above.
+   if(!preserveApprovedMediaBase&&!nextScenarioWorkspace&&!importedProduction&&!milestone&&
+    (JSON.stringify(previous.scenarioWorkspace??null)!==JSON.stringify(scenarioWorkspace??null)||
+     JSON.stringify(previous.shootingPlan??null)!==JSON.stringify(production??null)))
+    throw new Error('persona_autosave_stale_approval_snapshot');
    const candidate:PersonaProject=preserveApprovedMediaBase
     ?{...previous,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,updatedAt:now,revision:previous.revision+1}
     :{...previous,title:ideaForSave.title,contentType:ideaForSave.format as PersonaContentType,sourceIdea:ideaForSave.angle,script:draft,shootingPlan:production,editPlan:production,timeline,mediaAssets:mediaProbe?[mediaProbe]:previous.mediaAssets,processing:localRenderOverride??previous.processing,colorComparison:colorComparisonOverride??previous.colorComparison,captions:draft?.platformNotes??previous.captions,socialCaptions:draft?.platformNotes??previous.socialCaptions,scenarioWorkspace:nextScenarioWorkspace??previous.scenarioWorkspace,stage,qa,lastOpenStep:workspaceStep,updatedAt:now,revision:previous.revision+1};
