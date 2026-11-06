@@ -23,6 +23,7 @@ if(tree.status!==0||tree.stdout.trim()){
 const suites=[
  ['task orchestration','tools/persona-task-operations.test.mjs'],
  ['artifact evidence','tools/persona-evidence.test.mjs'],
+ ['local execution','tools/persona-local-executor.test.mjs'],
  ['task orchestration CLI','tools/persona-orchestration-e2e.test.mjs'],
  ['release gate','tools/persona-release-gate.test.mjs'],
  ['marketing audit','tools/persona-marketing-audit.test.mjs'],
