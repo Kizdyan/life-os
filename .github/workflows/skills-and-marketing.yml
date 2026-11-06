@@ -31,6 +31,6 @@ jobs:
       - name: Test production brief and approval gate
         run: node --test tools/persona-production-brief.test.mjs
       - name: Test task orchestration and recovery
-        run: node --test tools/persona-task-operations.test.mjs
+        run: node --test tools/persona-task-operations.test.mjs tools/persona-orchestration-e2e.test.mjs
       - name: Test release evidence gate
         run: node --test tools/persona-release-gate.test.mjs
