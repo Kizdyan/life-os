@@ -36,7 +36,7 @@ const tasks = [
   ['Persona production brief regressions', 'production:brief:test'],
   ['media integration', 'media:test'],
 ];
-const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test','tasks:e2e:test'];
+const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','release:gate:test','tasks:e2e:test','production:brief:test'];
 const missing=mandatory.filter(script=>!Object.hasOwn(manifest.scripts??{},script));
 if(missing.length){console.error('Refusing verification: required scripts missing: '+missing.join(', '));process.exit(2)}
 const available=tasks.filter(([,script])=>Object.hasOwn(manifest.scripts??{},script));
