@@ -16,6 +16,11 @@ if (process.env.PERSONA_COMMIT_SHA && process.env.PERSONA_COMMIT_SHA !== gitSha)
   console.error('Refusing verification: declared SHA differs from checked-out HEAD.');
   process.exit(2);
 }
+const tracked=spawnSync('git',['status','--porcelain','--untracked-files=no'],{cwd:root,encoding:'utf8'});
+if(tracked.status!==0||tracked.stdout.trim()){
+ console.error('Refusing verification: tracked working tree is not clean.');
+ process.exit(2);
+}
 if (!existsSync(join(root, 'package.json'))) {
   console.error('Run from repository root (package.json missing).');
   process.exit(2);
