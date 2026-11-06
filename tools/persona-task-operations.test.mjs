@@ -1,0 +1,15 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {dispatch,run} from './persona-task-dispatcher.mjs';
+import {transition,updateBoard,recovery} from './persona-task-journal.mjs';
+const t=(id,status='QUEUED',dependsOn=[],priority='P1')=>({id,status,dependsOn,priority,kind:'engineering',title:id,acceptance:'Verified result'});
+const board=()=>({schemaVersion:1,revision:0,tasks:[t('A','READY',[],'P0'),t('B','QUEUED',['A'])]});
+test('priority and dependencies',()=>{const r=dispatch(board());assert.deepEqual(r.selected.map(x=>x.id),['A']);assert.deepEqual(r.waiting.map(x=>x.id),['B']);assert.equal(r.actionsExecuted,0)});
+test('cycles and duplicates rejected',()=>{assert.throws(()=>dispatch({schemaVersion:1,tasks:[t('A','QUEUED',['B']),t('B','QUEUED',['A'])]}),/cycle/);assert.throws(()=>dispatch({schemaVersion:1,tasks:[t('A'),t('A')]}),/Duplicate/)});
+test('DONE requires evidence and revision',()=>{const a=transition(board(),{id:'A',to:'RUNNING',expectedRevision:0});assert.throws(()=>transition(a.board,{id:'A',to:'DONE'}),/evidence/);const b=transition(a.board,{id:'A',to:'DONE',evidence:'All tests passed'});assert.equal(b.board.revision,2);assert.throws(()=>transition(b.board,{id:'A',to:'READY'}),/Illegal/)});
+test('blocked dependency cannot start',()=>{const a=transition(board(),{id:'B',to:'READY'});assert.throws(()=>transition(a.board,{id:'B',to:'RUNNING'}),/Dependencies/)});
+test('recovery never retries automatically',()=>{const r=recovery({schemaVersion:1,tasks:[t('A','RUNNING'),t('B','FAILED')]});assert.equal(r.running.length,1);assert.equal(r.actionsExecuted,0)});
+test('persistent journal and dispatcher',async()=>{const dir=await mkdtemp(join(tmpdir(),'lifeos-'));try{const file=join(dir,'board.json');await writeFile(file,JSON.stringify(board()));await updateBoard({input:file,id:'A',to:'RUNNING',expectedRevision:0});await assert.rejects(updateBoard({input:file,id:'A',to:'DONE',evidence:'All tests passed',expectedRevision:0}),/Revision/);await updateBoard({input:file,id:'A',to:'DONE',evidence:'All tests passed',expectedRevision:1});const data=JSON.parse(await readFile(file,'utf8'));assert.equal(data.history.length,2);const result=await run({input:file,output:join(dir,'out')});assert.equal(result.selected[0].id,'B')}finally{await rm(dir,{recursive:true,force:true})}});
