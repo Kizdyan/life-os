@@ -69,3 +69,14 @@ npm run tasks:batch:local -- --input board.json --output artifacts/batch-unique 
 The batch executes sequentially, moves unblocked QUEUED tasks to READY, stops on failure or unsupported execution metadata, and writes `batch-summary.json`. It does not execute remote agents or publish outputs. Never point it at untrusted repository test files.
 
 Tests: `npm run tasks:execute:test` and `npm run tasks:batch:test`. Both suites are included in offline smoke and full verification, and required by the full release gate.
+
+## Optional Remotion integration (no external dependency installed)
+
+The existing FFmpeg timeline renderer remains the default. The optional adapter `tools/persona-remotion-handoff.mjs` converts an existing local timeline (`version:1`, `clips:[{path,startSec,durationSec}]`) into a deterministic frame-based composition contract. It checks local media files, refuses paths outside the timeline directory, and writes a new non-overwriting `remotion-handoff.json`.
+
+```sh
+npm run media:remotion:handoff -- --input path/to/timeline.json --output artifacts/remotion-handoff-unique
+npm run media:remotion:test
+```
+
+This is **not** a Remotion render, not an installed third-party Skill, and not a replacement for Persona video QA. Before any actual Remotion runtime is installed, inspect its source, license, dependency tree and Windows compatibility; test visual equivalence on the same clips. The adapter is a reversible integration boundary so a Remotion renderer can be connected later without rewriting the Persona timeline engine. No remote services or paid calls are involved.
