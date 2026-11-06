@@ -19,3 +19,10 @@ test('real Node v22 provenance is accepted',()=>{
  const result=evaluateRelease(report(),{expectedSha:sha});
  assert.equal(result.status,'ELIGIBLE_FOR_HUMAN_REVIEW',result.errors.join('; '));
 });
+
+test('smoke-only report and negative duration cannot pass full release gate',()=>{
+ const smoke={...report(),kind:'LOCAL_SMOKE_ONLY'};
+ assert.equal(evaluateRelease(smoke,{expectedSha:sha}).status,'BLOCKED');
+ const negative=report();negative.results[0].durationMs=-1;
+ assert.equal(evaluateRelease(negative,{expectedSha:sha}).status,'BLOCKED');
+});
