@@ -35,3 +35,14 @@ The gate yields only `ELIGIBLE_FOR_HUMAN_REVIEW`, never automatic approval. JSON
 - The task dispatcher proposes work; it does not execute paid agents.
 - A user-entered DONE evidence string is a journal note, not independent proof of completion.
 - Existing unrelated workflows may still trigger in GitHub; their status is not a dependency for this local workflow.
+
+## Local task evidence
+A file-backed task completion can record the SHA-256 and byte size of an existing artifact. For example:
+
+```sh
+npm run tasks:journal -- --input board.json --id TASK-001 --to DONE --revision 1 --evidence "Reviewed local test output" --evidence-file artifacts/test-output.txt
+```
+
+The journal distinguishes `LOCAL_FILE_HASH` from `USER_TEXT_ONLY`. The file hash proves only that a particular byte sequence was read; it does not prove that the file is trustworthy or that the task's acceptance criteria were satisfied. Use `npm run evidence:test` for evidence regressions. The standalone `npm run evidence:hash -- --input FILE --output NEW_DIRECTORY` creates a separate non-overwriting evidence record. `verifyEvidence` can compare a current file with an earlier record and return `MATCH` or `MISMATCH`.
+
+These tests are now mandatory in both the local smoke and full local verification, and in the full release review gate.
