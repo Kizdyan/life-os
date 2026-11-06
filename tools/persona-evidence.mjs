@@ -17,6 +17,12 @@ export async function inspectEvidence({input,maxBytes=25_000_000}={}){
  if(bytes.length!==info.size)throw Error('Evidence changed while reading');
  return {schemaVersion:1,kind:'LOCAL_FILE_HASH',fileName:basename(file),sizeBytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),verified:'FILE_BYTES_ONLY',qualityApproved:false};
 }
+export async function verifyEvidence({input,record}={}){
+ if(!record||record.kind!=='LOCAL_FILE_HASH'||!/^[a-f0-9]{64}$/.test(record.sha256??'')||!Number.isSafeInteger(record.sizeBytes)||record.sizeBytes<1)throw Error('Invalid evidence record');
+ const current=await inspectEvidence({input});
+ return {status:current.sha256===record.sha256&&current.sizeBytes===record.sizeBytes?'MATCH':'MISMATCH',
+  expectedSha256:record.sha256,actualSha256:current.sha256,qualityApproved:false};
+}
 export async function writeEvidence({input,output}={}){
  const record=await inspectEvidence({input});
  const dir=resolve(output);
