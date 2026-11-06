@@ -3,7 +3,7 @@
  * Fail-closed release evidence gate. Does not execute commands or publish.
  * An independently generated verification report must match the exact Git SHA.
  */
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
@@ -26,9 +26,10 @@ export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}
 export async function run({input,output,sha}){
  const raw=await readFile(resolve(input),'utf8');if(Buffer.byteLength(raw)>2000000)throw Error('Verification report exceeds size limit');
  const result=evaluateRelease(JSON.parse(raw),{expectedSha:sha});
- const dir=resolve(output);await mkdir(dir,{recursive:true});
+ const dir=resolve(output);await mkdir(dir);
  const envelope={...result,reportSha256:createHash('sha256').update(raw).digest('hex')};
- await writeFile(join(dir,'release-gate.json'),JSON.stringify(envelope,null,2)+'\n',{flag:'wx'});
+ try{await writeFile(join(dir,'release-gate.json'),JSON.stringify(envelope,null,2)+'\n',{flag:'wx'})}
+ catch(error){await rm(dir,{recursive:true,force:true}).catch(()=>{});throw error}
  return envelope;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
