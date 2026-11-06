@@ -18,11 +18,12 @@ export function evaluateRelease(report,{expectedSha,requiredScripts=required}={}
  if(report?.commit!==expectedSha)errors.push('Commit mismatch');
  if(report?.overall!=='PASS')errors.push('Verification did not PASS');
  if(!Array.isArray(report?.results))errors.push('Missing execution results');
+ if(report?.kind==='LOCAL_SMOKE_ONLY')errors.push('Smoke report cannot authorize release review');
  const scriptLabels={'typecheck':'typecheck','api:typecheck':'api:typecheck','unit tests':'test','web build':'web:build','Persona core regressions':'persona:core:test','Persona scenario and delivery regressions':'persona:scenario:delivery:test','Workflow skill validation':'skills:validate','Persona marketing audit regressions':'marketing:test','Life OS task orchestration regressions':'tasks:test','Release evidence gate regressions':'release:gate:test','Task orchestration end-to-end CLI':'tasks:e2e:test','Persona production brief regressions':'production:brief:test'};
  const results=Array.isArray(report?.results)?report.results:[];
  for(const script of requiredScripts){
   const matching=results.filter(r=>scriptLabels[r?.name]===script);
-  if(matching.length!==1||matching[0].status!=='PASS'||matching[0].exitCode!==0||!Number.isFinite(matching[0].durationMs))errors.push('Missing or unverified gate: '+script);
+  if(matching.length!==1||matching[0].status!=='PASS'||matching[0].exitCode!==0||!Number.isFinite(matching[0].durationMs)||matching[0].durationMs<0)errors.push('Missing or unverified gate: '+script);
  }
  return {schemaVersion:1,status:errors.length?'BLOCKED':'ELIGIBLE_FOR_HUMAN_REVIEW',expectedSha,errors,verifiedGates:requiredScripts.length,publicationApproved:false,mergeApproved:false,actionsExecuted:0};
 }
