@@ -10,6 +10,7 @@ export function validateTaskBoard(board){
  for(const t of board.tasks){
   if(!t||typeof t.id!=='string'||!/^[\w-]{1,80}$/.test(t.id)||ids.has(t.id))throw Error('Duplicate/invalid task ID');
   ids.add(t.id);
+  if(t.execution!==undefined&&(!t.execution||t.execution.type!=='node-test'||typeof t.execution.file!=='string'||t.execution.file.length>200))throw Error('Invalid task execution '+t.id);
   if(!validStatuses.has(t.status)||!['P0','P1','P2','P3'].includes(t.priority)||!Object.hasOwn(agents,t.kind)||typeof t.title!=='string'||!t.title.trim()||typeof t.acceptance!=='string'||!t.acceptance.trim()||!Array.isArray(t.dependsOn)||t.dependsOn.some(d=>typeof d!=='string')||new Set(t.dependsOn).size!==t.dependsOn.length||(t.estimatedMinutes!==undefined&&(!Number.isInteger(t.estimatedMinutes)||t.estimatedMinutes<1||t.estimatedMinutes>10080)))throw Error('Invalid task '+t.id);
  }
  const map=new Map(board.tasks.map(t=>[t.id,t])),visiting=new Set(),done=new Set();
@@ -21,7 +22,7 @@ export function dispatch(board,{maxConcurrent=3}={}){
  const running=board.tasks.filter(t=>t.status==='RUNNING').length,slots=Math.max(0,maxConcurrent-running);
  const pending=board.tasks.filter(t=>['QUEUED','READY'].includes(t.status));
  const ready=pending.filter(t=>t.dependsOn.every(id=>map.get(id).status==='DONE')).sort((a,b)=>a.priority.localeCompare(b.priority)||(a.estimatedMinutes??10080)-(b.estimatedMinutes??10080)||a.id.localeCompare(b.id));
- return {schemaVersion:1,status:'PLAN_ONLY',selected:ready.slice(0,slots).map(t=>({id:t.id,title:t.title,priority:t.priority,executor:agents[t.kind],acceptance:t.acceptance,status:'SUGGESTED_NOT_EXECUTED'})),waiting:pending.filter(t=>!ready.slice(0,slots).includes(t)).map(t=>({id:t.id,waitingFor:t.dependsOn.filter(id=>map.get(id).status!=='DONE'),reason:ready.includes(t)?'CAPACITY':'DEPENDENCY'})),running,capacity:slots,actionsExecuted:0};
+ return {schemaVersion:1,status:'PLAN_ONLY',selected:ready.slice(0,slots).map(t=>({id:t.id,title:t.title,priority:t.priority,executor:agents[t.kind],execution:t.execution??null,acceptance:t.acceptance,status:'SUGGESTED_NOT_EXECUTED'})),waiting:pending.filter(t=>!ready.slice(0,slots).includes(t)).map(t=>({id:t.id,waitingFor:t.dependsOn.filter(id=>map.get(id).status!=='DONE'),reason:ready.includes(t)?'CAPACITY':'DEPENDENCY'})),running,capacity:slots,actionsExecuted:0};
 }
 export async function run({input,output,maxConcurrent=3}){
  const raw=await readFile(resolve(input),'utf8');if(Buffer.byteLength(raw)>1000000)throw Error('Oversized board');
