@@ -21,6 +21,40 @@ export interface PersonaProductionBriefInput {
   sourceFacts?: readonly string[];
 }
 
+/** Edit intentions made BEFORE filming, never inferred from nonexistent media. */
+export interface PersonaPreEditPlan {
+  version: 1;
+  kind: "persona-pre-edit-plan-v1";
+  status: "intent_only";
+  origin: "scenario_revision" | "ai_director";
+  sourceRevisionId: string | null;
+  researchEvidence: {
+    level: "reviewed_reference" | "metadata_only" | "hypothesis_only";
+    sourceUrls: string[];
+    note: string;
+  };
+  /** A pre-filming colour direction, not a measured property of recorded media. */
+  colorIntent?: string;
+  scenes: Array<{
+    order: number;
+    line: string;
+    durationSec: number;
+    editIntent: string;
+    audioIntent: string;
+    subtitleIntent: string;
+    /** Optional only so existing stored v1 briefs remain importable. */
+    visualIntent?: {
+      framing: "close-up" | "medium" | "detail";
+      angle: string;
+      cameraMovement: string;
+      lighting: string;
+      performance: string;
+    };
+    mediaStatus: "awaiting_author_footage";
+  }>;
+  publicationApproved: false;
+}
+
 export interface PersonaProductionBrief {
   version: 1;
   ideaId: string;
@@ -58,6 +92,8 @@ export interface PersonaProductionBrief {
       processing: string;
     };
   };
+  /** Frozen planning intent; NOT a rendered timeline or claim of media availability. */
+  preEditPlan?: PersonaPreEditPlan;
   postProduction: {
     transitions: string;
     subtitles: {
