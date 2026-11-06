@@ -23,6 +23,7 @@ const tasks = [
   ['unit tests', 'test'],
   ['web build', 'web:build'],
   ['Persona core regressions', 'persona:core:test'],
+  ['Persona scenario and delivery regressions', 'persona:scenario:delivery:test'],
   ['media integration', 'media:test'],
 ].filter(([,script]) => Object.hasOwn(manifest.scripts ?? {}, script));
 const install = process.argv.includes('--install');
