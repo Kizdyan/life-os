@@ -451,8 +451,11 @@ export default function PersonaFactory(){
   }
   const id=newProjectId();
   if(select({id,title:actorComposerPilot.title,angle:actorComposerPilot.angle,
-    format:'reel',score:0,source:'editorial-pilot'}))
+    format:'reel',score:0,source:'editorial-pilot'})){
+   // Preserve the shoot-first pilot; normal Reels begin at Idea.
+   setWorkspaceStep('guide');
    window.setTimeout(()=>{window.location.hash='#persona/project/'+id},0);
+  }
  }
 
  function persistGuide(guide:ProductionGuide){
