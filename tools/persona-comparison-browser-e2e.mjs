@@ -47,7 +47,7 @@ async function waitForImport(page,word){
  await page.getByRole('status').filter({hasText:word}).first().waitFor({state:'visible',timeout:45000});
 }
 async function openComparison(page){
- await page.getByRole('navigation',{name:'Этапы производства'})
+ await page.getByRole('navigation',{name:/Пять этапов создания Reels|Этапы производства/})
   .getByRole('button',{name:/Монтаж/}).click();
  await page.getByRole('region',{name:'Persona Comparison Studio'}).waitFor();
  return page.getByRole('region',{name:'Persona Comparison Studio'});
@@ -162,6 +162,9 @@ try{
   });
   await aiPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
   await aiPage.getByRole('button',{name:'Создать Reels'}).click();
+  // A new Reel starts at Idea: explicitly open the Shoot stage for this browser test.
+  await aiPage.getByRole('navigation',{name:'Пять этапов создания Reels'})
+   .getByRole('button',{name:/Съёмка/}).click();
   const aiBoard=aiPage.getByRole('region',{name:'Снять ролик сейчас'});
   await aiBoard.getByText(/пока нет реплик и кадров/).waitFor();
   await aiBoard.getByText('Ollama готова · mock-local-model').waitFor();
