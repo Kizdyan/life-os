@@ -93,3 +93,14 @@ npm run media:remotion:stage:test
 ```
 
 Staging writes a `remotion-handoff.json`, composition source, package manifest and media copies to `public/media`. It does not alter originals, install packages, render video, upload media or publish. The workspace can subsequently be opened and rendered **only after an explicit dependency review and local installation** (`npm install` within the staged directory). Remotion version and platform compatibility must be checked before installing. Actual visual QA and comparison against the FFmpeg baseline remain mandatory. Do not treat synthetic media fixture tests as a verified rendered video.
+
+## Explicit Remotion render (requires locally installed dependencies)
+
+After staging and independently reviewing the isolated `integrations/remotion/package.json` dependencies, install them **only inside the staged workspace** using a locally approved package-management process. This step is not automated by Persona.
+
+```sh
+npm run media:remotion:render -- --workspace artifacts/remotion-workspace-unique --output artifacts/remotion-workspace-unique/out/persona.mp4
+npm run media:remotion:render:test
+```
+
+The render runner refuses missing dependencies and pre-existing output. It invokes the local Remotion CLI without a shell, then ffprobe, checks dimensions, FPS, duration and minimum file size, and writes a `.verification.json` technical report. Even a technical PASS is **not** visual approval, color approval, sound approval, rights approval or permission to publish. A true A/B quality comparison still requires both actual rendered MP4 files from the same source media and human review.
