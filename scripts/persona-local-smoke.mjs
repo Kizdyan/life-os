@@ -27,6 +27,7 @@ const suites=[
  ['local batch','tools/persona-local-batch.test.mjs'],
  ['Remotion handoff','tools/persona-remotion-handoff.test.mjs'],
  ['Remotion stage','tools/persona-remotion-stage.test.mjs'],
+ ['Remotion render QC','tools/persona-remotion-render.test.mjs'],
  ['task orchestration CLI','tools/persona-orchestration-e2e.test.mjs'],
  ['release gate','tools/persona-release-gate.test.mjs'],
  ['marketing audit','tools/persona-marketing-audit.test.mjs'],
