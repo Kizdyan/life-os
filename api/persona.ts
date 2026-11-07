@@ -1,6 +1,4 @@
 import{env,json}from'./_media-session.js';
-import{experimental_transcribe as transcribeAudio}from'ai';
-import{gateway}from'@ai-sdk/gateway';
 
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 type Slide={eyebrow:string;title:string;body:string};
@@ -17,6 +15,128 @@ async function openAI(system:string,payload:any){const key=env('OPENAI_API_KEY')
 const planSystem=`Ты — стратег личного медиа. Сгенерируй 16–24 свежих идей для актёра/музыканта/автора, учитывая историю уже использованных и отклонённых тем. Не повторяй темы. Балансируй театр, кино, музыку, собственные проекты, процесс, личные наблюдения. Каждая идея должна иметь сильный curiosity gap, понятный формат и причину, почему её стоит выпускать сейчас. Верни JSON {"ideas":[{"id":string,"title":string,"angle":string,"format":"carousel|photo|reel|short|story","score":number,"reason":string}]}`;
 const genSystem=`Ты — автономная редакция. Создай полностью готовый контент-пакет по идее. Пиши живо и умно, без канцелярита и дешёвого кликбейта. Публичный материал никогда не содержит внутреннего названия системы. Сделай 5–7 карточек, короткий сильный первый экран, одну мысль на карточку, подпись и адаптации для Instagram/VK/YouTube. Верни JSON {"title":string,"slides":[{"eyebrow":string,"title":string,"body":string}],"caption":string,"platformNotes":{"instagram":string,"vk":string,"youtube":string},"style":"editorial|old-money|documentary|minimal","assetInstruction":string}`;
 const reviseSystem=`Ты — старший редактор и маркетолог. Прочитай всю команду пользователя целиком и внеси все смысловые изменения в готовый материал. Не просто комментируй. Сохраняй сильное, исправляй слабое. Проверь публичность, читаемость, хук, удержание, CTA, повторения и фактическую аккуратность. Верни JSON того же формата, что и готовый материал, плюс learnedRules:string[] и changeSummary:string.`;
-async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any){try{if(kind==='plan')return await openAI(planSystem,payload);if(kind==='generate')return await openAI(genSystem,payload);return await openAI(reviseSystem,payload)}catch(e){console.error('persona_ai_fallback',String((e as Error)?.message||e));if(kind==='plan')return{ideas:localIdeas(payload?.history||[])};if(kind==='generate')return localDraft(payload.idea,payload.assetName);return localRevise(payload.draft,String(payload.feedback||''))}}
-async function transcribe(request:Request){const form=await request.formData();const audio=form.get('audio');if(!(audio instanceof File)||!audio.size)return json({error:'audio_required'},400);const key=env('OPENAI_API_KEY')||env('openai_api_key');if(key){try{const outbound=new FormData();outbound.append('file',audio,audio.name||'voice.webm');outbound.append('model',env('PERSONA_TRANSCRIBE_MODEL')||'gpt-4o-transcribe');outbound.append('language','ru');outbound.append('prompt','Длинная разговорная русская инструкция по редактированию контента. Сохраняй весь смысл, отрицания, имена, термины и последовательность требований.');const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${key}`},body:outbound});if(r.ok){const d:any=await r.json();if(String(d.text||'').trim())return json({transcript:String(d.text).trim()})}}catch(e){console.error('persona_transcription_openai',String((e as Error)?.message||e))}}try{const bytes=new Uint8Array(await audio.arrayBuffer());const result=await transcribeAudio({model:gateway.transcriptionModel(env('PERSONA_GATEWAY_TRANSCRIBE_MODEL')||'openai/whisper-1'),audio:bytes});if(String(result.text||'').trim())return json({transcript:String(result.text).trim()})}catch(e){console.error('persona_transcription_gateway',String((e as Error)?.message||e))}return json({error:'voice_unavailable'},503)}
-export default{async fetch(request:Request){if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'POST'});const contentType=request.headers.get('content-type')||'';if(contentType.includes('multipart/form-data'))return transcribe(request);try{const body:any=await request.json();const action=String(body?.action||'plan');if(action==='plan'){const result:any=await aiOrFallback('plan',{history:body.history||[],seed:body.seed||[]});const ideas=Array.isArray(result?.ideas)?result.ideas:localIdeas(body.history||[]);return json({ideas:ideas.slice(0,24).map((x:any,i:number)=>({...x,id:String(x.id||`idea-${i+1}`),score:Number(x.score||80),status:'candidate'}))})}if(action==='generate'){const result:any=await aiOrFallback('generate',{idea:body.idea,history:body.history||[],assetName:body.assetName||''});const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),summary:result.changeSummary||'Материал собран и прошёл самопроверку.'})}if(action==='revise'){const result:any=await aiOrFallback('revise',{draft:body.draft,feedback:body.feedback,history:body.history||[]});const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),learnedRules:result.learnedRules||[],summary:result.changeSummary||'Правка применена и перепроверена.'})}return json({error:'unknown_action'},400)}catch(e){console.error('persona_route',String((e as Error)?.message||e));return json({error:'pipeline_unavailable'},503)}}};
+
+// Preview only, zero-price gateway model verified against public live catalog
+// on 2026-10-26. Never substitute a paid model; never silently run on page load.
+const PERSONA_FREE_MODEL = 'nvidia/nemotron-3.5-lightning-free';
+const freeAiWindow = new Map<string,{since:number,count:number}>();
+function allowFreeAiRequest(request:Request):boolean {
+  const key=(request.headers.get('x-forwarded-for')||'unknown').split(',')[0].trim().slice(0,80);
+  const now=Date.now(),prev=freeAiWindow.get(key);
+  if(prev&&now-prev.since<3600000){
+    if(prev.count>=6)return false;
+    prev.count+=1;
+    return true;
+  }
+  if(freeAiWindow.size>1000)freeAiWindow.clear();
+  freeAiWindow.set(key,{since:now,count:1});
+  return true;
+}
+const freeScriptSystem=`Ты — профессиональный сценарист, режиссёр коротких видео и маркетолог. Пиши ПО-РУССКИ. Верни только валидный JSON без markdown.
+Сделай пригодный к съёмке авторский сценарий по конкретной идее пользователя, а не абстрактный текст про творчество.
+Если формат reel/short/story — 5–7 ПОСЛЕДОВАТЕЛЬНЫХ КАДРОВ, каждый с конкретным действием, планом (крупный/общий), ракурсом, звуком/репликой и длительностью в секундах. Не выдумывай реальные биографические события. Можно предлагать постановочные эпизоды — обозначь их как сценарную идею.
+Если carousel — 5–7 карточек с конкретным примером и законченным повествованием, а не фразами «покажи процесс» и «сделай вывод».
+Тон: харизматично, тонкий юмор, кинематографично, без дешёвых мотивационных клише. Эстетика приглушённая old-money, натуральная кожа, никакой ретуши личности.
+Формат JSON: {"title":"заголовок","slides":[{"eyebrow":"Кадр 1 · 0–4 сек","title":"короткий заголовок","body":"Конкретно: действие, ракурс, движение камеры, свет, звук/реплика"}],"caption":"готовая подпись без выдуманных фактов","platformNotes":{"instagram":"как адаптировать","vk":"как адаптировать","youtube":"как адаптировать"},"style":"old-money","assetInstruction":"конкретный план съёмки: вертикаль 9:16, свет, фон, одежда, реквизит, монтаж, звук"}
+Только JSON, без лишних пояснений.`;
+const freeReviseSystem=`Ты — профессиональный сценарист и режиссёр. Выполни ВСЕ требования правки пользователя, не отвечай пояснением вместо изменения текста. Сохрани структуру, но перепиши необходимые кадры/текст/съёмочный план. Не выдумывай историй о пользователе. Верни только JSON той же структуры: title,slides[{eyebrow,title,body}],caption,platformNotes{instagram,vk,youtube},style,assetInstruction,changeSummary. 5–7 последовательных конкретных кадров/карточек.`;
+async function freeAiGenerate(system:string,payload:any,request:Request):Promise<any> {
+  if(env('PERSONA_ENABLE_FREE_AI')!=='true'||env('VERCEL_ENV')!=='preview')
+    throw new Error('free_ai_disabled');
+  if(!allowFreeAiRequest(request))throw new Error('free_ai_limit_6_per_hour');
+  const token=env('AI_GATEWAY_API_KEY')||request.headers.get('x-vercel-oidc-token')||env('VERCEL_OIDC_TOKEN');
+  if(!token)throw new Error('free_ai_gateway_auth_missing');
+  const input=JSON.stringify(payload);
+  if(input.length>8000)throw new Error('free_ai_input_too_large');
+  let response:Response;
+  try{
+    response=await fetch('https://ai-gateway.vercel.sh/v1/chat/completions',{
+      method:'POST',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:PERSONA_FREE_MODEL,
+        messages:[{role:'system',content:system},{role:'user',content:input}],
+        max_tokens:2400,temperature:0.6,response_format:{type:'json_object'},
+      }),
+      signal:AbortSignal.timeout(50000),
+    });
+  }catch{throw new Error('free_ai_network_unavailable')}
+  if(!response.ok) {
+    if(response.status===403) {
+      // Vercel can deny a valid OIDC team without routing to the free model.
+      // Only expose documented, allowlisted error TYPES; never echo provider
+      // messages, request bodies, headers, keys, or arbitrary details.
+      const details:any=await response.json().catch(()=>null);
+      const type=details?.error?.type;
+      const code=details?.error?.code;
+      if(type==='customer_verification_required'||code==='customer_verification_required')
+        throw new Error('free_ai_account_verification_required');
+      if(type==='access_denied'||code==='access_denied')
+        throw new Error('free_ai_gateway_access_denied');
+    }
+    throw new Error(`free_ai_provider_${response.status}`);
+  }
+  const data:any=await response.json();
+  const content=data.choices?.[0]?.message?.content;
+  if(typeof content!=='string'||!content.trim())throw new Error('free_ai_empty_response');
+  let parsed:any;
+  try {parsed=extract(content)} catch {throw new Error('free_ai_json_invalid')}
+  if(!parsed||typeof parsed!=='object'||typeof parsed.title!=='string'||
+    typeof parsed.caption!=='string'||!Array.isArray(parsed.slides)||
+    parsed.slides.length<4||parsed.slides.length>9||
+    parsed.slides.some((s:any)=>typeof s.title!=='string'||typeof s.body!=='string')){
+    throw new Error('free_ai_structure_invalid');
+  }
+  return {...parsed,executionMode:'ai',model:PERSONA_FREE_MODEL};
+}
+async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:Request,engine?:string){
+  if(engine==='free-ai'){
+    if(kind==='plan')throw new Error('free_ai_generate_or_revise_only');
+    return freeAiGenerate(kind==='generate'?freeScriptSystem:freeReviseSystem,payload,request);
+  }
+  // Paid external AI is double opt-in: explicit server permission AND request header.
+   // Preview cannot silently spend paid model credits, or conceal a failed
+  // model call behind a pretend AI-generated quality result.
+  if(env('PERSONA_ENABLE_EXTERNAL_AI')==='true' && env('PERSONA_ALLOW_PAID_REQUESTS')==='true' && request.headers.get('x-persona-paid-approved')==='true' && env('PERSONA_ENABLE_FREE_AI')!=='true'){
+    try{
+      const generated=kind==='plan'?await openAI(planSystem,payload):kind==='generate'?await openAI(genSystem,payload):await openAI(reviseSystem,payload);
+      return {...generated,executionMode:'ai'};
+    }catch(e){console.error('persona_ai_fallback',String((e as Error)?.message||e))}
+  }
+  if(kind==='plan')return {ideas:localIdeas(payload?.history||[]),executionMode:'template'};
+  if(kind==='generate')return {...localDraft(payload.idea,payload.assetName),executionMode:'template'};
+  return {...localRevise(payload.draft,String(payload.feedback||'')),executionMode:'template'};
+}
+async function transcribe(request:Request){
+  if(env('PERSONA_ENABLE_EXTERNAL_AI')!=='true'||env('PERSONA_ALLOW_PAID_REQUESTS')!=='true'||request.headers.get('x-persona-paid-approved')!=='true'){
+    return json({error:'В тестовом режиме голосовое распознавание ещё не подключено. Используй текстовую правку.'},503);
+  }
+  const form=await request.formData();
+  const audio=form.get('audio');
+  if(!(audio instanceof File)||!audio.size)return json({error:'audio_required'},400);
+  const key=env('OPENAI_API_KEY')||env('openai_api_key');
+  if(!key)return json({error:'voice_provider_not_configured'},503);
+  try{
+    const outbound=new FormData();
+    outbound.append('file',audio,audio.name||'voice.webm');
+    outbound.append('model',env('PERSONA_TRANSCRIBE_MODEL')||'gpt-4o-transcribe');
+    outbound.append('language','ru');
+    const response=await fetch('https://api.openai.com/v1/audio/transcriptions',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`},body:outbound
+    });
+    if(response.ok){
+      const data:any=await response.json();
+      if(String(data.text||'').trim())return json({transcript:String(data.text).trim()});
+    }
+  }catch(e){console.error('persona_transcription',String((e as Error)?.message||e))}
+  return json({error:'voice_unavailable'},503);
+}
+export default{async fetch(request:Request){
+  // Safe read-only preview health check. Report only availability, never tokens.
+  if(request.method==='GET' && new URL(request.url).searchParams.get('auth_health')==='1' &&
+      env('VERCEL_ENV')==='preview' && env('PERSONA_ENABLE_FREE_AI')==='true'){
+    return json({freeAiPreview:true,
+      authReady:Boolean(env('AI_GATEWAY_API_KEY')||request.headers.get('x-vercel-oidc-token')||env('VERCEL_OIDC_TOKEN')),
+      tokenIncluded:false});
+  }
+  if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'POST'});const contentType=request.headers.get('content-type')||'';if(contentType.includes('multipart/form-data'))return transcribe(request);try{const body:any=await request.json();const action=String(body?.action||'plan');if(action==='plan'){const result:any=await aiOrFallback('plan',{history:body.history||[],seed:body.seed||[]},request,body.engine);const ideas=Array.isArray(result?.ideas)?result.ideas:localIdeas(body.history||[]);return json({ideas:ideas.slice(0,24).map((x:any,i:number)=>({...x,id:String(x.id||`idea-${i+1}`),score:Number(x.score||80),status:'candidate'})),mode:result.executionMode||'template'})}if(action==='generate'){const result:any=await aiOrFallback('generate',{idea:body.idea,history:body.history||[],assetName:body.assetName||''},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),summary:result.changeSummary||'Текстовый черновик создан; проведена формальная проверка структуры.',mode:result.executionMode||'template',model:result.model||null})}if(action==='revise'){const result:any=await aiOrFallback('revise',{draft:body.draft,feedback:body.feedback,history:body.history||[]},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),learnedRules:result.learnedRules||[],summary:result.changeSummary||'Текстовый черновик обновлён.',mode:result.executionMode||'template',model:result.model||null})}return json({error:'unknown_action'},400)}catch(e){const code=String((e as Error)?.message||'pipeline_unavailable');console.error('persona_route_error_code',code.startsWith('free_ai_')?code:'pipeline_unavailable');return json({error:code.startsWith('free_ai_')?code:'pipeline_unavailable'},code==='free_ai_limit_6_per_hour'?429:503)}}};

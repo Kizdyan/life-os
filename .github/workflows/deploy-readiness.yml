@@ -7,6 +7,7 @@ on:
       - "api/**"
       - "vercel.json"
       - "package.json"
+      - "package-lock.json"
       - ".github/workflows/deploy-readiness.yml"
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - "api/**"
       - "vercel.json"
       - "package.json"
+      - "package-lock.json"
 
 jobs:
   preview-build:
@@ -24,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
+      - run: npm ci --no-audit --no-fund
       - run: npm run api:typecheck
       - run: npm run web:build
       - name: Verify deploy artifact

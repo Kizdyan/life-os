@@ -1,1 +1,53 @@
-<!doctype html><html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><meta name="theme-color" content="#111827"/><link rel="manifest" href="/manifest.webmanifest"/><title>Life OS</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#111827"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111827'/%3E%3Cpath d='M19 14h9v36h-9zm17 0h9v36h-9z' fill='white'/%3E%3C/svg%3E"/>
+<title>Life OS · Persona</title>
+<style>
+#boot-fallback{font:15px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#343434;padding:28px 20px;max-width:540px;margin:56px auto}
+#boot-fallback strong{font-size:23px;display:block;margin-bottom:12px}
+#boot-fallback p{color:#666}
+#boot-fallback code{font-size:12px;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div id="root">
+ <div id="boot-fallback" role="status">
+  <strong>Загрузка Life OS и Persona…</strong>
+  <p>Если приложение не откроется, здесь появится сообщение об ошибке. Ваши данные не удаляются.</p>
+  <p id="boot-detail">Проверяем загрузку интерфейса.</p>
+ </div>
+</div>
+<script>
+(function(){
+  var shown=false;
+  function error(message){
+    if(shown)return;shown=true;
+    var node=document.getElementById('boot-detail');
+    if(node)node.textContent='Не удалось открыть интерфейс ('+message+'). Обновите страницу. Если повторится — пришлите скриншот этого сообщения.';
+  }
+  addEventListener('error',function(e){
+    if(document.getElementById('boot-fallback'))error('ошибка загрузки скрипта: '+String(e.message||'ресурс не загрузился').slice(0,100));
+  },true);
+  addEventListener('unhandledrejection',function(e){
+    if(document.getElementById('boot-fallback'))error('ошибка выполнения: '+String(e.reason?.message||e.reason||'неизвестно').slice(0,100));
+  });
+  setTimeout(function(){
+    if(document.getElementById('boot-fallback'))error('превышено время загрузки');
+  },8000);
+  // In the isolated preview, retire old service workers. They may cache
+  // outdated HTML that refers to missing chunk files after a new deployment.
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(regs){
+      regs.forEach(function(r){r.unregister().catch(function(){});});
+    }).catch(function(){});
+  }
+})();
+</script>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+import{afterEach,describe,expect,it}from'vitest';import handler from'./start.js';
+const original={...process.env};afterEach(()=>{process.env={...original}});
+
+describe('Yandex OAuth start function',()=>{
+  it('fails closed without server-only configuration',async()=>{delete process.env.YANDEX_CLIENT_ID;delete process.env.MEDIA_COOKIE_SECRET;const response=await handler.fetch(new Request('https://life.example.com/api/media/yandex/connect/start',{method:'POST'}));expect(response.status).toBe(503)});
+  it('returns only Yandex authorization URL and secure sealed OAuth cookie',async()=>{process.env.YANDEX_CLIENT_ID='client-1';process.env.MEDIA_COOKIE_SECRET='12345678901234567890123456789012';process.env.YANDEX_SCOPES='cloud_api:disk.read cloud_api:disk.write';const response=await handler.fetch(new Request('https://life.example.com/api/media/yandex/connect/start',{method:'POST'}));expect(response.status).toBe(200);const payload=await response.json() as{authorizationUrl:string};const url=new URL(payload.authorizationUrl);expect(url.hostname).toBe('oauth.yandex.ru');expect(url.searchParams.get('client_id')).toBe('client-1');expect(url.searchParams.get('redirect_uri')).toBe('https://life.example.com/api/media/yandex/connect/callback');expect(url.searchParams.get('code_challenge')).toBeTruthy();const cookie=response.headers.get('set-cookie')??'';expect(cookie).toContain('lifeos_yandex_oauth=');expect(cookie).toContain('HttpOnly');expect(cookie).not.toContain('client-1')});
+});

@@ -1,0 +1,21 @@
+{
+  "note": "EXAMPLE ONLY. Replace both model names with two DIFFERENT models actually installed in Ollama (ollama list). Roles can be reassigned per evaluation. No cloud calls.",
+  "judges": [
+    {
+      "role": "producer",
+      "server": {
+        "id": "producer-local",
+        "baseUrl": "http://127.0.0.1:11434",
+        "model": "REPLACE-WITH-INSTALLED-LOCAL-MODEL-A"
+      }
+    },
+    {
+      "role": "dramaturg",
+      "server": {
+        "id": "dramaturg-local",
+        "baseUrl": "http://127.0.0.1:11434",
+        "model": "REPLACE-WITH-INSTALLED-LOCAL-MODEL-B"
+      }
+    }
+  ]
+}

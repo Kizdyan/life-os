@@ -10,7 +10,9 @@ on:
       - "src/**"
       - "supabase/**"
       - "scripts/**"
+      - "tools/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
   pull_request:
@@ -21,7 +23,9 @@ on:
       - "src/**"
       - "supabase/**"
       - "scripts/**"
+      - "tools/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
 # Only the latest commit of each PR needs the expensive typecheck/test result.
@@ -37,6 +41,45 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npm test
-      - run: npm run typecheck
+      - run: npm ci --no-audit --no-fund
+      - name: Install FFmpeg and FFprobe for real video and audio integration tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
+      - name: Persona calendar and distribution regression tests
+        run: |
+          set -o pipefail
+          npm run persona:core:test 2>&1 | tee /tmp/persona-ci-core.log
+      - name: Verify full Persona media pipeline with real FFmpeg
+        run: |
+          set -o pipefail
+          npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+      - name: Persona scenario and delivery regression gate
+        run: |
+          set -o pipefail
+          npm run persona:scenario:delivery:test 2>&1 | tee /tmp/persona-ci-scenario-delivery.log
+      - name: Run tests with captured diagnostics
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/persona-ci-test.log
+      - name: Typecheck with captured diagnostics
+        if: success()
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/persona-ci-typecheck.log
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-failure-diagnostics
+          path: |
+            /tmp/persona-ci-core.log
+            /tmp/persona-ci-media.log
+            /tmp/persona-ci-scenario-delivery.log
+            /tmp/persona-ci-test.log
+            /tmp/persona-ci-typecheck.log
+          if-no-files-found: warn

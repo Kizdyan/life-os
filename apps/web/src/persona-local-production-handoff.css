@@ -1,0 +1,8 @@
+.personaLocalHandoff{margin-top:20px;padding:18px;border:1px solid #d8d5ce;border-radius:18px;background:#f7f5f0}
+.personaLocalHandoff h4{font-size:18px;line-height:1.25;margin:0 0 8px}
+.personaLocalHandoff p{font-size:13px;line-height:1.5;color:#5b574f;margin:9px 0}
+.personaLocalHandoff button{margin:8px 0}
+.personaLocalHandoff button:disabled{cursor:not-allowed;opacity:.55}
+.personaLocalHandoff details{margin-top:13px;border-top:1px solid #dedbd3;padding-top:11px}
+.personaLocalHandoff summary{cursor:pointer;font-size:13px;font-weight:650}
+.personaLocalHandoff pre{box-sizing:border-box;max-width:100%;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 Consolas,monospace;background:#eeece7;padding:12px;border-radius:10px;color:#26241e}

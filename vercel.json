@@ -2,9 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install",
-  "buildCommand": "npm run web:build",
+  "buildCommand": "npm run typecheck && npm run api:typecheck && npm test && npm run web:build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/|assets/|sw.js$|manifest.webmanifest$|favicon.ico$).*)",
+      "destination": "/index.html"
+    }
   ]
 }

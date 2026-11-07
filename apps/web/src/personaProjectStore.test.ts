@@ -1,0 +1,295 @@
+import {describe,expect,it} from 'vitest';
+import {applyPersonaImportedProductionBrief,applyPersonaProductionMilestone,assertPersonaAsyncImportTarget,createPersonaProject,loadPersonaProjects,resolvePersonaProjectSaveBase,savePersonaProject,validatePersonaProjectSnapshot,type PersonaProjectStorage} from './personaProjectStore';
+import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
+
+function memoryStorage(seed:Record<string,string>={}):PersonaProjectStorage{
+ const data=new Map(Object.entries(seed));
+ return {getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value)},removeItem:key=>{data.delete(key)}};
+}
+
+describe('Persona AI director provenance persistence',()=>{
+ it('preserves provider/model/revision on reload and refuses fabricated metadata',()=>{
+  const original=createPersonaProject({
+   id:'ai-provenance',title:'AI Scene',contentType:'reel',
+   sourceIdea:'Actor & composer scene',now:'2026-11-03T14:00:00.000Z',
+  });
+  const workspace={
+   version:1 as const,research:[],analyses:[],ideas:[],
+   directorGeneration:{
+    version:1 as const,provider:'ollama' as const,model:'qwen3:4b-instruct',
+    variation:'unexpected' as const,revisionId:'revision-ai-001',
+    createdAt:'2026-11-03T14:00:00.000Z',
+   },
+  };
+  const stored={...original,scenarioWorkspace:workspace};
+  const data=new Map<string,string>();
+  const storage:PersonaProjectStorage={
+   getItem:key=>data.get(key)??null,
+   setItem:(key,value)=>{data.set(key,value)},
+   removeItem:key=>{data.delete(key)},
+  };
+  savePersonaProject(storage,stored,stored.id);
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace?.directorGeneration)
+   .toEqual(workspace.directorGeneration);
+  const invalid={...workspace,directorGeneration:{...workspace.directorGeneration,model:''}};
+  expect(()=>savePersonaProject(storage,{...original,revision:2,scenarioWorkspace:invalid},original.id)).toThrow();
+ });
+});
+
+describe('Persona project storage',()=>{
+ it('persists an editorial approval before the browser can reload',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'milestone',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const decision={stage:'READY_FOR_SHOOT',materials:{editorialDecision:{decision:'approved',editor:'Author'}}};
+  const saved=applyPersonaProductionMilestone({...original,revision:2},decision);
+  savePersonaProject(storage,saved);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.shootingPlan).toEqual(decision);
+  expect(restored.editPlan).toEqual(decision);
+  expect(restored.revision).toBe(2);
+  expect(restored.stage).toBe('strategy');
+  expect(restored.scenarioWorkspace).toBeUndefined();
+ });
+ it('does not replace the previous approval when production persistence fails',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'quota-case',title:'First Reel',contentType:'reel',sourceIdea:'Actor',now:'2026-11-01T00:00:00Z'});
+  savePersonaProject(storage,original);
+  const broken:PersonaProjectStorage={
+   getItem:key=>storage.getItem(key),
+   setItem:()=>{throw Error('quota exceeded')},
+   removeItem:key=>storage.removeItem(key),
+  };
+  const proposal=applyPersonaProductionMilestone({...original,revision:2},{editorialDecision:{decision:'approved'}});
+  expect(()=>savePersonaProject(broken,proposal)).toThrow('quota exceeded');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].shootingPlan).toBeNull();
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].revision).toBe(1);
+ });
+ it('persists imported scenario and full production plan before the next React effect',()=>{
+  const storage=memoryStorage();
+  const project={...createPersonaProject({id:'atomic-import',title:'First Reels',contentType:'reel',sourceIdea:'Acting',now:'2026-11-01T00:00:00.000Z'}),qa:{pass:true},lastOpenStep:'idea',revision:2};
+  savePersonaProject(storage,project);
+  const workspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-import'};
+  const production={stage:'QA',materials:{shotList:[{order:1,line:'A01'},{order:2,line:'B01'}]}};
+  const imported=applyPersonaImportedProductionBrief({...project,revision:3},production,workspace);
+  savePersonaProject(storage,imported);
+  const restored=loadPersonaProjects(storage,()=> 'unused').projects[0];
+  expect(restored.revision).toBe(3);
+  expect(restored.scenarioWorkspace).toEqual(workspace);
+  expect(restored.shootingPlan).toEqual(production);
+  expect(restored.editPlan).toEqual(production);
+  expect(restored.stage).toBe('final_qa');
+  expect(restored.lastOpenStep).toBe('script');
+  expect(restored.qa).toBeNull();
+  expect(project.lastOpenStep).toBe('idea');
+ });
+
+ it('rejects async import after the author switches to another project',()=>{
+  const storage=memoryStorage();
+  const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  const b=createPersonaProject({id:'b',title:'B',contentType:'reel',sourceIdea:'Second',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,a);
+  savePersonaProject(storage,b);
+  const initial=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(initial,'b',b.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(initial,'a',a.revision)).toThrow('другой проект');
+ });
+ it('rejects async import after the current project changes during file read',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'a',title:'Before',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,first);
+  const revisionBefore=loadPersonaProjects(storage,()=> 'unused').projects[0].revision;
+  savePersonaProject(storage,{...first,revision:2,title:'Updated by other tab'});
+  const latest=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(latest,first.id,revisionBefore)).toThrow('Проект изменился');
+  expect(latest.projects[0].title).toBe('Updated by other tab');
+ });
+ it('permits an unchanged project at both sides of an async file read',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'a',title:'Stable',contentType:'reel',sourceIdea:'First',now:'2026-10-31T10:00:00Z'});
+  savePersonaProject(storage,project);
+  const before=loadPersonaProjects(storage,()=> 'unused');
+  const after=loadPersonaProjects(storage,()=> 'unused');
+  expect(()=>assertPersonaAsyncImportTarget(before,'a',project.revision)).not.toThrow();
+  expect(()=>assertPersonaAsyncImportTarget(after,'a',project.revision)).not.toThrow();
+ });
+
+ it('autosave uses the latest persisted scenario, not the older React script object',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'p-reel',title:'Actor and Composer',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const savedWorkspace={version:1 as const,research:[],analyses:[],ideas:[],selectedIdeaId:'new-editorial-version'};
+  const updated={...old,scenarioWorkspace:savedWorkspace,revision:2,updatedAt:'2026-10-31T09:01:00Z'};
+  savePersonaProject(storage,updated);
+  const base=resolvePersonaProjectSaveBase(storage,updated);
+  expect(base.scenarioWorkspace).toEqual(savedWorkspace);
+  const autosave={...base,lastOpenStep:'review',revision:base.revision+1};
+  savePersonaProject(storage,autosave);
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].scenarioWorkspace).toEqual(savedWorkspace);
+ });
+ it('accepts a newer revision already written by this tab while React is behind',()=>{
+  const storage=memoryStorage();
+  const old=createPersonaProject({id:'same-tab',title:'First',contentType:'reel',sourceIdea:'Two roles',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,old);
+  const ownLatest={...old,revision:2,title:'Own synchronous edit'};
+  savePersonaProject(storage,ownLatest);
+  const rendered={...old};
+  const knownOwnRevision=ownLatest.revision;
+  expect(resolvePersonaProjectSaveBase(storage,{...rendered,revision:knownOwnRevision}).title).toBe('Own synchronous edit');
+  expect(()=>resolvePersonaProjectSaveBase(storage,rendered)).toThrow('persona_project_changed_since_open');
+ });
+ it('rejects direct stale writes even when callers skip the save-base guard',()=>{
+  const storage=memoryStorage();
+  const original=createPersonaProject({id:'stale-write',title:'First',contentType:'reel',sourceIdea:'Idea',now:'2026-11-02T10:00:00Z'});
+  savePersonaProject(storage,original);
+  const latest={...original,revision:2,title:'Latest tab'};
+  savePersonaProject(storage,latest);
+  expect(()=>savePersonaProject(storage,{...original,title:'Stale tab'})).toThrow('persona_project_stale_save');
+  expect(()=>savePersonaProject(storage,{...latest,title:'Same revision'})).toThrow('persona_project_stale_save');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe('Latest tab');
+ });
+ it('keeps other projects intact when a stale tab attempts to save',()=>{
+  const storage=memoryStorage();
+  const a=createPersonaProject({id:'a',title:'A',contentType:'reel',sourceIdea:'A',now:'2026-11-02T10:00:00Z'});
+  const b=createPersonaProject({id:'b',title:'B',contentType:'reel',sourceIdea:'B',now:'2026-11-02T10:00:00Z'});
+  savePersonaProject(storage,a);
+  savePersonaProject(storage,b);
+  savePersonaProject(storage,{...a,revision:2,title:'A revised'},'a');
+  expect(()=>savePersonaProject(storage,{...a,title:'A stale'},'a')).toThrow('persona_project_stale_save');
+  const restored=loadPersonaProjects(storage,()=> 'unused');
+  expect(restored.projects.find(p=>p.id==='a')?.title).toBe('A revised');
+  expect(restored.projects.find(p=>p.id==='b')?.title).toBe('B');
+  expect(restored.activeProjectId).toBe('a');
+ });
+ it('rejects stale React saves from another tab without rewriting the latest version',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'p-reel',title:'First',contentType:'reel',sourceIdea:'Original',now:'2026-10-31T09:00:00Z'});
+  savePersonaProject(storage,first);
+  const oldTab={...first};
+  const latest={...first,revision:2,title:'Second tab saved new text',updatedAt:'2026-10-31T09:02:00Z'};
+  savePersonaProject(storage,latest);
+  expect(()=>resolvePersonaProjectSaveBase(storage,oldTab)).toThrow('persona_project_changed_since_open');
+  expect(loadPersonaProjects(storage,()=> 'unused').projects[0].title).toBe(latest.title);
+  expect(resolvePersonaProjectSaveBase(storage,latest).revision).toBe(2);
+ });
+ it('refuses saves for a project deleted from storage rather than resurrecting it',()=>{
+  const storage=memoryStorage();
+  const removed=createPersonaProject({id:'deleted',title:'Old',contentType:'reel',sourceIdea:'Old',now:'2026-10-31T09:00:00Z'});
+  expect(()=>resolvePersonaProjectSaveBase(storage,removed)).toThrow('persona_project_missing_at_save');
+ });
+
+ it('migrates the previous single active draft without deleting its source keys',()=>{
+  const storage=memoryStorage({
+   'persona:active-idea:v1':JSON.stringify({id:'legacy-1',title:'Сцена',angle:'Одна репетиция',format:'reel',score:0}),
+   'persona:active-draft:v1':JSON.stringify({title:'Черновик',slides:[],caption:'Текст',platformNotes:{instagram:'',vk:'',youtube:''}}),
+   'persona:active-stage:v1':JSON.stringify('final_qa'),
+  });
+
+  const result=loadPersonaProjects(storage,()=> 'migrated-project',()=> '2026-10-28T10:00:00.000Z');
+
+  expect(result.projects).toHaveLength(1);
+  expect(result.projects[0]).toMatchObject({id:'migrated-project',title:'Сцена',contentType:'reel',sourceIdea:'Одна репетиция',stage:'final_qa',schemaVersion:1,revision:1});
+  expect(result.projects[0].createdAt).toBe('2026-10-28T10:00:00.000Z');
+  expect(storage.getItem('persona:active-idea:v1')).toContain('legacy-1');
+ });
+
+ it('keeps two projects independent through save and reload',()=>{
+  const storage=memoryStorage();
+  const first=createPersonaProject({id:'project-a',title:'Первый',contentType:'reel',sourceIdea:'Идея А',now:'2026-10-28T10:00:00.000Z'});
+  const second=createPersonaProject({id:'project-b',title:'Второй',contentType:'carousel',sourceIdea:'Идея Б',now:'2026-10-28T10:01:00.000Z'});
+
+  savePersonaProject(storage,{...first,title:'Первый — версия 2',revision:2,updatedAt:'2026-10-28T10:02:00.000Z'});
+  savePersonaProject(storage,second);
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+
+  expect(reloaded.projects).toHaveLength(2);
+  expect(reloaded.projects.find(project=>project.id==='project-a')).toMatchObject({title:'Первый — версия 2',revision:2});
+  expect(reloaded.projects.find(project=>project.id==='project-b')).toMatchObject({title:'Второй',sourceIdea:'Идея Б',revision:1});
+ });
+
+ it('keeps an imported seven-shot shooting plan through a reload',()=>{
+  const storage=memoryStorage();
+  const brief={version:1 as const,ideaId:'external-id',sourceTitle:'Один день между театром и музыкой',sourceAngle:'Соединить две профессии одной историей',sourceFormat:'reel' as const,hook:{firstSeconds:'Я актёр.',visual:'Крупный план',delivery:'В объектив'},script:[3,4,5,5,4,6,4].map((durationSec,index)=>({order:index+1,durationSec,line:`Реплика ${index+1}`,action:'Действие'})),shots:[3,4,5,5,4,6,4].map((durationSec,index)=>({order:index+1,durationSec,framing:'medium' as const,angle:'Ракурс',cameraMovement:'Статика',lighting:'Мягкий свет',action:'Снять кадр'})),capture:{props:['Смартфон'],wardrobe:'Одежда',location:'Студия',lighting:'Мягкий свет',audio:{recording:'Близко к микрофону',processing:'Естественный голос'}},postProduction:{transitions:'Склейки',subtitles:{instruction:'Две строки',maxCharactersPerLine:42},color:'Естественный цвет'},adaptations:{reels:{aspectRatio:'9:16' as const,durationSec:31,instruction:'Reels'},shorts:{aspectRatio:'9:16' as const,durationSec:31,instruction:'Shorts'},vkClips:{aspectRatio:'9:16' as const,durationSec:31,instruction:'VK'}},factReferences:[]};
+  const imported=importPersonaProductionBrief({brief,selectedIdea:{id:'project-reel',title:brief.sourceTitle,angle:brief.sourceAngle,format:'reel'}});
+  const project=createPersonaProject({id:'project-reel',title:brief.sourceTitle,contentType:'reel',sourceIdea:brief.sourceAngle,now:'2026-10-29T12:00:00.000Z'});
+
+  savePersonaProject(storage,{...project,shootingPlan:imported,stage:'final_qa',revision:2,updatedAt:'2026-10-29T12:01:00.000Z'});
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+  const saved=reloaded.projects[0].shootingPlan as typeof imported;
+
+  expect(saved.materials.shotList).toHaveLength(7);
+  expect(saved.materials.productionBrief?.adaptations.reels.durationSec).toBe(31);
+  expect(saved.materials.script[0].line).toBe('Реплика 1');
+ });
+
+ it('persists a versioned Scenario Intelligence workspace without changing media or legacy projects',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'scenario-project',title:'Сценарий',contentType:'reel',sourceIdea:'Проверить сцену',now:'2026-10-30T10:00:00.000Z'});
+  const workspace={
+   version:1,
+   research:[{id:'ref-1',url:'https://www.youtube.com/shorts/reference',platform:'youtube',observedAt:'2026-10-30T10:00:00.000Z',observationStatus:'metadata_only',evidence:{kind:'manual_link',observedFields:['url','title']}}],
+   analyses:[],
+   ideas:[{id:'scenario-idea-1',title:'Оригинальная идея',referenceIds:['ref-1'],originalConflict:'Конфликт без копирования чужой сцены.',actingTask:'Слушать партнёра.',ending:'Точная реакция.',productionComplexity:'low',estimatedDurationSec:25,creativeProfileFit:'Естественный голос.'}],
+   selectedIdeaId:'scenario-idea-1',
+   creativeProfile:{priorities:['выразительная игра','оригинальная музыка'],constraints:['не менять внешность']},
+   editorialFeedback:[{revisionId:'r1',comment:'Шутка слишком предсказуемая, переписать финал',createdAt:'2026-10-30T10:00:00Z'}],
+   script:{currentRevisionId:'r1',revisions:[{id:'r1',number:1,createdAt:'2026-10-30T10:00:00.000Z',beats:[],sourceFacts:[]}],approval:undefined},
+  };
+
+  savePersonaProject(storage,{...project,mediaAssets:[{id:'original-video'}],timeline:{clips:['original-video']},scenarioWorkspace:workspace,revision:2,updatedAt:'2026-10-30T10:01:00.000Z'} as any);
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+  const saved=reloaded.projects[0] as any;
+
+  expect(saved.scenarioWorkspace).toMatchObject({version:1,selectedIdeaId:'scenario-idea-1'});
+  expect(saved.scenarioWorkspace.creativeProfile.priorities).toContain('оригинальная музыка');
+  expect(saved.scenarioWorkspace.editorialFeedback[0].comment).toContain('финал');
+  expect(saved.mediaAssets).toEqual([{id:'original-video'}]);
+  expect(saved.timeline).toEqual({clips:['original-video']});
+  expect(()=>validatePersonaProjectSnapshot({...project,scenarioWorkspace:{version:2}} as any)).toThrow('invalid_persona_project_snapshot');
+ });
+
+ it('loads an existing v1 project without a Scenario Intelligence workspace',()=>{
+  const storage=memoryStorage();
+  const project=createPersonaProject({id:'legacy-v1',title:'Старый',contentType:'photo',sourceIdea:'Идея',now:'2026-10-30T10:00:00.000Z'});
+  savePersonaProject(storage,project);
+
+  const reloaded=loadPersonaProjects(storage,()=> 'unused');
+
+  expect((reloaded.projects[0] as any).scenarioWorkspace).toBeUndefined();
+ });
+
+ it('preserves multiple distinct corrupt collection backups rather than overwriting history',()=>{
+  const main='lifeos:persona:projects:v1';
+  const backup=main+':corrupt';
+  const storage=memoryStorage({[backup]:'{first-snapshot',[main]:'{second-snapshot'});
+  expect(loadPersonaProjects(storage,()=> 'unused').projects).toEqual([]);
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+  expect(storage.getItem(backup+':2')).toBe('{second-snapshot');
+  storage.setItem(main,'{third-snapshot');
+  loadPersonaProjects(storage,()=> 'unused');
+  expect(storage.getItem(backup+':3')).toBe('{third-snapshot');
+  expect(storage.getItem(backup)).toBe('{first-snapshot');
+ });
+ it('keeps the malformed original when the recovery backup cannot be written',()=>{
+  const main='lifeos:persona:projects:v1';
+  const original=memoryStorage({[main]:'{valuable-corrupt-data'});
+  const denied:PersonaProjectStorage={
+   getItem:key=>original.getItem(key),
+   setItem:(key,value)=>{if(key.includes(':corrupt'))throw new Error('storage quota');original.setItem(key,value)},
+   removeItem:key=>original.removeItem(key),
+  };
+  expect(()=>loadPersonaProjects(denied,()=> 'unused')).toThrow('storage quota');
+  expect(original.getItem(main)).toBe('{valuable-corrupt-data');
+  expect(original.getItem(main+':corrupt')).toBeNull();
+ });
+
+ it('quarantines corrupt project data instead of throwing or overwriting it',()=>{
+  const storage=memoryStorage({'lifeos:persona:projects:v1':'{not-json'});
+
+  const result=loadPersonaProjects(storage,()=> 'unused');
+
+  expect(result.projects).toEqual([]);
+  expect(storage.getItem('lifeos:persona:projects:v1:corrupt')).toBe('{not-json');
+  expect(storage.getItem('lifeos:persona:projects:v1')).toBeNull();
+ });
+});

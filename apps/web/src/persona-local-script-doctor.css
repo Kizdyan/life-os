@@ -1,0 +1,30 @@
+.personaDoctorPanel{margin:16px 0;padding:16px;border:1px solid var(--line,#5d6878);border-radius:14px;min-width:0;max-width:100%;overflow-wrap:anywhere}
+.personaDoctorPanel>summary{cursor:pointer;font-weight:700;line-height:1.4}
+.personaDoctorPanel[open]>summary{margin-bottom:12px}
+.personaDoctorHint{font-size:.88rem;line-height:1.5;opacity:.82;margin:10px 0}
+.personaDoctorWarning{padding:10px;border-inline-start:3px solid #d5a04d;background:rgba(184,129,48,.12);border-radius:5px;line-height:1.5}
+.personaDoctorSelections{border:1px solid var(--line,#5d6878);border-radius:10px;padding:12px;min-width:0;margin:12px 0}
+.personaDoctorSelections legend{padding:0 5px;font-weight:600}
+.personaDoctorScene{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;padding:10px 0;align-items:center;border-bottom:1px solid rgba(125,140,155,.24)}
+.personaDoctorScene:last-child{border-bottom:0}
+.personaDoctorScene strong,.personaDoctorScene small{display:block;overflow-wrap:anywhere}
+.personaDoctorScene small{opacity:.75;line-height:1.4}
+.personaDoctorScene label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.personaDoctorField{display:block;min-width:0;margin:14px 0}
+.personaDoctorField textarea,.personaDoctorField input[type=file]{display:block;width:100%;box-sizing:border-box;min-width:0;margin-top:6px}
+.personaDoctorCommand{display:block;white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(100,120,140,.13);border-radius:8px;padding:12px;font-size:.85rem}
+.personaDoctorPreview{margin-top:14px;border-top:1px solid var(--line,#5d6878);padding-top:12px;min-width:0}
+.personaDoctorPreview li{margin:8px 0;line-height:1.45}
+.personaDoctorPreview li p{margin:3px 0}
+.personaDoctorDiff{border:1px solid rgba(125,140,155,.3);padding:12px;border-radius:10px;margin:12px 0;min-width:0}
+.personaDoctorDiff h6{margin:0 0 8px}
+.personaDoctorDiff>div{border-top:1px solid rgba(125,140,155,.18);padding:8px 0;overflow-wrap:anywhere}
+.personaDoctorDiff p{margin:4px 0}
+.personaDoctorActions{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:620px){
+ .personaDoctorPanel{padding:12px;margin:12px 0}
+ .personaDoctorScene{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+ .personaDoctorScene>div{grid-column:1/-1}
+ .personaDoctorScene label{white-space:normal}
+ .personaDoctorActions button{flex:1 1 190px}
+}

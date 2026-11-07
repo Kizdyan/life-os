@@ -1,0 +1,53 @@
+.personaShootNow{display:grid;gap:15px;margin:0 0 22px;padding:clamp(16px,3vw,28px);border:1px solid #dedbd5;border-radius:22px;background:#fff;color:#242424;max-width:100%;min-width:0;box-shadow:0 15px 35px rgba(0,0,0,.055)}
+.personaShootNow *{box-sizing:border-box;overflow-wrap:anywhere}
+.personaShootNowHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.personaShootNowHead small{font-size:11px;letter-spacing:.16em;color:#756f67;font-weight:700}
+.personaShootNowHead h3{font-size:clamp(23px,4vw,32px);margin:6px 0 5px;line-height:1.1}
+.personaShootNowHead p{font-size:16px;margin:4px 0;color:#514e48}
+.personaShootNowTime{flex-shrink:0;border:1px solid #dedbd5;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700;color:#2b2925}
+.personaShootNowStatus{font-size:13px;line-height:1.5;color:#5c554a;margin:0;border-left:3px solid #af9c71;padding-left:11px}
+.personaShootNowSetup{background:#f6f5f1;border-radius:16px;padding:16px;display:grid;gap:8px}
+.personaShootNowSetup p{margin:0;font-size:14px;line-height:1.45}
+.personaShootNowSetup strong,.personaShootNowProgress strong,.personaShootNowFinal strong{font-size:16px}
+.personaShootNowSetup details{font-size:14px}
+.personaShootNowSetup summary{cursor:pointer;font-weight:600}
+.personaShootNowProgress{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center}
+.personaShootNowProgress span{font-size:13px;color:#756f67}
+.personaShootNowSceneNav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}
+.personaShootNowSceneNav button{min-width:0;min-height:56px;border:1px solid #ddd9d2;background:#f5f4f1;border-radius:10px;color:#222;display:grid;align-content:center;justify-items:center;gap:2px;padding:6px;cursor:pointer;font:inherit}
+.personaShootNowSceneNav button.current{background:#1f1f1f;border-color:#1f1f1f;color:#fff}
+.personaShootNowSceneNav button span{font-size:16px;font-weight:700}
+.personaShootNowSceneNav small{font-size:10px}
+.personaShootNowScene{border:1px solid #e5e2dc;border-radius:16px;padding:clamp(15px,3vw,23px);display:grid;gap:9px}
+.personaShootNowSceneTop{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.personaShootNowSceneTop b{font-size:13px;letter-spacing:.08em}
+.personaShootNowSceneTop span{font-size:12px;color:#605c57}
+.personaShootNowScene>small{font-size:11px;letter-spacing:.14em;color:#756f67;margin-top:8px}
+.personaShootNowScene blockquote{font-size:clamp(21px,4vw,31px);font-weight:700;line-height:1.25;margin:0 0 8px;padding:0;border:0;color:#111}
+.personaShootNowScene p{font-size:14px;line-height:1.5;margin:0}
+.personaShootNowScene code{background:#f3f1ed;padding:4px 6px;border-radius:5px;font-size:12px}
+.personaShootNowCheck{display:flex;align-items:center;gap:10px;margin-top:10px;border-top:1px solid #e8e6e0;padding:15px 0 3px;font-size:14px;font-weight:700;cursor:pointer}
+.personaShootNowCheck input{width:20px;height:20px;flex-shrink:0}
+.personaShootNowActions{display:flex;flex-wrap:wrap;gap:9px}
+.personaShootNowActions button,.personaShootNowEmpty button{min-height:45px;border:0;border-radius:12px;padding:10px 15px;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.personaShootNowActions button.primary,.personaShootNowEmpty button{background:#171717;color:#fff}
+.personaShootNowActions button.secondary{background:#eeece7;color:#222}
+.personaShootNowActions button:disabled{opacity:.4;cursor:not-allowed}
+.personaShootNowFinal{border-top:1px solid #e9e6df;padding-top:14px;display:grid;gap:9px}
+.personaShootNowFinal p{margin:0;font-size:14px;line-height:1.5;color:#4c4944}
+.personaShootNowFeedback{font-size:13px;color:#555;margin:0}
+.personaShootNowEmpty{display:grid;gap:8px}.personaShootNowEmpty p{margin:0}
+.personaShootNowEmpty button{justify-self:start}
+@media(max-width:600px){.personaShootNow{border-radius:17px;padding:15px}.personaShootNowHead{display:grid}.personaShootNowTime{justify-self:start}.personaShootNowSceneNav{gap:4px}.personaShootNowSceneNav button{min-height:47px}.personaShootNowSceneNav small{font-size:9px}.personaShootNowActions button{flex:1 1 150px}.personaShootNowScene blockquote{font-size:23px}}
+
+.personaShootNowAi{display:grid;gap:9px;padding:15px;border:1px solid #dbd3c5;border-radius:15px;background:#fbf9f5}
+.personaShootNowAi strong{font-size:15px}
+.personaShootNowAi p{font-size:13px;color:#504c46;line-height:1.45;margin:0}
+.personaShootNowAi>div{display:flex;align-items:end;flex-wrap:wrap;gap:9px}
+.personaShootNowAi label{display:grid;gap:5px;font-size:12px;font-weight:650;min-width:170px;flex:1}
+.personaShootNowAi select{width:100%;padding:10px;border-radius:10px;border:1px solid #cfc9be;font:inherit;background:#fff;color:#222}
+.personaShootNowAi button{min-height:44px;border:0;border-radius:12px;background:#171717;color:#fff;padding:10px 14px;font:inherit;font-weight:700;cursor:pointer}
+.personaShootNowAi button:disabled{opacity:.5;cursor:not-allowed}
+
+.personaShootNowProvenance{margin:0;padding:11px 13px;border-left:3px solid #81735e;border-radius:7px;background:#f4f2ed;color:#3f3930;font-size:13px;line-height:1.55}
+.personaShootNowAiConnection{font-weight:650;overflow-wrap:anywhere}
