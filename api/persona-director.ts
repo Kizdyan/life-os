@@ -1,5 +1,6 @@
 import {env,json} from './_media-session.js';
 import {readPersonaDirectorProposal} from '../packages/core/src/persona-director-model.js';
+import {CREATIVE_PRODUCER_SYSTEM_PROMPT} from '../packages/core/src/persona-agent-system-prompts.js';
 
 type Idea={id:string;title:string;angle:string;format:string};
 const FREE_MODEL='nvidia/nemotron-3.5-lightning-free';
@@ -33,6 +34,7 @@ function activeProvider():{provider:'ollama'|'gateway';model:string}|null{
  return null;
 }
 const DIRECTOR_SYSTEM=[
+  CREATIVE_PRODUCER_SYSTEM_PROMPT,
  'Ты сценарист, режиссёр и монтажёр для автора-актёра и композитора.',
  'Создай оригинальный пригодный к самостоятельной СЪЁМКЕ короткий Reels на русском.',
  'НЕ повторяй предыдущие хуки или сюжет и НЕ выдумывай реальные биографические события.',
