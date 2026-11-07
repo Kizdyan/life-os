@@ -1,0 +1,36 @@
+name: skills-and-marketing
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".agents/skills/**"
+      - "scripts/validate-workflow-skills.mjs"
+      - "tools/persona-marketing-audit*.mjs"
+      - "tools/persona-production-brief*.mjs"
+      - "tools/persona-experiment-planner*.mjs"
+      - "tools/persona-marketing-production*.mjs"
+      - "tools/persona-task-*.mjs"
+      - "tools/persona-release-gate*.mjs"
+      - "package.json"
+      - ".github/workflows/skills-and-marketing.yml"
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate workflow skills
+        run: node scripts/validate-workflow-skills.mjs
+      - name: Test marketing calculations and report generation
+        run: node --test tools/persona-marketing-audit.test.mjs tools/persona-marketing-production.test.mjs tools/persona-experiment-planner.test.mjs
+      - name: Test production brief and approval gate
+        run: node --test tools/persona-production-brief.test.mjs
+      - name: Test task orchestration and recovery
+        run: node --test tools/persona-task-operations.test.mjs tools/persona-orchestration-e2e.test.mjs
+      - name: Test release evidence gate
+        run: node --test tools/persona-release-gate.test.mjs

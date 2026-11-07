@@ -8,9 +8,18 @@ import { join } from 'node:path';
 const root = process.cwd();
 const git = spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'});
 const gitSha = git.status === 0 ? git.stdout.trim() : null;
-if (process.env.PERSONA_COMMIT_SHA && gitSha && process.env.PERSONA_COMMIT_SHA !== gitSha) {
+if (!gitSha || !/^[a-f0-9]{40}$/.test(gitSha)) {
+  console.error('Refusing verification: exact Git HEAD SHA unavailable.');
+  process.exit(2);
+}
+if (process.env.PERSONA_COMMIT_SHA && process.env.PERSONA_COMMIT_SHA !== gitSha) {
   console.error('Refusing verification: declared SHA differs from checked-out HEAD.');
   process.exit(2);
+}
+const tracked=spawnSync('git',['status','--porcelain','--untracked-files=no'],{cwd:root,encoding:'utf8'});
+if(tracked.status!==0||tracked.stdout.trim()){
+ console.error('Refusing verification: tracked working tree is not clean.');
+ process.exit(2);
 }
 if (!existsSync(join(root, 'package.json'))) {
   console.error('Run from repository root (package.json missing).');
@@ -23,8 +32,25 @@ const tasks = [
   ['unit tests', 'test'],
   ['web build', 'web:build'],
   ['Persona core regressions', 'persona:core:test'],
+  ['Persona scenario and delivery regressions', 'persona:scenario:delivery:test'],
+  ['Workflow skill validation', 'skills:validate'],
+  ['Persona marketing audit regressions', 'marketing:test'],
+  ['Life OS task orchestration regressions', 'tasks:test'],
+  ['Local artifact evidence regressions', 'evidence:test'],
+  ['Local task executor regressions', 'tasks:execute:test'],
+  ['Local batch executor regressions', 'tasks:batch:test'],
+  ['Remotion handoff regressions', 'media:remotion:test'],
+  ['Remotion stage regressions', 'media:remotion:stage:test'],
+  ['Remotion render QC regressions', 'media:remotion:render:test'],
+  ['Release evidence gate regressions', 'release:gate:test'],
+  ['Task orchestration end-to-end CLI', 'tasks:e2e:test'],
+  ['Persona production brief regressions', 'production:brief:test'],
   ['media integration', 'media:test'],
-].filter(([,script]) => Object.hasOwn(manifest.scripts ?? {}, script));
+];
+const mandatory=['typecheck','api:typecheck','test','web:build','persona:core:test','persona:scenario:delivery:test','skills:validate','marketing:test','tasks:test','evidence:test','tasks:execute:test','tasks:batch:test','media:remotion:test','media:remotion:stage:test','media:remotion:render:test','release:gate:test','tasks:e2e:test','production:brief:test'];
+const missing=mandatory.filter(script=>!Object.hasOwn(manifest.scripts??{},script));
+if(missing.length){console.error('Refusing verification: required scripts missing: '+missing.join(', '));process.exit(2)}
+const available=tasks.filter(([,script])=>Object.hasOwn(manifest.scripts??{},script));
 const install = process.argv.includes('--install');
 const dry = process.argv.includes('--dry-run');
 const runMedia = process.argv.includes('--media');
@@ -37,7 +63,7 @@ if (runMedia && !dry) {
     }
   }
 }
-const selected = tasks.filter(([name]) => name !== 'media integration' || runMedia);
+const selected = available.filter(([name]) => name !== 'media integration' || runMedia);
 const commands = [...(install ? [['install','npm',['ci','--no-audit','--no-fund']]] : []), ...selected.map(([name,script]) => [name,'npm',['run',script]])];
 const results = [];
 const startedAt = new Date().toISOString();
