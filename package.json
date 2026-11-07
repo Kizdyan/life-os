@@ -82,7 +82,9 @@
     "media:remotion:handoff": "node tools/persona-remotion-handoff.mjs",
     "media:remotion:test": "node --test tools/persona-remotion-handoff.test.mjs",
     "media:remotion:stage": "node tools/persona-remotion-stage.mjs",
-    "media:remotion:stage:test": "node --test tools/persona-remotion-stage.test.mjs"
+    "media:remotion:stage:test": "node --test tools/persona-remotion-stage.test.mjs",
+    "media:remotion:render": "node tools/persona-remotion-render.mjs",
+    "media:remotion:render:test": "node --test tools/persona-remotion-render.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
