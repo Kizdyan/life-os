@@ -2,7 +2,7 @@ import {
  buildPersonaProductionBrief,
  type PersonaProductionBrief,
  type PersonaProductionIdea,
-} from './persona-production-brief';
+} from './persona-production-brief.js';
 
 export type PersonaDirectorScene={
  durationSec:number;line:string;action:string;
@@ -75,7 +75,7 @@ export function personaDirectorToBrief(
  }));
  const durationSec=script.reduce((sum,s)=>sum+s.durationSec,0);
  const adaptations=Object.fromEntries(Object.entries(base.adaptations)
-  .map(([key,adaptation])=>[key,{...adaptation,durationSec}])) as PersonaProductionBrief['adaptations'];
+  .map(([key,adaptation])=>[key,{...(adaptation as PersonaProductionBrief['adaptations'][keyof PersonaProductionBrief['adaptations']]),durationSec}])) as PersonaProductionBrief['adaptations'];
  return {
   ...base,hook:{firstSeconds:p.hook,visual:p.scenes[0].action,
    delivery:p.scenes[0].performance},
