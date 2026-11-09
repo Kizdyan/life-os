@@ -15,6 +15,7 @@ import {createAsrRecoveryReport} from './persona-asr-recovery-report.mjs';
 import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
 import {createColorVariants} from './persona-color-variants.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
+import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 import { makeManifest } from './persona-delivery-source-folder.mjs';
 import {createGenericTakeManifest,isGenericTakeFolder} from './persona-generic-takes.mjs';
 
@@ -174,7 +175,8 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
  ].join('\n'),{flag:'wx'});
  return recoveryResult;
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts}={}){
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts,burnSubtitles=false}={}){
+ if(typeof burnSubtitles!=='boolean')fail('burnSubtitles must be boolean');
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
  for(const file of [sources,brief,whisperCli,whisperModel])if(!await exists(resolve(file)))fail('Missing required local file: '+file);
  if(extname(resolve(whisperCli)).toLowerCase()==='.cmd')fail('Batch wrappers are not accepted: supply a native whisper-cli executable');
@@ -277,7 +279,13 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const subtitleDraft=await writeSubtitleDraft({briefPath:resolve(brief),timelinePath:assembled.project,decisionsPath:chosenDecisionPath,outputDir:root});
   events.push('reviewable_subtitle_sidecars_written');
   const output=join(root,'draft-reel.mp4');
-  await call(process.execPath,[rendererPath,assembled.project,output]);
+  let subtitleBurnIn=null;
+  const renderOutput=burnSubtitles&&!aiEditorial?join(root,'draft-reel-clean.mp4'):output;
+  await call(process.execPath,[rendererPath,assembled.project,renderOutput]);
+  if(burnSubtitles&&!aiEditorial){
+   subtitleBurnIn=await burnPersonaSubtitles({videoPath:renderOutput,reviewPath:subtitleDraft.reviewPath,outputPath:output,ffmpegDir});
+   events.push('subtitles_burned_into_draft_mp4');
+  }
   events.push('real_mp4_rendered');
   const qaPath=join(root,'qa.json');
   await call(process.execPath,[verifierPath,output,'persona-first-reel','reel',qaPath]);
@@ -296,7 +304,10 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
    const selected=colorPackage.variants.find(item=>item.id===aiEditorial.look);
    if(!selected)fail('Ollama requested an unavailable safe color grade');
    const finished=join(root,'ai-edited-reel.mp4');
-   await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
+   if(burnSubtitles){
+    subtitleBurnIn=await burnPersonaSubtitles({videoPath:selected.path,reviewPath:subtitleDraft.reviewPath,outputPath:finished,ffmpegDir});
+    events.push('subtitles_burned_into_ai_finished_mp4');
+   }else await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
    const finishedQa=join(root,'ai-edited-qa.json');
    await call(process.execPath,[verifierPath,finished,'persona-ai-reel','reel',finishedQa]);
    const checked=JSON.parse(await readFile(finishedQa,'utf8'));
@@ -310,7 +321,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
     aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
-    subtitleDraft,timing,
+    subtitleDraft,subtitleBurnIn,timing,
     warning:'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});

@@ -14,6 +14,9 @@ test('one-command AI editor accepts only actual explicit model + media inputs',(
  assert.equal(args.aiEditorModel,'qwen3:4b-instruct');
  assert.equal(args.aiVariation,'humor');
  assert.equal(args.mode,'strict');
+ assert.equal(args.burnSubtitles,false);
+ assert.equal(readPersonaAiReelArgs([...values,'--burn-subtitles','true']).burnSubtitles,true);
+ assert.throws(()=>readPersonaAiReelArgs([...values,'--burn-subtitles','yes']),/burn-subtitles/);
  assert.throws(()=>readPersonaAiReelArgs([...values,'--variation','invalid']),/duplicate|Invalid/);
  assert.throws(()=>readPersonaAiReelArgs(values.slice(0,-4)),/Missing/);
  assert.throws(()=>readPersonaAiReelArgs([...values,'--server','https://example.com']),/Invalid/);

@@ -74,13 +74,14 @@ function scan(s){for(const [name,file] of Object.entries({evidence:join(s.output
 function runProcess(s,config){
  const args=[join(here,'persona-ai-reel.mjs'),'--takes',s.input,'--brief',s.briefPath,'--out',s.output,'--whisper-cli',config.whisperCli,'--whisper-model',config.whisperModel,'--ollama-model',s.model,'--variation',s.variation];
  if(config.ffmpegDir)args.push('--ffmpeg-dir',config.ffmpegDir);
+ if(s.burnSubtitles)args.push('--burn-subtitles','true');
  s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],env:envPath(config.ffmpegDir)});
  let stderr='';s.child.stderr.on('data',b=>stderr=(stderr+String(b)).slice(-6000));s.child.stdout.on('data',()=>scan(s));
  s.timer=setInterval(()=>scan(s),750).unref();
  s.child.on('error',error=>{s.state='failed';s.error=String(error.message||error)});
  s.child.on('close',async code=>{clearInterval(s.timer);s.child=null;scan(s);if(s.cancelled){s.state='cancelled';s.error='Cancelled by the author; originals were not changed.';return}
   if(code!==0){s.state='failed';s.error=(stderr||'AI reel process exited '+code).slice(-3000);return}
-  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
+  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
   catch(error){s.state='failed';s.error=String(error.message||error)}
  });
 }
@@ -100,12 +101,12 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    const videoToken=req.method==='GET'&&url.pathname.endsWith('/video')?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
    if(req.method==='POST'&&url.pathname==='/session'){
-    const body=await json(req);if(!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel))fail('invalid approved Reel brief, variation or local model');
+    const body=await json(req);if(!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel)||(body.burnSubtitles!==undefined&&typeof body.burnSubtitles!=='boolean'))fail('invalid approved Reel brief, variation, subtitle option or local model');
     await mkdir(config.outputRoot,{recursive:true});const id=randomUUID(),input=join(config.outputRoot,'.worker-staging-'+id),output=join(config.outputRoot,'ai-reel-'+id);await mkdir(input,{recursive:false});
     // The established runner owns output creation and rejects a pre-existing
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,briefPath,variation:body.variation,model:body.model||config.ollamaModel,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    const s={id,input,output,briefPath,variation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<2||s.expected>12)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
    const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
