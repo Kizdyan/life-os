@@ -20,7 +20,7 @@ const fail=message=>{throw Error('Persona independent code review: '+message)};
 const sha256=value=>createHash('sha256').update(value).digest('hex');
 const permitted=/^(apps\/web\/src\/|api\/|packages\/core\/src\/|tools\/|scripts\/)/;
 const codeFile=/\.(?:tsx?|mjs|cjs|jsx?|css)$/;
-const forbidden=/(?:^|\/)(?:\.env(?:\..*)?|private|secrets|credentials|node_modules)(?:\/|$)|\.(?:pem|key|p12)$/i;
+const forbidden=/(?:^|\/)(?:\.env(?:\.[^/]*)?|private|secrets|credentials|node_modules)(?:\/|\.|$)|\.(?:pem|key|p12)$/i;
 const disclosure=/(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{15,}|sk-[A-Za-z0-9_-]{20,})/;
 const severities=new Set(['BLOCKER','MAJOR','MINOR']);
 const statusValues=new Set(['PASS','NEEDS_FIX','BLOCKED','UNVERIFIED']);
@@ -135,7 +135,7 @@ export async function run({base='main',model='qwen3:4b-instruct',secondModel,out
   verdict:{...gate,modelFindingsAreUnconfirmed:true,humanAcceptanceRequired:true,
    publicationApproved:false,productionReady:false,actionsExecuted:0}};
  const directory=resolve(outputDir);
- await mkdir(directory,{recursive:false});
+ await mkdir(directory,{recursive:true});
  await writeFile(join(directory,'code-review.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
  return {reportPath:join(directory,'code-review.json'),commit:head,status:gate.status,
   reviewers:reviews.map(r=>({model:r.model,issues:r.issues.length,durationMs:r.durationMs})),
