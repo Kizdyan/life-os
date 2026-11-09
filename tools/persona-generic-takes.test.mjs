@@ -48,13 +48,19 @@ test('new dynamically generated story accepts labeled real takes, without touchi
   }),/every video must be named/);
  }finally{await rm(d,{recursive:true,force:true})}
 });
-test('symlinked videos are not processed as input files',async()=>{
+test('symlinked videos are not processed as input files',async t=>{
  const d=await mkdtemp(join(tmpdir(),'persona-link-'));
  try{
   const folder=join(d,'takes');await mkdir(folder);
   const outside=join(d,'outside.mp4');await writeFile(outside,Buffer.alloc(1200,1));
   await writeFile(join(folder,'S01_take01.mp4'),Buffer.alloc(1200,2));
-  await symlink(outside,join(folder,'S02_take01.mp4'));
+  try{await symlink(outside,join(folder,'S02_take01.mp4'))}
+  catch(error){
+   if(process.platform==='win32'&&error?.code==='EPERM'){
+    t.skip('Windows account cannot create the symlink fixture; production rejection remains unchanged');return;
+   }
+   throw error;
+  }
   assert.equal(await isGenericTakeFolder(folder),false);
   await assert.rejects(createGenericTakeManifest({
    folderPath:folder,manifestPath:join(d,'source.json'),
