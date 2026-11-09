@@ -11,6 +11,7 @@ on:
       - "tools/persona-marketing-production*.mjs"
       - "tools/persona-task-*.mjs"
       - "tools/persona-release-gate*.mjs"
+      - "tools/persona-code-review-gate*.mjs"
       - "package.json"
       - ".github/workflows/skills-and-marketing.yml"
 permissions:
@@ -34,3 +35,5 @@ jobs:
         run: node --test tools/persona-task-operations.test.mjs tools/persona-orchestration-e2e.test.mjs
       - name: Test release evidence gate
         run: node --test tools/persona-release-gate.test.mjs
+      - name: Test local independent code review contracts (no Qwen call)
+        run: node --test tools/persona-code-review-gate.test.mjs
