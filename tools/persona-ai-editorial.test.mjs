@@ -31,6 +31,10 @@ test('real local model chooses different existing takes without inventing source
    const request=JSON.parse(options.body);
    assert.equal(request.stream,false);
    assert.equal(request.model,'qwen3:4b-instruct');
+   assert.equal(request.format.type,'object');
+   assert.deepEqual(request.format.properties.choices.items.properties.candidateId.enum,[a.candidateId,b.candidateId,c.candidateId,d.candidateId]);
+   assert.equal(request.format.properties.choices.items.properties.beat.maximum,2);
+   assert.equal(request.options.temperature,.2);
    assert.ok(request.messages[0].content.includes('НЕ видишь видео'));
    assert.equal(JSON.parse(request.messages[1].content).candidates[1].alternatives.length,2);
    modelWasCalled=true;
