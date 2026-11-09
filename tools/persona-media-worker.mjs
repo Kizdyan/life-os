@@ -7,7 +7,7 @@
  */
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {createWriteStream,createReadStream} from 'node:fs';
 import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
@@ -51,6 +51,15 @@ async function health(config){
  return {ok:unavailable.length===0,components:{ffmpeg,whisper,ollama},reason:unavailable.length?unavailable.join('; ')+' unavailable':null};
 }
 function safeFile(name){return typeof name==='string'&&basename(name)===name&&takeName.test(name)}
+function originalName(header,fallback){
+ if(header===undefined)return fallback;
+ if(typeof header!=='string'||header.length>4096)fail('invalid original filename');
+ let name;try{name=decodeURIComponent(header)}catch{fail('invalid original filename encoding')}
+ if(!name||name.length>255||/[\\/\x00-\x1f:]/.test(name)||! /\.(mp4|mov|mkv|webm|m4v)$/i.test(name))fail('invalid original filename');
+ if(extname(name).toLowerCase()!==extname(fallback).toLowerCase())fail('original container extension must be preserved');
+ return name;
+}
+async function fileHash(path){const hash=createHash('sha256');for await(const part of createReadStream(path))hash.update(part);return hash.digest('hex')}
 function sessionView(s){
  const evidence=join(s.output,'evidence','analysis.json'), decisions=join(s.output,'decisions.ai.json'), timeline=join(s.output,'timeline.json'), finished=join(s.output,'ai-edited-reel.mp4');
  let stage=s.stage;
@@ -81,7 +90,7 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
   const origin=req.headers.origin;if(origin&&!permittedOrigin(origin)){respond(res,403,{error:'origin_not_allowed'});return}
   const expected=new Set(['127.0.0.1:'+server.address().port,'localhost:'+server.address().port]);if(!expected.has(req.headers.host||'')){respond(res,403,{error:'host_not_allowed'});return}
   if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
-  if(req.method==='OPTIONS'&&origin){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Persona-Worker-Token,X-Persona-File-Name'});res.end();return}
+  if(req.method==='OPTIONS'&&origin){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Persona-Worker-Token,X-Persona-File-Name,X-Persona-Original-Name'});res.end();return}
   const url=new URL(req.url||'/','http://127.0.0.1');
   try{
    if(req.method==='GET'&&url.pathname==='/health'){
@@ -103,7 +112,8 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    if(req.method==='GET'&&match[2]==='status'){scan(s);respond(res,200,sessionView(s));return}
    if(req.method==='PUT'&&match[2]?.startsWith('take/')){
     const index=Number(match[3]),name=req.headers['x-persona-file-name'];const length=Number(req.headers['content-length']);if(s.state!=='uploading'||!Number.isInteger(index)||index<0||index>=s.expected||s.uploaded.has(index)||!safeFile(name)||!Number.isSafeInteger(length)||length<1024||length>maxFile||s.total+length>maxTotal)fail('invalid explicit take upload');
-    const path=join(s.input,name);let ownsPartial=false;const sink=createWriteStream(path,{flags:'wx'});sink.once('open',()=>{ownsPartial=true});try{await pipeline(req,sink);if((await stat(path)).size!==length)fail('upload size mismatch');s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
+    const sourceName=originalName(req.headers['x-persona-original-name'],name);
+    const path=join(s.input,name);let ownsPartial=false;const sink=createWriteStream(path,{flags:'wx'});sink.once('open',()=>{ownsPartial=true});try{await pipeline(req,sink);if((await stat(path)).size!==length)fail('upload size mismatch');const intake={version:1,originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
    }
    if(req.method==='POST'&&match[2]==='run'){
     if(s.state!=='uploading'||s.uploaded.size!==s.expected)fail('all selected takes must finish uploading');s.state='running';s.stage='intake';runProcess(s,config);respond(res,202,sessionView(s));return;
