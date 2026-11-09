@@ -16,6 +16,7 @@
     "media:comparison:handoff": "node tools/persona-review-handoff.mjs",
     "media:timeline": "node tools/persona-timeline-render.mjs",
     "media:bridge": "node tools/persona-render-bridge.mjs",
+    "media:worker": "node tools/persona-media-worker.mjs",
     "persona:preflight": "node tools/persona-preflight.mjs",
     "persona:check": "npm run persona:preflight && npm run media:test && npm run web:build",
     "media:verify": "node tools/persona-verify-render.mjs",

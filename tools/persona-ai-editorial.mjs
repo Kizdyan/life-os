@@ -9,6 +9,28 @@ const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const string=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
 const validNumber=v=>typeof v==='number'&&Number.isFinite(v);
 const looks=new Set(['natural-clean','warm-cinematic','muted-filmic']);
+function editorialJsonSchema(decisions){
+ // Ollama's local grammar supports the portable JSON Schema subset below.
+ // Index-specific `prefixItems` is intentionally not used: some Windows builds
+ // reject it with HTTP 400. The fail-closed validator below retains the
+ // per-beat candidate and ordering guarantee.
+ const candidateIds=[...new Set(decisions.candidates.flatMap(entry=>
+  entry.alternatives.map(candidate=>candidate.candidateId)))];
+ const beatCount=decisions.candidates.length;
+ return {
+  type:'object',additionalProperties:false,
+  properties:{
+   choices:{type:'array',minItems:beatCount,maxItems:beatCount,items:{
+    type:'object',additionalProperties:false,
+    properties:{beat:{type:'integer',minimum:1,maximum:beatCount},
+     candidateId:{type:'string',enum:candidateIds}},
+    required:['beat','candidateId'],
+   }},
+   creativeIntent:{type:'string',minLength:1,maxLength:700},
+   look:{type:'string',enum:[...looks]},
+  },required:['choices','creativeIntent','look'],
+ };
+}
 function boundedSourceCandidate(item){
  return {candidateId:item.candidateId,sourceId:item.sourceId,startSec:item.startSec,
   durationSec:item.durationSec,confidence:item.confidence,transcript:String(item.transcript??'').slice(0,300),
@@ -89,9 +111,9 @@ export async function chooseAiEditorialCuts({decisions,brief,model,variation='ci
  try{
   response=await fetchImpl('http://127.0.0.1:11434/api/chat',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({model,stream:false,format:'json',messages:[
+   body:JSON.stringify({model,stream:false,format:editorialJsonSchema(decisions),messages:[
     {role:'system',content:system},{role:'user',content:body},
-   ],options:{temperature:0.75,num_predict:1800}}),
+   ],options:{temperature:0.2,num_predict:1800}}),
    signal:AbortSignal.timeout(120000),
   });
  }catch{fail('Ollama unavailable; no fake AI editing performed')}
