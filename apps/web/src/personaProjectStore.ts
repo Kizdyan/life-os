@@ -2,6 +2,7 @@ import type { ScenarioIdea, ScenarioReferenceAnalysis, ScenarioResearchItem, Sce
 import type { FormatMemoryObservation } from '../../../packages/core/src/format-memory';
 import {validatePersonaProductionGuide,type PersonaProductionGuide} from './personaProductionGuide';
 import type {PersonaColorComparisonRecord} from './personaColorComparison';
+import {readPersonaAiMediaJob,type PersonaAiMediaJob} from './personaAiMediaWorker';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -20,6 +21,8 @@ export type PersonaProject={
  processing:unknown|null;
  /** Author-picked color comparison evidence; MP4 bytes remain outside project storage. */
  colorComparison?:PersonaColorComparisonRecord;
+ /** Local Worker paths and SHA-bound provenance; never stores MP4 bytes. */
+ aiMediaJob?:PersonaAiMediaJob;
  captions:unknown|null;
  socialCaptions:unknown|null;
  stage:PersonaProjectStage;
