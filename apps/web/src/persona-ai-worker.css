@@ -1,0 +1,6 @@
+.personaAiMediaWorker{display:block;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.personaAiMediaWorker label{display:block;min-width:0;max-width:100%;margin:12px 0}
+.personaAiMediaWorker input,.personaAiMediaWorker select,.personaAiMediaWorker video{max-width:100%;min-width:0;box-sizing:border-box}
+.personaAiMediaWorker input[type=file]{width:100%}
+.personaAiMediaWorker pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.personaAiMediaWorker button{max-width:100%;white-space:normal}
