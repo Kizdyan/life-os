@@ -15,6 +15,7 @@ import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runFirstReel,validateDraftQa} from './persona-first-reel-runner.mjs';
 import {matchBriefToLibrary,shootGapMarkdown} from './persona-library-shot-match.mjs';
+import {readCommercialIdeaDetails} from './persona-commercial-prompt.mjs';
 
 const fail=message=>{throw Error('Persona flow: '+message)};
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -42,9 +43,10 @@ export function validateModelServers(input){
  if(new Set(servers.map(s=>s.id)).size!==servers.length)fail('Provider IDs must be unique');
  return servers;
 }
-export function validateIdeas(input){
+export function validateIdeas(input,{count}={}){
+ if(count!==undefined&&![1,3].includes(count))fail('Invalid requested idea count');
  const ideas=input?.ideas;
- if(!Array.isArray(ideas)||ideas.length<3||ideas.length>5)fail('Model did not return 3-5 real ideas');
+ if(!Array.isArray(ideas)||(count!==undefined?ideas.length!==count:ideas.length<3||ideas.length>5))fail('Model did not return the required number of real ideas');
  const seen=new Set();
  return ideas.map((idea,index)=>{
   if(!object(idea)||!txt(idea.title,4,140)||!txt(idea.angle,8,650)||
@@ -52,7 +54,7 @@ export function validateIdeas(input){
   const key=idea.title.toLowerCase().trim().replace(/\s+/g,' ');
   if(seen.has(key))fail('Model duplicated an idea');
   seen.add(key);
-  return {id:'idea-'+(index+1),title:idea.title.trim(),angle:idea.angle.trim(),hook:idea.hook.trim(),format:'reel'};
+  return {id:'idea-'+(index+1),title:idea.title.trim(),angle:idea.angle.trim(),hook:idea.hook.trim(),format:'reel',...(idea.skills!==undefined?readCommercialIdeaDetails(idea):{})};
  });
 }
 export function validateDirector(input){
@@ -77,7 +79,9 @@ export function validateDirector(input){
  if(duration<15||duration>70)fail('Generated reel duration outside 15–70 sec');
  return input;
 }
-export async function modelJSON({servers,system,payload,fetchImpl}){
+export async function modelJSON({servers,system,payload,fetchImpl,contextTokens,timeoutMs=120000,maxOutputTokens=3600,thinking}){
+ if(contextTokens!==undefined&&(!Number.isInteger(contextTokens)||contextTokens<1024||contextTokens>32768))fail('Invalid local context size');
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000||!Number.isInteger(maxOutputTokens)||maxOutputTokens<80||maxOutputTokens>6000)fail('Invalid model resource budget');
  const errors=[];
  for(const server of validateModelServers(servers)){
   const token=server.tokenEnv?process.env[server.tokenEnv]:null;
@@ -86,10 +90,10 @@ export async function modelJSON({servers,system,payload,fetchImpl}){
    const response=await fetchImpl(server.origin+'/api/chat',{
     method:'POST',headers:{'Content-Type':'application/json',
      ...(token?{Authorization:'Bearer '+token}:{})},
-    body:JSON.stringify({model:server.model,stream:false,format:'json',
+    body:JSON.stringify({model:server.model,stream:false,format:'json',...(thinking===undefined?{}:{think:thinking}),
      messages:[{role:'system',content:system},{role:'user',content:JSON.stringify(payload)}],
-     options:{temperature:.75,num_predict:3600}}),
-    signal:AbortSignal.timeout(120000),
+     options:{temperature:.75,num_predict:maxOutputTokens,...(contextTokens?{num_ctx:contextTokens}:{})}}),
+    signal:AbortSignal.timeout(timeoutMs),
    });
    if(!response.ok)throw Error('HTTP '+response.status);
    const data=await response.json();
@@ -108,6 +112,7 @@ export function canonicalBrief(idea,director){
  const platform=instruction=>({aspectRatio:'9:16',durationSec:duration,instruction});
  return {
   version:1,ideaId:idea.id,sourceAngle:idea.angle,sourceTitle:idea.title,sourceFormat:'reel',
+  ...(idea.skills?{commercialIntent:readCommercialIdeaDetails(idea)}:{}),
   hook:{firstSeconds:d.hook,visual:d.scenes[0].action,delivery:d.scenes[0].performance},
   script:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,line:s.line.trim(),action:s.action.trim()})),
   shots:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,framing:s.framing,
@@ -154,7 +159,7 @@ export async function preparePersonaFlow({
   'Ты предлагаешь актёру и композитору три разных оригинальных коротких видео. Никаких шаблонных советов, выдуманных личных фактов и повторяющихся хуков. Отвечай ТОЛЬКО JSON формата {"ideas":[{"title":"...","angle":"...","hook":"..."},...]}.',
   payload:{theme,style,requirements:'one actor; one room; phone + tripod; possible piano; shootable 20–50 sec; character and humor'},
  });
- const ideas=validateIdeas(first.data);
+ const ideas=validateIdeas(first.data,ideasFromProposal?.length===1?{count:1}:{});
  if(ideasFromProposal!==null&&(!ideasProvider||typeof ideasProvider.id!=='string'||
   typeof ideasProvider.model!=='string'||!/^[a-f0-9]{64}$/i.test(sourceProposalSha256??'')))
   fail('Invalid saved proposal provenance');

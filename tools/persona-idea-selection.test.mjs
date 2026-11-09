@@ -31,6 +31,22 @@ const director={hook:'Кто здесь действительно режисс�
  ],editingIntent:'Драматические паузы переходят в комедийные музыкальные акценты',
  colorIntent:'Натуральные цвета кожи без жёлтого тона и сохранённые очки'};
 const server=[{id:'local',baseUrl:'http://127.0.0.1:11434',model:'installed-real-model'}];
+test('commercial examples and three-skill details survive proposal and chosen-idea director handoff',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-commercial-proposal-')),requests=[];
+ const enriched={ideas:ideas.ideas.map(i=>({...i,skills:['actor','director','composer'].map(role=>({role,action:'Конкретное действие на экране'})),music:'Пиццикато переходит в оркестровый удар',actingTask:'Убедить сомневающегося клиента',sellingEnding:'Сыграю, сниму и напишу музыку для вашего проекта.'}))};
+ const fetchImpl=async(url,options)=>{const request=JSON.parse(options.body);requests.push(request);return {ok:true,json:async()=>({message:{content:JSON.stringify(request.messages[0].content.includes('<author_examples>')?enriched:director)}})}};
+ try{
+  const result=await proposePersonaIdeas({theme:'Самоирония актёра, режиссёра и композитора',contentFormat:'comedy',servers:server,outputDir:join(root,'ideas'),fetchImpl});
+  const proposal=JSON.parse(await readFile(result.ideasPath,'utf8'));
+  assert.equal(proposal.contentFormat,'comedy');assert.equal(proposal.ideas[0].skills.length,3);
+  assert.equal(requests[0].options.num_ctx,8192);assert.equal(requests[0].think,false);assert.match(requests[0].messages[0].content,/Играть три разные цели/);
+  await selectPersonaIdea({proposalPath:result.ideasPath,ideaId:'idea-2',outputDir:join(root,'plan'),servers:server,fetchImpl});
+  const payload=JSON.parse(requests[1].messages[1].content);
+  assert.equal(payload.idea.music,enriched.ideas[1].music,'Music intent cannot be lost during director handoff');
+  const brief=JSON.parse(await readFile(join(root,'plan','PRODUCTION-BRIEF.json'),'utf8'));
+  assert.equal(brief.commercialIntent.sellingEnding,enriched.ideas[1].sellingEnding);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 const mock=(history)=>async(url,options)=>{
  history.push({url,body:JSON.parse(options.body)});
  const sys=history.at(-1).body.messages[0].content;
