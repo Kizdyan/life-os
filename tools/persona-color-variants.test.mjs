@@ -7,9 +7,28 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createColorVariants} from './persona-color-variants.mjs';
-
+import {createColorVariants,renderVisualPreset} from './persona-color-variants.mjs';
 const available=spawnSync('ffmpeg',['-version']).status===0&&spawnSync('ffprobe',['-version']).status===0;
+
+test('director whitelist renders distinct pixels while preserving geometry, original and decoded audio',{skip:!available,timeout:120000},()=>withTemp(async root=>{
+ const input=join(root,'original.mp4');makeSample(input);const original=await readFile(input),audio=decodedAudioHash(input),pixels=[];
+ for(const presetId of ['Dynamic','Cinematic']){
+  const output=join(root,presetId+'.mp4');const result=await renderVisualPreset({inputPath:input,outputPath:output,presetId});
+  assert.equal(result.presetId,presetId);assert.equal(decodedAudioHash(output),audio);
+  const probe=spawnSync('ffprobe',['-v','error','-show_streams','-of','json',output],{encoding:'utf8'});
+  const video=JSON.parse(probe.stdout).streams.find(s=>s.codec_type==='video');
+  assert.equal(video.width,320);assert.equal(video.height,568);assert.equal(video.avg_frame_rate,'30/1');
+  const decoded=spawnSync('ffmpeg',['-v','error','-i',output,'-frames:v','1','-f','hash','-hash','sha256','-'],{encoding:'utf8'});
+  assert.equal(decoded.status,0,decoded.stderr);pixels.push(decoded.stdout);
+  const rgb=spawnSync('ffmpeg',['-v','error','-i',output,'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'],{maxBuffer:320*568*4});
+  assert.equal(rgb.status,0,rgb.stderr?.toString());const patch=rgb.stdout.subarray((100*320+20)*3,(100*320+20)*3+3);
+  assert.ok(Math.max(...patch)-Math.min(...patch)>100,'A saturated red reference must not collapse into neutral grey');
+  await assert.rejects(renderVisualPreset({inputPath:input,outputPath:output,presetId}),/exists/);
+ }
+ assert.notEqual(pixels[0],pixels[1],'Styles must change exported pixels, not only metadata');
+ assert.deepEqual(await readFile(input),original);
+}));
+
 async function withTemp(run){
  const root=await mkdtemp(join(tmpdir(),'persona-color-variants-'));
  try{return await run(root)}finally{await rm(root,{recursive:true,force:true})}

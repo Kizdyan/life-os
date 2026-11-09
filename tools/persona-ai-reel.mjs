@@ -8,7 +8,8 @@
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runFirstReel,firstReelCliExitCode} from './persona-first-reel-runner.mjs';
-const allowed=new Set(['--takes','--brief','--out','--whisper-cli','--whisper-model','--ollama-model','--variation','--ffmpeg-dir']);
+import {getVisualPreset} from './persona-creative-director.mjs';
+const allowed=new Set(['--takes','--brief','--out','--whisper-cli','--whisper-model','--ollama-model','--variation','--ffmpeg-dir','--burn-subtitles','--visual-preset']);
 export function readPersonaAiReelArgs(args){
  const parsed={};
  if(args.length%2!==0)throw Error('Flags must be followed by values');
@@ -21,20 +22,22 @@ export function readPersonaAiReelArgs(args){
  if(required.some(k=>typeof parsed[k]!=='string'||!parsed[k].trim()))
   throw Error('Missing '+required.filter(k=>!parsed[k]).join(', '));
  const variation=parsed['--variation']??'cinematic';
+ if(parsed['--visual-preset']!==undefined)getVisualPreset(parsed['--visual-preset']);
+ if(parsed['--burn-subtitles']!==undefined&&!['true','false'].includes(parsed['--burn-subtitles']))throw Error('Invalid --burn-subtitles (true|false)');
  if(!['cinematic','humor','intimate','unexpected'].includes(variation))
   throw Error('Invalid --variation (cinematic|humor|intimate|unexpected)');
  return {
   sources:parsed['--takes'],brief:parsed['--brief'],outputDir:parsed['--out'],
   whisperCli:parsed['--whisper-cli'],whisperModel:parsed['--whisper-model'],
   aiEditorModel:parsed['--ollama-model'],aiVariation:variation,
-  ffmpegDir:parsed['--ffmpeg-dir'],mode:'strict',
+  ffmpegDir:parsed['--ffmpeg-dir'],mode:'strict',burnSubtitles:parsed['--burn-subtitles']==='true',visualPreset:parsed['--visual-preset']??null,
  };
 }
 export const personaAiReelUsage=
  'Usage: npm run media:ai:reel -- --takes "<folder>" --brief "<brief.json>" '+
  '--out "<NEW-output-folder>" --whisper-cli "<whisper-cli.exe>" '+
  '--whisper-model "<multilingual-whisper.ggml.bin>" '+
- '--ollama-model "qwen3:4b-instruct" [--variation cinematic|humor|intimate|unexpected] [--ffmpeg-dir "<bin>"]';
+ '--ollama-model "qwen3:4b-instruct" [--variation cinematic|humor|intimate|unexpected] [--visual-preset Dynamic|Cinematic] [--burn-subtitles true|false] [--ffmpeg-dir "<bin>"]';
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{
   const args=readPersonaAiReelArgs(process.argv.slice(2));

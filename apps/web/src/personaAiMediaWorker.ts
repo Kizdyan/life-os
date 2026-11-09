@@ -1,5 +1,10 @@
-export type PersonaAiMediaJob={version:1;projectId:string;createdAt:string;status:'awaiting-author-review';model:string;variation:'cinematic'|'humor'|'intimate'|'unexpected';briefFingerprintSha256:string;briefSnapshot:string;outputPath:string;videoPath:string;qaPath:string;resultPath:string;sourceCount:number;sessionId?:string;distributionAllowed:false};
+export type PersonaAiMediaJob={version:1;projectId:string;createdAt:string;status:'awaiting-author-review';model:string;variation:'cinematic'|'humor'|'intimate'|'unexpected';briefFingerprintSha256:string;briefSnapshot:string;outputPath:string;videoPath:string;qaPath:string;resultPath:string;sourceCount:number;sessionId?:string;creativeDirection?:{mode:'auto'|'manual';selected_preset:'Dynamic'|'Cinematic';model:string|null};subtitlesBurnedIn?:boolean;distributionAllowed:false};
 const sha=/^[a-f0-9]{64}$/i;
+export function isPersonaDirectorDecisionFresh(value:unknown,nowMs=Date.now()):boolean{
+ const decision=value as {createdAt?:unknown}|null;
+ if(typeof decision?.createdAt!=='string')return false;
+ const age=nowMs-Date.parse(decision.createdAt);return Number.isFinite(age)&&age>=0&&age<30*60*1000;
+}
 export function planPersonaAiTakeUploads(files:readonly {name:string;size:number}[],assignments:readonly (number|null)[],sceneCount:number){
  if(files.length<2||files.length>12)throw Error('Выберите от 2 до 12 дублей за один запуск.');
  if(!Number.isInteger(sceneCount)||sceneCount<2||sceneCount>30)throw Error('Нужен утверждённый сценарий со сценами.');
@@ -17,7 +22,8 @@ export function planPersonaAiTakeUploads(files:readonly {name:string;size:number
 }
 export function readPersonaAiMediaJob(value:unknown):PersonaAiMediaJob|null{
  const v=value as Partial<PersonaAiMediaJob>;
- if(!v||typeof v!=='object'||v.version!==1||typeof v.projectId!=='string'||!v.projectId||typeof v.createdAt!=='string'||!Number.isFinite(Date.parse(v.createdAt))||v.status!=='awaiting-author-review'||typeof v.model!=='string'||!v.model||!['cinematic','humor','intimate','unexpected'].includes(String(v.variation))||typeof v.briefFingerprintSha256!=='string'||!sha.test(v.briefFingerprintSha256)||typeof v.briefSnapshot!=='string'||!v.briefSnapshot||v.briefSnapshot.length>100000||typeof v.outputPath!=='string'||!v.outputPath||typeof v.videoPath!=='string'||!v.videoPath||typeof v.qaPath!=='string'||!v.qaPath||typeof v.resultPath!=='string'||!v.resultPath||!Number.isInteger(v.sourceCount)||v.sourceCount<2||v.sourceCount>12||v.distributionAllowed!==false||(v.sessionId!==undefined&&!/^[a-f0-9-]{36}$/.test(v.sessionId)))return null;
+ if(v?.creativeDirection&&(!['auto','manual'].includes(v.creativeDirection.mode)||!['Dynamic','Cinematic'].includes(v.creativeDirection.selected_preset)||(v.creativeDirection.model!==null&&typeof v.creativeDirection.model!=='string')))return null;
+ if(!v||typeof v!=='object'||v.version!==1||typeof v.projectId!=='string'||!v.projectId||typeof v.createdAt!=='string'||!Number.isFinite(Date.parse(v.createdAt))||v.status!=='awaiting-author-review'||typeof v.model!=='string'||!v.model||!['cinematic','humor','intimate','unexpected'].includes(String(v.variation))||typeof v.briefFingerprintSha256!=='string'||!sha.test(v.briefFingerprintSha256)||typeof v.briefSnapshot!=='string'||!v.briefSnapshot||v.briefSnapshot.length>100000||typeof v.outputPath!=='string'||!v.outputPath||typeof v.videoPath!=='string'||!v.videoPath||typeof v.qaPath!=='string'||!v.qaPath||typeof v.resultPath!=='string'||!v.resultPath||!Number.isInteger(v.sourceCount)||v.sourceCount<2||v.sourceCount>12||v.distributionAllowed!==false||(v.subtitlesBurnedIn!==undefined&&typeof v.subtitlesBurnedIn!=='boolean')||(v.sessionId!==undefined&&!/^[a-f0-9-]{36}$/.test(v.sessionId)))return null;
  return v as PersonaAiMediaJob;
 }
 

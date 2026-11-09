@@ -30,7 +30,10 @@ records, transcripts, MP4 and QA are stored under
 directory. Source filename records are `source-N.json` beside staged copies.
 MP4 bytes are not stored in localStorage or sent to cloud services.
 
-Draft captions are SRT/VTT sidecars, not burned-in subtitles. The current Worker
+The «Вшить субтитры в MP4» checkbox burns short outlined Arial phrases into the
+final AI MP4 after color grading. It is enabled for new UI renders; disable it
+to keep only the SRT/VTT sidecars. Short-phrase timings inside an ASR cue are
+proportional estimates and require author sync review. The current Worker
 does not grant artistic or publication approval. Browser reload restores a
 completed result while that Worker session is alive; after a Worker restart,
 the saved paths remain but its in-memory playback session must be recreated.
