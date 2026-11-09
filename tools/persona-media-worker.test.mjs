@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readdir,readFile} from 'node:fs/promises';
+import {mkdtemp,rm,readdir,readFile,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
@@ -9,6 +9,18 @@ import {createHash} from 'node:crypto';
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};
+test('idea endpoints reject unsupported formats, path injection and another project before any inference',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-idea-worker-')),id='11111111-1111-4111-8111-111111111111';
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'missing-model'}),port=await worker.start();
+ try{
+  const post=(path,body,token=worker.token)=>fetch('http://127.0.0.1:'+port+path,{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},body:JSON.stringify(body)});
+  assert.equal((await post('/ideas',{projectId:'project',contentFormat:'invented',theme:'No inference expected'})).status,400);
+  assert.equal((await post('/ideas',{projectId:'../outside',contentFormat:'comedy'})).status,400);
+  assert.equal((await post('/ideas',{projectId:'project'},'invalid-token')).status,401);
+  const proposal=join(root,'ideas-'+id);await mkdir(proposal);await writeFile(join(proposal,'PROJECT.json'),JSON.stringify({projectId:'owner'}));
+  const foreign=await post('/ideas/'+id+'/select',{projectId:'other',ideaId:'idea-1'});assert.equal(foreign.status,400);assert.match((await foreign.json()).error,/another project/);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
 
 test('concurrent identical director requests share real inference; a different brief stays isolated',async()=>{
  let calls=0,release,started;const gate=new Promise(r=>release=r),entered=new Promise(r=>started=r);

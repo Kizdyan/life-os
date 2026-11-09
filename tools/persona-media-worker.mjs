@@ -15,6 +15,8 @@ import {join,resolve,basename,extname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
+import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
+import {commercialPrompt} from './persona-commercial-prompt.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -89,7 +91,7 @@ function runProcess(s,config){
 }
 export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))){
  const token=randomUUID();
- const directorDecisions=new Map();let directorPending=null;
+ const directorDecisions=new Map();let directorPending=null,ideationBusy=false;
  const briefHash=brief=>createHash('sha256').update(JSON.stringify(brief)).digest('hex');
  const server=createServer(async(req,res)=>{
   const origin=req.headers.origin;if(origin&&!permittedOrigin(origin)){respond(res,403,{error:'origin_not_allowed'});return}
@@ -104,7 +106,30 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    }
    const videoToken=req.method==='GET'&&url.pathname.endsWith('/video')?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='POST'&&(url.pathname==='/ideas'||/^\/ideas\/[a-f0-9-]{36}\/select$/.test(url.pathname))){
+    const body=await json(req);if(typeof body.projectId!=='string'||!/^[-a-zA-Z0-9_]{1,160}$/.test(body.projectId))fail('A local project identity is required');
+    if(ideationBusy||directorPending)fail('Local Qwen is busy; retry after the current task');
+    ideationBusy=true;
+    try{
+     const servers=[{id:'ollama-local',baseUrl:'http://127.0.0.1:11434',model:config.ollamaModel}];
+     if(url.pathname==='/ideas'){
+      commercialPrompt(body.contentFormat,1);
+      const id=randomUUID(),outputDir=join(config.outputRoot,'ideas-'+id);await mkdir(config.outputRoot,{recursive:true});
+      const result=await proposePersonaIdeas({theme:body.theme,contentFormat:body.contentFormat,ideaCount:1,style:body.contentFormat==='comedy'?'humor':'cinematic',outputDir,servers});
+      const proposal=JSON.parse(await readFile(result.ideasPath,'utf8'));
+      await writeFile(join(outputDir,'PROJECT.json'),JSON.stringify({projectId:body.projectId}),{flag:'wx'});
+      respond(res,200,{...proposal,id});
+     }else{
+      const id=url.pathname.split('/')[2],proposalDir=join(config.outputRoot,'ideas-'+id);
+      const owner=JSON.parse(await readFile(join(proposalDir,'PROJECT.json'),'utf8'));if(owner.projectId!==body.projectId)fail('Idea proposal belongs to another project');
+      const outputDir=join(config.outputRoot,'idea-plan-'+randomUUID());
+      const result=await selectPersonaIdea({proposalPath:join(proposalDir,'IDEAS.json'),ideaId:body.ideaId,outputDir,servers});
+      respond(res,200,{brief:JSON.parse(await readFile(result.brief,'utf8')),shootSheet:await readFile(join(outputDir,'SHOOT.md'),'utf8'),publicationApproved:false});
+     }
+    }finally{ideationBusy=false}return;
+   }
    if(req.method==='POST'&&url.pathname==='/direct'){
+    if(ideationBusy)fail('Local Qwen is generating an idea; retry after it finishes');
     const body=await json(req);if(!validBrief(body?.brief))fail('AI Director requires a valid Production Brief');
     const fingerprint=briefHash(body.brief);
     if(directorPending&&directorPending.fingerprint!==fingerprint)fail('AI Director is busy with another brief; retry after the current analysis');

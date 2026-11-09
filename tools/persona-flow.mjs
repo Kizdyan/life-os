@@ -165,9 +165,9 @@ export async function preparePersonaFlow({
   fail('Invalid saved proposal provenance');
  const idea=ideasFromProposal!==null?ideas.find(x=>x.id===selectedIdeaId):ideas[0];
  if(!idea)fail('Selected idea ID absent from saved candidate list');
- const second=await modelJSON({servers,fetchImpl,system:
+ const second=await modelJSON({servers,fetchImpl,...(idea.skills?{contextTokens:4096,thinking:false,timeoutMs:300000,maxOutputTokens:2200}:{}),system:
   'Ты ИИ-режиссёр, который должен дать конкретные реплики, действия, свет, ракурсы и монтаж для оригинального Reels. Никакого кода, шаблонов и фиктивных биографических фактов. JSON: {"hook":"...","setup":{"location":"...","camera":"...","lighting":"...","sound":"...","wardrobe":"...","arrangement":"..."},"scenes":[{"durationSec":4,"line":"...","action":"...","framing":"close-up","camera":"...","lighting":"...","performance":"...","edit":"..."}],"editingIntent":"...","colorIntent":"..."}. Дай 4–8 сцен суммарно 15–70 секунд. Крупность только close-up, medium, detail.',
-  payload:{idea,theme,style,requirements:'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
+  payload:{idea,theme,style,requirements:idea.skills?'Ровно 4–5 конкретных сцен суммарно 20–30 секунд. Хук, три навыка через экранные действия, продающий финал. Сохрани music, actingTask и sellingEnding выбранной идеи. Каждое поле — одна короткая фраза. Один человек, смартфон, штатив; без изменения лица.':'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
  });
  const director=validateDirector(second.data);
  const brief=canonicalBrief(idea,director);
@@ -185,6 +185,7 @@ export async function preparePersonaFlow({
   writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas,
    selectedIdeaId:idea.id,selectionMode:meta.ideaSelectionMode},null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'PRODUCTION-BRIEF.json'),JSON.stringify(brief,null,2)+'\n',{flag:'wx'}),
+  writeFile(join(dir,'DIRECTOR.json'),JSON.stringify(director,null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'SHOOT.md'),createShootSheet(idea,director),{flag:'wx'}),
   writeFile(join(dir,'FLOW.json'),JSON.stringify(meta,null,2)+'\n',{flag:'wx'}),
    ...(matches?[

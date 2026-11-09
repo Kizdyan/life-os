@@ -3,6 +3,7 @@ import type { FormatMemoryObservation } from '../../../packages/core/src/format-
 import {validatePersonaProductionGuide,type PersonaProductionGuide} from './personaProductionGuide';
 import type {PersonaColorComparisonRecord} from './personaColorComparison';
 import {readPersonaAiMediaJob,type PersonaAiMediaJob} from './personaAiMediaWorker';
+import type {PersonaCommercialDevelopment} from './personaCommercialDevelopment';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -23,6 +24,8 @@ export type PersonaProject={
  colorComparison?:PersonaColorComparisonRecord;
  /** Local Worker paths and SHA-bound provenance; never stores MP4 bytes. */
  aiMediaJob?:PersonaAiMediaJob;
+ /** Local few-shot idea versions; optional damaged records never erase projects. */
+ commercialDevelopment?:PersonaCommercialDevelopment;
  captions:unknown|null;
  socialCaptions:unknown|null;
  stage:PersonaProjectStage;
