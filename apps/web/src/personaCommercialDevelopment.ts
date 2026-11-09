@@ -5,7 +5,8 @@ export type CommercialProposal={id:string;contentFormat:PersonaContentFormat;ide
 export type PersonaCommercialDevelopment={version:1;format:PersonaContentFormat;proposals:CommercialProposal[];selected?:{proposalId:string;ideaId:string}};
 export function readCommercialDevelopment(value:unknown):PersonaCommercialDevelopment|null{
  const v=value as PersonaCommercialDevelopment|null;
- if(!v||v.version!==1||!contentFormats.some(f=>f.id===v.format)||!Array.isArray(v.proposals)||v.proposals.length>100||v.proposals.some(p=>!p||!/^[a-f0-9-]{36}$/.test(p.id)||!contentFormats.some(f=>f.id===p.contentFormat)||p.publicationApproved!==false||!p.provider?.model||!Array.isArray(p.ideas)||p.ideas.length<1||p.ideas.length>3||p.ideas.some(i=>!i||!i.title||!i.hook||!i.angle||!i.music||!i.actingTask||!i.sellingEnding||!Array.isArray(i.skills)||i.skills.length!==3)))return null;
+ const text=(s:unknown,max=1000)=>typeof s==='string'&&s.trim().length>0&&s.length<=max;
+ if(!v||v.version!==1||!contentFormats.some(f=>f.id===v.format)||!Array.isArray(v.proposals)||v.proposals.length>100||v.proposals.some(p=>!p||typeof p.id!=='string'||!/^[a-f0-9-]{36}$/.test(p.id)||!contentFormats.some(f=>f.id===p.contentFormat)||p.publicationApproved!==false||!text(p.provider?.model,120)||!text(p.provider?.id,80)||typeof p.examplesSha256!=='string'||!/^[a-f0-9]{64}$/.test(p.examplesSha256)||!Array.isArray(p.ideas)||p.ideas.length<1||p.ideas.length>3||p.ideas.some(i=>!i||![i.id,i.title,i.hook,i.angle,i.music,i.actingTask,i.sellingEnding].every(s=>text(s))||!Array.isArray(i.skills)||i.skills.length!==3||new Set(i.skills.map(s=>s?.role)).size!==3||i.skills.some(s=>!s||!['actor','director','composer'].includes(s.role)||!text(s.action)))))return null;
  if(v.selected&&!v.proposals.some(p=>p.id===v.selected!.proposalId&&p.ideas.some(i=>i.id===v.selected!.ideaId)))return null;
  return v;
 }

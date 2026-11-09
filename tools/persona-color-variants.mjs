@@ -59,6 +59,7 @@ async function preflight(input,environment){
  return video;
 }
 /** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> [ffmpeg-dir] */
+export async function inspectVisualInput(inputPath,ffmpegDir){return preflight(resolve(inputPath),env(ffmpegDir))}
 export async function renderVisualPreset({inputPath,outputPath,presetId,ffmpegDir}={}){
  const preset=getVisualPreset(presetId),input=resolve(inputPath),output=resolve(outputPath),environment=env(ffmpegDir);
  if(input===output||!output.toLowerCase().endsWith('.mp4'))fail('Use a new output MP4');

@@ -8,6 +8,7 @@
  *  plan <evidence/analysis.json> <PersonaProductionBrief.json> <new-decisions.json>
  */
 import { spawn } from 'node:child_process';
+import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,8 +122,11 @@ export function rankDialogueCandidates(line,sourceId,segments){
       if(expectedWords.length<=3 &&
          !heardWords.some((_,k)=>expectedWords.every((w,j)=>heardWords[k+j]===w)))
         continue;
-      const startSec=Math.max(0,segments[i].startSec-0.16);
-      const endSec=segments[j-1].endSec+0.18;
+      // Clamp optional handles at adjacent ASR speech, never truncate speech.
+      const speechStart=segments[i].startSec,speechEnd=segments[j-1].endSec;
+      const previous=segments[i-1]?.endSec,next=segments[j]?.startSec;
+      const startSec=Math.max(0,speechStart-0.16,Number.isFinite(previous)&&previous<=speechStart?(previous+speechStart)/2:0);
+      const endSec=Math.min(speechEnd+0.18,Number.isFinite(next)&&next>=speechEnd?(speechEnd+next)/2:Infinity);
       results.push({sourceId,startSec,endSec,speechEndSec:segments[j-1].endSec,
        speechBoundaryConfidence:segments.slice(i,j).every(segment=>segment.timing==='word')?'word':'segment',coverage,f1,score,transcript:text,
        captionWords:segments.slice(i,j).map(segment=>({text:segment.text,startSec:segment.startSec,endSec:segment.endSec,timing:segment.timing??'segment'}))});
@@ -167,6 +171,7 @@ export function createEditorialPlan(brief,sources,{mode='strict'}={}){
   const candidatesByBeat=brief.script.map((beat,index)=>{
     const shot=brief.shots?.[index];
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
+      .map(x=>({...x,endSec:Math.min(x.endSec,src.durationSec)}))
       // ASR segment-level timing cannot locate the music entry precisely.
       // Leave B03 unmatched so the existing Recovery Review can request a real boundary.
       .filter(x=>!requiresPostSpeechMusic(shot)||x.speechBoundaryConfidence==='word')
@@ -255,7 +260,7 @@ async function plan(analysisArg,briefArg,decisionsArg,mode='strict'){
   await access(out).then(()=>fail('Decision output already exists'),()=>{});
   const sources=[];
   for(const source of analysis.sources){
-    if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id)||!valid(source.durationSec,0.1,180))fail('Invalid source metadata');
+    if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id)||!valid(source.durationSec,0.1,MAX_PERSONA_SOURCE_SECONDS))fail('Invalid source metadata or source exceeds 15 minutes');
     const transcriptFile=join(base,source.id+'-whisper.json');
     const transcript=await readJson(transcriptFile);
     sources.push({id:source.id,durationSec:source.durationSec,technicalQuality:source.technicalQuality,segments:parseWhisperJson(transcript,source.durationSec)});

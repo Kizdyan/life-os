@@ -83,7 +83,9 @@ export function applyAiEditorialSelection(decisions,proposal){
   note:'Only real ASR candidates were used. Not a face, performance, music or visual understanding claim. Author approval required.',
  }};
 }
-export async function chooseAiEditorialCuts({decisions,brief,model,variation='cinematic',fetchImpl=fetch}={}){
+export async function chooseAiEditorialCuts({decisions,brief,model,variation='cinematic',fetchImpl=fetch,platform=null}={}){
+ const platforms={shorts:'TikTok/Shorts: до 30 секунд; предпочитай короткие полные реплики и ясный хук.',reels:'Reels: ориентир 30–45 секунд; сохраняй естественные паузы и кинематографические действия.',vk:'VK Видео: ориентир 40–60 секунд; предпочитай больше подтверждённого контекста.',youtube:'YouTube: до 600 секунд; сохраняй полные подтверждённые музыкальные хвосты и паузы.'};
+ if(platform!==null&&!Object.hasOwn(platforms,platform))fail('Unknown export platform');
  if(!string(model,120)||!['cinematic','humor','intimate','unexpected'].includes(variation))
   fail('local model name and valid creative variation required');
  if(!object(decisions)||!Array.isArray(decisions.candidates)||!Array.isArray(brief?.script)||
@@ -93,7 +95,7 @@ export async function chooseAiEditorialCuts({decisions,brief,model,variation='ci
   alternatives:Array.isArray(entry.alternatives)?
    entry.alternatives.map(boundedSourceCandidate):[],
  }));
- const body=JSON.stringify({variation,candidates:candidateSummaries});
+ const body=JSON.stringify({variation,platform,candidates:candidateSummaries});
  if(body.length>60000)fail('AI editorial evidence too large');
  const system=[
   'Ты локальный ИИ-монтажёр короткого художественного видео.',
@@ -102,6 +104,7 @@ export async function chooseAiEditorialCuts({decisions,brief,model,variation='ci
   'Выбери строго по одному candidateId для каждой реплики, сохраняя порядок.',
   'Не выбирай перекрывающиеся интервалы одного источника. Учитывай качество ASR и разнообразие дублей.',
   'Вариация влияет на ритм выбора дублей: cinematic — паузы, humor — реакция, intimate — естественность, unexpected — контраст.',
+  ...(platform?[platforms[platform],'Не дописывай контекст, не повторяй кадры и не обрезай подтверждённые реплики ради длительности. Если материала мало, выбери лучшие доступные полные кандидаты; система покажет предупреждение.']:[]),
   'look — только ПРЕДЛОЖЕНИЕ цветового направления, не доказательство хорошей кожи.',
   'У каждого ответа JSON: {"choices":[{"beat":1,"candidateId":"..."}],"creativeIntent":"...","look":"natural-clean|warm-cinematic|muted-filmic"}.',
   'Каждый candidateId обязан точно совпадать с предложенным, никаких новых файлов, таймкодов или реплик.',
@@ -111,9 +114,9 @@ export async function chooseAiEditorialCuts({decisions,brief,model,variation='ci
  try{
   response=await fetchImpl('http://127.0.0.1:11434/api/chat',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({model,stream:false,format:editorialJsonSchema(decisions),messages:[
+   body:JSON.stringify({model,stream:false,think:false,format:editorialJsonSchema(decisions),messages:[
     {role:'system',content:system},{role:'user',content:body},
-   ],options:{temperature:0.2,num_predict:1800}}),
+   ],options:{temperature:0.2,num_predict:1800,num_ctx:4096}}),
    signal:AbortSignal.timeout(120000),
   });
  }catch{fail('Ollama unavailable; no fake AI editing performed')}
@@ -124,5 +127,5 @@ export async function chooseAiEditorialCuts({decisions,brief,model,variation='ci
   parsed=JSON.parse(raw?.message?.content);
  }catch{fail('Ollama did not produce valid JSON edit decisions')}
  const picked=applyAiEditorialSelection(decisions,parsed);
- return {...picked,aiEditorial:{...picked.aiEditorial,model,variation}};
+ return {...picked,aiEditorial:{...picked.aiEditorial,model,variation,...(platform?{platform}:{})}};
 }

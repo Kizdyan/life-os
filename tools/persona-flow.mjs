@@ -113,6 +113,9 @@ export function canonicalBrief(idea,director){
  return {
   version:1,ideaId:idea.id,sourceAngle:idea.angle,sourceTitle:idea.title,sourceFormat:'reel',
   ...(idea.skills?{commercialIntent:readCommercialIdeaDetails(idea)}:{}),
+  preEditPlan:{version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:'ai_director',sourceRevisionId:null,
+   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Локальная модель использовала авторские примеры; эффективность реальных Reels не измерялась.'},colorIntent:d.colorIntent,
+   scenes:d.scenes.map((s,i)=>({order:i+1,line:s.line.trim(),durationSec:s.durationSec,editIntent:s.edit,audioIntent:idea.music??d.setup.sound,subtitleIntent:'Точные произнесённые слова, короткие фразы и безопасные поля; синхронизация после ASR.',visualIntent:{framing:s.framing,angle:s.camera,cameraMovement:'По утверждённому указанию камеры',lighting:s.lighting,performance:s.performance},mediaStatus:'awaiting_author_footage'})),publicationApproved:false},
   hook:{firstSeconds:d.hook,visual:d.scenes[0].action,delivery:d.scenes[0].performance},
   script:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,line:s.line.trim(),action:s.action.trim()})),
   shots:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,framing:s.framing,
