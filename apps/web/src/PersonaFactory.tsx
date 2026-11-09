@@ -1,4 +1,5 @@
 import React from 'react';
+import PersonaMvpSteps,{REEL_MVP_STEPS,reelMvpIndex,type PersonaMvpWorkspaceStep} from './PersonaMvpSteps';
 import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
 import PersonaVideoTimeline from './PersonaVideoTimeline';
@@ -204,7 +205,7 @@ type QA={pass:boolean;score:number;issues:{target:string;instruction:string}[]};
 type MediaProbe={name:string;bytes:number;mime:string;kind:'video'|'image';width?:number;height?:number;durationSec?:number;error?:string};
 type Stage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
 type PersonaScreen='home'|'projects'|'project';
-type WorkspaceStep='guide'|'idea'|'script'|'assets'|'edit'|'review'|'export';
+type WorkspaceStep=PersonaMvpWorkspaceStep;
 type ProductionMilestone={pipeline:PersonaProductionPipeline;stage?:Stage;step?:WorkspaceStep;resetQa?:boolean};
 const HISTORY='lifeos:persona:idea-history:v2';
 const PRODUCTION_DRAFT='lifeos:persona:production-draft:v1';
@@ -410,7 +411,7 @@ export default function PersonaFactory(){
   try{
   const now=new Date().toISOString();const project=createPersonaProject({id:newProjectId(),title:idea.title,contentType:idea.format,sourceIdea:idea.angle,now});const collection=savePersonaProject(localStorage,project,project.id);
   lastOwnSavedRevision.current={id:project.id,revision:project.revision};
-  setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(null);setChosen({...idea,id:project.id});setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setColorComparison(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep(idea.format==='photo'||idea.format==='carousel'?'assets':'guide');setStage(idea.format==='photo'?'needs_assets':'strategy');setStatus('Новый проект создан и сохранён локально.');setShowBank(false);resetLocalAsset();setMediaProbe(null);
+  setProjects(collection.projects);setActiveProjectId(project.id);setTimeline(null);setChosen({...idea,id:project.id});setDraft(null);setQa(null);setProduction(null);setScenarioWorkspace(undefined);setLocalRenderReview(null);setColorComparison(null);setProductionEditor('');setProductionComment('');setProductionFactsChecked(false);setWorkspaceStep(idea.format==='photo'||idea.format==='carousel'?'assets':idea.format==='reel'?'idea':'guide');setStage(idea.format==='photo'?'needs_assets':'strategy');setStatus('Новый проект создан и сохранён локально.');setShowBank(false);resetLocalAsset();setMediaProbe(null);
   return true;
   }catch{setSaveState('error');setStatus('Создание проекта не удалось: браузер не подтвердил сохранение. Текущий проект сохранён.');return false}
  }
@@ -450,8 +451,11 @@ export default function PersonaFactory(){
   }
   const id=newProjectId();
   if(select({id,title:actorComposerPilot.title,angle:actorComposerPilot.angle,
-    format:'reel',score:0,source:'editorial-pilot'}))
+    format:'reel',score:0,source:'editorial-pilot'})){
+   // Preserve the shoot-first pilot; normal Reels begin at Idea.
+   setWorkspaceStep('guide');
    window.setTimeout(()=>{window.location.hash='#persona/project/'+id},0);
+  }
  }
 
  function persistGuide(guide:ProductionGuide){
@@ -673,7 +677,8 @@ export default function PersonaFactory(){
  function onAsset(e:React.ChangeEvent<HTMLInputElement>){const file=e.target.files?.[0];if(!file)return;const kind=file.type.startsWith('video/')?'video':file.type.startsWith('image/')?'image':null;if(!kind){setStatus('Неподдерживаемый тип файла. Выберите видео или изображение.');return}if(file.size>250*1024*1024){setStatus('Файл превышает лимит локального предпросмотра 250 МБ. Исходник не был открыт.');return}if(chosen?.format==='photo'&&kind!=='image'){setStatus('Для фото нужен исходник изображения.');return}const sequence=++mediaProbeSequence.current;const url=URL.createObjectURL(file);if(assetUrlRef.current)URL.revokeObjectURL(assetUrlRef.current);assetUrlRef.current=url;setAsset(url);setAssetName(file.name);setAssetIsVideo(kind==='video');setMediaProbe({name:file.name,bytes:file.size,mime:file.type,kind});setStage('production');setStatus('Исходник открыт локально. Измеряются только доступные браузеру параметры; монтаж и анализ художественного качества ещё не выполняются.');const element=kind==='video'?document.createElement('video'):document.createElement('img');const finish=()=>{if(sequence!==mediaProbeSequence.current)return;if(kind==='video'){const video=element as HTMLVideoElement;setMediaProbe({name:file.name,bytes:file.size,mime:file.type,kind,width:video.videoWidth,height:video.videoHeight,durationSec:Number.isFinite(video.duration)?video.duration:undefined})}else{const img=element as HTMLImageElement;setMediaProbe({name:file.name,bytes:file.size,mime:file.type,kind,width:img.naturalWidth,height:img.naturalHeight})}element.removeAttribute('src');if(kind==='video')(element as HTMLVideoElement).load()};element.addEventListener(kind==='video'?'loadedmetadata':'load',finish,{once:true});element.addEventListener('error',()=>{if(sequence!==mediaProbeSequence.current)return;setMediaProbe({name:file.name,bytes:file.size,mime:file.type,kind,error:'Браузер не смог прочитать метаданные.'})},{once:true});element.src=url;if(kind==='video')(element as HTMLVideoElement).preload='metadata';}
  function approve(){if(!draft||!qa?.pass)return;remember(chosen!,'used');setStage('approval');setStatus('Черновик одобрен на этом устройстве. Автоматической публикации не было.')}
  function rejectIdea(){if(chosen)remember(chosen,'rejected');setChosen(null);setDraft(null);setQa(null);setProduction(null);setStage('strategy')}
- const projectSteps=workspaceStepsFor(chosen?.format);const workspaceIndex=Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
+ const isReelMvp=chosen?.format==='reel';const projectSteps=isReelMvp?REEL_MVP_STEPS:workspaceStepsFor(chosen?.format);
+  const workspaceIndex=isReelMvp?reelMvpIndex(workspaceStep):Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
  function moveWorkspace(direction:-1|1){const next=projectSteps[workspaceIndex+direction];if(next&&canLeaveGuide())setWorkspaceStep(next[0])}
  if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><section className="personaTodayShoot" aria-label="Что снять сегодня">
   <small>СЕГОДНЯ · 31 СЕКУНДА · 7 КАДРОВ</small>
@@ -686,7 +691,18 @@ export default function PersonaFactory(){
  return <section className="personaFactoryV2">
   <header className="pfHead personaProjectHead"><div><button className="backButton" onClick={()=>navigate('projects')}>← Мои проекты</button><h2>{chosen?.title||'Новый проект'}</h2><p>{contentTypeLabel(chosen?.format as PersonaContentType|undefined)} · {stageLabel(stage)} · {saveState==='saved'?'Сохранено на этом устройстве':saveState==='saving'?'Сохранение…':'Сохранение не удалось'}</p></div><button className="ghost" onClick={()=>navigate('home')}>Persona</button></header>
   {guideGuardMessage&&<p className="personaGuideNavigationWarning" role="alert">{guideGuardMessage}</p>}
-  <nav className="personaWorkspaceSteps" aria-label="Этапы производства">{projectSteps.map(([id,label],index)=><button key={id} type="button" className={workspaceStep===id?'current':''} onClick={()=>{if(canLeaveGuide())setWorkspaceStep(id)}} aria-current={workspaceStep===id?'step':undefined}><span>{index+1}</span>{label}</button>)}</nav>
+  {isReelMvp?<PersonaMvpSteps step={workspaceStep} onSelect={next=>{if(canLeaveGuide())setWorkspaceStep(next)}}/>:
+   <nav className="personaWorkspaceSteps" aria-label="Этапы производства">{projectSteps.map(([id,label],index)=><button key={id} type="button" className={workspaceStep===id?'current':''} onClick={()=>{if(canLeaveGuide())setWorkspaceStep(id)}} aria-current={workspaceStep===id?'step':undefined}><span>{index+1}</span>{label}</button>)}</nav>}
+  {isReelMvp&&(workspaceStep==='guide'||workspaceStep==='assets')&&
+   <div className="personaMvpSubsteps" role="group" aria-label="Съёмка и исходники">
+    <button type="button" aria-pressed={workspaceStep==='guide'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('guide')}}>План съёмки</button>
+    <button type="button" aria-pressed={workspaceStep==='assets'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('assets')}}>Добавить исходники</button>
+   </div>}
+  {isReelMvp&&(workspaceStep==='review'||workspaceStep==='export')&&
+   <div className="personaMvpSubsteps" role="group" aria-label="Проверка и выпуск">
+    <button type="button" aria-pressed={workspaceStep==='review'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('review')}}>Проверить результат</button>
+    <button type="button" aria-pressed={workspaceStep==='export'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('export')}}>Скачать MP4</button>
+   </div>}
   {!chosen&&<section className="personaQuickStart" aria-label="Быстрый старт Persona"><h3>Быстрый старт</h3><div className="personaQuickStartGrid">{(['reel','photo','carousel'] as const).map(format=><button key={format} type="button" onClick={()=>select({id:crypto.randomUUID(),title:format==='reel'?'Новый Reels':format==='photo'?'Новое фото':'Новая карусель',angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}>{format==='reel'?'Создать Reels':format==='photo'?'Обработать фото':'Создать карусель'}</button>)}</div><p>Экспорт MP4 с телефона пока не подключён.</p></section>}
   <details className="personaDeveloperDisclosure"><summary>Дополнительные инструменты</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{if(select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'}))window.setTimeout(()=>navigate('project'),0)}}/></details>
   {chosen&&<label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label>}
@@ -722,7 +738,7 @@ export default function PersonaFactory(){
    projectTitle={chosen.title} projectAngle={chosen.angle} allowExample={chosen.format==='reel'&&!draft&&isActorComposerPilot(chosen)} workspace={scenarioWorkspace}
    pipeline={production} onSave={persistGuide} onApplyToBrief={transferGuideToBrief} onDirtyChange={dirty=>{guideDirty.current=dirty;if(!dirty)setGuideGuardMessage('')}} onUseExample={applyGuideExample}
    onNavigate={setWorkspaceStep}/>}
-  {chosen&&!draft&&(workspaceStep==='idea'||workspaceStep==='assets')&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
+  {chosen&&(workspaceStep==='assets'||(!draft&&workspaceStep==='idea'))&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
   {chosen&&activeProjectId&&workspaceStep==='script'&&<PersonaScenarioWorkspace key={`scenario-workspace:${personaScenarioWorkspaceMountKey(activeProjectId,scenarioWorkspace)}`} project={projects.find(project=>project.id===activeProjectId)??createPersonaProject({id:activeProjectId,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,now:new Date().toISOString()})} workspace={scenarioWorkspace} creativeProfile={{priorities:['смысловые склейки','естественный голос','актёрские паузы'],constraints:['не менять внешность','не выдавать метаданные за просмотр','не копировать чужой сценарий']}} onChange={persistScenarioWorkspace} onCreateBrief={input=>createScenarioProductionBrief(input)}/>}
   {chosen?.format==='photo'&&workspaceStep==='edit'&&<PersonaPhotoEditor/>}
   {chosen?.format==='carousel'&&workspaceStep==='edit'&&<PersonaCarouselEditor key={chosen.id} title={chosen.title} initialSlides={draft?.slides}/>}

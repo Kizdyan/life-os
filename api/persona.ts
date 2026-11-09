@@ -1,4 +1,5 @@
 import{env,json}from'./_media-session.js';
+import {personaAgentSystemPrompt} from '../packages/core/src/persona-agent-system-prompts.js';
 
 type Idea={id:string;title:string;angle:string;format:'carousel'|'photo'|'reel'|'short'|'story';score:number;reason?:string;source?:string;status?:string};
 type Slide={eyebrow:string;title:string;body:string};
@@ -92,14 +93,14 @@ async function freeAiGenerate(system:string,payload:any,request:Request):Promise
 async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:Request,engine?:string){
   if(engine==='free-ai'){
     if(kind==='plan')throw new Error('free_ai_generate_or_revise_only');
-    return freeAiGenerate(kind==='generate'?freeScriptSystem:freeReviseSystem,payload,request);
+    return freeAiGenerate(personaAgentSystemPrompt('creative',kind==='generate'?freeScriptSystem:freeReviseSystem),payload,request);
   }
   // Paid external AI is double opt-in: explicit server permission AND request header.
    // Preview cannot silently spend paid model credits, or conceal a failed
   // model call behind a pretend AI-generated quality result.
   if(env('PERSONA_ENABLE_EXTERNAL_AI')==='true' && env('PERSONA_ALLOW_PAID_REQUESTS')==='true' && request.headers.get('x-persona-paid-approved')==='true' && env('PERSONA_ENABLE_FREE_AI')!=='true'){
     try{
-      const generated=kind==='plan'?await openAI(planSystem,payload):kind==='generate'?await openAI(genSystem,payload):await openAI(reviseSystem,payload);
+      const generated=kind==='plan'?await openAI(personaAgentSystemPrompt('marketing',planSystem),payload):kind==='generate'?await openAI(personaAgentSystemPrompt('creative',genSystem),payload):await openAI(personaAgentSystemPrompt('creative',reviseSystem),payload);
       return {...generated,executionMode:'ai'};
     }catch(e){console.error('persona_ai_fallback',String((e as Error)?.message||e))}
   }
