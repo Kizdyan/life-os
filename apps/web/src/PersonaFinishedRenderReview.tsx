@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {validatePersonaMediaImportFileNames,type PersonaLocalRenderRecord} from './personaLocalRenderImport';
 import {advancePersonaPlaybackProof,emptyPersonaPlaybackProof} from './personaPlaybackProof';
+import {approvedPersonaMp4DownloadName} from './personaApprovedMp4Export';
 import {inspectPersonaFinishedRenderImport,mergePersonaFinishedReimport,makePersonaFinalAuthorReview,
  PERSONA_FINAL_REVIEW_KEYS,type PersonaFinalReviewChecks,type PersonaFinalAuthorReview} from './personaFinishedRenderImport';
 
@@ -50,6 +51,15 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
  useEffect(()=>()=>{generation.current++;if(urlRef.current)URL.revokeObjectURL(urlRef.current)},[]);
  const finished=draft.finished;
  const sameFile=Boolean(videoUrl&&finished&&fileHash.current===finished.finishedSha256);
+ const approvedDownloadName=approvedPersonaMp4DownloadName(finished,fileHash.current,sameFile);
+ function downloadApprovedVideo(){
+  const filename=approvedPersonaMp4DownloadName(finished,fileHash.current,Boolean(videoUrl)&&sameFile);
+  if(!filename||!videoUrl){setMessage('Сначала импортируй настоящий MP4 и утверди именно эту проверенную версию.');return}
+  const link=document.createElement('a');
+  link.href=videoUrl;link.download=filename;link.rel='noopener';
+  document.body.appendChild(link);link.click();link.remove();
+  setMessage('Сохранение проверенного MP4 запрошено. Найди файл в загрузках браузера или приложении «Файлы». Это не публикация.');
+ }
  async function importFinished(files:FileList|null){
   if(!files||busy)return;
   const run=++generation.current;setBusy(true);setMessage('');
@@ -135,6 +145,11 @@ export default function PersonaFinishedRenderReview({draft,onSave,canImport}:{
     onPause={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'pause',currentTime:v.currentTime,duration:v.duration}))}}
     onSeeking={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'seeking',currentTime:v.currentTime,duration:v.duration}))}}
     onEnded={event=>{const v=event.currentTarget;setPlaybackProof(p=>advancePersonaPlaybackProof(p,{kind:'ended',currentTime:v.currentTime,duration:v.duration}))}}/>
+   {approvedDownloadName&&<div className="personaRenderReturnDetails" aria-label="Экспорт утверждённого MP4">
+    <h4>Скачать готовый ролик</h4>
+    <p>Скачается только файл с проверенным SHA-256 и твоим решением «Утвердить финальный монтаж». Исходник не отправляется в облако и не публикуется.</p>
+    <button type="button" className="primary" onClick={downloadApprovedVideo}>Скачать утверждённый MP4</button>
+   </div>}
    <div className="personaFinalReviewChecklist">
     <h4>Решение автора — отдельно от публикации</h4>
     <p role="status">{playbackProof.completed?
