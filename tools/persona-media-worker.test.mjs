@@ -9,6 +9,38 @@ import {createHash} from 'node:crypto';
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};
+
+test('concurrent identical director requests share real inference; a different brief stays isolated',async()=>{
+ let calls=0,release,started;const gate=new Promise(r=>release=r),entered=new Promise(r=>started=r);
+ const worker=createPersonaMediaWorker({port:0,ollamaModel:'test-qwen',directorSelector:async()=>{calls++;started();await gate;return {selected_preset:'Dynamic',model:'test-qwen',createdAt:new Date().toISOString()}}});
+ const port=await worker.start(),base='http://127.0.0.1:'+port;
+ try{
+  const post=b=>fetch(base+'/direct',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':worker.token},body:JSON.stringify({brief:b})});
+  const first=post(brief);await entered;const second=post(brief);
+  const changed=structuredClone(brief);changed.script[0].line='Other script';
+  assert.equal((await post(changed)).status,400);release();
+  const responses=await Promise.all([first,second]);for(const response of responses)assert.equal(response.status,200);
+  assert.equal(calls,1);const receipts=await Promise.all(responses.map(r=>r.json()));assert.notEqual(receipts[0].id,receipts[1].id);
+ }finally{release();await new Promise(r=>worker.server.close(r))}
+});
+test('director receipt is required for auto mode and cannot be reused for a changed brief',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-director-test-'));
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'test-qwen',directorSelector:async()=>({selected_preset:'Cinematic',model:'test-qwen',createdAt:new Date().toISOString()})});
+ const port=await worker.start(),base='http://127.0.0.1:'+port;
+ try{
+  const info=await (await fetch(base+'/health')).json();
+  const post=(path,body)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':info.token},body:JSON.stringify(body)});
+  const routed=await post('/direct',{brief});assert.equal(routed.status,200);const decision=await routed.json();
+  const common={brief,variation:'cinematic',takeCount:2,directionMode:'auto'};
+  assert.equal((await post('/session',common)).status,400);
+  const changed=structuredClone(brief);changed.script[0].line='Changed line';
+  assert.equal((await post('/session',{...common,brief:changed,directorDecisionId:decision.id})).status,400);
+  const good=await post('/session',{...common,directorDecisionId:decision.id});assert.equal(good.status,201);
+  const staged=(await readdir(root)).find(name=>name.startsWith('.worker-staging-'));
+  assert.equal(JSON.parse(await readFile(join(root,staged,'AI-DIRECTOR.json'),'utf8')).selected_preset,'Cinematic');
+  assert.equal((await post('/session',{...common,directionMode:'manual',visualPreset:'invented'})).status,400);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
 test('loopback worker rejects foreign origins and accepts only explicit local authenticated sessions',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-worker-test-'));
  const worker=createPersonaMediaWorker({port:0,outputRoot:root,ffmpegDir:null,whisperCli:'missing.exe',whisperModel:'missing.bin',ollamaModel:'qwen3:4b-instruct'});

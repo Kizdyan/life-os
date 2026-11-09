@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {readPersonaAiMediaJob,planPersonaAiTakeUploads} from './personaAiMediaWorker';
+import {readPersonaAiMediaJob,planPersonaAiTakeUploads,isPersonaDirectorDecisionFresh} from './personaAiMediaWorker';
 
 const job={version:1 as const,projectId:'project-1',createdAt:'2026-11-03T10:00:00.000Z',status:'awaiting-author-review' as const,
  model:'qwen3:4b-instruct',variation:'cinematic' as const,briefFingerprintSha256:'a'.repeat(64),briefSnapshot:'{"version":1}',
@@ -7,6 +7,18 @@ const job={version:1 as const,projectId:'project-1',createdAt:'2026-11-03T10:00:
  resultPath:'C:\\Persona\\result\\RESULT.json',sourceCount:2,distributionAllowed:false as const};
 
 describe('Persona AI media job',()=>{
+ it('refreshes expired, missing or invalid director receipts before starting a render',()=>{
+  const now=Date.parse('2026-11-09T10:30:00.000Z');
+  expect(isPersonaDirectorDecisionFresh({createdAt:'2026-11-09T10:01:00.000Z'},now)).toBe(true);
+  for(const createdAt of ['2026-11-09T10:00:00.000Z','2026-11-09T10:31:00.000Z','invalid',undefined])expect(isPersonaDirectorDecisionFresh({createdAt},now)).toBe(false);
+  expect(isPersonaDirectorDecisionFresh(null,now)).toBe(false);
+ });
+ it('restores a directed result without accepting invented presets or model identities',()=>{
+  const creativeDirection={mode:'auto' as const,selected_preset:'Cinematic' as const,model:'persona-qwen-cpu:latest'};
+  expect(readPersonaAiMediaJob(JSON.parse(JSON.stringify({...job,creativeDirection})))?.creativeDirection).toEqual(creativeDirection);
+  expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,selected_preset:'invented'}})).toBeNull();
+  expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,model:42}})).toBeNull();
+ });
  it('maps explicitly assigned camera files to copies without renaming originals or changing MOV extensions',()=>{
   const files=[{name:'IMG_9001.MOV',size:2048},{name:'Дубль 2.mp4',size:4096}];
   const plan=planPersonaAiTakeUploads(files,[2,2],3);

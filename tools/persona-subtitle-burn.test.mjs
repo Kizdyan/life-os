@@ -20,6 +20,14 @@ test('invalid timestamps and ASS control syntax cannot enter the rendering filte
  for(const cues of [[{startMs:0,endMs:1000,text:'{\\pos(0,0)}'}],[{startMs:-1,endMs:5,text:'текст'}],[{startMs:0,endMs:1000,text:'один'},{startMs:900,endMs:1100,text:'два'}]])
   assert.throws(()=>buildSubtitleAss({cues,width:1080,height:1920}));
 });
+test('directed subtitle styles differ in weight, emphasis and measured fade configuration',()=>{
+ const input={cues:[{startMs:0,endMs:2000,text:'Музыка меняет настроение.'}],width:1080,height:1920};
+ const dynamic=buildSubtitleAss({...input,presetId:'Dynamic'}),cinematic=buildSubtitleAss({...input,presetId:'Cinematic'});
+ assert.equal(dynamic.style.bold,true);assert.equal(cinematic.style.bold,false);
+ assert.match(dynamic.ass,/\\c&H0000D7FF/);assert.match(cinematic.ass,/\\fad\(180,180\)/);
+ assert.equal(dynamic.style.outline,5);assert.equal(cinematic.style.outline,1);
+ assert.doesNotMatch(cinematic.ass,/\\c&H0000D7FF/);
+});
 
 const available=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore'}).status===0);
 function run(bin,args){const r=spawnSync(bin,args,{encoding:null,timeout:60000});assert.equal(r.status,0,r.stderr?.toString());return r.stdout}

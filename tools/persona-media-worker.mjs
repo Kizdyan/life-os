@@ -14,6 +14,7 @@ import {pipeline} from 'node:stream/promises';
 import {join,resolve,basename,extname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -75,18 +76,21 @@ function runProcess(s,config){
  const args=[join(here,'persona-ai-reel.mjs'),'--takes',s.input,'--brief',s.briefPath,'--out',s.output,'--whisper-cli',config.whisperCli,'--whisper-model',config.whisperModel,'--ollama-model',s.model,'--variation',s.variation];
  if(config.ffmpegDir)args.push('--ffmpeg-dir',config.ffmpegDir);
  if(s.burnSubtitles)args.push('--burn-subtitles','true');
+ if(s.visualPreset)args.push('--visual-preset',s.visualPreset);
  s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],env:envPath(config.ffmpegDir)});
  let stderr='';s.child.stderr.on('data',b=>stderr=(stderr+String(b)).slice(-6000));s.child.stdout.on('data',()=>scan(s));
  s.timer=setInterval(()=>scan(s),750).unref();
  s.child.on('error',error=>{s.state='failed';s.error=String(error.message||error)});
  s.child.on('close',async code=>{clearInterval(s.timer);s.child=null;scan(s);if(s.cancelled){s.state='cancelled';s.error='Cancelled by the author; originals were not changed.';return}
   if(code!==0){s.state='failed';s.error=(stderr||'AI reel process exited '+code).slice(-3000);return}
-  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
+  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,creativeDirection:s.direction??null,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
   catch(error){s.state='failed';s.error=String(error.message||error)}
  });
 }
 export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))){
  const token=randomUUID();
+ const directorDecisions=new Map();let directorPending=null;
+ const briefHash=brief=>createHash('sha256').update(JSON.stringify(brief)).digest('hex');
  const server=createServer(async(req,res)=>{
   const origin=req.headers.origin;if(origin&&!permittedOrigin(origin)){respond(res,403,{error:'origin_not_allowed'});return}
   const expected=new Set(['127.0.0.1:'+server.address().port,'localhost:'+server.address().port]);if(!expected.has(req.headers.host||'')){respond(res,403,{error:'host_not_allowed'});return}
@@ -96,17 +100,44 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
   try{
    if(req.method==='GET'&&url.pathname==='/health'){
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const videoToken=req.method==='GET'&&url.pathname.endsWith('/video')?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='POST'&&url.pathname==='/direct'){
+    const body=await json(req);if(!validBrief(body?.brief))fail('AI Director requires a valid Production Brief');
+    const fingerprint=briefHash(body.brief);
+    if(directorPending&&directorPending.fingerprint!==fingerprint)fail('AI Director is busy with another brief; retry after the current analysis');
+    if(!directorPending){
+     const promise=Promise.resolve().then(()=>(config.directorSelector??selectCreativePreset)({text:body.brief.script.map(beat=>beat.line).join('\n'),model:config.ollamaModel}));
+     directorPending={fingerprint,promise};
+     // StrictMode, navigation and auto/manual toggles may resend an identical
+     // request. Share that inference, with one bounded local model operation.
+     promise.then(()=>{directorPending=null},()=>{directorPending=null});
+    }
+     const decision=await directorPending.promise;
+     getVisualPreset(decision.selected_preset);
+     const receipt={...decision,id:randomUUID(),briefSha256:briefHash(body.brief)};
+     if(directorDecisions.size>=100)directorDecisions.delete(directorDecisions.keys().next().value);
+     directorDecisions.set(receipt.id,receipt);respond(res,200,receipt);
+    return;
+   }
    if(req.method==='POST'&&url.pathname==='/session'){
     const body=await json(req);if(!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel)||(body.burnSubtitles!==undefined&&typeof body.burnSubtitles!=='boolean'))fail('invalid approved Reel brief, variation, subtitle option or local model');
+    let direction=null;
+    if(body.directionMode==='auto'){
+     const receipt=directorDecisions.get(body.directorDecisionId);
+     if(!receipt||receipt.briefSha256!==briefHash(body.brief)||receipt.model!==config.ollamaModel||Date.now()-Date.parse(receipt.createdAt)>30*60*1000)fail('AI Director decision missing, stale or belongs to another brief');
+     direction={...receipt,mode:'auto'};
+    }else if(body.directionMode==='manual'){
+     getVisualPreset(body.visualPreset);direction={mode:'manual',selected_preset:body.visualPreset,model:null,briefSha256:briefHash(body.brief)};
+    }else if(body.directionMode!==undefined)fail('Invalid director mode');
     await mkdir(config.outputRoot,{recursive:true});const id=randomUUID(),input=join(config.outputRoot,'.worker-staging-'+id),output=join(config.outputRoot,'ai-reel-'+id);await mkdir(input,{recursive:false});
     // The established runner owns output creation and rejects a pre-existing
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,briefPath,variation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    if(direction)await writeFile(join(input,'AI-DIRECTOR.json'),JSON.stringify(direction,null,2)+'\n',{flag:'wx'});
+    const s={id,input,output,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<2||s.expected>12)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
    const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}

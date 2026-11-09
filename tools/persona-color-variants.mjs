@@ -2,9 +2,10 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream,constants as fsConstants} from 'node:fs';
-import {access,copyFile,mkdir,stat,writeFile} from 'node:fs/promises';
-import {basename,join,resolve} from 'node:path';
+import {access,copyFile,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
+import {basename,dirname,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {getVisualPreset} from './persona-creative-director.mjs';
 
 const presets=[
  ['natural-clean','Natural Clean','colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015'],
@@ -58,6 +59,23 @@ async function preflight(input,environment){
  return video;
 }
 /** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> [ffmpeg-dir] */
+export async function renderVisualPreset({inputPath,outputPath,presetId,ffmpegDir}={}){
+ const preset=getVisualPreset(presetId),input=resolve(inputPath),output=resolve(outputPath),environment=env(ffmpegDir);
+ if(input===output||!output.toLowerCase().endsWith('.mp4'))fail('Use a new output MP4');
+ for(const path of [output,output+'.visual-preset.json'])await access(path).then(()=>fail('output already exists'),e=>{if(e.code!=='ENOENT')throw e});
+ const before=await preflight(input,environment),sourceSha256=await sha(input);
+ await mkdir(dirname(output),{recursive:true});const temp=await mkdtemp(join(dirname(output),'.persona-grade-'));let owned=false;
+ try{
+  const staged=join(temp,'grade.mp4');
+  await run('ffmpeg',['-v','error','-n','-i',input,'-map','0:v:0','-map','0:a?','-vf',preset.filter,'-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p','-c:a','copy','-movflags','+faststart',staged],environment);
+  const after=await preflight(staged,environment);
+  if(before.width!==after.width||before.height!==after.height||before.avg_frame_rate!==after.avg_frame_rate||Math.abs(Number(before.duration)-Number(after.duration))>.1)fail('Visual preset changed geometry or timing');
+  if(await sha(input)!==sourceSha256)fail('source changed during grading');
+  const result={version:1,presetId:preset.id,label:preset.name,filter:preset.filter,source:{path:input,sha256:sourceSha256},output:{path:output,sha256:await sha(staged)},publicationApproved:false,distributionAllowed:false};
+  await copyFile(staged,output,fsConstants.COPYFILE_EXCL);owned=true;
+  await writeFile(output+'.visual-preset.json',JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result;
+ }catch(error){if(owned)await rm(output,{force:true});throw error}finally{await rm(temp,{recursive:true,force:true})}
+}
 export async function createColorVariants({inputPath,outputDir,ffmpegDir}={}){
  if(typeof inputPath!=='string'||!inputPath.trim()||
   typeof outputDir!=='string'||!outputDir.trim())fail('inputPath and NEW outputDir required');

@@ -4,7 +4,11 @@ In Persona → Монтаж → local AI Worker, use **Вшить субтитр
 New UI renders enable it by default. Existing videos and decisions are unchanged.
 CLI opt-in: add `--burn-subtitles true` to `npm run media:ai:reel -- ...`.
 
-The final MP4 is encoded through FFmpeg/libass after the color pass. Text is
+AI Director now selects a configured color/subtitle style by default. Turn off
+**Авто-режиссура (ИИ)** to choose Dynamic Contrast or Cinematic Autumn manually.
+See [AI Director](persona-ai-director.md) for behavior and limitations.
+
+The final MP4 is encoded through FFmpeg/libass after the color pass. Legacy text is
 bold white Arial, 72px / 5px black outline at 1080×1920, scaled with output width,
 centered horizontally at 66% of image height. Smart wrapping stays inside 10%
 side margins. The text is 2–3 words per cue where possible; one-word utterances

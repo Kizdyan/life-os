@@ -10,4 +10,7 @@ it('offers explicit burned-in captions on new renders without claiming old video
  expect(html).toContain('Вшить субтитры в MP4');
  expect(html).toMatch(/aria-label="Вшить субтитры в MP4"[^>]*checked=""/);
  expect(html).toContain('2–3 слова');
+ expect(html).toMatch(/aria-label="Авто-режиссура \(ИИ\)"[^>]*checked=""/);
+ expect(html).not.toContain('aria-label="Ручной визуальный пресет"');
+ expect(html).toContain('Повторить анализ Qwen');
 });
