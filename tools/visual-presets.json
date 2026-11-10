@@ -9,6 +9,13 @@
       "editorialVariation": "humor",
       "subtitles": {"font":"Arial","fontSize":72,"bold":true,"outline":5,"shadow":1,"fadeMs":0,"highlight":"longest-word","highlightColor":"&H0000D7FF"}
     },
+    "Commercial": {
+      "id":"Commercial", "name":"Commercial Cinematic",
+      "description":"Нейтральная коммерческая подача: мягкий контраст, умеренное тепло и спокойные титры шампань. Требуется авторская проверка кожи.",
+      "filter":"colorbalance=bs=.010:rh=.006:bh=-.004:pl=0,eq=contrast=1.04:saturation=.98:gamma=1.01",
+      "editorialVariation":"cinematic",
+      "subtitles":{"font":"Arial","fontSize":56,"bold":false,"outline":1,"shadow":1,"fadeMs":180,"highlight":"none","highlightColor":"&H00FFFFFF","primaryColor":"&H00E0EAF5"}
+    },
     "Cinematic": {
       "id": "Cinematic", "name": "Cinematic Autumn",
       "description": "Драматичный, актёрский или музыкальный ролик: мягкий контраст, приглушённая насыщенность, охристое тепло и синие тени.",

@@ -7,6 +7,14 @@ const job={version:1 as const,projectId:'project-1',createdAt:'2026-11-03T10:00:
  resultPath:'C:\\Persona\\result\\RESULT.json',sourceCount:2,distributionAllowed:false as const};
 
 describe('Persona AI media job',()=>{
+ it('explicit master-asset mode accepts one original while normal takes still require scene assignment',()=>{
+  const files=[{name:'Master.MOV',size:2048}];
+  expect(()=>planPersonaAiTakeUploads(files,[],2)).toThrow();
+  expect(planPersonaAiTakeUploads(files,[],2,true)).toEqual([{originalName:'Master.MOV',sceneOrder:1,workerName:'S01_take01.MOV'}]);
+  expect(()=>planPersonaAiTakeUploads([...files,...files],[],2,true)).toThrow();
+  expect(readPersonaAiMediaJob({...job,sourceCount:1,masterAsset:true})?.sourceCount).toBe(1);
+  expect(readPersonaAiMediaJob({...job,sourceCount:1})).toBeNull();
+ });
  it('refreshes expired, missing or invalid director receipts before starting a render',()=>{
   const now=Date.parse('2026-11-09T10:30:00.000Z');
   expect(isPersonaDirectorDecisionFresh({createdAt:'2026-11-09T10:01:00.000Z'},now)).toBe(true);

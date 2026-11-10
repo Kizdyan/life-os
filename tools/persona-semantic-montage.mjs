@@ -12,6 +12,7 @@ import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectTake } from './persona-take-qa.mjs';
+import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 
 const exts = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const MAX_INPUTS = 12;
@@ -52,7 +53,7 @@ async function mediaInfo(path) {
   const value = JSON.parse(await invoke(FFPROBE,['-v','error','-show_entries','format=duration:stream=codec_type,width,height,avg_frame_rate','-of','json',path]));
   const video = value.streams?.find(stream => stream.codec_type === 'video');
   const durationSec = Number(value.format?.duration);
-  assert(video?.width > 0 && video?.height > 0 && finite(durationSec,0.1,180), 'Invalid or oversized video input');
+  assert(video?.width > 0 && video?.height > 0 && finite(durationSec,0.1,MAX_PERSONA_SOURCE_SECONDS), 'Invalid video input or source exceeds 15 minutes');
   return { durationSec, width:video.width, height:video.height, hasAudio:!!value.streams?.some(s=>s.codec_type==='audio') };
 }
 async function analyze(inputArg, outputArg) {
@@ -124,7 +125,7 @@ async function assemble(decisionsArg, projectArg) {
     assert(Number.isSafeInteger(beatNumber) && beatNumber>previousBeat && beatNumber<=brief.script.length && beat?.order===beatNumber && shot?.order===beatNumber, 'Beat order mismatch');
     previousBeat=beatNumber;
     assert(typeof c.sourceId==='string' && sources.has(c.sourceId), 'Unknown source clip');
-    assert(finite(c.startSec,0,180) && finite(c.durationSec,0.25,60), 'Invalid choice time range');
+    assert(finite(c.startSec,0,MAX_PERSONA_SOURCE_SECONDS) && finite(c.durationSec,0.25,60), 'Invalid choice time range');
     assert(typeof c.reason==='string' && c.reason.trim().length>=10 && c.reason.length<=1000, 'Missing editorial cut rationale');
     const manuallyConfirmed=c.transcriptSource==='manual-review'&&c.manualTranscriptReview===true;
     assert(manuallyConfirmed||(finite(c.confidence,0,1)&&c.confidence>=0.65), 'Low confidence: manual review needed, no automatic montage');

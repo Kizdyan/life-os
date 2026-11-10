@@ -218,6 +218,22 @@ describe("Persona Scenario Intelligence research core", () => {
     expect(brief.adaptations.reels.durationSec).toBe(18);
   });
 
+  it('keeps the selected package and AI direction through normal approval/rebuild and flags later action changes',()=>{
+    const [idea]=suggestScenarioIdeas({research:[],creativeProfile:{priorities:[],constraints:[]},count:5});
+    const beats=[{purpose:'hook' as const,line:'Мы встретились у закрытой двери.',action:'Остановиться у порога и прислушаться.',durationSec:4},{purpose:'development' as const,line:'Но никто не открыл.',action:'Трижды постучать и отступить.',durationSec:6},{purpose:'ending' as const,line:'Я, оказывается, стоял не там.',action:'Повернуться к зрителю и замереть.',durationSec:4}];
+    const draft=createScenarioScript(idea,{createdAt:'2026-11-10T10:00:00Z',beats});
+    const approved=approveScenarioScript(draft,{author:'Test',comment:'Synthetic fixture approval',approvedAt:'2026-11-10T10:01:00Z'});
+    const project={id:'showcase-project',title:'Сценический заказ',angle:'Конфликт двух намерений героя',format:'reel' as const};
+    const source=scenarioScriptToProductionBrief(approved,project),pack={visualStyle:{lighting:'Мягкий свет слева',colors:'Нейтральная кожа и синий фон'},musicalLeitmotif:{instruments:'Фортепиано и струнные',climax:'Аккорд на раскрытии'},editingRhythm:{cuts:'По смене цели героя',pauses:'Перед неожиданным ответом'}};
+    source.productionPackage=pack;source.preEditPlan!.productionPackage=pack;source.capture.lighting='Конкретная схема света автора';source.shots[0].angle='Камера у дверной ручки';source.shots[0].action+='\nАктёрская задача режиссёра: скрыть тревогу от партнёра';source.postProduction.color='Сдержанная палитра исходного замысла';source.preEditPlan!.scenes[0].editIntent='Пауза перед стуком';const before=JSON.stringify(source);
+    const rebuilt=scenarioScriptToProductionBrief(approved,project,[],source);
+    expect(rebuilt.productionPackage).toEqual(pack);expect(rebuilt.capture).toEqual(source.capture);expect(rebuilt.shots).toEqual(source.shots);expect(rebuilt.postProduction).toEqual(source.postProduction);expect(rebuilt.preEditPlan?.scenes).toEqual(source.preEditPlan!.scenes);
+    expect(importPersonaProductionBrief({brief:JSON.parse(JSON.stringify(rebuilt))}).materials.productionBrief?.preEditPlan?.productionPackage).toEqual(pack);
+    const revised=reviseScenarioScript(approved,{createdAt:'2026-11-10T10:02:00Z',reason:'Изменено действие первой сцены',beats:beats.map((b,i)=>i===0?{...b,action:'Резко открыть дверь и выйти.'}:b)});
+    const nextApproved=approveScenarioScript(revised,{author:'Test',comment:'Approve revised words',approvedAt:'2026-11-10T10:03:00Z'});
+    const changed=scenarioScriptToProductionBrief(nextApproved,project,[],source);expect(importPersonaProductionBrief({brief:changed}).materials.qa?.status).toBe('needs_revision');expect(changed.productionPackage).toEqual(pack);expect(JSON.stringify(source)).toBe(before);
+    expect(()=>scenarioScriptToProductionBrief(approved,project,[],{...source,sourceTitle:'Чужая идея'})).toThrow(/another idea/);
+  });
   it("treats an imported local-model edit as a new unapproved author-script version", () => {
     const [idea]=suggestScenarioIdeas({research:[],creativeProfile:{priorities:[],constraints:[]},count:5});
     const beats=[

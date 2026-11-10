@@ -51,6 +51,16 @@ const firstReelBrief = {
 };
 
 describe("Persona production brief import", () => {
+  it('retains the complete pre-shoot package and blocks approval of mismatched old pre-edit intent without deleting it',()=>{
+    const productionPackage={visualStyle:{lighting:'Боковой мягкий свет',colors:'Нейтральная кожа и синий фон'},musicalLeitmotif:{instruments:'Фортепиано и струнные',climax:'Аккорд на повороте сцены'},editingRhythm:{cuts:'Склейки по действиям',pauses:'Перед финальным решением'}};
+    const preEditPlan={version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:'ai_director',sourceRevisionId:null,researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Авторские эталоны, метрики не проверены'},productionPackage,scenes:firstReelBrief.script.map(s=>({order:s.order,durationSec:s.durationSec,line:String(s.line),editIntent:'Резать по действию',audioIntent:'Фортепианный акцент',subtitleIntent:'По реальной речи',mediaStatus:'awaiting_author_footage'})),publicationApproved:false};
+    const input={...firstReelBrief,productionPackage,preEditPlan};
+    const imported=pipelineModule.importPersonaProductionBrief({brief:input}).materials.productionBrief!;
+    expect(imported.preEditPlan).toEqual(preEditPlan);expect(imported.productionPackage).toEqual(productionPackage);
+    expect(pipelineModule.importPersonaProductionBrief({brief:JSON.parse(JSON.stringify(imported))}).materials.productionBrief).toEqual(imported);
+    const bad=structuredClone(input);bad.preEditPlan.scenes[0].line='Подменённая реплика';const mismatch=pipelineModule.importPersonaProductionBrief({brief:bad});expect(mismatch.materials.qa?.status).toBe('needs_revision');expect(mismatch.materials.productionBrief?.preEditPlan?.scenes[0].line).toBe('Подменённая реплика');expect(()=>pipelineModule.recordPersonaEditorialDecision(mismatch,{decision:'approved',editor:'Test',comment:'Test',factReviewCompleted:true,decidedAt:'2026-11-10T10:00:00Z'})).toThrow();
+    const missing=structuredClone(input);delete (missing.productionPackage.visualStyle as Partial<typeof missing.productionPackage.visualStyle>).colors;expect(()=>pipelineModule.importPersonaProductionBrief({brief:missing})).toThrow(/production package/i);
+  });
   it("imports the seven-shot 31-second first-Reels brief into QA for the selected matching idea", () => {
     const imported = (pipelineModule as Record<string, unknown>).importPersonaProductionBrief as undefined | ((input: unknown) => any);
     expect(typeof imported).toBe("function");

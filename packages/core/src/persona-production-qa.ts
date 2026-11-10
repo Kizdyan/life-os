@@ -13,6 +13,7 @@ export interface PersonaProductionStructuralCheck {
     | "subtitle-readability"
     | "format-duration"
     | "script-shot-sync"
+    | "pre-edit-sync"
     | "fact-references";
   passed: boolean;
   message: string;
@@ -123,6 +124,7 @@ export function evaluatePersonaProductionBrief(input: {
     },
   ];
 
+  if(brief.preEditPlan||brief.preEditPlanNeedsReview)checks.push({id:'pre-edit-sync',passed:!brief.preEditPlanNeedsReview&&Boolean(brief.preEditPlan&&brief.preEditPlan.scenes.length===brief.script.length&&brief.preEditPlan.scenes.every((scene,index)=>scene.order===index+1&&scene.line===brief.script[index]?.line&&scene.durationSec===brief.script[index]?.durationSec)),message:'Предмонтажный замысел относится к сохранённой версии реплик, действий и длительностей. После правок согласуйте план заново; предыдущий замысел сохранён.'});
   const structuralPass = checks.every((check) => check.passed);
   return {
     status: !structuralPass

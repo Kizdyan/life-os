@@ -1,3 +1,4 @@
+import type {ProductionPackage} from './persona-idea-audit.mjs';
 export type PersonaIdeaFormat =
   | "carousel"
   | "photo"
@@ -35,6 +36,7 @@ export interface PersonaPreEditPlan {
   };
   /** A pre-filming colour direction, not a measured property of recorded media. */
   colorIntent?: string;
+  productionPackage?: ProductionPackage;
   scenes: Array<{
     order: number;
     line: string;
@@ -94,6 +96,9 @@ export interface PersonaProductionBrief {
   };
   /** Frozen planning intent; NOT a rendered timeline or claim of media availability. */
   preEditPlan?: PersonaPreEditPlan;
+  productionPackage?: ProductionPackage;
+  /** Old intent is preserved after a script/action edit, but cannot be approved as current. */
+  preEditPlanNeedsReview?: boolean;
   postProduction: {
     transitions: string;
     subtitles: {

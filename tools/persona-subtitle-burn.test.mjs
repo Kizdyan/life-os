@@ -27,6 +27,8 @@ test('directed subtitle styles differ in weight, emphasis and measured fade conf
  assert.match(dynamic.ass,/\\c&H0000D7FF/);assert.match(cinematic.ass,/\\fad\(180,180\)/);
  assert.equal(dynamic.style.outline,5);assert.equal(cinematic.style.outline,1);
  assert.doesNotMatch(cinematic.ass,/\\c&H0000D7FF/);
+ const commercial=buildSubtitleAss({...input,presetId:'Commercial',positionYRatio:.38});
+ assert.match(commercial.ass,/&H00E0EAF5/);assert.equal(commercial.style.position.y,730);
 });
 
 const available=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore'}).status===0);

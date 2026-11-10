@@ -1,0 +1,10 @@
+export type IdeaAuditCriterion='visuality'|'actingRange'|'sellingPotential'|'hook';
+export type ProductionPackage={visualStyle:{lighting:string;colors:string};musicalLeitmotif:{instruments:string;climax:string};editingRhythm:{cuts:string;pauses:string}};
+export type IdeaAuditScores=Record<'visuality'|'actingRange'|'sellingPotential',number>&{hook?:number};
+export type IdeaAuditReview={ideaId:string;title:string;modelScores:IdeaAuditScores;scores:IdeaAuditScores;average:number;banal:boolean;showsActing:boolean;reason:string;appliedRules:string[];decision:'selected'|'below_threshold'|'outside_top_two'};
+export type IdeaAudit={version:1|2;kind:'persona-generator-critic-v1'|'persona-generator-critic-v2';threshold:8;limit:2;selectedIdeaIds:string[];reviews:IdeaAuditReview[];rawResponse:unknown;provider?:{id:string;model:string};sourceIdeasSha256?:string;systemPromptSha256?:string;generatedAt?:string};
+export const IDEA_AUDIT_CRITERIA:readonly IdeaAuditCriterion[];
+export function auditCriteria(version?:1|2):readonly IdeaAuditCriterion[];
+export function readIdeaProductionPackage(value:unknown):ProductionPackage;
+export function evaluateIdeaAudit(ideas:readonly {id:string;title:string}[],reply:unknown,options?:{version?:1|2}):IdeaAudit;
+export function verifyIdeaAudit(audit:unknown,ideas?:readonly {id:string;title:string}[]):IdeaAudit;

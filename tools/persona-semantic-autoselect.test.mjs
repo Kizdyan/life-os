@@ -10,6 +10,33 @@ const mk=()=>mkdtemp(join(tmpdir(),'persona-asr-select-'));
 const put=(p,v)=>writeFile(p,JSON.stringify(v));
 const whisper=(words)=>({transcription:words.map(([text,a,b])=>({text,offsets:{from:a*1000,to:b*1000}}))});
 const brief={version:1,sourceFormat:'reel',script:[{order:1,line:'Я актёр. И ещё пишу музыку.',durationSec:3},{order:2,line:'И у нас есть проблема.',durationSec:4}],shots:[{order:1,durationSec:3},{order:2,durationSec:4}]};
+test('adjacent master dialogue never loses candidates only because optional pre/post padding overlaps',()=>{
+ const b={script:[{line:'Я говорю первую реплику.'},{line:'Музыка меняет настроение.'}],shots:[{},{}]};
+ const segments=[{text:b.script[0].line,startSec:240,endSec:242.94,timing:'segment'},{text:b.script[1].line,startSec:242.94,endSec:244.64,timing:'segment'}];
+ const plan=createEditorialPlan(b,[{id:'master',durationSec:244.64,segments}],{mode:'strict'});
+ assert.equal(plan.choices.length,2);
+ for(const gap of [.1,.2,.3]){
+  const gapped=createEditorialPlan(b,[{id:'master',durationSec:244.64,segments:[segments[0],{...segments[1],startSec:segments[1].startSec+gap}]}]);
+  assert.ok(gapped.choices[0].startSec+gapped.choices[0].durationSec<=gapped.choices[1].startSec+.001);
+ }
+ assert.ok(plan.choices[0].startSec+plan.choices[0].durationSec<=plan.choices[1].startSec+.001);
+ for(const c of plan.choices)for(const word of c.captionWords){assert.ok(c.startSec<=word.startSec);assert.ok(c.startSec+c.durationSec>=word.endSec-.001)}
+ assert.throws(()=>createEditorialPlan(b,[{id:'master',durationSec:245,segments:[{...segments[0],endSec:243.2},segments[1]]}]),/non-overlapping/);
+});
+test('real four-minute source can be analyzed and assembled with late ASR fixture offsets; 15-minute cap stays closed',{skip:spawnSync('ffmpeg',['-version']).status!==0,timeout:120000},async()=>{
+ const root=await mk();try{
+  const video=join(root,'master.mp4'),manifest=join(root,'sources.json'),evidence=join(root,'evidence'),briefPath=join(root,'brief.json'),decisions=join(root,'decisions.json');
+  const made=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=0x80a0b0:s=128x224:r=1:d=246','-f','lavfi','-i','sine=frequency=440:duration=246','-c:v','libx264','-preset','ultrafast','-c:a','aac',video],{encoding:'utf8',timeout:60000});assert.equal(made.status,0,made.stderr);
+  const original=await readFile(video);await put(manifest,{version:1,sources:[{id:'master',path:video}]});await analyze(manifest,evidence);
+  const packet=JSON.parse(await readFile(join(evidence,'analysis.json'),'utf8'));assert.ok(packet.sources[0].durationSec>240);
+  // Deliberate unit ASR fixture: this validates timestamp handling, not real speech recognition.
+  await put(join(evidence,'master-whisper.json'),whisper([['Первые слова',240,241],['Вторые слова',242,244]]));
+  await put(briefPath,{version:1,sourceFormat:'reel',script:[{order:1,line:'Первые слова',durationSec:2},{order:2,line:'Вторые слова',durationSec:2}],shots:[{order:1},{order:2}]});
+  await plan(join(evidence,'analysis.json'),briefPath,decisions);await assemble(decisions,join(root,'timeline.json'));
+  const timeline=JSON.parse(await readFile(join(root,'timeline.json'),'utf8'));assert.ok(timeline.clips[0].startSec>180);assert.deepEqual(await readFile(video),original);
+  packet.sources[0].durationSec=901;await put(join(evidence,'too-long.json'),packet);await assert.rejects(plan(join(evidence,'too-long.json'),briefPath,join(root,'no-decisions.json')),/15 minutes/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 test('Russian transcription matching normalizes ё, rejects unrelated phrases',()=>{
  assert.equal(overlap('Я актёр. Ещё пишу музыку','Я актер, еще пишу музыку'),1);
  assert.ok(similarity('Пишу музыку','Пишу музыку')>0.99);

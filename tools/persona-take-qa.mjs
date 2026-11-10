@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Evidence-based source take diagnostics. No face/acting judgements, no editing. */
 import { spawn } from 'node:child_process';
+import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +44,7 @@ export function overlapsBlackInterval(startSec,endSec,blackIntervals,thresholdSe
   });
 }
 export async function inspectTake({path,durationSec,hasAudio}){
-  if(!path||!(durationSec>0)||durationSec>180)throw Error('Invalid take inspection input');
+  if(!path||!(durationSec>0)||durationSec>MAX_PERSONA_SOURCE_SECONDS)throw Error('Invalid take inspection input or source exceeds 15 minutes');
   const videoLog=await command(['-hide_banner','-nostdin','-i',path,'-vf','fps=1,scale=320:-2,signalstats,metadata=print','-an','-f','null','-']);
   const blackLog=await command(['-hide_banner','-nostdin','-i',path,'-vf','blackdetect=d=0.2:pix_th=0.10','-an','-f','null','-']);
   const audioLog=hasAudio?await command(['-hide_banner','-nostdin','-i',path,'-vn','-af','volumedetect','-f','null','-']):'';

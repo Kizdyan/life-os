@@ -15,6 +15,7 @@ import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runFirstReel,validateDraftQa} from './persona-first-reel-runner.mjs';
 import {matchBriefToLibrary,shootGapMarkdown} from './persona-library-shot-match.mjs';
+import {readCommercialIdeaDetails} from './persona-commercial-prompt.mjs';
 
 const fail=message=>{throw Error('Persona flow: '+message)};
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -42,17 +43,19 @@ export function validateModelServers(input){
  if(new Set(servers.map(s=>s.id)).size!==servers.length)fail('Provider IDs must be unique');
  return servers;
 }
-export function validateIdeas(input){
+export function validateIdeas(input,{count,requireProductionPackage=false}={}){
+ if(count!==undefined&&(!Number.isInteger(count)||count<1||count>5))fail('Invalid requested idea count');
  const ideas=input?.ideas;
- if(!Array.isArray(ideas)||ideas.length<3||ideas.length>5)fail('Model did not return 3-5 real ideas');
+ if(!Array.isArray(ideas)||(count!==undefined?ideas.length!==count:ideas.length<3||ideas.length>5))fail('Model did not return the required number of real ideas');
  const seen=new Set();
  return ideas.map((idea,index)=>{
   if(!object(idea)||!txt(idea.title,4,140)||!txt(idea.angle,8,650)||
    !txt(idea.hook,4,180))fail('Incomplete model idea '+(index+1));
   const key=idea.title.toLowerCase().trim().replace(/\s+/g,' ');
   if(seen.has(key))fail('Model duplicated an idea');
+  if(requireProductionPackage&&idea.productionPackage===undefined)fail('Model omitted the full production package');
   seen.add(key);
-  return {id:'idea-'+(index+1),title:idea.title.trim(),angle:idea.angle.trim(),hook:idea.hook.trim(),format:'reel'};
+  return {id:'idea-'+(index+1),title:idea.title.trim(),angle:idea.angle.trim(),hook:idea.hook.trim(),format:'reel',...(idea.skills!==undefined?readCommercialIdeaDetails(idea):{})};
  });
 }
 export function validateDirector(input){
@@ -77,7 +80,32 @@ export function validateDirector(input){
  if(duration<15||duration>70)fail('Generated reel duration outside 15–70 sec');
  return input;
 }
-export async function modelJSON({servers,system,payload,fetchImpl}){
+async function streamedModelContent(response){
+ if(!response.body)throw Error('Missing Ollama stream');
+ const decoder=new TextDecoder(),reader=response.body.getReader();let pending='',content='',done=false,total=0;
+ const consume=line=>{
+  if(!line.trim())return;
+  if(done)throw Error('Unexpected data after completed Ollama stream');
+  const part=JSON.parse(line);
+  if(part.error)throw Error(String(part.error));
+  if(part.message?.content!==undefined){if(typeof part.message.content!=='string')throw Error('Invalid Ollama content');content+=part.message.content}
+  if(part.done===true){if(part.done_reason==='length')throw Error('Ollama output limit reached');done=true}
+ };
+ try{
+  for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.byteLength;
+   if(total>2_000_000)throw Error('Ollama response exceeds local budget');
+   pending+=decoder.decode(chunk.value,{stream:true});let end;
+   while((end=pending.indexOf('\n'))>=0){consume(pending.slice(0,end));pending=pending.slice(end+1)}
+  }
+  pending+=decoder.decode();consume(pending);
+  if(!done)throw Error('Incomplete Ollama stream');
+  return content;
+ }finally{await reader.cancel().catch(()=>{});reader.releaseLock()}
+}
+export async function modelJSON({servers,system,payload,fetchImpl,contextTokens,timeoutMs=120000,maxOutputTokens=3600,thinking,temperature=.75,responseSchema,streaming=false}){
+ if(contextTokens!==undefined&&(!Number.isInteger(contextTokens)||contextTokens<1024||contextTokens>32768))fail('Invalid local context size');
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000||!Number.isInteger(maxOutputTokens)||maxOutputTokens<80||maxOutputTokens>6000)fail('Invalid model resource budget');
+ if(!Number.isFinite(temperature)||temperature<0||temperature>1)fail('Invalid model temperature');
  const errors=[];
  for(const server of validateModelServers(servers)){
   const token=server.tokenEnv?process.env[server.tokenEnv]:null;
@@ -86,17 +114,17 @@ export async function modelJSON({servers,system,payload,fetchImpl}){
    const response=await fetchImpl(server.origin+'/api/chat',{
     method:'POST',headers:{'Content-Type':'application/json',
      ...(token?{Authorization:'Bearer '+token}:{})},
-    body:JSON.stringify({model:server.model,stream:false,format:'json',
+    body:JSON.stringify({model:server.model,stream:streaming,format:responseSchema??'json',...(thinking===undefined?{}:{think:thinking}),
      messages:[{role:'system',content:system},{role:'user',content:JSON.stringify(payload)}],
-     options:{temperature:.75,num_predict:3600}}),
-    signal:AbortSignal.timeout(120000),
+     options:{temperature,num_predict:maxOutputTokens,...(contextTokens?{num_ctx:contextTokens}:{})}}),
+    signal:AbortSignal.timeout(timeoutMs),
    });
    if(!response.ok)throw Error('HTTP '+response.status);
-   const data=await response.json();
-   const decoded=JSON.parse(data?.message?.content);
+   const content=streaming?await streamedModelContent(response):(await response.json())?.message?.content;
+   const decoded=JSON.parse(content);
    if(!object(decoded))throw Error('Non-object JSON output');
    return {data:decoded,provider:{id:server.id,model:server.model}};
-  }catch(error){errors.push(server.id+': '+String(error?.message??error).slice(0,180))}
+  }catch(error){errors.push(server.id+': '+String(error?.message??error).slice(0,180)+(error?.cause?.code?' ('+error.cause.code+')':''))}
  }
  fail('All real model servers failed: '+errors.join('; '));
 }
@@ -108,6 +136,11 @@ export function canonicalBrief(idea,director){
  const platform=instruction=>({aspectRatio:'9:16',durationSec:duration,instruction});
  return {
   version:1,ideaId:idea.id,sourceAngle:idea.angle,sourceTitle:idea.title,sourceFormat:'reel',
+  ...(idea.productionPackage?{productionPackage:structuredClone(idea.productionPackage)}:{}),
+  ...(idea.skills?{commercialIntent:readCommercialIdeaDetails(idea)}:{}),
+  preEditPlan:{version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:'ai_director',sourceRevisionId:null,
+   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Локальная модель использовала авторские примеры; эффективность реальных Reels не измерялась.'},colorIntent:d.colorIntent,...(idea.productionPackage?{productionPackage:structuredClone(idea.productionPackage)}:{}),
+   scenes:d.scenes.map((s,i)=>({order:i+1,line:s.line.trim(),durationSec:s.durationSec,editIntent:s.edit,audioIntent:idea.music??d.setup.sound,subtitleIntent:'Точные произнесённые слова, короткие фразы и безопасные поля; синхронизация после ASR.',visualIntent:{framing:s.framing,angle:s.camera,cameraMovement:'По утверждённому указанию камеры',lighting:s.lighting,performance:s.performance},mediaStatus:'awaiting_author_footage'})),publicationApproved:false},
   hook:{firstSeconds:d.hook,visual:d.scenes[0].action,delivery:d.scenes[0].performance},
   script:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,line:s.line.trim(),action:s.action.trim()})),
   shots:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,framing:s.framing,
@@ -143,7 +176,7 @@ export function createShootSheet(idea,director){
 }
 export async function preparePersonaFlow({
  theme,outputDir,servers,style='cinematic',libraryIndexPath,fetchImpl=fetch,
- ideasFromProposal=null,selectedIdeaId=null,ideasProvider=null,sourceProposalSha256=null,
+ ideasFromProposal=null,selectedIdeaId=null,ideasProvider=null,sourceProposalSha256=null,creativeContext=null,
 }={}){
  if(!txt(theme,8,700)||!allowedStyles.has(style))fail('Theme (8–700 chars) and valid style are required');
  if(!txt(outputDir,1,1000))fail('Provide a NEW output directory');
@@ -154,15 +187,19 @@ export async function preparePersonaFlow({
   'Ты предлагаешь актёру и композитору три разных оригинальных коротких видео. Никаких шаблонных советов, выдуманных личных фактов и повторяющихся хуков. Отвечай ТОЛЬКО JSON формата {"ideas":[{"title":"...","angle":"...","hook":"..."},...]}.',
   payload:{theme,style,requirements:'one actor; one room; phone + tripod; possible piano; shootable 20–50 sec; character and humor'},
  });
- const ideas=validateIdeas(first.data);
+ const ideas=validateIdeas(first.data,ideasFromProposal!==null?{count:ideasFromProposal.length}:{}).map((idea,index)=>{
+  if(ideasFromProposal===null)return idea;
+  const savedId=ideasFromProposal[index]?.id;if(typeof savedId!=='string'||!/^idea-[1-5]$/.test(savedId))fail('Invalid saved candidate identity');
+  return {...idea,id:savedId};
+ });
  if(ideasFromProposal!==null&&(!ideasProvider||typeof ideasProvider.id!=='string'||
   typeof ideasProvider.model!=='string'||!/^[a-f0-9]{64}$/i.test(sourceProposalSha256??'')))
   fail('Invalid saved proposal provenance');
  const idea=ideasFromProposal!==null?ideas.find(x=>x.id===selectedIdeaId):ideas[0];
  if(!idea)fail('Selected idea ID absent from saved candidate list');
- const second=await modelJSON({servers,fetchImpl,system:
+ const second=await modelJSON({servers,fetchImpl,...(idea.skills?{contextTokens:4096,thinking:false,timeoutMs:300000,maxOutputTokens:2200}:{}),system:
   'Ты ИИ-режиссёр, который должен дать конкретные реплики, действия, свет, ракурсы и монтаж для оригинального Reels. Никакого кода, шаблонов и фиктивных биографических фактов. JSON: {"hook":"...","setup":{"location":"...","camera":"...","lighting":"...","sound":"...","wardrobe":"...","arrangement":"..."},"scenes":[{"durationSec":4,"line":"...","action":"...","framing":"close-up","camera":"...","lighting":"...","performance":"...","edit":"..."}],"editingIntent":"...","colorIntent":"..."}. Дай 4–8 сцен суммарно 15–70 секунд. Крупность только close-up, medium, detail.',
-  payload:{idea,theme,style,requirements:'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
+  payload:{idea,theme,style,...(creativeContext?{creativeContext}:{}),requirements:idea.skills?'Ровно 4–5 конкретных сцен суммарно 20–30 секунд. Хук, проблема/задача, три навыка через экранные действия, продающий финал. Сохрани music, actingTask, sellingEnding и productionPackage выбранной идеи: свет/цвет в setup и colorIntent, инструменты/кульминацию в sound, склейки/паузы в editingIntent и edit сцен. Не меняй задуманный пакет. Каждое поле — одна короткая фраза. Один человек, смартфон, штатив; без изменения лица.':'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
  });
  const director=validateDirector(second.data);
  const brief=canonicalBrief(idea,director);
@@ -180,6 +217,7 @@ export async function preparePersonaFlow({
   writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas,
    selectedIdeaId:idea.id,selectionMode:meta.ideaSelectionMode},null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'PRODUCTION-BRIEF.json'),JSON.stringify(brief,null,2)+'\n',{flag:'wx'}),
+  writeFile(join(dir,'DIRECTOR.json'),JSON.stringify(director,null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'SHOOT.md'),createShootSheet(idea,director),{flag:'wx'}),
   writeFile(join(dir,'FLOW.json'),JSON.stringify(meta,null,2)+'\n',{flag:'wx'}),
    ...(matches?[

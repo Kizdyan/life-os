@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 const config=JSON.parse(readFileSync(new URL('./visual-presets.json',import.meta.url),'utf8'));
 export function getVisualPreset(id){
- if(!['Dynamic','Cinematic'].includes(id)||!Object.hasOwn(config.presets,id))throw Error('Unknown visual preset');
+ if(!['Dynamic','Cinematic','Commercial'].includes(id)||!Object.hasOwn(config.presets,id))throw Error('Unknown visual preset');
  return structuredClone(config.presets[id]);
 }
 export async function selectCreativePreset({text,model,fetchImpl=fetch}={}){

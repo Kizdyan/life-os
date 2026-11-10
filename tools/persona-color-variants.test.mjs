@@ -12,7 +12,7 @@ const available=spawnSync('ffmpeg',['-version']).status===0&&spawnSync('ffprobe'
 
 test('director whitelist renders distinct pixels while preserving geometry, original and decoded audio',{skip:!available,timeout:120000},()=>withTemp(async root=>{
  const input=join(root,'original.mp4');makeSample(input);const original=await readFile(input),audio=decodedAudioHash(input),pixels=[];
- for(const presetId of ['Dynamic','Cinematic']){
+ for(const presetId of ['Dynamic','Cinematic','Commercial']){
   const output=join(root,presetId+'.mp4');const result=await renderVisualPreset({inputPath:input,outputPath:output,presetId});
   assert.equal(result.presetId,presetId);assert.equal(decodedAudioHash(output),audio);
   const probe=spawnSync('ffprobe',['-v','error','-show_streams','-of','json',output],{encoding:'utf8'});
