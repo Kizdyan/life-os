@@ -8,6 +8,7 @@ import {
   evaluatePersonaProductionBrief,
   type PersonaProductionQaResult,
 } from "./persona-production-qa";
+import {readIdeaProductionPackage} from './persona-idea-audit.mjs';
 
 export type PersonaProductionStage =
   | "IDEA"
@@ -371,6 +372,23 @@ function parsePersonaProductionBrief(value: unknown): PersonaProductionBrief {
     factReferences: array(record.factReferences, "factReferences").map((item, index) => text(item, `factReferences[${index}]`)),
   };
   assertTimelineConsistency(brief);
+  if(record.productionPackage!==undefined)brief.productionPackage=readIdeaProductionPackage(record.productionPackage);
+  if(record.preEditPlanNeedsReview!==undefined){if(typeof record.preEditPlanNeedsReview!=='boolean')throw Error('Invalid pre-edit review flag');brief.preEditPlanNeedsReview=record.preEditPlanNeedsReview}
+  if(record.preEditPlan!==undefined){
+    const plan=asRecord(record.preEditPlan,'preEditPlan'),evidence=asRecord(plan.researchEvidence,'preEditPlan.researchEvidence');
+    if(plan.version!==1||plan.kind!=='persona-pre-edit-plan-v1'||plan.status!=='intent_only'||plan.publicationApproved!==false||!['ai_director','scenario_revision'].includes(String(plan.origin))||(plan.sourceRevisionId!==null&&typeof plan.sourceRevisionId!=='string')||!['reviewed_reference','metadata_only','hypothesis_only'].includes(String(evidence.level)))throw Error('Invalid pre-edit intent');
+    const scenes=array(plan.scenes,'preEditPlan.scenes').map((value,index)=>{
+      const s=asRecord(value,'preEditPlan.scene');
+      if(s.order!==index+1||s.mediaStatus!=='awaiting_author_footage')throw Error('Invalid pre-edit intent scene');
+      const scene={order:index+1,line:text(s.line,'preEditPlan.line'),durationSec:positiveNumber(s.durationSec,'preEditPlan.durationSec'),editIntent:text(s.editIntent,'preEditPlan.editIntent'),audioIntent:text(s.audioIntent,'preEditPlan.audioIntent'),subtitleIntent:text(s.subtitleIntent,'preEditPlan.subtitleIntent'),mediaStatus:'awaiting_author_footage' as const};
+      if(s.visualIntent===undefined)return scene;
+      const v=asRecord(s.visualIntent,'preEditPlan.visualIntent');if(!['close-up','medium','detail'].includes(String(v.framing)))throw Error('Invalid pre-edit framing');
+      return {...scene,visualIntent:{framing:v.framing as 'close-up'|'medium'|'detail',angle:text(v.angle,'preEditPlan.angle'),cameraMovement:text(v.cameraMovement,'preEditPlan.cameraMovement'),lighting:text(v.lighting,'preEditPlan.lighting'),performance:text(v.performance,'preEditPlan.performance')}};
+    });
+    if(!scenes.length||scenes.length>30)throw Error('Invalid pre-edit intent scene count');
+    brief.preEditPlan={version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:plan.origin as 'ai_director'|'scenario_revision',sourceRevisionId:plan.sourceRevisionId as string|null,researchEvidence:{level:evidence.level as 'reviewed_reference'|'metadata_only'|'hypothesis_only',sourceUrls:array(evidence.sourceUrls,'preEditPlan.sourceUrls').map(u=>text(u,'preEditPlan.sourceUrl')),note:text(evidence.note,'preEditPlan.note')},scenes,publicationApproved:false,...(plan.colorIntent!==undefined?{colorIntent:text(plan.colorIntent,'preEditPlan.colorIntent')}:{}),...(plan.productionPackage!==undefined?{productionPackage:readIdeaProductionPackage(plan.productionPackage)}:{})};
+    if(brief.productionPackage&&brief.preEditPlan.productionPackage&&JSON.stringify(brief.productionPackage)!==JSON.stringify(brief.preEditPlan.productionPackage))throw Error('Production package differs from pre-edit intent');
+  }
   return brief;
 }
 

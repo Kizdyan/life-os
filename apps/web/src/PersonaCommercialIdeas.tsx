@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {contentFormats,readCommercialDevelopment,type PersonaCommercialDevelopment,type CommercialProposal} from './personaCommercialDevelopment';
-import {IDEA_AUDIT_CRITERIA} from '../../../packages/core/src/persona-idea-audit.mjs';
+import {auditCriteria} from '../../../packages/core/src/persona-idea-audit.mjs';
 const worker='http://127.0.0.1:47832';
 const criteria={visuality:'Визуальность',actingRange:'Актёрский диапазон',sellingPotential:'Продающий потенциал',hook:'Хук'};
 export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave,onApplyBrief}:{projectId:string;record:PersonaCommercialDevelopment|null;creativeSnapshot:string;onSave:(r:PersonaCommercialDevelopment)=>boolean;onApplyBrief:(brief:unknown,base:string)=>void}){
@@ -43,16 +43,17 @@ export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave
   finally{running.current=false;if(alive.current)setBusy(false)}
  }
  return <section className="captureCard personaAiMediaWorker" aria-label="Продающий формат и локальная Qwen">
-  <h3>Генератор → Критик → ТОП-2</h3>
+  <h3>Showcase &amp; Sell · Генератор → Критик → ТОП-2</h3>
   <label>Стилевая вариация<select aria-label="Формат контента" value={current.format} disabled={busy} onChange={e=>{if(!onSave({...current,format:e.target.value as typeof current.format}))setError('Формат не сохранён')}}>{contentFormats.map(f=><option key={f.id} value={f.id}>{f.label}</option>)}</select></label>
-  <p>Qwen создаёт 5 черновиков по трём авторским эталонам, затем отдельным запросом критикует каждый. Код оставляет не больше двух идей со средней оценкой от 8/10.</p>
+  <p>Qwen создаёт 5 полных пакетов по трём авторским эталонам и редактируемому архетипу. Продюсер-критик проверяет продающий потенциал, актёрский диапазон и визуальность. Код оставляет не больше двух идей со средней оценкой от 8/10.</p>
   <p>Это самокритика одной модели, не независимое жюри и не измерение спроса или вероятности успеха. Авторское утверждение остаётся отдельным.</p>
   <button type="button" disabled={busy||current.proposals.length>=100} onClick={()=>void generate()}>{busy?'Qwen: генерация и аудит…':'Создать качественную идею'}</button>
   {current.proposals.length>=100&&<p>Сохранено 100 версий. Старые данные не удалены; создайте отдельный проект для следующего набора.</p>}
-  {busy&&<p role="status">Реальные локальные проходы: 5 черновиков → строгий аудит 4 критериев → отсев. На CPU каждый проход ограничен 10 минутами.</p>}
+  {busy&&<p role="status">Реальные локальные проходы: 5 пакетов → строгий аудит 3 критериев → отсев. На CPU каждый проход ограничен 10 минутами.</p>}
   {error&&<p role="alert">{error}</p>}
   {proposal?.audit&&<div aria-label="Результат аудита идей">
    <small>{contentFormats.find(f=>f.id===proposal.contentFormat)?.label} · {proposal.provider.model} · два прохода той же модели</small>
+   {proposal.archetype&&<p>Архетип этой редакции: {proposal.archetype.description}</p>}
    {proposal.ideas.length===0&&<p role="status">Все 5 идей отсеяны. Ни одна не прошла порог 8/10; сценарий не создаётся.</p>}
    {proposal.ideas.length===1&&<p>Порог прошла только одна идея. Вторую система не подставляет.</p>}
    {proposal.ideas.map(idea=>{
@@ -60,11 +61,17 @@ export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave
     return <article key={idea.id} aria-label={'Проверенная идея '+idea.id}>
      <h4>{idea.title}</h4>
      <p><b>Средняя оценка критика: {review.average}/10</b></p>
-     <ul>{IDEA_AUDIT_CRITERIA.map(k=><li key={k}>{criteria[k]}: {review.scores[k]}/10</li>)}</ul>
+     <ul>{auditCriteria(proposal.audit!.version).map(k=><li key={k}>{criteria[k]}: {review.scores[k]}/10</li>)}</ul>
      <p><b>Почему прошла:</b> {review.reason}</p>
      <p><b>Хук:</b> {idea.hook}</p><p>{idea.angle}</p>
      {idea.skills.map(s=><p key={s.role}><b>{{actor:'Актёр',director:'Режиссёр',composer:'Композитор'}[s.role]}:</b> {s.action}</p>)}
      <p><b>Музыка:</b> {idea.music}</p><p><b>Актёрская задача:</b> {idea.actingTask}</p><p><b>Финал:</b> {idea.sellingEnding}</p>
+     {idea.productionPackage&&<div aria-label={'Полный продакшн-пакет '+idea.id}><h5>Полный продакшн-пакет</h5>
+      <p><b>Свет:</b> {idea.productionPackage.visualStyle.lighting}<br/><b>Цвет:</b> {idea.productionPackage.visualStyle.colors}</p>
+      <p><b>Лейтмотив:</b> {idea.productionPackage.musicalLeitmotif.instruments}<br/><b>Кульминация:</b> {idea.productionPackage.musicalLeitmotif.climax}</p>
+      <p><b>Склейки:</b> {idea.productionPackage.editingRhythm.cuts}<br/><b>Паузы:</b> {idea.productionPackage.editingRhythm.pauses}</p>
+      <small>Замысел до съёмки; точные границы появятся только после анализа настоящих дублей.</small>
+     </div>}
      <button disabled={busy} onClick={()=>void screenplay(proposal.id,idea.id)}>Выбрать и создать сценарий</button>
     </article>;
    })}

@@ -652,6 +652,7 @@ export function scenarioScriptToProductionBrief(
   script: ScenarioScript,
   selectedProject: PersonaProductionIdea,
   research: readonly ScenarioResearchItem[] = [],
+  sourceBrief?: PersonaProductionBrief,
 ): PersonaProductionBrief {
   const current = requireCurrentRevision(script);
   if (!script.approval || script.approval.revisionId !== current.id) {
@@ -674,6 +675,19 @@ export function scenarioScriptToProductionBrief(
     action: beat.action,
     durationSec: beat.durationSec,
   }));
+  if(sourceBrief){
+    if(sourceBrief.sourceTitle!==selectedProject.title||sourceBrief.sourceAngle!==selectedProject.angle||sourceBrief.sourceFormat!==selectedProject.format)throw Error('Source production plan belongs to another idea');
+    if(sourceBrief.shots.length!==authored.length)throw Error('Scene count changed; reconcile the existing production plan before rebuilding');
+    const source=structuredClone(sourceBrief),same=source.script.length===authored.length&&source.script.every((s,i)=>s.order===i+1&&s.line===authored[i].line&&s.action===authored[i].action&&s.durationSec===authored[i].durationSec);
+    const plan=source.preEditPlan??buildScenarioPreEditPlan(current,script.idea,research),durationSec=authored.reduce((sum,b)=>sum+b.durationSec,0);
+    return {...source,ideaId:selectedProject.id,sourceTitle:selectedProject.title,sourceAngle:selectedProject.angle,sourceFormat:selectedProject.format,
+      hook:same?source.hook:{...source.hook,firstSeconds:authored[0].line,visual:authored[0].action},script:authored,
+      shots:same?source.shots:source.shots.map((shot,index)=>({...shot,order:index+1,durationSec:authored[index].durationSec,action:authored[index].action})),
+      preEditPlan:{...plan,sourceRevisionId:same?current.id:plan.sourceRevisionId},
+      ...(!same||source.preEditPlanNeedsReview?{preEditPlanNeedsReview:true}:{}),
+      adaptations:{reels:{...source.adaptations.reels,durationSec},shorts:{...source.adaptations.shorts,durationSec},vkClips:{...source.adaptations.vkClips,durationSec}},
+    };
+  }
   const preEditPlan = buildScenarioPreEditPlan(current,script.idea,research);
   const shots: PersonaProductionBrief["shots"] = authored.map((beat, index) => {
     const visual=preEditPlan.scenes[index].visualIntent;

@@ -1,8 +1,8 @@
-import {verifyIdeaAudit,type IdeaAudit} from '../../../packages/core/src/persona-idea-audit.mjs';
+import {verifyIdeaAudit,readIdeaProductionPackage,type IdeaAudit,type ProductionPackage} from '../../../packages/core/src/persona-idea-audit.mjs';
 export type PersonaContentFormat='showcase'|'acting'|'comedy';
 export const contentFormats:readonly {id:PersonaContentFormat;label:string}[]=[{id:'showcase',label:'Commercial Showcase'},{id:'acting',label:'Acting Range'},{id:'comedy',label:'Self-Irony / Comedy'}];
-export type CommercialIdea={id:string;title:string;angle:string;hook:string;skills:{role:'actor'|'director'|'composer';action:string}[];music:string;actingTask:string;sellingEnding:string};
-export type CommercialProposal={id:string;contentFormat:PersonaContentFormat;ideas:CommercialIdea[];provider:{model:string;id:string};examplesSha256:string;publicationApproved:false;audit?:IdeaAudit};
+export type CommercialIdea={id:string;title:string;angle:string;hook:string;skills:{role:'actor'|'director'|'composer';action:string}[];music:string;actingTask:string;sellingEnding:string;productionPackage?:ProductionPackage};
+export type CommercialProposal={id:string;contentFormat:PersonaContentFormat;ideas:CommercialIdea[];provider:{model:string;id:string};examplesSha256:string;publicationApproved:false;audit?:IdeaAudit;archetype?:{version:1;description:string}};
 export type PersonaCommercialDevelopment={version:1;format:PersonaContentFormat;proposals:CommercialProposal[];selected?:{proposalId:string;ideaId:string}};
 export function readCommercialDevelopment(value:unknown):PersonaCommercialDevelopment|null{
  const v=value as PersonaCommercialDevelopment|null;
@@ -13,6 +13,8 @@ export function readCommercialDevelopment(value:unknown):PersonaCommercialDevelo
   if(p.audit){
    try{
     const audit=verifyIdeaAudit(p.audit);
+    if(p.archetype!==undefined&&(p.archetype.version!==1||!text(p.archetype.description,1500)))return null;
+    for(const idea of p.ideas)if(audit.version===2||idea.productionPackage!==undefined)readIdeaProductionPackage(idea.productionPackage);
     if(JSON.stringify(p.ideas.map(i=>i.id))!==JSON.stringify(audit.selectedIdeaIds)||p.ideas.some(i=>i.title!==audit.reviews.find(r=>r.ideaId===i.id)?.title)||p.audit.provider?.model!==p.provider.model||p.audit.provider?.id!==p.provider.id)return null;
    }catch{return null}
   }

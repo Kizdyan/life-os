@@ -1,11 +1,21 @@
 import React from 'react';import {renderToString} from 'react-dom/server';import {expect,it} from 'vitest';
 import {PersonaCommercialIdeas} from './PersonaCommercialIdeas';import {readCommercialDevelopment,commercialCreativeSnapshot} from './personaCommercialDevelopment';
 import {evaluateIdeaAudit} from '../../../packages/core/src/persona-idea-audit.mjs';
-function auditedRecord(values=[7,9,7,10,8]){
+function auditedRecord(values=[7,9,7,10,8],version:1|2=1){
  const drafts=Array.from({length:5},(_,i)=>({id:'idea-'+(i+1),title:'Концепция '+(i+1),angle:'Полное описание черновика '+(i+1),hook:'Конкретный хук',music:'Переход от пиано к струнным',actingTask:'Скрыть ошибку от клиента',sellingEnding:'Сыграю, сниму и напишу музыку',skills:['actor','director','composer'].map(role=>({role,action:'Конкретное действие'}))}));
- const audit={...evaluateIdeaAudit(drafts,{reviews:drafts.map((idea,i)=>({ideaId:idea.id,scores:{visuality:values[i],actingRange:values[i],sellingPotential:values[i],hook:values[i]},banal:false,showsActing:true,reason:'Конкретный довод критика о съёмке и актёрском действии.'}))}),provider:{model:'qwen',id:'ollama-local'},sourceIdeasSha256:'a'.repeat(64)};
+ const audit={...evaluateIdeaAudit(drafts,{reviews:drafts.map((idea,i)=>({ideaId:idea.id,scores:{visuality:values[i],actingRange:values[i],sellingPotential:values[i],...(version===1?{hook:values[i]}:{})},banal:false,showsActing:true,reason:'Конкретный довод критика о съёмке и актёрском действии.'}))},{version}),provider:{model:'qwen',id:'ollama-local'},sourceIdeasSha256:'a'.repeat(64)};
  return {version:1 as const,format:'comedy' as const,proposals:[{id:'11111111-1111-4111-8111-111111111111',contentFormat:'comedy' as const,ideas:audit.selectedIdeaIds.map(id=>drafts.find(i=>i.id===id)!),provider:{model:'qwen',id:'ollama-local'},examplesSha256:'a'.repeat(64),publicationApproved:false as const,audit}]};
 }
+it('Showcase v2 shows the complete production package with three scores and rejects damaged packages on reload',()=>{
+ const record=auditedRecord([7,9,7,10,8],2);
+ const pack={visualStyle:{lighting:'Боковой мягкий свет',colors:'Нейтральная кожа'},musicalLeitmotif:{instruments:'Фортепиано и струнные',climax:'На решении героя'},editingRhythm:{cuts:'По жестам и действию',pauses:'Перед неожиданным ответом'}};
+ record.proposals[0].ideas.forEach(i=>Object.assign(i,{productionPackage:pack}));
+ expect(readCommercialDevelopment(record)).toEqual(record);
+ const html=renderToString(<PersonaCommercialIdeas projectId="test" record={record} creativeSnapshot="base" onSave={()=>true} onApplyBrief={()=>{}}/>);
+ for(const text of ['Полный продакшн-пакет','Боковой мягкий свет','Фортепиано и струнные','Перед неожиданным ответом'])expect(html).toContain(text);
+ expect(html).not.toContain('Хук: 10/10');
+ const bad=JSON.parse(JSON.stringify(record));delete bad.proposals[0].ideas[0].productionPackage.editingRhythm.pauses;expect(readCommercialDevelopment(bad)).toBeNull();
+});
 it('renders only the audited top2, explains rejects, and restores the same result after JSON reload',()=>{
  const record=auditedRecord();expect(readCommercialDevelopment(JSON.parse(JSON.stringify(record)))).toEqual(record);
  const html=renderToString(<PersonaCommercialIdeas projectId="test" record={record} creativeSnapshot="base" onSave={()=>true} onApplyBrief={()=>{}}/>);

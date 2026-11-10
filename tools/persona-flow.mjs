@@ -43,7 +43,7 @@ export function validateModelServers(input){
  if(new Set(servers.map(s=>s.id)).size!==servers.length)fail('Provider IDs must be unique');
  return servers;
 }
-export function validateIdeas(input,{count}={}){
+export function validateIdeas(input,{count,requireProductionPackage=false}={}){
  if(count!==undefined&&(!Number.isInteger(count)||count<1||count>5))fail('Invalid requested idea count');
  const ideas=input?.ideas;
  if(!Array.isArray(ideas)||(count!==undefined?ideas.length!==count:ideas.length<3||ideas.length>5))fail('Model did not return the required number of real ideas');
@@ -53,6 +53,7 @@ export function validateIdeas(input,{count}={}){
    !txt(idea.hook,4,180))fail('Incomplete model idea '+(index+1));
   const key=idea.title.toLowerCase().trim().replace(/\s+/g,' ');
   if(seen.has(key))fail('Model duplicated an idea');
+  if(requireProductionPackage&&idea.productionPackage===undefined)fail('Model omitted the full production package');
   seen.add(key);
   return {id:'idea-'+(index+1),title:idea.title.trim(),angle:idea.angle.trim(),hook:idea.hook.trim(),format:'reel',...(idea.skills!==undefined?readCommercialIdeaDetails(idea):{})};
  });
@@ -135,9 +136,10 @@ export function canonicalBrief(idea,director){
  const platform=instruction=>({aspectRatio:'9:16',durationSec:duration,instruction});
  return {
   version:1,ideaId:idea.id,sourceAngle:idea.angle,sourceTitle:idea.title,sourceFormat:'reel',
+  ...(idea.productionPackage?{productionPackage:structuredClone(idea.productionPackage)}:{}),
   ...(idea.skills?{commercialIntent:readCommercialIdeaDetails(idea)}:{}),
   preEditPlan:{version:1,kind:'persona-pre-edit-plan-v1',status:'intent_only',origin:'ai_director',sourceRevisionId:null,
-   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Локальная модель использовала авторские примеры; эффективность реальных Reels не измерялась.'},colorIntent:d.colorIntent,
+   researchEvidence:{level:'hypothesis_only',sourceUrls:[],note:'Локальная модель использовала авторские примеры; эффективность реальных Reels не измерялась.'},colorIntent:d.colorIntent,...(idea.productionPackage?{productionPackage:structuredClone(idea.productionPackage)}:{}),
    scenes:d.scenes.map((s,i)=>({order:i+1,line:s.line.trim(),durationSec:s.durationSec,editIntent:s.edit,audioIntent:idea.music??d.setup.sound,subtitleIntent:'Точные произнесённые слова, короткие фразы и безопасные поля; синхронизация после ASR.',visualIntent:{framing:s.framing,angle:s.camera,cameraMovement:'По утверждённому указанию камеры',lighting:s.lighting,performance:s.performance},mediaStatus:'awaiting_author_footage'})),publicationApproved:false},
   hook:{firstSeconds:d.hook,visual:d.scenes[0].action,delivery:d.scenes[0].performance},
   script:d.scenes.map((s,i)=>({order:i+1,durationSec:s.durationSec,line:s.line.trim(),action:s.action.trim()})),
@@ -174,7 +176,7 @@ export function createShootSheet(idea,director){
 }
 export async function preparePersonaFlow({
  theme,outputDir,servers,style='cinematic',libraryIndexPath,fetchImpl=fetch,
- ideasFromProposal=null,selectedIdeaId=null,ideasProvider=null,sourceProposalSha256=null,
+ ideasFromProposal=null,selectedIdeaId=null,ideasProvider=null,sourceProposalSha256=null,creativeContext=null,
 }={}){
  if(!txt(theme,8,700)||!allowedStyles.has(style))fail('Theme (8–700 chars) and valid style are required');
  if(!txt(outputDir,1,1000))fail('Provide a NEW output directory');
@@ -197,7 +199,7 @@ export async function preparePersonaFlow({
  if(!idea)fail('Selected idea ID absent from saved candidate list');
  const second=await modelJSON({servers,fetchImpl,...(idea.skills?{contextTokens:4096,thinking:false,timeoutMs:300000,maxOutputTokens:2200}:{}),system:
   'Ты ИИ-режиссёр, который должен дать конкретные реплики, действия, свет, ракурсы и монтаж для оригинального Reels. Никакого кода, шаблонов и фиктивных биографических фактов. JSON: {"hook":"...","setup":{"location":"...","camera":"...","lighting":"...","sound":"...","wardrobe":"...","arrangement":"..."},"scenes":[{"durationSec":4,"line":"...","action":"...","framing":"close-up","camera":"...","lighting":"...","performance":"...","edit":"..."}],"editingIntent":"...","colorIntent":"..."}. Дай 4–8 сцен суммарно 15–70 секунд. Крупность только close-up, medium, detail.',
-  payload:{idea,theme,style,requirements:idea.skills?'Ровно 4–5 конкретных сцен суммарно 20–30 секунд. Хук, три навыка через экранные действия, продающий финал. Сохрани music, actingTask и sellingEnding выбранной идеи. Каждое поле — одна короткая фраза. Один человек, смартфон, штатив; без изменения лица.':'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
+  payload:{idea,theme,style,...(creativeContext?{creativeContext}:{}),requirements:idea.skills?'Ровно 4–5 конкретных сцен суммарно 20–30 секунд. Хук, проблема/задача, три навыка через экранные действия, продающий финал. Сохрани music, actingTask, sellingEnding и productionPackage выбранной идеи: свет/цвет в setup и colorIntent, инструменты/кульминацию в sound, склейки/паузы в editingIntent и edit сцен. Не меняй задуманный пакет. Каждое поле — одна короткая фраза. Один человек, смартфон, штатив; без изменения лица.':'Shootable alone on a phone tripod, no generated face edits; varied organic edit rhythm'},
  });
  const director=validateDirector(second.data);
  const brief=canonicalBrief(idea,director);
