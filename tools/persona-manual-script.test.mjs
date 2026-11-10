@@ -37,3 +37,23 @@ test('all-spoken manual master keeps real ASR matching instead of file-label rej
  assert.equal(createManualEditorialPlan(brief,sources).choices.length,2);
  assert.throws(()=>createManualEditorialPlan(brief,[{...sources[0],segments:[]}]),/Manual review/);
 });
+
+test('separately uploaded speech shots use only the planned opening window',()=>{
+ const sourceText='0–2 сек: Реплика: Я говорю первую реплику.\n2–4 сек: Реплика: Музыка меняет настроение.';
+ const rows=extractManualScenes(sourceText);
+ const script=rows.map(row=>({order:row.order,line:row.speech,action:row.action,durationSec:row.durationSec}));
+ const brief={script,shots:script,manualSource:{version:1,sourceText,
+  sourceSha256:createHash('sha256').update(sourceText).digest('hex'),model:'test',
+  scenes:rows.map(row=>({order:row.order,kind:'spoken',caption:'',spokenText:row.speech,musicAccent:''}))}};
+ const sources=rows.map(row=>({id:'s0'+row.order+'_t01',durationSec:15,
+  segments:[{text:row.speech,startSec:.4,endSec:1.8,timing:'segment'}]}));
+ const plan=createManualEditorialPlan(brief,sources);
+ assert.deepEqual(plan.choices.map(choice=>[choice.startSec,choice.durationSec,choice.captionWords[0].startSec]),[[0,2,.4],[0,2,.4]]);
+ const late={...sources[0],segments:[{...sources[0].segments[0],endSec:2.3}]};
+ assert.throws(()=>createManualEditorialPlan(brief,[late,sources[1]]),/Manual review/);
+ const clipped={...sources[0],segments:[
+  {text:'Я говорю первую',startSec:.4,endSec:1.9,timing:'word'},
+  {text:'реплику',startSec:1.95,endSec:2.15,timing:'word'},
+ ]};
+ assert.throws(()=>createManualEditorialPlan(brief,[clipped,sources[1]]),/Manual review/);
+});

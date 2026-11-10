@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, assemble, sharedWords } from './persona-semantic-montage.mjs';
+import { extractManualScenes } from '../packages/core/src/persona-manual-script.mjs';
+import { createManualEditorialPlan } from './persona-semantic-autoselect.mjs';
+import { buildSubtitleDraft } from './persona-subtitle-draft.mjs';
 
 const mediaTools=['ffmpeg','ffprobe'].every(c=>spawnSync(c,['-version'],{encoding:'utf8'}).status===0);
 const mk=(p,x)=>writeFile(p,JSON.stringify(x));
@@ -14,6 +17,60 @@ const minimalBrief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'Я актёр. И ещё пишу музыку.',durationSec:2},
  {order:2,line:'И у нас есть проблема.',durationSec:2}
 ],shots:[{order:1,durationSec:2},{order:2,durationSec:2}]};
+test('eleven Budget for One sources render 24 seconds with a timed, four-part finale',{skip:!mediaTools},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-budget-finale-'));
+ try{
+  const examples=await readFile(new URL('../docs/persona-commercial-examples.md',import.meta.url),'utf8');
+  const sourceText=examples.split('## Сценарий 3: ')[1];
+  const rows=extractManualScenes(sourceText);
+  const script=rows.map(row=>({order:row.order,line:row.caption||row.action,action:row.action,durationSec:row.durationSec}));
+  const brief={version:1,sourceFormat:'reel',script,shots:script,
+   manualSource:{version:1,sourceText,sourceSha256:createHash('sha256').update(sourceText).digest('hex'),model:'test',
+    scenes:rows.map(row=>({order:row.order,kind:'visual',caption:row.caption,spokenText:'',musicAccent:''}))}};
+  const colors=['white','red','lime','blue','yellow','white','white','white','white','white','magenta'];
+  const sources=[];
+  for(const [i,color] of colors.entries()){
+   const path=join(dir,String(i+1).padStart(3,'0')+'.mp4');
+   const durationSec=i===0?15:i===10?2.5:2;
+   const tail=i===0?['-vf',"drawbox=color=black:t=fill:enable='gte(t,2)'"]:[];
+   const made=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c='+color+':s=160x284:r=30',
+    ...tail,'-t',String(durationSec),'-c:v','mpeg4',path],{encoding:'utf8',timeout:30000});
+   assert.equal(made.status,0,made.stderr);
+   const bytes=await readFile(path);
+   sources.push({id:'s'+String(i+1).padStart(2,'0')+'_t01',path,durationSec,
+    bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),technicalQuality:{blackIntervals:[]}});
+  }
+  const plan=createManualEditorialPlan(brief,sources);
+  const briefPath=join(dir,'brief.json'),analysisPath=join(dir,'analysis.json'),decisionsPath=join(dir,'decisions.json');
+  await mk(briefPath,brief);
+  await mk(analysisPath,{version:1,kind:'persona-evidence-v1',sources});
+  await mk(decisionsPath,{version:1,analysisPath,briefPath,...plan});
+  const {project}=await assemble(decisionsPath,join(dir,'timeline.json'));
+  const timeline=JSON.parse(await readFile(project,'utf8'));
+  assert.deepEqual([timeline.clips[0].startSec,timeline.clips[0].durationSec],[0,2]);
+  assert.deepEqual(timeline.clips.slice(10).map(clip=>[clip.beat,clip.path,clip.startSec,clip.durationSec]),
+   [[11,sources[1].path,0,.5],[11,sources[2].path,0,.5],[11,sources[3].path,0,.5],[11,sources[10].path,0,2.5]]);
+  const {review}=buildSubtitleDraft(brief,timeline,plan);
+  assert.deepEqual(review.cues.slice(-2).map(cue=>[cue.startMs,cue.endMs,cue.text]),
+   [[20000,21500,'ТРИ ПРОФЕССИИ'],[21500,24000,'ОДИН ЧЕЛОВЕК']]);
+  await mk(project,{...timeline,width:160,height:284});
+  const output=join(dir,'render.mp4');
+  const result=spawnSync(process.execPath,[fileURLToPath(new URL('./persona-timeline-render.mjs',import.meta.url)),project,output],
+   {encoding:'utf8',timeout:120000});
+  assert.equal(result.status,0,result.stderr);
+  const manifest=JSON.parse(await readFile(output+'.persona.json','utf8'));
+  assert.ok(Math.abs(manifest.output.durationSec-24)<0.08);
+  const pixelAt=sec=>{
+   const decoded=spawnSync('ffmpeg',['-v','error','-ss',String(sec),'-i',output,'-frames:v','1',
+    '-vf','scale=2:2','-pix_fmt','rgb24','-f','rawvideo','-'],{timeout:30000});
+   assert.equal(decoded.status,0,decoded.stderr.toString());
+   return [...decoded.stdout.subarray(0,3)].map(value=>value>128?1:0);
+  };
+  assert.deepEqual([1.9,2.1,20.2,20.7,21.2,21.7].map(pixelAt),
+   [[1,1,1],[1,0,0],[1,0,0],[0,1,0],[0,0,1],[1,0,1]]);
+  for(const src of sources)assert.equal(createHash('sha256').update(await readFile(src.path)).digest('hex'),src.sha256);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('speech matching rejects unrelated dialogue',()=>{
  assert.equal(sharedWords('Я актёр. Пишу музыку.','Я актёр, пишу музыку.'),1);
  assert.equal(sharedWords('Я актёр, пишу музыку','Картошка, свекла, суп'),0);
