@@ -36,11 +36,11 @@ if(!$health){
 }
 if(!$health.ok){throw 'Worker is not ready. Check installed dependencies and worker.stderr.log.'}
 $web=$null
-try{$web=Invoke-WebRequest 'http://127.0.0.1:5173' -TimeoutSec 3}catch{}
+try{$web=Invoke-WebRequest 'http://127.0.0.1:5173' -UseBasicParsing -TimeoutSec 3}catch{}
 if($web -and $web.Content -notmatch 'Life OS'){throw 'Port 5173 belongs to another application.'}
 if(!$web){
  Start-Process -FilePath $node -ArgumentList @(('"'+(Join-Path $repo 'node_modules\vite\bin\vite.js')+'"'),'apps/web','--host','127.0.0.1','--port','5173','--strictPort') -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output 'web.stdout.log') -RedirectStandardError (Join-Path $output 'web.stderr.log') | Out-Null
- for($attempt=0;$attempt -lt 30;$attempt++){Start-Sleep -Milliseconds 300;try{$web=Invoke-WebRequest 'http://127.0.0.1:5173' -TimeoutSec 3;break}catch{}}
+ for($attempt=0;$attempt -lt 30;$attempt++){Start-Sleep -Milliseconds 300;try{$web=Invoke-WebRequest 'http://127.0.0.1:5173' -UseBasicParsing -TimeoutSec 3;break}catch{}}
  if(!$web){throw 'Local Persona did not start. See web.stderr.log.'}
 }
 Write-Output 'Persona: http://127.0.0.1:5173/#persona'
