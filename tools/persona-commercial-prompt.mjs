@@ -10,7 +10,19 @@ export function productionIdeaSchema(){
   productionPackage:{type:'object',additionalProperties:false,required:['visualStyle','musicalLeitmotif','editingRhythm'],properties:{visualStyle:section(['lighting','colors']),musicalLeitmotif:section(['instruments','climax']),editingRhythm:section(['cuts','pauses'])}}};
  return {type:'object',additionalProperties:false,required:['ideas'],properties:{ideas:{type:'array',minItems:5,maxItems:5,items:{type:'object',additionalProperties:false,required:Object.keys(properties),properties}}}};
 }
-function validateArchetype(value){if(value?.version!==1||typeof value.description!=='string'||value.description.trim().length<8||value.description.length>1500)throw Error('Invalid local author archetype');return {version:1,description:value.description.trim()}}
+function validateArchetype(value){
+ // Preserve the v1 prompt/provenance contract for saved revisions while reading the author's structured config.
+ if(value&&Object.hasOwn(value,'archetype')){
+  const fields=['archetype','visual_style','core_value','persona_description'];
+  const text=v=>typeof v==='string'&&v.trim().length>=4&&v.length<=600;
+  if(fields.some(key=>!text(value[key]))||!Array.isArray(value.content_pillars)||value.content_pillars.length<1||value.content_pillars.length>10||value.content_pillars.some(v=>!text(v)))throw Error('Invalid local author archetype');
+  const description=[...fields.map(key=>key+': '+value[key].trim()),'content_pillars: '+value.content_pillars.map(v=>v.trim()).join('; ')].join('\n');
+  if(description.length>1500)throw Error('Invalid local author archetype');
+  return {version:1,description};
+ }
+ if(value?.version!==1||typeof value.description!=='string'||value.description.trim().length<8||value.description.length>1500)throw Error('Invalid local author archetype');
+ return {version:1,description:value.description.trim()};
+}
 const examples=readFileSync(new URL('../docs/persona-commercial-examples.md',import.meta.url),'utf8');
 export const commercialExamplesSha256=createHash('sha256').update(examples).digest('hex');
 export const commercialFormats=Object.freeze({
