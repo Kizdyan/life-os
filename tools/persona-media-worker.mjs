@@ -11,11 +11,12 @@ import {randomUUID,createHash} from 'node:crypto';
 import {createWriteStream,createReadStream} from 'node:fs';
 import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
-import {join,resolve,basename,extname} from 'node:path';
+import {join,resolve,basename,extname,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
+import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
@@ -63,6 +64,20 @@ function originalName(header,fallback){
  return name;
 }
 async function fileHash(path){const hash=createHash('sha256');for await(const part of createReadStream(path))hash.update(part);return hash.digest('hex')}
+async function inspectUploadedTake(path,config){
+ const bin=config.ffmpegDir?join(config.ffmpegDir,process.platform==='win32'?'ffprobe.exe':'ffprobe'):'ffprobe';
+ const media=await new Promise((ok,no)=>{
+  const child=spawn(bin,['-v','error','-show_streams','-show_format','-of','json',path],{windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});let output='',err='';
+  const timer=setTimeout(()=>{child.kill();no(Error('FFprobe: время проверки файла истекло'))},15000);
+  child.stdout.on('data',b=>{output+=b;if(output.length>1024*1024){child.kill();no(Error('FFprobe output limit'))}});child.stderr.on('data',b=>err=(err+b).slice(-1000));
+  child.once('error',e=>{clearTimeout(timer);no(e)});child.once('close',code=>{clearTimeout(timer);try{if(code!==0)throw Error('Повреждённый или неподдерживаемый видеофайл: '+err);ok(JSON.parse(output))}catch(e){no(e)}});
+ });
+ const v=media.streams?.find(s=>s.codec_type==='video');if(!v||!v.width||!v.height)fail('В файле нет видеопотока');
+ if(['smpte2084','arib-std-b67'].includes(v.color_transfer)||String(v.color_primaries).startsWith('bt2020'))fail('HDR/BT.2020: скрытая конвертация запрещена; подготовьте отдельную SDR-копию');
+ if(Number(v.tags?.rotate||0)!==0||v.side_data_list?.some(s=>Number(s.rotation||0)!==0))fail('Поворот в метаданных требует отдельной подготовки копии; исходник не изменён');
+ if(media.streams.some(s=>s.codec_type==='subtitle'))fail('Встроенные субтитры требуют отдельного согласования');
+ return {duration:Number(media.format?.duration),videoCodec:v.codec_name,audioCodecs:media.streams.filter(s=>s.codec_type==='audio').map(s=>s.codec_name),width:v.width,height:v.height,colorTransfer:v.color_transfer??'unknown'};
+}
 function sessionView(s){
  const evidence=join(s.output,'evidence','analysis.json'), decisions=join(s.output,'decisions.ai.json'), timeline=join(s.output,'timeline.json'), finished=join(s.output,'ai-edited-reel.mp4');
  let stage=s.stage;
@@ -107,6 +122,10 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    }
    const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='POST'&&url.pathname==='/manual-script'){
+    const body=await json(req,96000);if(ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('Worker занят; повторите после текущей задачи');
+    ideationBusy=true;try{respond(res,200,await parseManualScript({text:body.text,projectId:body.projectId,model:config.ollamaModel}));}finally{ideationBusy=false}return;
+   }
    if(req.method==='POST'&&(url.pathname==='/ideas'||/^\/ideas\/[a-f0-9-]{36}\/select$/.test(url.pathname))){
     const body=await json(req);if(typeof body.projectId!=='string'||!/^[-a-zA-Z0-9_]{1,160}$/.test(body.projectId))fail('A local project identity is required');
     if(ideationBusy||directorPending||activeExport)fail('Local Qwen is busy; retry after the current task');
@@ -154,6 +173,7 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    }
    if(req.method==='POST'&&url.pathname==='/session'){
     const body=await json(req);if((body?.masterAsset!==undefined&&typeof body.masterAsset!=='boolean')||!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel)||(body.burnSubtitles!==undefined&&typeof body.burnSubtitles!=='boolean'))fail('invalid approved Reel brief, variation, subtitle option or local model');
+    if(body.brief.manualSource){validateManualSource(body.brief.manualSource,body.brief.script);if(createHash('sha256').update(body.brief.manualSource.sourceText).digest('hex')!==body.brief.manualSource.sourceSha256)fail('Manual source SHA mismatch');if(body.directionMode!=='manual')fail('Авторский сценарий не допускает автоматической творческой режиссуры');}
     let direction=null;
     if(body.directionMode==='auto'){
      const receipt=directorDecisions.get(body.directorDecisionId);
@@ -162,15 +182,22 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
     }else if(body.directionMode==='manual'){
      getVisualPreset(body.visualPreset);direction={mode:'manual',selected_preset:body.visualPreset,model:null,briefSha256:briefHash(body.brief)};
     }else if(body.directionMode!==undefined)fail('Invalid director mode');
+    if(!Number.isInteger(body.takeCount)||body.takeCount<(body.masterAsset?1:2)||body.takeCount>12||body.masterAsset&&body.takeCount!==1)fail('choose 2–12 explicitly named takes');
+    if(body.masterAsset&&body.brief.manualSource?.scenes.some(s=>s.kind==='visual'))fail('Для визуального авторского сценария назначьте отдельный короткий файл каждому кадру');
     await mkdir(config.outputRoot,{recursive:true});const id=randomUUID(),input=join(config.outputRoot,'.worker-staging-'+id),output=join(config.outputRoot,'ai-reel-'+id);await mkdir(input,{recursive:false});
     // The established runner owns output creation and rejects a pre-existing
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
     if(direction)await writeFile(join(input,'AI-DIRECTOR.json'),JSON.stringify(direction,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    const s={id,input,output,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
    const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   if(req.method==='DELETE'&&!match[2]){
+    if(s.state!=='uploading'||s.child)fail('Only an unstarted upload can be discarded');
+    if(dirname(s.input)!==resolve(config.outputRoot)||basename(s.input)!=='.worker-staging-'+s.id)fail('Invalid owned staging directory');
+    await import('node:fs/promises').then(({rm})=>rm(s.input,{recursive:true,force:true}));sessions.delete(s.id);respond(res,200,{discarded:true,originalsChanged:false});return;
+   }
    if(req.method==='POST'&&match[2]==='exports'){
     if(s.state!=='completed'||s.exports?.state==='running'||ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('A completed local MP4 and idle worker are required');
     activeExport=true;
@@ -193,7 +220,11 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    if(req.method==='PUT'&&match[2]?.startsWith('take/')){
     const index=Number(match[3]),name=req.headers['x-persona-file-name'];const length=Number(req.headers['content-length']);if(s.state!=='uploading'||!Number.isInteger(index)||index<0||index>=s.expected||s.uploaded.has(index)||!safeFile(name)||!Number.isSafeInteger(length)||length<1024||length>maxFile||s.total+length>maxTotal)fail('invalid explicit take upload');
     const sourceName=originalName(req.headers['x-persona-original-name'],name);
-    const path=join(s.input,name);let ownsPartial=false;const sink=createWriteStream(path,{flags:'wx'});sink.once('open',()=>{ownsPartial=true});try{await pipeline(req,sink);if((await stat(path)).size!==length)fail('upload size mismatch');const intake={version:1,originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
+    const path=join(s.input,name);let ownsPartial=false;const sink=createWriteStream(path,{flags:'wx'});sink.once('open',()=>{ownsPartial=true});try{await pipeline(req,sink);if((await stat(path)).size!==length)fail('upload size mismatch');const media=await inspectUploadedTake(path,config);const durationSec=Number(media.duration);
+     const sceneNumber=Number(/^S(\d{2})_take/i.exec(name)?.[1]);const planned=s.masterAsset?900:s.brief.script[sceneNumber-1]?.durationSec??20;
+     const limit=s.masterAsset?900:Math.min(60,Math.max(15,Number(planned)*3));
+     if(!Number.isFinite(durationSec)||durationSec<.25||durationSec>limit)fail('Длительность '+sourceName+': '+durationSec.toFixed(2)+' с. Для этого кадра допустимо до '+limit+' с; выберите короткий дубль.');
+     const intake={version:1,durationSec,media,originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256,durationSec:intake.durationSec});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
    }
    if(req.method==='POST'&&match[2]==='run'){
     if(activeExport||ideationBusy||directorPending||[...sessions.values()].some(j=>j!==s&&j.state==='running'))fail('Worker is busy; retry after the current task');

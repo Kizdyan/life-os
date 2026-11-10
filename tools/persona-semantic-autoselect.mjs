@@ -7,6 +7,8 @@
  *  transcribe <evidence/analysis.json> <whisper-cli binary> <model.bin>
  *  plan <evidence/analysis.json> <PersonaProductionBrief.json> <new-decisions.json>
  */
+import {validateManualSource} from '../packages/core/src/persona-manual-script.mjs';
+import {createHash} from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 import { access, readFile, stat, writeFile } from 'node:fs/promises';
@@ -214,6 +216,31 @@ export function createEditorialPlan(brief,sources,{mode='strict'}={}){
   });
   return {mode,candidates,choices,missingBeats:brief.script.map((_,index)=>index+1).filter(beat=>!choices.some(choice=>choice.beat===beat))};
 }
+/** Authored visual takes are explicit file assignments, not fake ASR evidence. */
+export function createManualEditorialPlan(brief,sources){
+ const manual=validateManualSource(brief.manualSource,brief.script);
+ if(createHash('sha256').update(manual.sourceText).digest('hex')!==manual.sourceSha256)fail('Manual source SHA mismatch');
+ if(sources.length===1&&sources[0].id==='master'&&manual.scenes.every(s=>s.kind==='spoken'))return createEditorialPlan(brief,sources);
+ const candidates=[],choices=[];
+ for(const [i,scene] of manual.scenes.entries()){
+  const mapped=sources.filter(src=>new RegExp('^s'+String(scene.order).padStart(2,'0')+'_t\\d{2}$','i').test(src.id));
+  if(mapped.length!==1)fail('Назначьте ровно один файл на кадр '+scene.order+'; альтернативы требуют явного выбора.');
+  const src=mapped[0],limit=Math.min(60,Math.max(15,brief.script[i].durationSec*3));
+  if(!valid(src.durationSec,.25,limit))fail('Неподходящая длительность файла кадра '+scene.order+'; допустимо до '+limit+' с');
+  if(scene.kind==='spoken'){
+   const one=createEditorialPlan({script:[{...brief.script[i],order:1}],shots:[{...brief.shots[i],order:1}]},[src]);
+   const alternatives=one.candidates[0].alternatives.map((c,n)=>({...c,candidateId:'beat-'+scene.order+'-take-'+(n+1)}));
+   candidates.push({beat:scene.order,alternatives});
+   choices.push({...one.choices[0],beat:scene.order,selectedCandidateId:alternatives[0].candidateId});
+  }else{
+   if(overlapsBlackInterval(0,src.durationSec,src.technicalQuality?.blackIntervals))fail('Чёрные кадры в визуальном дубле '+scene.order+'; требуется просмотр исходника.');
+   if(!/^[a-f0-9]{64}$/.test(src.sha256??''))fail('Missing visual source SHA');
+   const c={candidateId:'beat-'+scene.order+'-visual',beat:scene.order,sourceId:src.id,sourceSha256:src.sha256,startSec:0,durationSec:src.durationSec,evidenceType:'author-visual-take',transcript:'',reason:'Author assigned this complete visual take to this storyboard frame; no speech or acting verification claimed.'};
+   candidates.push({beat:scene.order,alternatives:[c]});choices.push(c);
+  }
+ }
+ return {mode:'strict',candidates,choices,missingBeats:[]};
+}
 export function chooseForBrief(brief,sources){
  return createEditorialPlan(brief,sources).choices;
 }
@@ -225,7 +252,7 @@ export function applyManualSelection(decisions,{beat,candidateId}={}){
  choices.push(choiceFromAlternative(beat,candidate));choices.sort((a,b)=>a.beat-b.beat);
  return {...decisions,choices,missingBeats:(decisions.missingBeats??[]).filter(item=>item!==beat)};
 }
-async function transcribe(analysisArg,cliArg,modelArg){
+async function transcribe(analysisArg,cliArg,modelArg,{sourceIds=null}={}){
   const analysisFile=resolve(analysisArg),analysis=await readJson(analysisFile),base=dirname(analysisFile);
   if(analysis?.kind!=='persona-evidence-v1'||!Array.isArray(analysis.sources))fail('Invalid evidence packet');
   const cli=resolve(cliArg),model=resolve(modelArg);
@@ -233,6 +260,7 @@ async function transcribe(analysisArg,cliArg,modelArg){
   if(!st.isFile()||!stModel.isFile()||stModel.size<1024*1024)fail('Local ASR executable or model unavailable');
   const completed=[];
   for(const source of analysis.sources){
+    if(sourceIds&&!sourceIds.includes(source.id))continue;
     if(!source.hasAudio||!source.audioPath)fail('Offline dialogue ASR requires original audio: '+source.id);
     if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id))fail('Invalid source ID');
     const wav=sourcePath(base,source.audioPath);const output=join(base,source.id+'-whisper');
@@ -262,10 +290,11 @@ async function plan(analysisArg,briefArg,decisionsArg,mode='strict'){
   for(const source of analysis.sources){
     if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id)||!valid(source.durationSec,0.1,MAX_PERSONA_SOURCE_SECONDS))fail('Invalid source metadata or source exceeds 15 minutes');
     const transcriptFile=join(base,source.id+'-whisper.json');
-    const transcript=await readJson(transcriptFile);
-    sources.push({id:source.id,durationSec:source.durationSec,technicalQuality:source.technicalQuality,segments:parseWhisperJson(transcript,source.durationSec)});
+    const scene=brief.manualSource?.scenes.find(s=>new RegExp('^s'+String(s.order).padStart(2,'0')+'_t','i').test(source.id));
+    const transcript=scene?.kind==='visual'?null:await readJson(transcriptFile);
+    sources.push({...source,segments:transcript?parseWhisperJson(transcript,source.durationSec):[]});
   }
-  const editorial=createEditorialPlan(brief,sources,{mode});
+  const editorial=brief.manualSource?createManualEditorialPlan(brief,sources):createEditorialPlan(brief,sources,{mode});
   const result={version:1,analysisPath,briefPath,...editorial};
   await writeFile(out,JSON.stringify(result,null,2)+'\n',{flag:'wx'});
   return {decisions:out,choices:editorial.choices.length,missingBeats:editorial.missingBeats,totalSec:Number(editorial.choices.reduce((s,x)=>s+x.durationSec,0).toFixed(3)),review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};

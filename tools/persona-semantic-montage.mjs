@@ -5,6 +5,7 @@
  * assemble <decisions.json> <new-render-project.json>
  * No network, API keys, silent overwrite, AI claims or media uploads.
  */
+import {validateManualSource} from '../packages/core/src/persona-manual-script.mjs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -118,6 +119,7 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof source.id==='string'&&!sources.has(source.id)&&typeof source.path==='string'&&/^[a-f0-9]{64}$/.test(source.sha256), 'Invalid analysis source');
     sources.set(source.id,source);
   }
+  if(brief.manualSource){validateManualSource(brief.manualSource,brief.script);assert(createHash('sha256').update(brief.manualSource.sourceText).digest('hex')===brief.manualSource.sourceSha256,'Manual source SHA mismatch');}
   const checkedSources=new Set(), clips=[],audit=[],usedIntervals=[];
   let previousBeat=0;
   for(let i=0;i<d.choices.length;i++){
@@ -127,11 +129,14 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof c.sourceId==='string' && sources.has(c.sourceId), 'Unknown source clip');
     assert(finite(c.startSec,0,MAX_PERSONA_SOURCE_SECONDS) && finite(c.durationSec,0.25,60), 'Invalid choice time range');
     assert(typeof c.reason==='string' && c.reason.trim().length>=10 && c.reason.length<=1000, 'Missing editorial cut rationale');
+    const visual=c.evidenceType==='author-visual-take'&&brief.manualSource?.scenes[beatNumber-1]?.kind==='visual';
+    const visualSource=sources.get(c.sourceId);
+    if(c.evidenceType==='author-visual-take')assert(visual&&c.sourceSha256===visualSource.sha256&&new RegExp('^s'+String(beatNumber).padStart(2,'0')+'_t\\d{2}$','i').test(c.sourceId)&&c.startSec===0&&Math.abs(c.durationSec-visualSource.durationSec)<.001,'Unverified visual take mapping or source SHA');
     const manuallyConfirmed=c.transcriptSource==='manual-review'&&c.manualTranscriptReview===true;
-    assert(manuallyConfirmed||(finite(c.confidence,0,1)&&c.confidence>=0.65), 'Low confidence: manual review needed, no automatic montage');
-    assert(typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
+    assert(visual||manuallyConfirmed||(finite(c.confidence,0,1)&&c.confidence>=0.65), 'Low confidence: manual review needed, no automatic montage');
+    assert(visual||typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
     const overlap=sharedWords(beat.line,c.transcript);
-    assert(overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
+    assert(visual||overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
     const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
     assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
@@ -149,9 +154,9 @@ async function assemble(decisionsArg, projectArg) {
       assert(finite(boundary,c.startSec,c.startSec+c.durationSec), 'Invalid post-speech music boundary');
       audioTreatment={speechDurationSec:Number((boundary-c.startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
     }
-    clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{})});
+    clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{}),...(visual?{preserveOriginalAudio:true}:{})});
     audit.push({beat:beatNumber,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,
-      transcriptSource:manuallyConfirmed?'manual-review':'whisper',reason:c.reason,...(audioTreatment?{audioTreatment}:{})});
+      transcriptSource:visual?'author-visual-take':manuallyConfirmed?'manual-review':'whisper',reason:c.reason,...(audioTreatment?{audioTreatment}:{})});
   }
   const output=resolve(projectArg);
   assert(extname(output).toLowerCase()==='.json', 'Render project must be JSON');

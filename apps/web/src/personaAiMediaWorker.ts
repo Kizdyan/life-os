@@ -1,4 +1,4 @@
-export type PersonaAiMediaJob={version:1;projectId:string;createdAt:string;status:'awaiting-author-review';model:string;variation:'cinematic'|'humor'|'intimate'|'unexpected';briefFingerprintSha256:string;briefSnapshot:string;outputPath:string;videoPath:string;qaPath:string;resultPath:string;sourceCount:number;sessionId?:string;masterAsset?:boolean;creativeDirection?:{mode:'auto'|'manual';selected_preset:'Dynamic'|'Cinematic';model:string|null};subtitlesBurnedIn?:boolean;distributionAllowed:false};
+export type PersonaAiMediaJob={version:1;projectId:string;createdAt:string;status:'awaiting-author-review';model:string;variation:'cinematic'|'humor'|'intimate'|'unexpected';briefFingerprintSha256:string;briefSnapshot:string;outputPath:string;videoPath:string;qaPath:string;resultPath:string;sourceCount:number;sessionId?:string;masterAsset?:boolean;creativeDirection?:{mode:'auto'|'manual';selected_preset:'Dynamic'|'Cinematic'|'Commercial';model:string|null};subtitlesBurnedIn?:boolean;distributionAllowed:false};
 const sha=/^[a-f0-9]{64}$/i;
 export function isPersonaDirectorDecisionFresh(value:unknown,nowMs=Date.now()):boolean{
  const decision=value as {createdAt?:unknown}|null;
@@ -22,8 +22,18 @@ export function planPersonaAiTakeUploads(files:readonly {name:string;size:number
 }
 export function readPersonaAiMediaJob(value:unknown):PersonaAiMediaJob|null{
  const v=value as Partial<PersonaAiMediaJob>;
- if(v?.creativeDirection&&(!['auto','manual'].includes(v.creativeDirection.mode)||!['Dynamic','Cinematic'].includes(v.creativeDirection.selected_preset)||(v.creativeDirection.model!==null&&typeof v.creativeDirection.model!=='string')))return null;
- if(!v||typeof v!=='object'||v.version!==1||typeof v.projectId!=='string'||!v.projectId||typeof v.createdAt!=='string'||!Number.isFinite(Date.parse(v.createdAt))||v.status!=='awaiting-author-review'||typeof v.model!=='string'||!v.model||!['cinematic','humor','intimate','unexpected'].includes(String(v.variation))||typeof v.briefFingerprintSha256!=='string'||!sha.test(v.briefFingerprintSha256)||typeof v.briefSnapshot!=='string'||!v.briefSnapshot||v.briefSnapshot.length>100000||typeof v.outputPath!=='string'||!v.outputPath||typeof v.videoPath!=='string'||!v.videoPath||typeof v.qaPath!=='string'||!v.qaPath||typeof v.resultPath!=='string'||!v.resultPath||!Number.isInteger(v.sourceCount)||v.sourceCount<(v.masterAsset===true?1:2)||v.sourceCount>12||(v.masterAsset!==undefined&&(typeof v.masterAsset!=='boolean'||v.masterAsset&&v.sourceCount!==1))||v.distributionAllowed!==false||(v.subtitlesBurnedIn!==undefined&&typeof v.subtitlesBurnedIn!=='boolean')||(v.sessionId!==undefined&&!/^[a-f0-9-]{36}$/.test(v.sessionId)))return null;
+ if(v?.creativeDirection&&(!['auto','manual'].includes(v.creativeDirection.mode)||!['Dynamic','Cinematic','Commercial'].includes(v.creativeDirection.selected_preset)||(v.creativeDirection.model!==null&&typeof v.creativeDirection.model!=='string')))return null;
+ if(!v||typeof v!=='object'||v.version!==1||typeof v.projectId!=='string'||!v.projectId||typeof v.createdAt!=='string'||!Number.isFinite(Date.parse(v.createdAt))||v.status!=='awaiting-author-review'||typeof v.model!=='string'||!v.model||!['cinematic','humor','intimate','unexpected'].includes(String(v.variation))||typeof v.briefFingerprintSha256!=='string'||!sha.test(v.briefFingerprintSha256)||typeof v.briefSnapshot!=='string'||!v.briefSnapshot||v.briefSnapshot.length>100000||typeof v.outputPath!=='string'||!v.outputPath||typeof v.videoPath!=='string'||!v.videoPath||typeof v.qaPath!=='string'||!v.qaPath||typeof v.resultPath!=='string'||!v.resultPath||typeof v.sourceCount!=='number'||!Number.isInteger(v.sourceCount)||v.sourceCount<(v.masterAsset===true?1:2)||v.sourceCount>12||(v.masterAsset!==undefined&&(typeof v.masterAsset!=='boolean'||v.masterAsset&&v.sourceCount!==1))||v.distributionAllowed!==false||(v.subtitlesBurnedIn!==undefined&&typeof v.subtitlesBurnedIn!=='boolean')||(v.sessionId!==undefined&&!/^[a-f0-9-]{36}$/.test(v.sessionId)))return null;
  return v as PersonaAiMediaJob;
 }
 
+
+export function inferPersonaSceneOrder(name:string,sceneCount:number):number|null{
+ const match=/^(?:S(\d{2})_take\d+|(\d{1,3}))\.(?:mp4|mov|mkv|webm|m4v)$/i.exec(name);
+ const order=Number(match?.[1]??match?.[2]);return Number.isInteger(order)&&order>=1&&order<=sceneCount?order:null;
+}
+export function validatePersonaTakeDuration(duration:number,planned:number,master:boolean){
+ const limit=master?900:Math.min(60,Math.max(15,planned*3));
+ if(!Number.isFinite(duration)||duration<.25||!Number.isFinite(limit)||duration>limit)throw Error('Длительность дубля должна быть 0,25–'+limit+' с. Для длинного файла выберите режим мастер-ассета.');
+ return duration;
+}

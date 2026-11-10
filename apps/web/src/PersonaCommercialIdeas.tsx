@@ -3,7 +3,7 @@ import {contentFormats,readCommercialDevelopment,type PersonaCommercialDevelopme
 import {auditCriteria} from '../../../packages/core/src/persona-idea-audit.mjs';
 const worker='http://127.0.0.1:47832';
 const criteria={visuality:'Визуальность',actingRange:'Актёрский диапазон',sellingPotential:'Продающий потенциал',hook:'Хук'};
-export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave,onApplyBrief}:{projectId:string;record:PersonaCommercialDevelopment|null;creativeSnapshot:string;onSave:(r:PersonaCommercialDevelopment)=>boolean;onApplyBrief:(brief:unknown,base:string)=>void}){
+export function PersonaCommercialIdeas({readOnly=false,projectId,record,creativeSnapshot,onSave,onApplyBrief}:{readOnly?:boolean;projectId:string;record:PersonaCommercialDevelopment|null;creativeSnapshot:string;onSave:(r:PersonaCommercialDevelopment)=>boolean;onApplyBrief:(brief:unknown,base:string)=>void}){
  const current=record??{version:1 as const,format:'showcase' as const,proposals:[]};
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const alive=useRef(true),running=useRef(false),latest=useRef(creativeSnapshot);latest.current=creativeSnapshot;
@@ -43,11 +43,11 @@ export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave
   finally{running.current=false;if(alive.current)setBusy(false)}
  }
  return <section className="captureCard personaAiMediaWorker" aria-label="Продающий формат и локальная Qwen">
-  <h3>Showcase &amp; Sell · Генератор → Критик → ТОП-2</h3>
-  <label>Стилевая вариация<select aria-label="Формат контента" value={current.format} disabled={busy} onChange={e=>{if(!onSave({...current,format:e.target.value as typeof current.format}))setError('Формат не сохранён')}}>{contentFormats.map(f=><option key={f.id} value={f.id}>{f.label}</option>)}</select></label>
+  <h3>{readOnly?"Архив прежних предложений Qwen":"Showcase & Sell · Генератор → Критик → ТОП-2"}</h3>{readOnly&&<p>Новые идеи и сценарии вводятся автором. Творческая генерация и критика Qwen отключены; сохранённая история доступна для чтения.</p>}
+  <label>Стилевая вариация<select aria-label="Формат контента" value={current.format} disabled={busy||readOnly} onChange={e=>{if(!onSave({...current,format:e.target.value as typeof current.format}))setError('Формат не сохранён')}}>{contentFormats.map(f=><option key={f.id} value={f.id}>{f.label}</option>)}</select></label>
   <p>Qwen создаёт 5 полных пакетов по трём авторским эталонам и редактируемому архетипу. Продюсер-критик проверяет продающий потенциал, актёрский диапазон и визуальность. Код оставляет не больше двух идей со средней оценкой от 8/10.</p>
   <p>Это самокритика одной модели, не независимое жюри и не измерение спроса или вероятности успеха. Авторское утверждение остаётся отдельным.</p>
-  <button type="button" disabled={busy||current.proposals.length>=100} onClick={()=>void generate()}>{busy?'Qwen: генерация и аудит…':'Создать качественную идею'}</button>
+  <button type="button" disabled={busy||readOnly||current.proposals.length>=100} onClick={()=>void generate()}>{busy?'Qwen: генерация и аудит…':'Создать качественную идею'}</button>
   {current.proposals.length>=100&&<p>Сохранено 100 версий. Старые данные не удалены; создайте отдельный проект для следующего набора.</p>}
   {busy&&<p role="status">Реальные локальные проходы: 5 пакетов → строгий аудит 3 критериев → отсев. На CPU каждый проход ограничен 10 минутами.</p>}
   {error&&<p role="alert">{error}</p>}
@@ -72,7 +72,7 @@ export function PersonaCommercialIdeas({projectId,record,creativeSnapshot,onSave
       <p><b>Склейки:</b> {idea.productionPackage.editingRhythm.cuts}<br/><b>Паузы:</b> {idea.productionPackage.editingRhythm.pauses}</p>
       <small>Замысел до съёмки; точные границы появятся только после анализа настоящих дублей.</small>
      </div>}
-     <button disabled={busy} onClick={()=>void screenplay(proposal.id,idea.id)}>Выбрать и создать сценарий</button>
+     <button disabled={busy||readOnly} onClick={()=>void screenplay(proposal.id,idea.id)}>Выбрать и создать сценарий</button>
     </article>;
    })}
    <details><summary>Почему остальные отсеяны</summary>{proposal.audit.reviews.filter(r=>r.decision!=='selected').map(r=><div key={r.ideaId}>

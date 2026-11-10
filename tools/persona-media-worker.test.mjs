@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 
 test('idea selection endpoint rejects a foreign project and a legacy unaudited proposal before model work',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-worker-idea-audit-'));
@@ -25,6 +26,19 @@ test('idea selection endpoint rejects a foreign project and a legacy unaudited p
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};
+test('real FFprobe rejects a ten-minute video assigned to a five-second shot before rendering',{skip:spawnSync('ffmpeg',['-version']).status!==0},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-long-short-take-')),source=join(root,'long.mp4');
+ const generated=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=white:s=160x284:r=1','-t','600','-c:v','libx264',source],{timeout:30000});assert.equal(generated.status,0,generated.stderr?.toString());
+ const bytes=await readFile(source),originalSha=createHash('sha256').update(bytes).digest('hex');
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used-for-intake'}),port=await worker.start(),base='http://127.0.0.1:'+port;
+ try{
+  const created=await fetch(base+'/session',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':worker.token},body:JSON.stringify({brief:{...brief,script:brief.script.map(b=>({...b,durationSec:5}))},variation:'cinematic',takeCount:2,directionMode:'manual',visualPreset:'Commercial'})});assert.equal(created.status,201);const job=await created.json();
+  const upload=await fetch(base+'/session/'+job.id+'/take/0',{method:'PUT',headers:{'X-Persona-Worker-Token':worker.token,'X-Persona-File-Name':'S01_take01.mp4'},body:bytes});assert.equal(upload.status,400);assert.match((await upload.json()).error,/600.*15 с/);
+  const status=await(await fetch(base+'/session/'+job.id+'/status',{headers:{'X-Persona-Worker-Token':worker.token}})).json();assert.equal(status.uploaded,0);assert.equal(status.state,'uploading');
+  assert.equal((await fetch(base+'/session/'+job.id,{method:'DELETE',headers:{'X-Persona-Worker-Token':worker.token}})).status,200);
+  assert.deepEqual(await readdir(root),['long.mp4']);assert.equal(createHash('sha256').update(await readFile(source)).digest('hex'),originalSha);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
 test('idea endpoints reject unsupported formats, path injection and another project before any inference',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-idea-worker-')),id='11111111-1111-4111-8111-111111111111';
  const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'missing-model'}),port=await worker.start();
@@ -35,6 +49,23 @@ test('idea endpoints reject unsupported formats, path injection and another proj
   assert.equal((await post('/ideas',{projectId:'project'},'invalid-token')).status,401);
   const proposal=join(root,'ideas-'+id);await mkdir(proposal);await writeFile(join(proposal,'PROJECT.json'),JSON.stringify({projectId:'owner'}));
   const foreign=await post('/ideas/'+id+'/select',{projectId:'other',ideaId:'idea-1'});assert.equal(foreign.status,400);assert.match((await foreign.json()).error,/another project/);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
+
+test('manual parsing remains authenticated and abandoned intake removes only owned staging',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-manual-intake-'));const untouched=join(root,'previous-result.txt');await writeFile(untouched,'keep');
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'missing-model'}),port=await worker.start(),base='http://127.0.0.1:'+port;
+ try{
+  const post=(path,body,token=worker.token,origin='http://127.0.0.1:5173')=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token,Origin:origin},body:JSON.stringify(body)});
+  assert.equal((await post('/manual-script',{},'wrong')).status,401);
+  const unicode=await post('/manual-script',{projectId:'test',text:'я'.repeat(19000)});assert.match((await unicode.json()).error,/Нужны 2/,'Unicode input stays within the advertised character limit');
+  assert.equal((await post('/manual-script',{},worker.token,'https://other.example')).status,403);
+  const session=await(await post('/session',{brief,variation:'cinematic',takeCount:2})).json();
+  const dir=join(root,'.worker-staging-'+session.id);await writeFile(join(dir,'partial.mp4'),'worker-owned copy');
+  assert.equal((await fetch(base+'/session/'+session.id,{method:'DELETE',headers:{'X-Persona-Worker-Token':'wrong'}})).status,401);
+  const discarded=await fetch(base+'/session/'+session.id,{method:'DELETE',headers:{'X-Persona-Worker-Token':worker.token}});assert.equal(discarded.status,200);
+  assert.deepEqual(await readdir(root),['previous-result.txt']);assert.equal(await readFile(untouched,'utf8'),'keep');
+  assert.equal((await fetch(base+'/session/'+session.id+'/status',{headers:{'X-Persona-Worker-Token':worker.token}})).status,404);
  }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
 });
 
@@ -82,13 +113,16 @@ test('loopback worker rejects foreign origins and accepts only explicit local au
   const traversal=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers:{Origin:'http://127.0.0.1:5173','X-Persona-Worker-Token':info.token,'X-Persona-File-Name':'..\\outside.mp4','Content-Length':'1024'},body:Buffer.alloc(1024)});assert.equal(traversal.status,400);
   const bytes=Buffer.alloc(1024,7),headers={Origin:'http://127.0.0.1:5173','X-Persona-Worker-Token':info.token,'X-Persona-File-Name':'S01_take01.mp4','X-Persona-Original-Name':encodeURIComponent('Мой дубль.mp4')};
   const badName=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers:{...headers,'X-Persona-Original-Name':encodeURIComponent('../private.mp4')},body:bytes});assert.equal(badName.status,400);
-  const uploaded=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers,body:bytes});assert.equal(uploaded.status,200);
+  const corrupt=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers,body:bytes});assert.equal(corrupt.status,400,'arbitrary bytes are not evidence of a video');
+  if(spawnSync('ffmpeg',['-version']).status!==0)return;
+  const sample=join(root,'sample.mp4');assert.equal(spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=160x284:r=30','-t','1','-c:v','libx264',sample]).status,0);const videoBytes=await readFile(sample);
+  const uploaded=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers,body:videoBytes});assert.equal(uploaded.status,200,JSON.stringify(await uploaded.json()));
   const duplicate=await fetch(base+'/session/'+session.id+'/take/1',{method:'PUT',headers,body:Buffer.alloc(1024,9)});assert.equal(duplicate.status,400);
   const staged=(await readdir(root)).find(name=>name.startsWith('.worker-staging-'));
-  assert.deepEqual(await readFile(join(root,staged,'S01_take01.mp4')),bytes,'duplicate upload cannot delete previously staged bytes');
+  assert.deepEqual(await readFile(join(root,staged,'S01_take01.mp4')),videoBytes,'duplicate upload cannot delete previously staged bytes');
   const intake=JSON.parse(await readFile(join(root,staged,'source-0.json'),'utf8'));
   assert.equal(intake.originalName,'Мой дубль.mp4');assert.equal(intake.stagedName,'S01_take01.mp4');
-  assert.equal(intake.sha256,createHash('sha256').update(bytes).digest('hex'));assert.equal(intake.bytes,bytes.length);
+  assert.equal(intake.sha256,createHash('sha256').update(videoBytes).digest('hex'));assert.equal(intake.bytes,videoBytes.length);
  }finally{await new Promise(resolve=>worker.server.close(resolve));await rm(root,{recursive:true,force:true});}
 });
 

@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {readPersonaAiMediaJob,planPersonaAiTakeUploads,isPersonaDirectorDecisionFresh} from './personaAiMediaWorker';
+import {readPersonaAiMediaJob,planPersonaAiTakeUploads,isPersonaDirectorDecisionFresh,inferPersonaSceneOrder,validatePersonaTakeDuration} from './personaAiMediaWorker';
 
 const job={version:1 as const,projectId:'project-1',createdAt:'2026-11-03T10:00:00.000Z',status:'awaiting-author-review' as const,
  model:'qwen3:4b-instruct',variation:'cinematic' as const,briefFingerprintSha256:'a'.repeat(64),briefSnapshot:'{"version":1}',
@@ -7,6 +7,10 @@ const job={version:1 as const,projectId:'project-1',createdAt:'2026-11-03T10:00:
  resultPath:'C:\\Persona\\result\\RESULT.json',sourceCount:2,distributionAllowed:false as const};
 
 describe('Persona AI media job',()=>{
+ it('maps numeric camera names without guessing unrelated names and rejects long short-takes',()=>{
+  expect(inferPersonaSceneOrder('001.mp4',11)).toBe(1);expect(inferPersonaSceneOrder('011.MOV',11)).toBe(11);expect(inferPersonaSceneOrder('IMG_001.MOV',11)).toBeNull();
+  expect(()=>validatePersonaTakeDuration(600,5,false)).toThrow(/15/);expect(()=>validatePersonaTakeDuration(5.1,5,false)).not.toThrow();expect(()=>validatePersonaTakeDuration(NaN,5,false)).toThrow();
+ });
  it('explicit master-asset mode accepts one original while normal takes still require scene assignment',()=>{
   const files=[{name:'Master.MOV',size:2048}];
   expect(()=>planPersonaAiTakeUploads(files,[],2)).toThrow();
