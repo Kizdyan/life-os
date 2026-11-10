@@ -1,4 +1,7 @@
 {
-  "version": 1,
-  "description": "Сдержанный, кинематографичный, без пафоса, демонстрация трех навыков (Актер/Режиссер/Композитор)"
+  "archetype": "Independent Artist",
+  "visual_style": "Quiet Luxury / Old Money without snobbery",
+  "core_value": "Freedom through creativity",
+  "persona_description": "Confident, ironic, precise. No fake pathos. Action over words.",
+  "content_pillars": ["Acting Range", "Music creates story", "One man, two professions"]
 }

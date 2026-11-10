@@ -6,6 +6,7 @@ test('no automatic paid request, unknown providers, malformed and failed respons
 test('Perplexity uses documented Agent API message output without forwarding media',async()=>{
  let called=false;const result=await generateExternalIdeas({provider:'perplexity',theme:'Три профессии в одном кадре',consent:true,env:{PERPLEXITY_API_KEY:'test-only'},fetchImpl:async(url,options)=>{
   called=true;assert.equal(url,'https://api.perplexity.ai/v1/agent');const body=JSON.parse(options.body);assert.equal(body.max_output_tokens,3000);assert.ok(body.instructions.includes('JSON'));assert.equal(body.tools,undefined);
+  for(const value of ['Independent Artist','Quiet Luxury / Old Money without snobbery','Freedom through creativity','Confident, ironic, precise.','Acting Range','Music creates story','One man, two professions'])assert.ok(body.instructions.includes(value),value);
   return {ok:true,json:async()=>({model:'test-agent',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({ideas:[{title:'Три профессии',script:'0–2 сек: Первый кадр.\n2–4 сек: Второй кадр.'}]})}]}]})};
  }});assert.ok(called);assert.equal(result.ideas.length,1);assert.equal(result.model,'test-agent');
 });

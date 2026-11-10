@@ -42,7 +42,7 @@ test('Showcase packages and archetype survive generator, three-score producer an
  const fetchImpl=async(url,options)=>{const b=JSON.parse(options.body);calls.push(b);return answerResponse(calls.length===1?drafts:calls.length===2?review:director,b.stream)};
  try{
   const result=await proposePersonaIdeas({theme:'Портфолио для кино и брендов через действие',contentFormat:'showcase',ideaCount:5,audit:true,outputDir:join(root,'proposal'),servers:server,fetchImpl});
-  const saved=JSON.parse(await readFile(result.ideasPath,'utf8'));assert.equal(saved.audit.version,2);assert.equal(saved.ideas.length,2);assert.match(saved.archetype.description,/Сдержанный/);assert.match(saved.archetypeSha256,/^[a-f0-9]{64}$/);
+  const saved=JSON.parse(await readFile(result.ideasPath,'utf8'));assert.equal(saved.audit.version,2);assert.equal(saved.ideas.length,2);assert.match(saved.archetype.description,/Independent Artist/);assert.match(saved.archetypeSha256,/^[a-f0-9]{64}$/);
   assert.deepEqual(saved.ideas[0].productionPackage,pack);assert.match(calls[1].messages[0].content,/строгий Продюсер/);assert.equal(calls[1].format.properties.reviews.items.properties.scores.required.length,3);
   await selectPersonaIdea({proposalPath:result.ideasPath,ideaId:saved.ideas[0].id,outputDir:join(root,'selected'),servers:server,fetchImpl});
   assert.deepEqual(JSON.parse(calls[2].messages[1].content).idea.productionPackage,pack);
