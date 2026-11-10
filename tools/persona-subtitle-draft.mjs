@@ -7,6 +7,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { budgetFinale } from '../packages/core/src/persona-manual-script.mjs';
 
 const fail=message=>{throw Error(message)};
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
@@ -80,7 +81,21 @@ export function buildSubtitleDraft(brief,timeline,decisions){
  if(timeline.version!==1)fail('Invalid timeline version');
  const mode=timeline.mode??'strict';
  if(!['strict','preview'].includes(mode))fail('Invalid timeline mode');
- if(mode==='strict'&&timeline.clips.length!==brief.script.length)fail('Script and assembled clips must be aligned');
+ let captionClips=timeline.clips,finale=null,recapDurationSec=0;
+ if(timeline.clips.some(clip=>clip?.recapSourceBeat!==undefined)){
+  finale=budgetFinale(brief);
+  if(mode!=='strict'||!finale||timeline.clips.length!==brief.script.length+finale.sourceBeats.length)
+   fail('Invalid grouped finale');
+  const start=finale.beat-1,recap=timeline.clips.slice(start,-1),coffee=timeline.clips.at(-1);
+  if(recap.some((clip,i)=>clip?.beat!==finale.beat||clip.recapSourceBeat!==finale.sourceBeats[i]||
+   !finite(clip.durationSec)||clip.durationSec<.25||clip.durationSec>finale.insertDurationSec)||
+   coffee?.beat!==finale.beat||coffee.recapSourceBeat!==undefined||
+   !finite(coffee.durationSec)||coffee.durationSec<.25||coffee.durationSec>finale.coffeeDurationSec)
+   fail('Invalid finale clip order or duration');
+  recapDurationSec=recap.reduce((sum,clip)=>sum+clip.durationSec,0);
+  captionClips=[...timeline.clips.slice(0,start),{...coffee,durationSec:recapDurationSec+coffee.durationSec}];
+ }
+ if(mode==='strict'&&captionClips.length!==brief.script.length)fail('Script and assembled clips must be aligned');
  if(mode==='preview'&&(timeline.clips.length<1||timeline.clips.length>brief.script.length||!Array.isArray(timeline.missingBeats)))fail('Invalid preview timeline');
  let cursor=0;
  const cues=[],warnings=[],timingKinds=new Set();
@@ -88,8 +103,8 @@ export function buildSubtitleDraft(brief,timeline,decisions){
  if(choices&&mode==='strict'&&choices.length!==brief.script.length)fail('Subtitle decisions must align with script beats');
  const choicesByBeat=new Map((choices??[]).map(choice=>[choice?.beat,choice]));
  let previousBeat=0;
- for(let index=0;index<timeline.clips.length;index++){
-  const clip=timeline.clips[index],beatNumber=mode==='preview'?clip?.beat:index+1;
+ for(let index=0;index<captionClips.length;index++){
+  const clip=captionClips[index],beatNumber=mode==='preview'?clip?.beat:index+1;
   const script=brief.script[beatNumber-1],shot=brief.shots[beatNumber-1];
   if(!Number.isSafeInteger(beatNumber)||beatNumber<=previousBeat||beatNumber>brief.script.length||script?.order!==beatNumber||shot?.order!==beatNumber||
    !finite(clip?.durationSec)||clip.durationSec<0.25||clip.durationSec>60)
@@ -98,14 +113,20 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   const choice=choicesByBeat.get(beatNumber),words=timedWords(choice);
   const manualScene=brief.manualSource?.scenes[beatNumber-1];
   const effectiveKind=decisions?.takeBindings?.find(b=>b.sceneOrder===beatNumber)?.kind??manualScene?.kind;
-  if(manualScene&&(effectiveKind==='visual'||manualScene.caption)){
+  if(finale?.beat===beatNumber){
+   timingKinds.add('author-titlecard');
+   const startMs=Math.round(cursor*1000),switchMs=Math.round((cursor+recapDurationSec)*1000);
+   cues.push({beat:beatNumber,startMs,endMs:switchMs,text:safeCaptionText(finale.titles[0])});
+   cues.push({beat:beatNumber,startMs:switchMs,endMs:Math.round((cursor+clip.durationSec)*1000),text:safeCaptionText(finale.titles[1])});
+  }else if(manualScene&&(effectiveKind==='visual'||manualScene.caption)){
    timingKinds.add('author-titlecard');
    if(manualScene.caption)cues.push({beat:beatNumber,startMs:Math.round(cursor*1000),endMs:Math.round((cursor+clip.durationSec)*1000),text:safeCaptionText(manualScene.caption)});
-   warnings.push('Beat '+beatNumber+': authored screen title uses complete mapped visual-take bounds; not a speech transcript.');
+   warnings.push('Beat '+beatNumber+': authored screen title uses the assembled shot boundaries.');
   }else if(words&&choice?.beat===beatNumber&&finite(choice.startSec)&&finite(choice.durationSec)){
    if(words.some(word=>word.startSec<choice.startSec-0.02||word.endSec>choice.startSec+choice.durationSec+0.02))
     fail('Whisper caption timing is outside selected clip at beat '+beatNumber);
-   cues.push(...wordCues(words,choice,cursor,clip.durationSec,beatNumber));
+   const captionStartSec=manualScene?(clip.startSec??choice.startSec):choice.startSec;
+   cues.push(...wordCues(words,{...choice,startSec:captionStartSec},cursor,clip.durationSec,beatNumber));
    if(words.some(word=>word.timing!=='word')){
     timingKinds.add('segment');
     warnings.push('Beat '+beatNumber+': Whisper supplied only segment-level timing; verify every word before release.');
@@ -129,7 +150,7 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   timingKinds.size===1&&timingKinds.has('segment')?'segment-level-whisper-timestamps-needs-review':
   timingKinds.size===1&&timingKinds.has('estimated')?'estimated-from-assembled-shot-boundaries-not-word-level-speech':
   'mixed-whisper-and-estimated-needs-review';
- const srt=cues.map(c=>c.beat+'\n'+timecode(c.startMs)+' --> '+timecode(c.endMs)+'\n'+c.text+'\n').join('\n')+'\n';
+ const srt=cues.map((c,i)=>(i+1)+'\n'+timecode(c.startMs)+' --> '+timecode(c.endMs)+'\n'+c.text+'\n').join('\n')+'\n';
  const vtt='WEBVTT\n\n'+cues.map(c=>timecode(c.startMs,true)+' --> '+timecode(c.endMs,true)+'\n'+c.text+'\n').join('\n')+'\n';
  return {
   srt,vtt,

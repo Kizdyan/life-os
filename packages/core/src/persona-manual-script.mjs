@@ -31,6 +31,25 @@ export function validateManualSource(value,script){
  }
  return v;
 }
+
+/** The approved Budget for One reference reuses takes 2–4 in its 20–24 s finale. */
+export function budgetFinale(brief){
+ const last=brief.script?.[10],scene=brief.manualSource?.scenes?.[10];
+ if(brief.script?.length!==11||scene?.kind!=='visual'||last?.durationSec!==4||
+   !brief.script.slice(0,10).every(beat=>beat.durationSec===2)||
+   !/быстрые вставки тр[ёе]х уже снятых ролей/iu.test(last.action)||
+   !/файлов №2\s*[–—-]\s*4/iu.test(last.action))return null;
+ const titles=/\(Текст последовательно:\s*([^→)]+)→([^→)]+)\)/iu.exec(last.action)?.slice(1).map(title=>title.trim());
+ if(!titles?.every(Boolean))return null;
+ return {beat:11,sourceBeats:[2,3,4],insertDurationSec:0.5,coffeeDurationSec:2.5,titles};
+}
+
+/** For a fixed shooting window, accepting part of the line would approve an audible cut. */
+export function hasCompleteSpokenLine(line,transcript){
+ const words=value=>String(value??'').normalize('NFKC').toLowerCase().replaceAll('ё','е').match(/[\p{L}\p{N}]+/gu)??[];
+ const expected=words(line),actual=words(transcript);
+ return expected.length>0&&actual.some((_,index)=>expected.every((word,offset)=>actual[index+offset]===word));
+}
 /** Explicit execution metadata, separate from immutable authored script. */
 export function readTakeBindings(brief,value,requireHashes=false){
  if(!brief?.manualSource||!Array.isArray(value)||value.length!==brief.script.length||value.length<2||value.length>12)throw Error('Назначьте один файл каждому кадру ручного сценария.');

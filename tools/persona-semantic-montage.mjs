@@ -5,14 +5,14 @@
  * assemble <decisions.json> <new-render-project.json>
  * No network, API keys, silent overwrite, AI claims or media uploads.
  */
-import {validateManualSource,readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
+import {budgetFinale,hasCompleteSpokenLine,validateManualSource,readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inspectTake } from './persona-take-qa.mjs';
+import { inspectTake, overlapsBlackInterval } from './persona-take-qa.mjs';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 
 const exts = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
@@ -121,6 +121,7 @@ async function assemble(decisionsArg, projectArg) {
   }
   if(brief.manualSource){validateManualSource(brief.manualSource,brief.script);assert(createHash('sha256').update(brief.manualSource.sourceText).digest('hex')===brief.manualSource.sourceSha256,'Manual source SHA mismatch');}
   const takeBindings=d.takeBindings?readTakeBindings(brief,d.takeBindings,true):null;
+  const finale=mode==='strict'?budgetFinale(brief):null;
   const checkedSources=new Set(), clips=[],audit=[],usedIntervals=[];
   let previousBeat=0;
   for(let i=0;i<d.choices.length;i++){
@@ -132,15 +133,31 @@ async function assemble(decisionsArg, projectArg) {
     assert(typeof c.reason==='string' && c.reason.trim().length>=10 && c.reason.length<=1000, 'Missing editorial cut rationale');
     const binding=takeBindings?.find(b=>b.sceneOrder===beatNumber);if(binding)assert(binding.sourceId===c.sourceId&&binding.sha256===sources.get(c.sourceId).sha256,'Binding source SHA mismatch');
     const visual=c.evidenceType==='author-visual-take'&&(binding?.kind??brief.manualSource?.scenes[beatNumber-1]?.kind)==='visual';
-    const visualSource=sources.get(c.sourceId);
-    if(c.evidenceType==='author-visual-take')assert(visual&&c.sourceSha256===visualSource.sha256&&new RegExp('^s'+String(beatNumber).padStart(2,'0')+'_t\\d{2}$','i').test(c.sourceId)&&c.startSec===0&&Math.abs(c.durationSec-visualSource.durationSec)<.001,'Unverified visual take mapping or source SHA');
+    const src=sources.get(c.sourceId);
+    const assignedFile=brief.manualSource&&new RegExp('^s'+String(beatNumber).padStart(2,'0')+'_t\\d{2}$','i').test(c.sourceId);
+    const plannedSec=finale?.beat===beatNumber?finale.coffeeDurationSec:beat.durationSec;
+    const shotDuration=assignedFile?Math.min(src.durationSec,plannedSec):c.durationSec;
+    const startSec=assignedFile?0:c.startSec;
+    if(c.evidenceType==='author-visual-take')assert(
+     visual&&assignedFile&&c.sourceSha256===src.sha256&&c.startSec===0&&
+     (Math.abs(c.durationSec-src.durationSec)<.001||Math.abs(c.durationSec-shotDuration)<.001),
+     'Unverified visual take mapping or source SHA');
     const manuallyConfirmed=c.transcriptSource==='manual-review'&&c.manualTranscriptReview===true;
     assert(visual||manuallyConfirmed||(finite(c.confidence,0,1)&&c.confidence>=0.65), 'Low confidence: manual review needed, no automatic montage');
     assert(visual||typeof c.transcript==='string' && c.transcript.trim().length>=3 && c.transcript.length<=3000, 'Timed transcript is required before semantic edit');
     const overlap=sharedWords(binding?.kind==='spoken'?binding.expectedSpeech:beat.line,c.transcript);
     assert(visual||overlap>=0.45, 'Beat ' + beatNumber + ' transcript does not sufficiently match its dialogue (overlap=' + overlap.toFixed(2) + ')');
-    const src=sources.get(c.sourceId);
     assert(c.startSec+c.durationSec<=src.durationSec+0.02, 'Choice exceeds recorded source duration');
+    if(assignedFile){
+      assert(finite(shotDuration,0.25,60),'Invalid planned shot duration');
+      if(!visual){
+        const speechEnd=c.speechEndSec??c.startSec+c.durationSec;
+        assert(hasCompleteSpokenLine(binding?.expectedSpeech??beat.line,c.transcript)&&finite(speechEnd,c.startSec,shotDuration)&&
+         (c.captionWords??[]).every(word=>finite(word.endSec,c.startSec,shotDuration)),
+         'Реплика кадра '+beatNumber+' должна целиком прозвучать в начале дубля, в пределах '+shotDuration+' с.');
+      }
+      assert(!overlapsBlackInterval(0,shotDuration,src.technicalQuality?.blackIntervals),'Чёрные кадры в начале дубля '+beatNumber+'.');
+    }
     assert(!usedIntervals.some(x=>x.id===c.sourceId && Math.min(x.endSec,c.startSec+c.durationSec)-Math.max(x.startSec,c.startSec)>0.1), 'Overlapping choices from one source require manual review');
     if(!checkedSources.has(src.id)){
       const file=await stat(src.path);
@@ -153,10 +170,20 @@ async function assemble(decisionsArg, projectArg) {
     if(musicHold){
       assert(c.speechBoundaryConfidence==='word'||Number.isFinite(c.manualMusicBoundarySec), 'Post-speech music needs word timing or manual boundary');
       const boundary=c.speechBoundaryConfidence==='word'?c.speechEndSec:c.manualMusicBoundarySec;
-      assert(finite(boundary,c.startSec,c.startSec+c.durationSec), 'Invalid post-speech music boundary');
-      audioTreatment={speechDurationSec:Number((boundary-c.startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
+      assert(finite(boundary,startSec,startSec+shotDuration), 'Invalid post-speech music boundary');
+      audioTreatment={speechDurationSec:Number((boundary-startSec).toFixed(3)),preserveMusicTail:true,boundarySource:c.speechBoundaryConfidence==='word'?'whisper-word':'manual'};
     }
-    clips.push({beat:beatNumber,path:src.path,startSec:c.startSec,durationSec:c.durationSec,...(audioTreatment?{audioTreatment}:{}),...(visual?{preserveOriginalAudio:true}:{})});
+    if(finale?.beat===beatNumber){
+      assert(visual&&assignedFile,'Для финала со вставками нужен визуальный дубль №11.');
+      assert(shotDuration>=finale.coffeeDurationSec,'Для плана с кофе в файле №11 нужно не менее 2,5 секунды.');
+      for(const sourceBeat of finale.sourceBeats){
+        const prior=clips.find(clip=>clip.beat===sourceBeat);
+        assert(prior&&prior.durationSec>=finale.insertDurationSec,'Для вставки из файла №'+sourceBeat+' нужно не менее 0,5 секунды.');
+        clips.push({beat:beatNumber,recapSourceBeat:sourceBeat,path:prior.path,startSec:prior.startSec,
+         durationSec:finale.insertDurationSec,muteSourceAudio:true});
+      }
+    }
+    clips.push({beat:beatNumber,path:src.path,startSec,durationSec:shotDuration,...(audioTreatment?{audioTreatment}:{}),...(visual?{preserveOriginalAudio:true}:{})});
     audit.push({beat:beatNumber,sourceId:c.sourceId,dialogue:beat.line,transcript:c.transcript,semanticTokenCoverage:Number(overlap.toFixed(3)),confidence:c.confidence,
       transcriptSource:visual?'author-visual-take':manuallyConfirmed?'manual-review':'whisper',reason:c.reason,...(audioTreatment?{audioTreatment}:{})});
   }

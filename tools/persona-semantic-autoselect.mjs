@@ -7,7 +7,7 @@
  *  transcribe <evidence/analysis.json> <whisper-cli binary> <model.bin>
  *  plan <evidence/analysis.json> <PersonaProductionBrief.json> <new-decisions.json>
  */
-import {validateManualSource,readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
+import {budgetFinale,hasCompleteSpokenLine,validateManualSource,readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 import {createHash} from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
@@ -167,18 +167,22 @@ function choiceFromAlternative(beat,alternative){
   postSpeechMusicPreserved:alternative.postSpeechMusicPreserved,
   reason:alternative.rankingReason+(alternative.postSpeechMusicPreserved?' Explicit post-speech music hold preserved.':'')};
 }
-export function createEditorialPlan(brief,sources,{mode='strict'}={}){
+export function createEditorialPlan(brief,sources,{mode='strict',useWholeWindow=false}={}){
   if(!Array.isArray(brief?.script)||!Array.isArray(sources))fail('Invalid script or sources');
   if(!['strict','preview'].includes(mode))fail('Unknown editorial decision mode');
   const candidatesByBeat=brief.script.map((beat,index)=>{
     const shot=brief.shots?.[index];
     const options=sources.flatMap(src=>rankDialogueCandidates(beat.line,src.id,src.segments)
+      .filter(x=>!useWholeWindow||hasCompleteSpokenLine(beat.line,x.transcript))
       .map(x=>({...x,endSec:Math.min(x.endSec,src.durationSec)}))
       // ASR segment-level timing cannot locate the music entry precisely.
       // Leave B03 unmatched so the existing Recovery Review can request a real boundary.
       .filter(x=>!requiresPostSpeechMusic(shot)||x.speechBoundaryConfidence==='word')
-      .map(x=>extendForShot(x,shot,src))
+      .map(x=>useWholeWindow
+        ?{...x,startSec:0,endSec:src.durationSec,postSpeechMusicPreserved:requiresPostSpeechMusic(shot)}
+        :extendForShot(x,shot,src))
       .filter(x=>x!==null && x.endSec<=src.durationSec+0.02)
+      .filter(x=>!useWholeWindow||!x.postSpeechMusicPreserved||x.endSec-x.speechEndSec>=0.02)
       .filter(x=>!overlapsBlackInterval(x.startSec,x.endSec,src.technicalQuality?.blackIntervals))
       .filter(x=>x.score>=0.75 && valid(x.endSec-x.startSec,0.25,60)));
     return options.sort((a,b)=>b.score-a.score).slice(0,3);
@@ -222,6 +226,7 @@ export function createManualEditorialPlan(brief,sources,{takeBindings=null}={}){
  if(createHash('sha256').update(manual.sourceText).digest('hex')!==manual.sourceSha256)fail('Manual source SHA mismatch');
  if(sources.length===1&&sources[0].id==='master'&&manual.scenes.every(s=>s.kind==='spoken'))return createEditorialPlan(brief,sources);
  const bindings=takeBindings?readTakeBindings(brief,takeBindings,true):null;
+ const finale=budgetFinale(brief);
  const candidates=[],choices=[];
  for(const [i,scene] of manual.scenes.entries()){
   const mapped=sources.filter(src=>new RegExp('^s'+String(scene.order).padStart(2,'0')+'_t\\d{2}$','i').test(src.id));
@@ -229,15 +234,20 @@ export function createManualEditorialPlan(brief,sources,{takeBindings=null}={}){
   const src=mapped[0],limit=Math.min(60,Math.max(15,brief.script[i].durationSec*3));
   if(!valid(src.durationSec,.25,limit))fail('Неподходящая длительность файла кадра '+scene.order+'; допустимо до '+limit+' с');
   const binding=bindings?.find(b=>b.sceneOrder===scene.order);if(binding&&(binding.sourceId!==src.id||binding.sha256!==src.sha256))fail('Binding source SHA mismatch');
+  const plannedSec=finale?.beat===scene.order?finale.coffeeDurationSec:brief.script[i].durationSec;
+  const durationSec=Math.min(src.durationSec,plannedSec);
   if((binding?.kind??scene.kind)==='spoken'){
-   const one=createEditorialPlan({script:[{...brief.script[i],line:binding?.expectedSpeech??brief.script[i].line,order:1}],shots:[{...brief.shots[i],order:1}]},[src]);
+   const window={...src,durationSec,segments:src.segments.filter(segment=>segment.endSec<=durationSec)};
+   const one=createEditorialPlan(
+    {script:[{...brief.script[i],line:binding?.expectedSpeech??brief.script[i].line,order:1}],shots:[{...brief.shots[i],order:1}]},
+    [window],{useWholeWindow:true});
    const alternatives=one.candidates[0].alternatives.map((c,n)=>({...c,candidateId:'beat-'+scene.order+'-take-'+(n+1)}));
    candidates.push({beat:scene.order,alternatives});
    choices.push({...one.choices[0],beat:scene.order,selectedCandidateId:alternatives[0].candidateId});
   }else{
-   if(overlapsBlackInterval(0,src.durationSec,src.technicalQuality?.blackIntervals))fail('Чёрные кадры в визуальном дубле '+scene.order+'; требуется просмотр исходника.');
+   if(overlapsBlackInterval(0,durationSec,src.technicalQuality?.blackIntervals))fail('Чёрные кадры в визуальном дубле '+scene.order+'; требуется просмотр исходника.');
    if(!/^[a-f0-9]{64}$/.test(src.sha256??''))fail('Missing visual source SHA');
-   const c={candidateId:'beat-'+scene.order+'-visual',beat:scene.order,sourceId:src.id,sourceSha256:src.sha256,startSec:0,durationSec:src.durationSec,evidenceType:'author-visual-take',transcript:'',reason:'Author assigned this complete visual take to this storyboard frame; no speech or acting verification claimed.'};
+   const c={candidateId:'beat-'+scene.order+'-visual',beat:scene.order,sourceId:src.id,sourceSha256:src.sha256,startSec:0,durationSec,evidenceType:'author-visual-take',transcript:'',reason:'Use the beginning of the assigned take up to the planned shot duration.'};
    candidates.push({beat:scene.order,alternatives:[c]});choices.push(c);
   }
  }
@@ -300,7 +310,10 @@ async function plan(analysisArg,briefArg,decisionsArg,mode='strict',{takeBinding
   const editorial=brief.manualSource?createManualEditorialPlan(brief,sources,{takeBindings}):createEditorialPlan(brief,sources,{mode});
   const result={version:1,analysisPath,briefPath,...editorial};
   await writeFile(out,JSON.stringify(result,null,2)+'\n',{flag:'wx'});
-  return {decisions:out,choices:editorial.choices.length,missingBeats:editorial.missingBeats,totalSec:Number(editorial.choices.reduce((s,x)=>s+x.durationSec,0).toFixed(3)),review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};
+  const finale=budgetFinale(brief);
+  const recapSec=finale?finale.sourceBeats.length*finale.insertDurationSec:0;
+  const totalSec=Number(editorial.choices.reduce((sum,choice)=>sum+choice.durationSec,recapSec).toFixed(3));
+  return {decisions:out,choices:editorial.choices.length,missingBeats:editorial.missingBeats,totalSec,review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};
 }
 export { transcribe,plan,overlap,similarity };
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){

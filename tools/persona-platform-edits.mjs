@@ -40,8 +40,12 @@ function run(bin,args,ffmpegDir){const env={...process.env},key=Object.keys(env)
 export async function renderSoftTransitions({videoPath,outputPath,clips,ffmpegDir}){
  if(!Array.isArray(clips)||clips.length<2||clips.length>30||clips.some(c=>!Number.isFinite(c.durationSec)||c.durationSec<.25))throw Error('Invalid soft transition timeline');
  const duration=clips.reduce((n,c)=>n+c.durationSec,0),boundaries=[];let cursor=0;
- for(const clip of clips.slice(0,-1)){cursor+=clip.durationSec;boundaries.push(cursor)}
- const filters=['[0:v]split='+clips.length+'[base]'+boundaries.map((_,i)=>'[s'+i+']').join('')];let base='base';
+ for(const [i,clip] of clips.slice(0,-1).entries()){
+  cursor+=clip.durationSec;
+  if(clip.recapSourceBeat===undefined&&clips[i+1].recapSourceBeat===undefined)boundaries.push(cursor);
+ }
+ if(!boundaries.length)return videoPath;
+ const filters=['[0:v]split='+(boundaries.length+1)+'[base]'+boundaries.map((_,i)=>'[s'+i+']').join('')];let base='base';
  boundaries.forEach((t,i)=>{
   filters.push('[s'+i+']trim=start='+Math.max(0,t-1/30-.0001)+':end='+t+',setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=0.15,trim=duration=0.15,format=yuva420p,fade=t=out:st=0:d=0.12:alpha=1,setpts=PTS+'+t+'/TB[f'+i+']');
   filters.push('['+base+'][f'+i+']overlay=eof_action=pass:enable=\'gte(t,'+t+')*lt(t,'+(t+.15)+')\'[v'+i+']');base='v'+i;
