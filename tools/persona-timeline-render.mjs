@@ -209,7 +209,15 @@ async function main() {
     // Concatenation via individual input arguments; no shell or unescaped concat file.
     const args = ['-hide_banner','-nostdin','-loglevel','error','-y'];
     for (const segment of segments) args.push('-i',segment);
-    const concat = segments.map((_, i) => '[' + i + ':v:0][' + i + ':a:0]').join('') + 'concat=n=' + segments.length + ':v=1:a=1[vraw][a];[vraw]fps=' + fps + '[v]';
+    // AAC packets in intermediate MP4s can extend past the cut. Concat uses the
+    // longest stream in each segment, so trim decoded streams at the planned boundary.
+    const normalized = clips.flatMap((clip, i) => [
+      `[${i}:v:0]setpts=PTS-STARTPTS,trim=duration=${clip.durationSec}[v${i}]`,
+      `[${i}:a:0]asetpts=PTS-STARTPTS,apad,atrim=duration=${clip.durationSec}[a${i}]`,
+    ]);
+    const inputs = segments.map((_, i) => `[v${i}][a${i}]`).join('');
+    const concat = normalized.join(';') + ';' + inputs +
+      'concat=n=' + segments.length + ':v=1:a=1[vraw][a];[vraw]fps=' + fps + '[v]';
     args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
     if (soundtrack) {
       const assembled=join(tempDir,'assembled.mp4');
