@@ -1,4 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {commercialPrompt,commercialExamplesSha256,readCommercialIdeaDetails,loadArchetype,readProductionPackage,productionIdeaSchema} from './persona-commercial-prompt.mjs';
 test('editable archetype and complete pre-shoot package enter the five-idea prompt',()=>{
  const archetype=loadArchetype();assert.match(archetype.description,/Independent Artist/);
@@ -28,4 +29,18 @@ test('three distinct skills and musical/acting/selling intent are required',()=>
  assert.deepEqual(readCommercialIdeaDetails(idea).skills,idea.skills);
  assert.throws(()=>readCommercialIdeaDetails({...idea,skills:[idea.skills[0],idea.skills[0],idea.skills[2]]}));
  assert.throws(()=>readCommercialIdeaDetails({...idea,music:''}));
+});
+
+// Regression: the author's 11-file shooting cheat sheet and the saved few-shot scenario must agree.
+test('budget for one author example has exactly 11 contiguous scenes with a reused-footage finale',()=>{
+ const text=readFileSync(new URL('../docs/persona-commercial-examples.md',import.meta.url),'utf8');
+ const scene=text.split('## Сценарий 3: «Продюсер сказал: у нас бюджет только на одного»')[1];
+ assert.ok(scene,'Saved author example is missing');
+ const intervals=[...scene.matchAll(/^• (\d+)–(\d+) сек: (.*)$/gm)].map(([,start,end,action])=>({start:Number(start),end:Number(end),action}));
+ assert.equal(intervals.length,11,'The approved shoot requires exactly 11 scene files');
+ assert.deepEqual(intervals.map(({start,end})=>[start,end]),[[0,2],[2,4],[4,6],[6,8],[8,10],[10,12],[12,14],[14,16],[16,18],[18,20],[20,24]]);
+ assert.match(intervals[10].action,/ТРИ ПРОФЕССИИ/);
+ assert.match(intervals[10].action,/ОДИН ЧЕЛОВЕК/);
+ assert.match(scene,/файл №11 — план с кофе/);
+ assert.match(scene,/файлов №2–4/);
 });
