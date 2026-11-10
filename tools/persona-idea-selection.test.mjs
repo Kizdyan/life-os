@@ -31,6 +31,42 @@ const director={hook:'Кто здесь действительно режисс�
  ],editingIntent:'Драматические паузы переходят в комедийные музыкальные акценты',
  colorIntent:'Натуральные цвета кожи без жёлтого тона и сохранённые очки'};
 const server=[{id:'local',baseUrl:'http://127.0.0.1:11434',model:'installed-real-model'}];
+function fiveDrafts(){return {ideas:Array.from({length:5},(_,i)=>({...ideas.ideas[i%3],title:'Новая концепция номер '+(i+1),skills:['actor','director','composer'].map(role=>({role,action:'Конкретное экранное действие'})),music:'Фортепиано и контраст струнных',actingTask:'Скрыть намерение от собеседника',sellingEnding:'Сыграю, сниму и напишу музыку для вашего фильма.'}))}}
+function criticReply(values=[7,9,6,10,8]){return {reviews:values.map((v,i)=>({ideaId:'idea-'+(i+1),scores:{visuality:v,actingRange:v,sellingPotential:v,hook:v},banal:false,showsActing:true,reason:'Конкретный разбор действия, конфликта и демонстрации трёх навыков.'}))}}
+function answerResponse(answer,streaming){const content=JSON.stringify(answer);return streaming?{ok:true,body:new Response(JSON.stringify({message:{content},done:true,done_reason:'stop'})+'\n').body}:{ok:true,json:async()=>({message:{content}})}}
+test('two separate same-model passes expose only top2 and preserve filtered IDs into the director',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-generator-critic-')),calls=[];
+ const fetchImpl=async(url,options)=>{const body=JSON.parse(options.body);calls.push(body);const system=body.messages[0].content;const answer=system.includes('строгий кастинг-директор')?criticReply():system.includes('<author_examples>')?fiveDrafts():director;return answerResponse(answer,body.stream)};
+ try{
+  const result=await proposePersonaIdeas({theme:'Три навыка через оригинальную экранную историю',outputDir:join(root,'proposal'),servers:server,contentFormat:'acting',ideaCount:5,audit:true,fetchImpl});
+  assert.equal(calls.length,2);assert.equal(calls[0].model,calls[1].model);assert.notEqual(calls[0].messages[0].content,calls[1].messages[0].content);
+  assert.equal(JSON.parse(calls[1].messages[1].content).ideas.length,5);
+  const saved=JSON.parse(await readFile(result.ideasPath,'utf8'));assert.deepEqual(saved.ideas.map(i=>i.id),['idea-4','idea-2']);assert.equal(saved.draftIdeas.length,5);
+  await assert.rejects(selectPersonaIdea({proposalPath:result.ideasPath,ideaId:'idea-1',outputDir:join(root,'rejected'),servers:server,fetchImpl}),/No such candidate/);assert.equal(calls.length,2);
+  await selectPersonaIdea({proposalPath:result.ideasPath,ideaId:'idea-4',outputDir:join(root,'selected'),servers:server,fetchImpl});
+  assert.equal(JSON.parse(calls[2].messages[1].content).idea.id,'idea-4');
+  const plan=JSON.parse(await readFile(join(root,'selected','PRODUCTION-BRIEF.json'),'utf8'));assert.equal(plan.ideaId,'idea-4');
+  saved.ideas[0]=saved.draftIdeas[0];await writeFile(result.ideasPath,JSON.stringify(saved));
+  await assert.rejects(selectPersonaIdea({proposalPath:result.ideasPath,ideaId:'idea-1',outputDir:join(root,'forged'),servers:server,fetchImpl}),/audit|Audit/);assert.equal(calls.length,3);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+test('failed critic retains draft evidence but cannot produce a selectable proposal',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-critic-failed-'));let calls=0;
+ try{
+  await assert.rejects(proposePersonaIdeas({theme:'Реальная идея без фальшивого аудита',outputDir:join(root,'proposal'),servers:server,contentFormat:'comedy',ideaCount:5,audit:true,fetchImpl:async()=>++calls===1?answerResponse(fiveDrafts(),true):{ok:false,status:503}}),/critic|Critic/);
+  assert.equal(calls,2);assert.equal(JSON.parse(await readFile(join(root,'proposal','DRAFTS.json'),'utf8')).ideas.length,5);
+  await assert.rejects(stat(join(root,'proposal','IDEAS.json')),/ENOENT/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+test('a valid all-rejected audit is saved honestly and never auto-generates a screenplay',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-critic-empty-'));let calls=0;
+ try{
+  const result=await proposePersonaIdeas({theme:'Проверка честного отказа всем пяти идеям',outputDir:join(root,'proposal'),servers:server,contentFormat:'comedy',ideaCount:5,audit:true,fetchImpl:async()=>answerResponse(++calls===1?fiveDrafts():criticReply([7,7,7,7,7]),true)});
+  const saved=JSON.parse(await readFile(result.ideasPath,'utf8'));assert.equal(saved.status,'NO_IDEAS_PASSED_AUDIT');assert.deepEqual(saved.ideas,[]);assert.equal(saved.audit.reviews.length,5);assert.equal(calls,2);
+  await assert.rejects(selectPersonaIdea({proposalPath:result.ideasPath,ideaId:'idea-1',outputDir:join(root,'never'),servers:server,fetchImpl:async()=>{throw Error('Must not generate a screenplay')}}));
+  await assert.rejects(stat(join(root,'never')),/ENOENT/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 test('commercial examples and three-skill details survive proposal and chosen-idea director handoff',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-commercial-proposal-')),requests=[];
  const enriched={ideas:ideas.ideas.map(i=>({...i,skills:['actor','director','composer'].map(role=>({role,action:'Конкретное действие на экране'})),music:'Пиццикато переходит в оркестровый удар',actingTask:'Убедить сомневающегося клиента',sellingEnding:'Сыграю, сниму и напишу музыку для вашего проекта.'}))};

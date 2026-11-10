@@ -114,15 +114,19 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
     try{
      const servers=[{id:'ollama-local',baseUrl:'http://127.0.0.1:11434',model:config.ollamaModel}];
      if(url.pathname==='/ideas'){
-      commercialPrompt(body.contentFormat,1);
+      commercialPrompt(body.contentFormat,5);
       const id=randomUUID(),outputDir=join(config.outputRoot,'ideas-'+id);await mkdir(config.outputRoot,{recursive:true});
-      const result=await proposePersonaIdeas({theme:body.theme,contentFormat:body.contentFormat,ideaCount:1,style:body.contentFormat==='comedy'?'humor':'cinematic',outputDir,servers});
+      const result=await proposePersonaIdeas({theme:body.theme,contentFormat:body.contentFormat,ideaCount:5,audit:true,style:body.contentFormat==='comedy'?'humor':'cinematic',outputDir,servers});
       const proposal=JSON.parse(await readFile(result.ideasPath,'utf8'));
       await writeFile(join(outputDir,'PROJECT.json'),JSON.stringify({projectId:body.projectId}),{flag:'wx'});
-      respond(res,200,{...proposal,id});
+      // Full rejected drafts stay in local evidence; only winners and review
+      // summaries enter the UI/project record.
+      const {draftIdeas,modelResponse,...visible}=proposal;
+      respond(res,200,{...visible,id});
      }else{
       const id=url.pathname.split('/')[2],proposalDir=join(config.outputRoot,'ideas-'+id);
       const owner=JSON.parse(await readFile(join(proposalDir,'PROJECT.json'),'utf8'));if(owner.projectId!==body.projectId)fail('Idea proposal belongs to another project');
+      const stored=JSON.parse(await readFile(join(proposalDir,'IDEAS.json'),'utf8'));if(!stored.audit)fail('Idea proposal has no Generator-Critic audit; generate a reviewed batch first');
       const outputDir=join(config.outputRoot,'idea-plan-'+randomUUID());
       const result=await selectPersonaIdea({proposalPath:join(proposalDir,'IDEAS.json'),ideaId:body.ideaId,outputDir,servers});
       respond(res,200,{brief:JSON.parse(await readFile(result.brief,'utf8')),shootSheet:await readFile(join(outputDir,'SHOOT.md'),'utf8'),publicationApproved:false});

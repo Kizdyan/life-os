@@ -6,6 +6,22 @@ import {join} from 'node:path';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 import {createHash} from 'node:crypto';
 
+test('idea selection endpoint rejects a foreign project and a legacy unaudited proposal before model work',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-worker-idea-audit-'));
+ const id='11111111-1111-4111-8111-111111111111',dir=join(root,'ideas-'+id);await mkdir(dir);
+ await writeFile(join(dir,'PROJECT.json'),JSON.stringify({projectId:'owner'}));
+ await writeFile(join(dir,'IDEAS.json'),JSON.stringify({version:1,ideas:[]}));
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'unavailable-no-call-needed'});
+ const port=await worker.start(),base='http://127.0.0.1:'+port;
+ try{
+  const {token}=await(await fetch(base+'/health')).json();
+  const post=projectId=>fetch(base+'/ideas/'+id+'/select',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},body:JSON.stringify({projectId,ideaId:'idea-1'})});
+  const foreign=await post('other');assert.equal(foreign.status,400);assert.match((await foreign.json()).error,/another project/);
+  const legacy=await post('owner');assert.equal(legacy.status,400);assert.match((await legacy.json()).error,/no Generator-Critic audit/);
+  assert.deepEqual(await readdir(root),['ideas-'+id]);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
+
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};

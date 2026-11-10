@@ -9,8 +9,10 @@ import {createHash} from 'node:crypto';
 import {access,mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {modelJSON,preparePersonaFlow,validateIdeas} from './persona-flow.mjs';
+import {modelJSON,preparePersonaFlow,validateIdeas,validateModelServers} from './persona-flow.mjs';
 import {commercialPrompt,commercialExamplesSha256,readCommercialIdeaDetails} from './persona-commercial-prompt.mjs';
+import {critiquePersonaIdeas} from './persona-idea-jury.mjs';
+import {verifyIdeaAudit} from '../packages/core/src/persona-idea-audit.mjs';
 
 const fail=m=>{throw Error('Persona ideas: '+m)};
 const txt=(x,min,max)=>typeof x==='string'&&x.trim().length>=min&&x.length<=max;
@@ -21,21 +23,34 @@ async function absent(path){
 }
 const sha=x=>createHash('sha256').update(x).digest('hex');
 export async function proposePersonaIdeas({
- theme,outputDir,servers,style='cinematic',fetchImpl=fetch,contentFormat=null,ideaCount=3,
+ theme,outputDir,servers,style='cinematic',fetchImpl=fetch,contentFormat=null,ideaCount=3,audit=false,
 }={}){
  if(!txt(theme,8,700)||!styles.has(style)||!txt(outputDir,1,1000))
   fail('Valid theme, style and fresh output directory required');
  const dir=resolve(outputDir);await absent(dir);
- if(![1,3].includes(ideaCount)||!contentFormat&&ideaCount!==3)fail('One-idea mode requires an explicit commercial format');
+ if(![1,3,5].includes(ideaCount)||!contentFormat&&ideaCount!==3)fail('Commercial counts require an explicit commercial format');
+ if(typeof audit!=='boolean'||audit&&(!contentFormat||ideaCount!==5))fail('Generator-Critic requires five commercial drafts');
+ if(audit&&validateModelServers(servers).some(s=>!['localhost','127.0.0.1','[::1]'].includes(new URL(s.origin).hostname)||/cloud/i.test(s.model)))fail('Generator-Critic requires installed local models only');
  const system=contentFormat?commercialPrompt(contentFormat,ideaCount):sys;
- const proposalResponse=await modelJSON({servers,fetchImpl,system,...(contentFormat?{contextTokens:8192,timeoutMs:300000,maxOutputTokens:2200,thinking:false}:{}),
+ const proposalResponse=await modelJSON({servers,fetchImpl,system,streaming:audit,...(contentFormat?{contextTokens:8192,timeoutMs:audit?600000:300000,maxOutputTokens:audit?4000:2200,thinking:false}:{}),
   payload:{theme,style,
    requirements:'one actor; one room; phone + tripod; possible piano; shootable 20–50 sec; character and humor'}});
- const ideas=validateIdeas(proposalResponse.data,contentFormat?{count:ideaCount}:{}).map((idea,index)=>contentFormat?{...idea,...readCommercialIdeaDetails(proposalResponse.data.ideas[index])}:idea);
- const proposal={version:1,kind:'persona-idea-proposal-v1',status:'AWAITING_AUTHOR_IDEA_SELECTION',
+ const draftIdeas=validateIdeas(proposalResponse.data,contentFormat?{count:ideaCount}:{}).map((idea,index)=>contentFormat?{...idea,...readCommercialIdeaDetails(proposalResponse.data.ideas[index])}:idea);
+ let critique=null,created=false;
+ if(audit){
+  await mkdir(dir,{recursive:false});created=true;
+  await writeFile(join(dir,'DRAFTS.json'),JSON.stringify({ideas:draftIdeas,provider:proposalResponse.provider,examplesSha256:commercialExamplesSha256,systemPromptSha256:sha(system),publicationApproved:false},null,2),{flag:'wx'});
+  try{
+   const sameProvider=servers.filter(s=>s.id===proposalResponse.provider.id&&s.model===proposalResponse.provider.model);
+   critique=await critiquePersonaIdeas({ideas:draftIdeas,servers:sameProvider,fetchImpl});
+  }catch(error){await writeFile(join(dir,'CRITIC-ERROR.json'),JSON.stringify({error:String(error.message),selectableIdeas:0,publicationApproved:false}),{flag:'wx'});fail('Critic failed; no ideas offered. Draft evidence: '+dir+'. '+error.message)}
+ }
+ const ideas=critique?critique.selectedIdeaIds.map(id=>draftIdeas.find(i=>i.id===id)):draftIdeas;
+ const proposal={version:1,kind:'persona-idea-proposal-v1',status:audit&&!ideas.length?'NO_IDEAS_PASSED_AUDIT':'AWAITING_AUTHOR_IDEA_SELECTION',
   generatedAt:new Date().toISOString(),theme,style,ideas,provider:proposalResponse.provider,
   selectedIdeaId:null,screenplayGenerated:false,publicationApproved:false,
   ...(contentFormat?{contentFormat,ideaCount,examplesSha256:commercialExamplesSha256,systemPromptSha256:sha(system),modelResponse:proposalResponse.data}:{}),};
+ if(critique)Object.assign(proposal,{audit:critique,draftIdeas});
  const markdown=[
   '# Persona — варианты на выбор автора','',
   '**Результат модели, пока без сценариев. Ни одна идея не выбрана.**','',
@@ -44,9 +59,10 @@ export async function proposePersonaIdeas({
    'Хук: '+idea.hook,'',
    'Замысел: '+idea.angle,'',
   ]),
+  ...(critique?['## Самокритика Qwen · не независимое жюри','',...critique.reviews.map(r=>r.ideaId+' · '+r.title+' · '+r.average+'/10 · '+r.decision+' — '+r.reason),'']:[]),
   'Выбери ID понравившейся идеи и запусти persona:ideas -- select.','',
  ];
- await mkdir(dir,{recursive:false});
+ if(!created)await mkdir(dir,{recursive:false});
  await Promise.all([
   writeFile(join(dir,'IDEAS.json'),JSON.stringify(proposal,null,2)+'\n',{flag:'wx'}),
   writeFile(join(dir,'IDEAS.md'),markdown.join('\n'),{flag:'wx'}),
@@ -67,9 +83,18 @@ export async function selectPersonaIdea({
   !txt(proposal.theme,8,700)||!styles.has(proposal.style)||
   !txt(proposal.provider?.id,1,64)||!txt(proposal.provider?.model,1,120))
   fail('Invalid or apparently pre-approved idea proposal');
- const ideas=validateIdeas(proposal,proposal.contentFormat?{count:proposal.ideaCount}:{});
- if(ideas.some((idea,i)=>proposal.ideas[i].id!==idea.id||
-  proposal.ideas[i].format!=='reel'))fail('Saved candidate IDs or formats were changed');
+ let ideas;
+ if(proposal.audit){
+  const drafts=validateIdeas({ideas:proposal.draftIdeas},{count:5});
+  if(drafts.some((i,index)=>i.id!==proposal.draftIdeas[index].id))fail('Audited draft IDs changed');
+  const checked=verifyIdeaAudit(proposal.audit,drafts);
+  if(proposal.audit.sourceIdeasSha256!==sha(JSON.stringify(drafts))||proposal.audit.provider?.model!==proposal.provider.model||proposal.audit.provider?.id!==proposal.provider.id)fail('Audit provenance changed');
+  ideas=checked.selectedIdeaIds.map(id=>drafts.find(i=>i.id===id));
+  if(JSON.stringify(ideas)!==JSON.stringify(proposal.ideas))fail('Saved idea list differs from audit winners');
+ }else{
+  ideas=validateIdeas(proposal,proposal.contentFormat?{count:proposal.ideaCount}:{});
+  if(ideas.some((idea,i)=>proposal.ideas[i].id!==idea.id||proposal.ideas[i].format!=='reel'))fail('Saved candidate IDs or formats were changed');
+ }
  const chosen=ideas.find(i=>i.id===ideaId);
  if(!chosen)fail('No such candidate in saved real model proposal: '+ideaId);
  const output=resolve(outputDir);await absent(output);

@@ -44,7 +44,7 @@ export function validateModelServers(input){
  return servers;
 }
 export function validateIdeas(input,{count}={}){
- if(count!==undefined&&![1,3].includes(count))fail('Invalid requested idea count');
+ if(count!==undefined&&(!Number.isInteger(count)||count<1||count>5))fail('Invalid requested idea count');
  const ideas=input?.ideas;
  if(!Array.isArray(ideas)||(count!==undefined?ideas.length!==count:ideas.length<3||ideas.length>5))fail('Model did not return the required number of real ideas');
  const seen=new Set();
@@ -79,9 +79,32 @@ export function validateDirector(input){
  if(duration<15||duration>70)fail('Generated reel duration outside 15–70 sec');
  return input;
 }
-export async function modelJSON({servers,system,payload,fetchImpl,contextTokens,timeoutMs=120000,maxOutputTokens=3600,thinking}){
+async function streamedModelContent(response){
+ if(!response.body)throw Error('Missing Ollama stream');
+ const decoder=new TextDecoder(),reader=response.body.getReader();let pending='',content='',done=false,total=0;
+ const consume=line=>{
+  if(!line.trim())return;
+  if(done)throw Error('Unexpected data after completed Ollama stream');
+  const part=JSON.parse(line);
+  if(part.error)throw Error(String(part.error));
+  if(part.message?.content!==undefined){if(typeof part.message.content!=='string')throw Error('Invalid Ollama content');content+=part.message.content}
+  if(part.done===true){if(part.done_reason==='length')throw Error('Ollama output limit reached');done=true}
+ };
+ try{
+  for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.byteLength;
+   if(total>2_000_000)throw Error('Ollama response exceeds local budget');
+   pending+=decoder.decode(chunk.value,{stream:true});let end;
+   while((end=pending.indexOf('\n'))>=0){consume(pending.slice(0,end));pending=pending.slice(end+1)}
+  }
+  pending+=decoder.decode();consume(pending);
+  if(!done)throw Error('Incomplete Ollama stream');
+  return content;
+ }finally{await reader.cancel().catch(()=>{});reader.releaseLock()}
+}
+export async function modelJSON({servers,system,payload,fetchImpl,contextTokens,timeoutMs=120000,maxOutputTokens=3600,thinking,temperature=.75,responseSchema,streaming=false}){
  if(contextTokens!==undefined&&(!Number.isInteger(contextTokens)||contextTokens<1024||contextTokens>32768))fail('Invalid local context size');
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000||!Number.isInteger(maxOutputTokens)||maxOutputTokens<80||maxOutputTokens>6000)fail('Invalid model resource budget');
+ if(!Number.isFinite(temperature)||temperature<0||temperature>1)fail('Invalid model temperature');
  const errors=[];
  for(const server of validateModelServers(servers)){
   const token=server.tokenEnv?process.env[server.tokenEnv]:null;
@@ -90,17 +113,17 @@ export async function modelJSON({servers,system,payload,fetchImpl,contextTokens,
    const response=await fetchImpl(server.origin+'/api/chat',{
     method:'POST',headers:{'Content-Type':'application/json',
      ...(token?{Authorization:'Bearer '+token}:{})},
-    body:JSON.stringify({model:server.model,stream:false,format:'json',...(thinking===undefined?{}:{think:thinking}),
+    body:JSON.stringify({model:server.model,stream:streaming,format:responseSchema??'json',...(thinking===undefined?{}:{think:thinking}),
      messages:[{role:'system',content:system},{role:'user',content:JSON.stringify(payload)}],
-     options:{temperature:.75,num_predict:maxOutputTokens,...(contextTokens?{num_ctx:contextTokens}:{})}}),
+     options:{temperature,num_predict:maxOutputTokens,...(contextTokens?{num_ctx:contextTokens}:{})}}),
     signal:AbortSignal.timeout(timeoutMs),
    });
    if(!response.ok)throw Error('HTTP '+response.status);
-   const data=await response.json();
-   const decoded=JSON.parse(data?.message?.content);
+   const content=streaming?await streamedModelContent(response):(await response.json())?.message?.content;
+   const decoded=JSON.parse(content);
    if(!object(decoded))throw Error('Non-object JSON output');
    return {data:decoded,provider:{id:server.id,model:server.model}};
-  }catch(error){errors.push(server.id+': '+String(error?.message??error).slice(0,180))}
+  }catch(error){errors.push(server.id+': '+String(error?.message??error).slice(0,180)+(error?.cause?.code?' ('+error.cause.code+')':''))}
  }
  fail('All real model servers failed: '+errors.join('; '));
 }
@@ -162,7 +185,11 @@ export async function preparePersonaFlow({
   'Ты предлагаешь актёру и композитору три разных оригинальных коротких видео. Никаких шаблонных советов, выдуманных личных фактов и повторяющихся хуков. Отвечай ТОЛЬКО JSON формата {"ideas":[{"title":"...","angle":"...","hook":"..."},...]}.',
   payload:{theme,style,requirements:'one actor; one room; phone + tripod; possible piano; shootable 20–50 sec; character and humor'},
  });
- const ideas=validateIdeas(first.data,ideasFromProposal?.length===1?{count:1}:{});
+ const ideas=validateIdeas(first.data,ideasFromProposal!==null?{count:ideasFromProposal.length}:{}).map((idea,index)=>{
+  if(ideasFromProposal===null)return idea;
+  const savedId=ideasFromProposal[index]?.id;if(typeof savedId!=='string'||!/^idea-[1-5]$/.test(savedId))fail('Invalid saved candidate identity');
+  return {...idea,id:savedId};
+ });
  if(ideasFromProposal!==null&&(!ideasProvider||typeof ideasProvider.id!=='string'||
   typeof ideasProvider.model!=='string'||!/^[a-f0-9]{64}$/i.test(sourceProposalSha256??'')))
   fail('Invalid saved proposal provenance');

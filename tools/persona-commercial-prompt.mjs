@@ -8,7 +8,7 @@ export const commercialFormats=Object.freeze({
  comedy:{label:'Self-Irony / Comedy',instruction:'Самоирония через конкретную неудачу и неожиданный выход; показать три навыка, а не хвастаться перечислением профессий.'},
 });
 export function commercialPrompt(format,count=3){
- if(![1,3].includes(count))throw Error('Choose one or three commercial ideas');
+ if(![1,3,5].includes(count))throw Error('Choose one, three or five commercial ideas');
  const selected=commercialFormats[format];if(!selected)throw Error('Unknown commercial content format');
  return ['Ты — креативный продюсер автора, который работает актёром, режиссёром и композитором.',
  'ЭТАЛОННЫЙ ПРОДАЮЩИЙ ФОРМАТ: Хук → демонстрация трёх навыков (актёр, режиссёр, композитор) через действие → уместный продающий финал. Это few-shot примеры, не данные о просмотрах и не обучение весов.',
@@ -16,7 +16,7 @@ export function commercialPrompt(format,count=3){
  'Музыкальную драматургию и конкретные актёрские цели нужно сохранить в новой идее. У автора остаётся выбор; автоматически ничего не утверждать.',
  'Выбранный формат: '+selected.label+'. '+selected.instruction,
  '<author_examples>',examples,'</author_examples>',
- 'Верни только JSON с ideas: ровно '+count+' разных идей. Каждая: title (4–140), angle (8–650), hook (4–180), skills: ровно три объекта {role:"actor"|"director"|"composer",action: конкретное экранное действие}, music (музыкальное развитие), actingTask (цель персонажа), sellingEnding (точный финальный титр или реплика). Все строки на русском. По одному краткому конкретному предложению в каждом поле. Не пиши рассказ вместо JSON.',
+ 'Верни только JSON с ideas: ровно '+count+' разных идей. Каждая: title (4–140), angle (8–650), hook (4–180), skills: ровно три объекта {role:"actor"|"director"|"composer",action: конкретное экранное действие}, music (музыкальное развитие), actingTask (цель персонажа), sellingEnding (точный финальный титр или реплика). Все строки на русском. Кратко: title до 60 знаков, остальные поля по одному конкретному предложению до 150 знаков. Идеи должны различаться конфликтом и экранным действием, а не только предметом. Не пиши рассказ вместо JSON.',
  ].join('\n');
 }
 export function readCommercialIdeaDetails(raw){

@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {mkdtemp,mkdir,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {canonicalBrief,createShootSheet,packagePersonaFlow,preparePersonaFlow,validateDirector,validateIdeas,validateModelServers} from './persona-flow.mjs';
+import {canonicalBrief,createShootSheet,modelJSON,packagePersonaFlow,preparePersonaFlow,validateDirector,validateIdeas,validateModelServers} from './persona-flow.mjs';
 import {verifyLocalPersonaRender} from './persona-verify-render.mjs';
 
 const ideas={ideas:[
@@ -13,6 +13,18 @@ const ideas={ideas:[
  {title:'Провал аудиопроб',angle:'Музыкальная проба превращает серьёзный монолог в неожиданный скетч.',hook:'Тишина оказалась смешнее.'},
  {title:'Станиславский слушает музыку',angle:'Герой репетирует драму, но музыкальные акценты меняют его эмоции.',hook:'Кто режиссёр этой сцены?'},
 ]};
+test('streamed Ollama keeps completed JSON across split UTF-8 chunks and refuses incomplete/error streams',async()=>{
+ const answer={text:'Актёр и музыка'},wire=JSON.stringify({message:{content:JSON.stringify(answer)}})+'\n'+JSON.stringify({done:true,done_reason:'stop'})+'\n';
+ const bytes=new TextEncoder().encode(wire);
+ const run=async(textBytes)=>modelJSON({servers:[{id:'cpu',baseUrl:'http://127.0.0.1:11434',model:'qwen'}],system:'test',payload:{},streaming:true,fetchImpl:async(url,options)=>{
+  assert.equal(JSON.parse(options.body).stream,true);
+  return {ok:true,body:new ReadableStream({start(controller){for(let i=0;i<textBytes.length;i+=3)controller.enqueue(textBytes.slice(i,i+3));controller.close()}})};
+ }});
+ assert.deepEqual((await run(bytes)).data,answer);
+ await assert.rejects(run(new TextEncoder().encode(JSON.stringify({message:{content:JSON.stringify(answer)}})+'\n')),/Incomplete Ollama stream/);
+ await assert.rejects(run(new TextEncoder().encode('{"error":"model failed"}\n')),/model failed/);
+ await assert.rejects(run(new TextEncoder().encode('{"message":{"content":"{}"},"done":true,"done_reason":"length"}\n')),/output limit/);
+});
 const director={hook:'Странный звук меняет всю сцену',setup:{
  location:'Тихая комната с пианино у стены',camera:'Смартфон вертикально на штативе',
  lighting:'Мягкий боковой свет без пересветов',sound:'Близкий микрофон и комнатный тон',
