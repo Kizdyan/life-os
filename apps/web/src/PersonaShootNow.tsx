@@ -157,7 +157,7 @@ export function PersonaShootNow({
      <b>КАДР {currentIndex+1} / {plan.scenes.length} · {current.id}</b>
      <span>{current.seconds} секунд · {current.framing}</span>
     </div>
-    <small>СКАЖИ В КАДРЕ</small>
+    <small>{current.lineKind==='visual'?'ЭКРАННЫЙ ТИТР / ВИЗУАЛЬНОЕ ДЕЙСТВИЕ — НЕ РЕПЛИКА':'СКАЖИ В КАДРЕ'}</small>
     <blockquote>«{current.line}»</blockquote>
     <p><b>Что сделать:</b> {current.action}</p>
     <p><b>Как поставить камеру:</b> {current.camera}</p>

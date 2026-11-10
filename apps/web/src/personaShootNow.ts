@@ -11,7 +11,7 @@ import {
  * A project-specific checklist is scoped to the exact edited scene sequence.
  */
 export type PersonaShootScene={
- id:string;seconds:number;line:string;action:string;
+ id:string;seconds:number;line:string;action:string;lineKind?:"visual"|"spoken";
  framing:string;lighting:string;camera:string;performance:string;edit:string;
  sourceFileName?:string;
 };
@@ -83,7 +83,7 @@ export function makeShootSheet(plan:PersonaShootPlan):string{
   '## Что снимать по порядку',
   ...plan.scenes.flatMap((s,index)=>[
    '### '+(index+1)+'. '+s.id+' · '+shootTimecode(plan,index)+' · '+s.seconds+' с',
-   'Сказать: '+s.line,
+   (s.lineKind==='visual'?'Экранный титр: ':'Сказать: ')+s.line,
    'Действие: '+s.action,
    'План: '+s.framing,
    'Камера: '+s.camera,
@@ -138,17 +138,17 @@ export function buildPersonaShootPlan(input:{
   const directions=pilot?actorComposerShotDirections[exampleActorComposerBeats[i].id]:null;
   const shotEvidence=useBrief&&brief?productionGuideScenes(brief)[i]:null;
   const saved=guideShotNoteForScene(guide,{
-   ...scene,source:shotEvidence?'brief':'example',
+   ...scene,
   }).note;
   const safeNote=guideShotNoteForScene(guide,{
-   ...scene,source:shotEvidence?'brief':'example',
+   ...scene,
   }).stale?null:saved;
   return {
-   id:scene.id,seconds:scene.seconds,line:scene.line,action:scene.action,
+   id:scene.id,seconds:scene.seconds,line:scene.line,action:scene.action,...(useBrief&&brief?.manualSource?{lineKind:brief.manualSource.scenes[i]?.kind}:{}),
    framing:scene.framing,lighting:safeNote?.lighting||scene.lighting,
    camera:safeNote?.camera||directions?.camera||scene.angle||guide.fields.camera,
    performance:safeNote?.performance||directions?.performance||scene.action,
-   edit:safeNote?.edit||directions?.edit||guide.fields.editing,
+   edit:safeNote?.edit||directions?.edit||(useBrief?brief?.preEditPlan?.scenes[i]?.editIntent:undefined)||guide.fields.editing,
    sourceFileName:pilot?exampleActorComposerSourceFiles[exampleActorComposerBeats[i].id]:
     'S'+String(i+1).padStart(2,'0')+'_take01.mp4',
   };
@@ -157,10 +157,10 @@ export function buildPersonaShootPlan(input:{
  const briefApproved=Boolean(brief&&useBrief&&pipeline?.stage==='READY_FOR_SHOOT'&&
   pipeline.materials.editorialDecision?.decision==='approved');
  return {
-  title,status:isExample?'example':scriptApproved&&briefApproved?'approved':'draft',
-  setup:{location:guide.fields.location,camera:guide.fields.camera,
-   lighting:guide.fields.keyLight,sound:guide.fields.sound,
-   wardrobe:guide.fields.wardrobeProps,arrangement:guide.fields.setArrangement},
+  title,status:isExample?'example':(scriptApproved||Boolean(useBrief&&brief?.manualSource))&&briefApproved?'approved':'draft',
+  setup:{location:useBrief&&brief?.manualSource?brief.capture.location:guide.fields.location,camera:guide.fields.camera,
+   lighting:useBrief&&brief?.manualSource?brief.capture.lighting:guide.fields.keyLight,sound:useBrief&&brief?.manualSource?brief.capture.audio.recording:guide.fields.sound,
+   wardrobe:useBrief&&brief?.manualSource?brief.capture.wardrobe:guide.fields.wardrobeProps,arrangement:guide.fields.setArrangement},
   scenes,
  };
 }

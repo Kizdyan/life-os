@@ -249,8 +249,10 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const evidence=await analyze(sourcesManifest,join(root,'evidence'));
   recoveryAnalysisPath=evidence.analysis;
   events.push('media_evidence_generated');
-  const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel);
-  events.push('offline_asr_completed');
+  const manualScenes=requestedBrief.manualSource?.scenes;
+  const sourceIds=manualScenes?JSON.parse(await readFile(evidence.analysis,'utf8')).sources.filter(src=>manualScenes.some(scene=>scene.kind==='spoken'&&(src.id==='master'||new RegExp('^s'+String(scene.order).padStart(2,'0')+'_t','i').test(src.id)))).map(src=>src.id):null;
+  const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel,{sourceIds});
+  events.push(manualScenes&&!sourceIds.length?'visual_takes_no_speech_asr_claimed':'offline_asr_completed');
   const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode);
   if(decisions.choices!==requestedBrief.script.length||
    (Array.isArray(decisions.missingBeats)&&decisions.missingBeats.length>0)){
@@ -266,16 +268,16 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   if(aiEditorModel!==null){
    if(typeof aiEditorModel!=='string'||!aiEditorModel.trim())fail('Invalid Ollama editor model');
    const currentDecision=JSON.parse(await readFile(decisions.decisions,'utf8'));
-   const selected=await aiEditorialSelector({
+   const selected=requestedBrief.manualSource?{...currentDecision,aiEditorial:{version:1,provider:"author-storyboard",model:null,variation:aiVariation,look:"natural-clean",creativeIntent:"Exact author storyboard and mapped visual files; ASR only verifies explicit speech.",changedTakeSelection:false}}:await aiEditorialSelector({
     decisions:currentDecision,brief:requestedBrief,model:aiEditorModel,variation:aiVariation,
    });
-   if(!selected?.aiEditorial||selected.aiEditorial.provider!=='ollama'||
+   if(!selected?.aiEditorial||!['ollama',...(requestedBrief.manualSource?['author-storyboard']:[])].includes(selected.aiEditorial.provider)||
     !Array.isArray(selected.choices)||selected.choices.length!==requestedBrief.script.length)
     fail('AI selector did not return a verified complete choice sequence');
    chosenDecisionPath=join(root,'decisions.ai.json');
    await writeFile(chosenDecisionPath,JSON.stringify(selected,null,2)+'\n',{flag:'wx'});
    aiEditorial=selected.aiEditorial;
-   events.push('real_local_ollama_selected_cut_candidates');
+   events.push(requestedBrief.manualSource?'authored_storyboard_preserved_without_creative_regeneration':'real_local_ollama_selected_cut_candidates');
   }
   const assembled=await assemble(chosenDecisionPath,join(root,'timeline.json'));
   events.push('clips_verified_and_timeline_built');
@@ -283,9 +285,9 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   events.push('reviewable_subtitle_sidecars_written');
   const output=join(root,'draft-reel.mp4');
   let subtitleBurnIn=null;
-  const renderOutput=burnSubtitles&&!aiEditorial?join(root,'draft-reel-clean.mp4'):output;
+  const renderOutput=burnSubtitles&&subtitleDraft.cues>0&&!aiEditorial?join(root,'draft-reel-clean.mp4'):output;
   await call(process.execPath,[rendererPath,assembled.project,renderOutput]);
-  if(burnSubtitles&&!aiEditorial){
+  if(burnSubtitles&&subtitleDraft.cues>0&&!aiEditorial){
    subtitleBurnIn=await burnPersonaSubtitles({videoPath:renderOutput,reviewPath:subtitleDraft.reviewPath,outputPath:output,ffmpegDir});
    events.push('subtitles_burned_into_draft_mp4');
   }
@@ -312,7 +314,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
     if(!selected)fail('Ollama requested an unavailable safe color grade');
    }
    const finished=join(root,'ai-edited-reel.mp4');
-   if(burnSubtitles){
+   if(burnSubtitles&&subtitleDraft.cues>0){
     subtitleBurnIn=await burnPersonaSubtitles({videoPath:selected.path,reviewPath:subtitleDraft.reviewPath,outputPath:finished,ffmpegDir,presetId:visualPreset});
     events.push('subtitles_burned_into_ai_finished_mp4');
    }else await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
@@ -330,7 +332,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
     aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
     subtitleDraft,subtitleBurnIn,visualDirection:visualPreset?getVisualPreset(visualPreset):null,timing,
-    warning:'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
+    warning:requestedBrief.manualSource?'Authored storyboard and mapped files preserved. Speech scenes use real Whisper; visual takes do not claim ASR verification. Whole visual files keep their original music. Caption placement, timing, color and acting require author review.':'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
   return summary;

@@ -96,7 +96,12 @@ export function buildSubtitleDraft(brief,timeline,decisions){
    fail('Invalid duration or scene order at beat '+beatNumber);
   previousBeat=beatNumber;
   const choice=choicesByBeat.get(beatNumber),words=timedWords(choice);
-  if(words&&choice?.beat===beatNumber&&finite(choice.startSec)&&finite(choice.durationSec)){
+  const manualScene=brief.manualSource?.scenes[beatNumber-1];
+  if(manualScene&&(manualScene.kind==='visual'||manualScene.caption)){
+   timingKinds.add('author-titlecard');
+   if(manualScene.caption)cues.push({beat:beatNumber,startMs:Math.round(cursor*1000),endMs:Math.round((cursor+clip.durationSec)*1000),text:safeCaptionText(manualScene.caption)});
+   warnings.push('Beat '+beatNumber+': authored screen title uses complete mapped visual-take bounds; not a speech transcript.');
+  }else if(words&&choice?.beat===beatNumber&&finite(choice.startSec)&&finite(choice.durationSec)){
    if(words.some(word=>word.startSec<choice.startSec-0.02||word.endSec>choice.startSec+choice.durationSec+0.02))
     fail('Whisper caption timing is outside selected clip at beat '+beatNumber);
    cues.push(...wordCues(words,choice,cursor,clip.durationSec,beatNumber));
@@ -117,9 +122,9 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   }
   cursor+=clip.durationSec;
  }
- if(!cues.length)fail('No safe subtitle cues could be created');
+ if(!cues.length&&!brief.manualSource?.scenes.every(s=>s.kind==='visual'))fail('No safe subtitle cues could be created');
  for(let index=1;index<cues.length;index++)if(cues[index].startMs<cues[index-1].endMs)fail('Overlapping subtitle cues');
- const timing=timingKinds.size===1&&timingKinds.has('word')?'word-level-from-whisper-timestamps':
+ const timing=timingKinds.size===1&&timingKinds.has('author-titlecard')?'authored-screen-titles-not-a-speech-transcript':timingKinds.size===1&&timingKinds.has('word')?'word-level-from-whisper-timestamps':
   timingKinds.size===1&&timingKinds.has('segment')?'segment-level-whisper-timestamps-needs-review':
   timingKinds.size===1&&timingKinds.has('estimated')?'estimated-from-assembled-shot-boundaries-not-word-level-speech':
   'mixed-whisper-and-estimated-needs-review';

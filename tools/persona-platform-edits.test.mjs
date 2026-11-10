@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createHash} from 'node:crypto';
-import {platformProfiles,assessPlatformTimeline,safeCaptionPosition,renderBrollLayer,assertReviewedLayoutCurrent} from './persona-platform-edits.mjs';
+import {platformProfiles,assessPlatformTimeline,safeCaptionPosition,renderBrollLayer,assertReviewedLayoutCurrent,renderSoftTransitions} from './persona-platform-edits.mjs';
 test('reviewed overlays and face regions cannot silently attach to another edit layout',()=>{
  const original={clips:[{beat:1,path:'take',startSec:0,durationSec:5},{beat:2,path:'take',startSec:10,durationSec:5}],overlays:[{timelineStartSec:6}]};
  assert.doesNotThrow(()=>assertReviewedLayoutCurrent(original,original));
@@ -20,6 +20,17 @@ test('captions avoid author-marked protected areas and reject impossible placeme
 });
 const available=spawnSync('ffmpeg',['-version']).status===0;
 function run(args){const r=spawnSync('ffmpeg',args,{maxBuffer:10*1024*1024,timeout:60000});assert.equal(r.status,0,r.stderr?.toString());return r.stdout}
+test('Reels soft visual joins preserve duration, original and decoded audio',{skip:!available},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-soft-cuts-'));try{
+  const input=join(root,'in.mp4'),output=join(root,'out.mp4');
+  run(['-v','error','-f','lavfi','-i','color=c=blue:s=320x568:r=30:d=0.5','-f','lavfi','-i','color=c=red:s=320x568:r=30:d=0.5','-f','lavfi','-i','sine=frequency=440:duration=1','-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]','-map','[v]','-map','2:a','-c:v','libx264','-c:a','aac',input]);
+  const original=await readFile(input);await renderSoftTransitions({videoPath:input,outputPath:output,clips:[{durationSec:.5},{durationSec:.5}]});
+  const pixel=t=>run(['-v','error','-ss',String(t),'-i',output,'-frames:v','1','-vf','scale=1:1','-f','rawvideo','-pix_fmt','rgb24','-']);
+  assert.ok(pixel(.533)[0]>20&&pixel(.533)[2]>20,'A real blend must appear around the join');
+  const audio=p=>run(['-v','error','-i',p,'-vn','-f','s16le','-']);assert.deepEqual(audio(output),audio(input));assert.deepEqual(await readFile(input),original);
+  const probe=spawnSync('ffprobe',['-v','error','-show_entries','format=duration','-of','json',output],{encoding:'utf8'});assert.ok(Math.abs(Number(JSON.parse(probe.stdout).format.duration)-1)<.05);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
 test('real B-roll layer covers only its interval, retains audio and refuses a forged SHA',{skip:!available},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-layer-'));
  try{

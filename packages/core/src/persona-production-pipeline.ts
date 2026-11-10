@@ -1,3 +1,4 @@
+import {validateManualSource} from "./persona-manual-script.mjs";
 import {
   buildPersonaProductionBrief,
   type PersonaProductionBrief,
@@ -372,6 +373,7 @@ function parsePersonaProductionBrief(value: unknown): PersonaProductionBrief {
     factReferences: array(record.factReferences, "factReferences").map((item, index) => text(item, `factReferences[${index}]`)),
   };
   assertTimelineConsistency(brief);
+  if(record.manualSource!==undefined)brief.manualSource=validateManualSource(record.manualSource,brief.script);
   if(record.productionPackage!==undefined)brief.productionPackage=readIdeaProductionPackage(record.productionPackage);
   if(record.preEditPlanNeedsReview!==undefined){if(typeof record.preEditPlanNeedsReview!=='boolean')throw Error('Invalid pre-edit review flag');brief.preEditPlanNeedsReview=record.preEditPlanNeedsReview}
   if(record.preEditPlan!==undefined){

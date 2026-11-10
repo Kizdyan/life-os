@@ -153,6 +153,8 @@ async function main() {
     const framing=framingFor(clip.framing??project.framing,width,height);
     if(clip.muteSourceAudio!==undefined&&typeof clip.muteSourceAudio!=='boolean')fail('Invalid muteSourceAudio');
     const muteSourceAudio=clip.muteSourceAudio===true;
+    if(clip.preserveOriginalAudio!==undefined&&typeof clip.preserveOriginalAudio!=='boolean')fail('Invalid preserveOriginalAudio');
+    const preserveOriginalAudio=clip.preserveOriginalAudio===true;
     const audioTreatment=audioTreatmentFor(clip.audioTreatment,durationSec,media.audio&&!muteSourceAudio);
     const loudnessDuration=audioTreatment?.speechDurationSec??durationSec;
     const loudness=media.audio&&!muteSourceAudio?await measureLoudness(path,startSec,loudnessDuration):null;
@@ -160,7 +162,7 @@ async function main() {
     clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing,
       beat:Number.isSafeInteger(clip.beat)?clip.beat:null,
       brollAfterBeat:Number.isSafeInteger(clip.brollAfterBeat)?clip.brollAfterBeat:null,
-      muteSourceAudio, audioTreatment, loudness, musicTail, audioLeveling:safeGain(loudness) });
+      muteSourceAudio, preserveOriginalAudio, audioTreatment, loudness, musicTail, audioLeveling:preserveOriginalAudio?{gainDb:0,status:'original-music-preserved',warning:null}:safeGain(loudness) });
   }
   let soundtrack = null;
   if (project.soundtrack !== undefined) {
@@ -193,7 +195,7 @@ async function main() {
       const audioFilters=['aresample=async=1:first_pts=0'];
       if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
       // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
-      audioFilters.push('alimiter=limit=0.95:level=0');
+      if(!clip.preserveOriginalAudio)audioFilters.push('alimiter=limit=0.95:level=0');
       args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k');
       if(clip.audioTreatment){
         const speech=clip.audioTreatment.speechDurationSec,tail=clip.durationSec-speech;

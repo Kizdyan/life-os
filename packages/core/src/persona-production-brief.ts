@@ -59,6 +59,7 @@ export interface PersonaPreEditPlan {
 
 export interface PersonaProductionBrief {
   version: 1;
+  manualSource?: import("./persona-manual-script.mjs").ManualScriptSource;
   ideaId: string;
   /** Immutable snapshot of the input angle used to generate this brief. */
   sourceAngle: string;
