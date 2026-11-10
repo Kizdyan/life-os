@@ -12,7 +12,7 @@ test('short phrases preserve every word and stay inside the original speech cue'
  assert.deepEqual(result.cues.map(c=>c.text),['Я говорю','первую реплику.','Музыка меняет настроение.']);
  assert.equal(result.cues[0].startMs,200);assert.equal(result.cues[1].endMs,2200);
  assert.ok(result.cues.every(c=>c.endMs<=2200||c.startMs>=2400));
- assert.match(result.ass,/Arial,72,/);assert.match(result.ass,/\\pos\(540,1267\)/);
+ assert.doesNotMatch(result.ass,/Arial/);assert.match(result.ass,/Segoe UI,72,/);assert.match(result.ass,/\\pos\(540,1267\)/);
  assert.match(result.timingMethod,/proportional/);
 });
 
@@ -28,6 +28,7 @@ test('directed subtitle styles differ in weight, emphasis and measured fade conf
  assert.equal(dynamic.style.outline,5);assert.equal(cinematic.style.outline,1);
  assert.doesNotMatch(cinematic.ass,/\\c&H0000D7FF/);
  const commercial=buildSubtitleAss({...input,presetId:'Commercial',positionYRatio:.38});
+ assert.equal(cinematic.style.font,'Segoe UI Light');assert.equal(dynamic.style.font,'Segoe UI');assert.equal(commercial.style.font,'Segoe UI');
  assert.match(commercial.ass,/&H00E0EAF5/);assert.equal(commercial.style.position.y,730);
 });
 

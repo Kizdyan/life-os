@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
  * from an explicit browser file selection to the existing AI reel CLI.
@@ -17,6 +18,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
+import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
@@ -95,19 +97,20 @@ function runProcess(s,config){
  if(config.ffmpegDir)args.push('--ffmpeg-dir',config.ffmpegDir);
  if(s.burnSubtitles)args.push('--burn-subtitles','true');
  if(s.visualPreset)args.push('--visual-preset',s.visualPreset);
+ if(s.takeBindingsPath)args.push('--take-bindings',s.takeBindingsPath);
  s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],env:envPath(config.ffmpegDir)});
  let stderr='';s.child.stderr.on('data',b=>stderr=(stderr+String(b)).slice(-6000));s.child.stdout.on('data',()=>scan(s));
  s.timer=setInterval(()=>scan(s),750).unref();
  s.child.on('error',error=>{s.state='failed';s.error=String(error.message||error)});
  s.child.on('close',async code=>{clearInterval(s.timer);s.child=null;scan(s);if(s.cancelled){s.state='cancelled';s.error='Cancelled by the author; originals were not changed.';return}
   if(code!==0){s.state='failed';s.error=(stderr||'AI reel process exited '+code).slice(-3000);return}
-  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,creativeDirection:s.direction??null,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
+  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,takeBindings:result.takeBindings??null,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,creativeDirection:s.direction??null,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
   catch(error){s.state='failed';s.error=String(error.message||error)}
  });
 }
 export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))){
  const token=randomUUID();
- const directorDecisions=new Map();let directorPending=null,ideationBusy=false,activeExport=false;
+ const directorDecisions=new Map();let directorPending=null,ideationBusy=false,activeExport=false,externalBusy=false;const externalCalls=[];
  const briefHash=brief=>createHash('sha256').update(JSON.stringify(brief)).digest('hex');
  const server=createServer(async(req,res)=>{
   const origin=req.headers.origin;if(origin&&!permittedOrigin(origin)){respond(res,403,{error:'origin_not_allowed'});return}
@@ -118,10 +121,20 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
   try{
    if(req.method==='GET'&&url.pathname==='/health'){
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='POST'&&url.pathname==='/external-ideas'){
+    const body=await json(req,8000);if(typeof body.projectId!=='string'||!/^[-a-zA-Z0-9_]{1,160}$/.test(body.projectId))fail('Project identity required');
+    const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
+    if(externalBusy||externalCalls.length>=5)fail('Внешняя генерация занята или достигнут локальный предел 5 запросов в час');
+    externalBusy=true;try{
+     const status=externalIdeaStatus(config.apiEnv??process.env);if(!status[body.provider]?.configured)fail('API-ключ не настроен. Используйте «Вставить свой сценарий».');
+     if(body.consent!==true)fail('Подтвердите платный текстовый запрос');externalCalls.push(now);
+     respond(res,200,await generateExternalIdeas({provider:body.provider,theme:body.theme,consent:body.consent,env:config.apiEnv??process.env}));
+    }finally{externalBusy=false}return;
+   }
    if(req.method==='POST'&&url.pathname==='/manual-script'){
     const body=await json(req,96000);if(ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('Worker занят; повторите после текущей задачи');
     ideationBusy=true;try{respond(res,200,await parseManualScript({text:body.text,projectId:body.projectId,model:config.ollamaModel}));}finally{ideationBusy=false}return;
@@ -174,6 +187,9 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    if(req.method==='POST'&&url.pathname==='/session'){
     const body=await json(req);if((body?.masterAsset!==undefined&&typeof body.masterAsset!=='boolean')||!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel)||(body.burnSubtitles!==undefined&&typeof body.burnSubtitles!=='boolean'))fail('invalid approved Reel brief, variation, subtitle option or local model');
     if(body.brief.manualSource){validateManualSource(body.brief.manualSource,body.brief.script);if(createHash('sha256').update(body.brief.manualSource.sourceText).digest('hex')!==body.brief.manualSource.sourceSha256)fail('Manual source SHA mismatch');if(body.directionMode!=='manual')fail('Авторский сценарий не допускает автоматической творческой режиссуры');}
+    const takeBindings=body.takeBindings===undefined?null:readTakeBindings(body.brief,body.takeBindings);
+    if(takeBindings&&body.masterAsset)fail('Per-shot types require separate files');
+    if(takeBindings&&body.takeCount!==takeBindings.length)fail('One typed file per frame required');
     let direction=null;
     if(body.directionMode==='auto'){
      const receipt=directorDecisions.get(body.directorDecisionId);
@@ -189,7 +205,7 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
     if(direction)await writeFile(join(input,'AI-DIRECTOR.json'),JSON.stringify(direction,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
    const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
@@ -219,15 +235,20 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    if(req.method==='GET'&&match[2]==='status'){scan(s);respond(res,200,sessionView(s));return}
    if(req.method==='PUT'&&match[2]?.startsWith('take/')){
     const index=Number(match[3]),name=req.headers['x-persona-file-name'];const length=Number(req.headers['content-length']);if(s.state!=='uploading'||!Number.isInteger(index)||index<0||index>=s.expected||s.uploaded.has(index)||!safeFile(name)||!Number.isSafeInteger(length)||length<1024||length>maxFile||s.total+length>maxTotal)fail('invalid explicit take upload');
+    if(s.takeBindings&&Number(/^S(\d{2})_take01\./i.exec(name)?.[1])!==s.takeBindings[index]?.sceneOrder)fail('File does not match its declared frame');
     const sourceName=originalName(req.headers['x-persona-original-name'],name);
     const path=join(s.input,name);let ownsPartial=false;const sink=createWriteStream(path,{flags:'wx'});sink.once('open',()=>{ownsPartial=true});try{await pipeline(req,sink);if((await stat(path)).size!==length)fail('upload size mismatch');const media=await inspectUploadedTake(path,config);const durationSec=Number(media.duration);
      const sceneNumber=Number(/^S(\d{2})_take/i.exec(name)?.[1]);const planned=s.masterAsset?900:s.brief.script[sceneNumber-1]?.durationSec??20;
      const limit=s.masterAsset?900:Math.min(60,Math.max(15,Number(planned)*3));
      if(!Number.isFinite(durationSec)||durationSec<.25||durationSec>limit)fail('Длительность '+sourceName+': '+durationSec.toFixed(2)+' с. Для этого кадра допустимо до '+limit+' с; выберите короткий дубль.');
-     const intake={version:1,durationSec,media,originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256,durationSec:intake.durationSec});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
+     const intake={version:1,durationSec,media,...(s.takeBindings?{binding:s.takeBindings[index]}:{}),originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256,durationSec:intake.durationSec});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
    }
    if(req.method==='POST'&&match[2]==='run'){
     if(activeExport||ideationBusy||directorPending||[...sessions.values()].some(j=>j!==s&&j.state==='running'))fail('Worker is busy; retry after the current task');
+    if(s.takeBindings){
+     const frozen=[];for(let i=0;i<s.expected;i++){const intake=JSON.parse(await readFile(join(s.input,'source-'+i+'.json'),'utf8'));frozen.push({...s.takeBindings[i],sha256:intake.sha256})}
+     const checked=readTakeBindings(s.brief,frozen,true);s.takeBindingsPath=join(s.input,'take-bindings.json');await writeFile(s.takeBindingsPath,JSON.stringify(checked,null,2),{flag:'wx'});
+    }
     if(s.masterAsset){
      if(s.uploaded.size!==1||s.state!=='uploading')fail('One uploaded master asset required');
      const intake=JSON.parse(await readFile(join(s.input,'source-0.json'),'utf8'));if(!safeFile(intake.stagedName))fail('Invalid staged master name');
@@ -247,5 +268,5 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
  });
  return {server,token,config,start:()=>new Promise(resolveStart=>server.listen(config.port,host,()=>resolveStart(server.address().port)))};
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{const worker=createPersonaMediaWorker();const port=await worker.start();process.stdout.write('Persona AI Media Worker: http://127.0.0.1:'+port+'\n')}catch(error){process.stderr.write(String(error.message||error)+'\n');process.exitCode=1}}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{if(await exists(resolve('.env.local'))){if(typeof process.loadEnvFile!=='function')fail('Use Node22+ to load .env.local');process.loadEnvFile(resolve('.env.local'));}const worker=createPersonaMediaWorker();const port=await worker.start();process.stdout.write('Persona AI Media Worker: http://127.0.0.1:'+port+'\n')}catch(error){process.stderr.write(String(error.message||error)+'\n');process.exitCode=1}}
 

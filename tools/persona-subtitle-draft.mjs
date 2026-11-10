@@ -97,7 +97,8 @@ export function buildSubtitleDraft(brief,timeline,decisions){
   previousBeat=beatNumber;
   const choice=choicesByBeat.get(beatNumber),words=timedWords(choice);
   const manualScene=brief.manualSource?.scenes[beatNumber-1];
-  if(manualScene&&(manualScene.kind==='visual'||manualScene.caption)){
+  const effectiveKind=decisions?.takeBindings?.find(b=>b.sceneOrder===beatNumber)?.kind??manualScene?.kind;
+  if(manualScene&&(effectiveKind==='visual'||manualScene.caption)){
    timingKinds.add('author-titlecard');
    if(manualScene.caption)cues.push({beat:beatNumber,startMs:Math.round(cursor*1000),endMs:Math.round((cursor+clip.durationSec)*1000),text:safeCaptionText(manualScene.caption)});
    warnings.push('Beat '+beatNumber+': authored screen title uses complete mapped visual-take bounds; not a speech transcript.');

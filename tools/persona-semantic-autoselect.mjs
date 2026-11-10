@@ -7,7 +7,7 @@
  *  transcribe <evidence/analysis.json> <whisper-cli binary> <model.bin>
  *  plan <evidence/analysis.json> <PersonaProductionBrief.json> <new-decisions.json>
  */
-import {validateManualSource} from '../packages/core/src/persona-manual-script.mjs';
+import {validateManualSource,readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 import {createHash} from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
@@ -217,18 +217,20 @@ export function createEditorialPlan(brief,sources,{mode='strict'}={}){
   return {mode,candidates,choices,missingBeats:brief.script.map((_,index)=>index+1).filter(beat=>!choices.some(choice=>choice.beat===beat))};
 }
 /** Authored visual takes are explicit file assignments, not fake ASR evidence. */
-export function createManualEditorialPlan(brief,sources){
+export function createManualEditorialPlan(brief,sources,{takeBindings=null}={}){
  const manual=validateManualSource(brief.manualSource,brief.script);
  if(createHash('sha256').update(manual.sourceText).digest('hex')!==manual.sourceSha256)fail('Manual source SHA mismatch');
  if(sources.length===1&&sources[0].id==='master'&&manual.scenes.every(s=>s.kind==='spoken'))return createEditorialPlan(brief,sources);
+ const bindings=takeBindings?readTakeBindings(brief,takeBindings,true):null;
  const candidates=[],choices=[];
  for(const [i,scene] of manual.scenes.entries()){
   const mapped=sources.filter(src=>new RegExp('^s'+String(scene.order).padStart(2,'0')+'_t\\d{2}$','i').test(src.id));
   if(mapped.length!==1)fail('Назначьте ровно один файл на кадр '+scene.order+'; альтернативы требуют явного выбора.');
   const src=mapped[0],limit=Math.min(60,Math.max(15,brief.script[i].durationSec*3));
   if(!valid(src.durationSec,.25,limit))fail('Неподходящая длительность файла кадра '+scene.order+'; допустимо до '+limit+' с');
-  if(scene.kind==='spoken'){
-   const one=createEditorialPlan({script:[{...brief.script[i],order:1}],shots:[{...brief.shots[i],order:1}]},[src]);
+  const binding=bindings?.find(b=>b.sceneOrder===scene.order);if(binding&&(binding.sourceId!==src.id||binding.sha256!==src.sha256))fail('Binding source SHA mismatch');
+  if((binding?.kind??scene.kind)==='spoken'){
+   const one=createEditorialPlan({script:[{...brief.script[i],line:binding?.expectedSpeech??brief.script[i].line,order:1}],shots:[{...brief.shots[i],order:1}]},[src]);
    const alternatives=one.candidates[0].alternatives.map((c,n)=>({...c,candidateId:'beat-'+scene.order+'-take-'+(n+1)}));
    candidates.push({beat:scene.order,alternatives});
    choices.push({...one.choices[0],beat:scene.order,selectedCandidateId:alternatives[0].candidateId});
@@ -239,7 +241,7 @@ export function createManualEditorialPlan(brief,sources){
    candidates.push({beat:scene.order,alternatives:[c]});choices.push(c);
   }
  }
- return {mode:'strict',candidates,choices,missingBeats:[]};
+ return {mode:'strict',...(bindings?{takeBindings:bindings}:{}),candidates,choices,missingBeats:[]};
 }
 export function chooseForBrief(brief,sources){
  return createEditorialPlan(brief,sources).choices;
@@ -280,7 +282,7 @@ async function transcribe(analysisArg,cliArg,modelArg,{sourceIds=null}={}){
   }
   return {status:'offline-asr-transcripts-written',results:completed,notice:'Transcriptions are model estimates, not proven verbatim words. Review before author approval.'};
 }
-async function plan(analysisArg,briefArg,decisionsArg,mode='strict'){
+async function plan(analysisArg,briefArg,decisionsArg,mode='strict',{takeBindings=null}={}){
   const analysisPath=resolve(analysisArg),briefPath=resolve(briefArg),out=resolve(decisionsArg);
   const analysis=await readJson(analysisPath),brief=await readJson(briefPath),base=dirname(analysisPath);
   if(analysis?.kind!=='persona-evidence-v1'||analysis.version!==1||!Array.isArray(analysis.sources)||analysis.sources.length<1)fail('Invalid analysis packet');
@@ -291,10 +293,11 @@ async function plan(analysisArg,briefArg,decisionsArg,mode='strict'){
     if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id)||!valid(source.durationSec,0.1,MAX_PERSONA_SOURCE_SECONDS))fail('Invalid source metadata or source exceeds 15 minutes');
     const transcriptFile=join(base,source.id+'-whisper.json');
     const scene=brief.manualSource?.scenes.find(s=>new RegExp('^s'+String(s.order).padStart(2,'0')+'_t','i').test(source.id));
-    const transcript=scene?.kind==='visual'?null:await readJson(transcriptFile);
+    const kind=takeBindings?.find(b=>b.sourceId===source.id)?.kind??scene?.kind;
+    const transcript=kind==='visual'?null:await readJson(transcriptFile);
     sources.push({...source,segments:transcript?parseWhisperJson(transcript,source.durationSec):[]});
   }
-  const editorial=brief.manualSource?createManualEditorialPlan(brief,sources):createEditorialPlan(brief,sources,{mode});
+  const editorial=brief.manualSource?createManualEditorialPlan(brief,sources,{takeBindings}):createEditorialPlan(brief,sources,{mode});
   const result={version:1,analysisPath,briefPath,...editorial};
   await writeFile(out,JSON.stringify(result,null,2)+'\n',{flag:'wx'});
   return {decisions:out,choices:editorial.choices.length,missingBeats:editorial.missingBeats,totalSec:Number(editorial.choices.reduce((s,x)=>s+x.durationSec,0).toFixed(3)),review:'ASR-based cut proposal only. Acting, meaning in context, subtitles, color, sound and final author approval not verified.'};

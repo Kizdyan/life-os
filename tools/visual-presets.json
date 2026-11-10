@@ -3,25 +3,56 @@
   "provenance": "User-provided creative directions; not a claim of independent reference viewing or validated skin correction",
   "presets": {
     "Dynamic": {
-      "id": "Dynamic", "name": "Dynamic Contrast",
+      "id": "Dynamic",
+      "name": "Dynamic Contrast",
       "description": "Энергичный разговорный или комедийный ролик: выразительный контраст, холодные тени, умеренно тёплые света.",
       "filter": "colorbalance=rs=-.012:bs=.025:rh=.020:bh=-.012:pl=0,eq=contrast=1.10:saturation=1.03:gamma=.99",
       "editorialVariation": "humor",
-      "subtitles": {"font":"Arial","fontSize":72,"bold":true,"outline":5,"shadow":1,"fadeMs":0,"highlight":"longest-word","highlightColor":"&H0000D7FF"}
+      "subtitles": {
+        "font": "Segoe UI",
+        "fontSize": 72,
+        "bold": true,
+        "outline": 5,
+        "shadow": 1,
+        "fadeMs": 0,
+        "highlight": "longest-word",
+        "highlightColor": "&H0000D7FF"
+      }
     },
     "Commercial": {
-      "id":"Commercial", "name":"Commercial Cinematic",
-      "description":"Нейтральная коммерческая подача: мягкий контраст, умеренное тепло и спокойные титры шампань. Требуется авторская проверка кожи.",
-      "filter":"colorbalance=bs=.010:rh=.006:bh=-.004:pl=0,eq=contrast=1.04:saturation=.98:gamma=1.01",
-      "editorialVariation":"cinematic",
-      "subtitles":{"font":"Arial","fontSize":56,"bold":false,"outline":1,"shadow":1,"fadeMs":180,"highlight":"none","highlightColor":"&H00FFFFFF","primaryColor":"&H00E0EAF5"}
+      "id": "Commercial",
+      "name": "Commercial Cinematic",
+      "description": "Нейтральная коммерческая подача: мягкий контраст, умеренное тепло и спокойные титры шампань. Требуется авторская проверка кожи.",
+      "filter": "colorbalance=bs=.010:rh=.006:bh=-.004:pl=0,eq=contrast=1.04:saturation=.98:gamma=1.01",
+      "editorialVariation": "cinematic",
+      "subtitles": {
+        "font": "Segoe UI",
+        "fontSize": 56,
+        "bold": false,
+        "outline": 1,
+        "shadow": 1,
+        "fadeMs": 180,
+        "highlight": "none",
+        "highlightColor": "&H00FFFFFF",
+        "primaryColor": "&H00E0EAF5"
+      }
     },
     "Cinematic": {
-      "id": "Cinematic", "name": "Cinematic Autumn",
+      "id": "Cinematic",
+      "name": "Cinematic Autumn",
       "description": "Драматичный, актёрский или музыкальный ролик: мягкий контраст, приглушённая насыщенность, охристое тепло и синие тени.",
       "filter": "colorbalance=rs=-.008:bs=.020:rm=.008:gm=.003:bm=-.006:rh=.012:bh=-.008:pl=0,eq=contrast=1.035:saturation=.91:gamma=1.02",
       "editorialVariation": "cinematic",
-      "subtitles": {"font":"Arial","fontSize":52,"bold":false,"outline":1,"shadow":1,"fadeMs":180,"highlight":"none","highlightColor":"&H00FFFFFF"}
+      "subtitles": {
+        "font": "Segoe UI Light",
+        "fontSize": 52,
+        "bold": false,
+        "outline": 1,
+        "shadow": 1,
+        "fadeMs": 180,
+        "highlight": "none",
+        "highlightColor": "&H00FFFFFF"
+      }
     }
   }
 }
