@@ -31,3 +31,19 @@ export function validateManualSource(value,script){
  }
  return v;
 }
+/** Explicit execution metadata, separate from immutable authored script. */
+export function readTakeBindings(brief,value,requireHashes=false){
+ if(!brief?.manualSource||!Array.isArray(value)||value.length!==brief.script.length||value.length<2||value.length>12)throw Error('Назначьте один файл каждому кадру ручного сценария.');
+ const seen=new Set();
+ return value.map(b=>{
+  const n=b?.sceneOrder,scene=brief.manualSource.scenes[n-1],beat=brief.script[n-1];
+  if(!Number.isInteger(n)||!scene||seen.has(n)||!['spoken','visual'].includes(b.kind))throw Error('Некорректный или повторный кадр в назначениях.');seen.add(n);
+  if(typeof b.expectedSpeech!=='string'||b.expectedSpeech.length>2000)throw Error('Укажите точную ожидаемую реплику.');
+  const expectedSpeech=b.expectedSpeech.trim(),sourceId='s'+String(n).padStart(2,'0')+'_t01';
+  if(b.kind==='visual'&&(scene.kind==='spoken'||expectedSpeech))throw Error('В кадре '+n+' утверждена реплика. Метка «Визуал» не может отменить её: исправьте тип или отдельно пересмотрите сценарий.');
+  if(b.kind==='spoken'&&(!expectedSpeech||(scene.spokenText?expectedSpeech!==scene.spokenText:![scene.caption,beat.action].some(t=>typeof t==='string'&&t.includes(expectedSpeech)))))throw Error('Реплика кадра '+n+' должна точно присутствовать в авторском сценарии.');
+  if(b.sourceId!==undefined&&b.sourceId!==sourceId)throw Error('Назначение относится к другому исходнику.');
+  if(requireHashes&&!/^[a-f0-9]{64}$/.test(b.sha256??''))throw Error('Missing binding source SHA-256');
+  return {sceneOrder:n,kind:b.kind,expectedSpeech,sourceId,...(requireHashes?{sha256:b.sha256}:{})};
+ });
+}

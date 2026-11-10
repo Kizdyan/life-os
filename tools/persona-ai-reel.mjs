@@ -9,7 +9,7 @@ import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runFirstReel,firstReelCliExitCode} from './persona-first-reel-runner.mjs';
 import {getVisualPreset} from './persona-creative-director.mjs';
-const allowed=new Set(['--takes','--brief','--out','--whisper-cli','--whisper-model','--ollama-model','--variation','--ffmpeg-dir','--burn-subtitles','--visual-preset']);
+const allowed=new Set(['--takes','--brief','--out','--whisper-cli','--whisper-model','--ollama-model','--variation','--ffmpeg-dir','--burn-subtitles','--visual-preset','--take-bindings']);
 export function readPersonaAiReelArgs(args){
  const parsed={};
  if(args.length%2!==0)throw Error('Flags must be followed by values');
@@ -27,7 +27,7 @@ export function readPersonaAiReelArgs(args){
  if(!['cinematic','humor','intimate','unexpected'].includes(variation))
   throw Error('Invalid --variation (cinematic|humor|intimate|unexpected)');
  return {
-  sources:parsed['--takes'],brief:parsed['--brief'],outputDir:parsed['--out'],
+  takeBindingsPath:parsed['--take-bindings']??null,sources:parsed['--takes'],brief:parsed['--brief'],outputDir:parsed['--out'],
   whisperCli:parsed['--whisper-cli'],whisperModel:parsed['--whisper-model'],
   aiEditorModel:parsed['--ollama-model'],aiVariation:variation,
   ffmpegDir:parsed['--ffmpeg-dir'],mode:'strict',burnSubtitles:parsed['--burn-subtitles']==='true',visualPreset:parsed['--visual-preset']??null,

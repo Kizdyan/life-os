@@ -25,7 +25,8 @@ export function buildSubtitleAss({cues,width,height,presetId,positionYRatio=.66}
    const endMs=Math.round(cue.startMs+(cue.endMs-cue.startMs)*offset/total);short.push({startMs,endMs,text});}
   previous=cue.endMs;
  }
- const style=presetId?getVisualPreset(presetId).subtitles:{font:'Arial',fontSize:72,bold:true,outline:5,shadow:1,fadeMs:0,highlight:'none',highlightColor:'&H00FFFFFF'};
+ const style=getVisualPreset(presetId??'Dynamic').subtitles;
+ if(!/^[\p{L}\p{N} _-]{1,80}$/u.test(style.font))fail('Invalid configured ASS font family');
  const fontSize=Math.round(width*style.fontSize/1080),outline=Math.max(1,Math.round(width*style.outline/1080)),margin=Math.round(width*.1),x=Math.round(width/2),y=Math.round(height*positionYRatio);
  const captionText=c=>{
   const parts=c.text.split(' ');let text=c.text;

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /** One-command local speech-aware Persona Reel (draft only; never publishes). */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -176,7 +177,7 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
  ].join('\n'),{flag:'wx'});
  return recoveryResult;
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts,burnSubtitles=false,visualPreset=null}={}){
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts,burnSubtitles=false,visualPreset=null,takeBindingsPath=null}={}){
  if(typeof burnSubtitles!=='boolean')fail('burnSubtitles must be boolean');
  if(visualPreset!==null)getVisualPreset(visualPreset);
  if(visualPreset!==null&&!aiEditorModel)fail('Visual direction requires the AI editorial pipeline');
@@ -249,11 +250,13 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const evidence=await analyze(sourcesManifest,join(root,'evidence'));
   recoveryAnalysisPath=evidence.analysis;
   events.push('media_evidence_generated');
-  const manualScenes=requestedBrief.manualSource?.scenes;
+  const takeBindings=takeBindingsPath?readTakeBindings(requestedBrief,JSON.parse(await readFile(resolve(takeBindingsPath),'utf8')),true):null;
+  if(takeBindings){const actual=JSON.parse(await readFile(evidence.analysis,'utf8')).sources;for(const b of takeBindings)if(!actual.some(s=>s.id===b.sourceId&&s.sha256===b.sha256))fail('Binding source SHA mismatch');}
+  const manualScenes=takeBindings?takeBindings.map(b=>({order:b.sceneOrder,kind:b.kind})):requestedBrief.manualSource?.scenes;
   const sourceIds=manualScenes?JSON.parse(await readFile(evidence.analysis,'utf8')).sources.filter(src=>manualScenes.some(scene=>scene.kind==='spoken'&&(src.id==='master'||new RegExp('^s'+String(scene.order).padStart(2,'0')+'_t','i').test(src.id)))).map(src=>src.id):null;
   const transcripts=await transcribeStep(evidence.analysis,whisperCli,whisperModel,{sourceIds});
   events.push(manualScenes&&!sourceIds.length?'visual_takes_no_speech_asr_claimed':'offline_asr_completed');
-  const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode);
+  const decisions=await plan(evidence.analysis,resolve(brief),join(root,'decisions.json'),mode,{takeBindings});
   if(decisions.choices!==requestedBrief.script.length||
    (Array.isArray(decisions.missingBeats)&&decisions.missingBeats.length>0)){
    // Partial preview is NOT a valid MP4. Preserve confident candidates in
@@ -328,7 +331,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
    events.push('real_ffmpeg_color_applied_to_edited_mp4');
    events.push('ai_selected_color_mp4_technical_qa_passed');
   }
-  const summary={version:1,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
+  const summary={version:1,takeBindings,publicationApproved:false,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
     aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
     subtitleDraft,subtitleBurnIn,visualDirection:visualPreset?getVisualPreset(visualPreset):null,timing,
