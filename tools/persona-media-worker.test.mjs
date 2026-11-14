@@ -26,6 +26,26 @@ test('idea selection endpoint rejects a foreign project and a legacy unaudited p
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};
+test('autonomous finishing requires the local token, explicit cloud consent and a completed draft',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-studio-'));
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used',
+  apiEnv:{OPENROUTER_API_KEY:'test-only',PERSONA_STUDIO_PYTHON:'test-only',PERSONA_STUDIO_RESOLVE_LAUNCHER:'test-only'}});
+ const base='http://127.0.0.1:'+await worker.start();
+ const post=(path,body,token=worker.token,origin='http://127.0.0.1:5173')=>fetch(base+path,{method:'POST',
+  headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token,Origin:origin},body:JSON.stringify(body)});
+ try{
+  const health=await(await fetch(base+'/health')).json();
+  assert.deepEqual(health.autonomousStudio,{configured:true,providers:['OpenRouter']});
+  const created=await post('/session',{brief,variation:'cinematic',takeCount:2});
+  const path='/session/'+(await created.json()).id+'/studio';
+  assert.equal((await post(path,{consent:true},'invalid')).status,401);
+  assert.equal((await post(path,{consent:true},worker.token,'https://other.example')).status,403);
+  const withoutConsent=await post(path,{consent:false});
+  assert.equal(withoutConsent.status,400);assert.match((await withoutConsent.json()).error,/Подтвердите отправку/);
+  const withoutDraft=await post(path,{consent:true});
+  assert.equal(withoutDraft.status,400);assert.match((await withoutDraft.json()).error,/готовый локальный монтаж/);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true});}
+});
 test('real FFprobe rejects a ten-minute video assigned to a five-second shot before rendering',{skip:spawnSync('ffmpeg',['-version']).status!==0},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-long-short-take-')),source=join(root,'long.mp4');
  const generated=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=white:s=160x284:r=1','-t','600','-c:v','libx264',source],{timeout:30000});assert.equal(generated.status,0,generated.stderr?.toString());

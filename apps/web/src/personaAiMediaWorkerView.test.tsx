@@ -13,4 +13,5 @@ it('offers explicit burned-in captions on new renders without claiming old video
  expect(html).toMatch(/aria-label="Авто-режиссура \(ИИ\)"[^>]*checked=""/);
  expect(html).not.toContain('aria-label="Ручной визуальный пресет"');
  expect(html).toContain('Повторить анализ Qwen');
+ expect(html).toMatch(/<button[^>]+disabled=""[^>]*>Запустить Автономный Монтаж<\/button>/);
 });

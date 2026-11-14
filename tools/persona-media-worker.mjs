@@ -20,6 +20,7 @@ import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mj
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
+import {startStudio,studioAvailability,studioView} from './persona-autonomous-studio.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -121,7 +122,7 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
   try{
    if(req.method==='GET'&&url.pathname==='/health'){
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),autonomousStudio:studioAvailability(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
@@ -208,7 +209,25 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
     const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
-   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|studio|studio\/video|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   if(match[2]==='studio'&&req.method==='GET'){respond(res,200,studioView(s));return}
+   if(match[2]==='studio'&&req.method==='POST'){
+    const body=await json(req,1024),env=config.apiEnv??process.env;
+    if(body.consent!==true)fail('Подтвердите отправку сценария и фрагментов видео/аудио в OpenRouter');
+    if(!studioAvailability(env).configured)fail('Настройте ключ OpenRouter и локальный мост Resolve');
+    if(s.state!=='completed'||s.studio?.state==='running'||[...sessions.values()].some(j=>j.studio?.state==='running'))fail('Нужен готовый локальный монтаж и свободная автономная студия');
+    // Reserve the Resolve workspace before the first asynchronous operation.
+    s.studio={state:'running',report:null,error:null};
+    try{await startStudio(s,{env,script:join(here,'autonomous_loop.py'),ffmpegDir:config.ffmpegDir});}
+    catch(error){s.studio={state:'failed',report:null,error:String(error.message||error)};throw error;}
+    respond(res,202,studioView(s));return;
+   }
+   if(match[2]==='studio/video'&&req.method==='GET'){
+    if(s.studio?.state!=='completed')fail('Автономный MP4 ещё недоступен');
+    const video=s.studio.video,size=(await stat(video)).size;
+    res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':size,'Content-Disposition':'inline; filename="studio.mp4"','Cache-Control':'no-store'});
+    createReadStream(video).pipe(res);return;
+   }
    if(req.method==='DELETE'&&!match[2]){
     if(s.state!=='uploading'||s.child)fail('Only an unstarted upload can be discarded');
     if(dirname(s.input)!==resolve(config.outputRoot)||basename(s.input)!=='.worker-staging-'+s.id)fail('Invalid owned staging directory');

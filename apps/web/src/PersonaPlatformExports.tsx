@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 type ExportInfo={state:string;stage?:string;platform?:string;error?:string;reportPath?:string;report?:{exports:{platform:string;label?:string;status:string;videoPath?:string;sha256?:string;warnings?:string[]}[]}};
-const worker='http://127.0.0.1:47832';
+import {personaWorkerUrl as worker} from './personaWorkerUrl';
 export function PersonaPlatformExports({sessionId,token}:{sessionId:string;token:string}){
  const [info,setInfo]=useState<ExportInfo|null>(null),[attempt,setAttempt]=useState(0),[error,setError]=useState(''),[starting,setStarting]=useState(false);
  useEffect(()=>{let alive=true,timer:ReturnType<typeof setTimeout>|undefined;async function poll(){try{const response=await fetch(worker+'/session/'+sessionId+'/status',{headers:{'X-Persona-Worker-Token':token}});const data=await response.json();if(!response.ok)throw Error(data.error||'Export status unavailable');if(!alive)return;setInfo(data.exports??null);if(data.exports?.state==='running')timer=setTimeout(()=>void poll(),1200)}catch(e){if(alive)setError(String((e as Error).message))}}void poll();return()=>{alive=false;clearTimeout(timer)}},[sessionId,token,attempt]);

@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
-const worker='http://127.0.0.1:47832';
+import {personaWorkerUrl as worker} from './personaWorkerUrl';
 export function PersonaManualScript({projectId,snapshot,onApply}:{projectId:string;snapshot:string;onApply:(brief:PersonaProductionBrief,snapshot:string)=>void}){
  const key='persona.manual-script-draft.'+projectId;
  const [open,setOpen]=useState(false),[text,setText]=useState(()=>{try{return localStorage.getItem(key)??''}catch{return ''}}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[parsed,setParsed]=useState<{brief:PersonaProductionBrief;warnings:string[]}|null>(null);

@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {contentFormats,readCommercialDevelopment,type PersonaCommercialDevelopment,type CommercialProposal} from './personaCommercialDevelopment';
 import {auditCriteria} from '../../../packages/core/src/persona-idea-audit.mjs';
-const worker='http://127.0.0.1:47832';
+import {personaWorkerUrl as worker} from './personaWorkerUrl';
 const criteria={visuality:'Визуальность',actingRange:'Актёрский диапазон',sellingPotential:'Продающий потенциал',hook:'Хук'};
 export function PersonaCommercialIdeas({readOnly=false,projectId,record,creativeSnapshot,onSave,onApplyBrief}:{readOnly?:boolean;projectId:string;record:PersonaCommercialDevelopment|null;creativeSnapshot:string;onSave:(r:PersonaCommercialDevelopment)=>boolean;onApplyBrief:(brief:unknown,base:string)=>void}){
  const current=record??{version:1 as const,format:'showcase' as const,proposals:[]};
