@@ -1,0 +1,2 @@
+# This approved render config is verified by its raw SHA-256.
+tools/subtitle-standard-v1/subtitle_render_config.json -text whitespace=cr-at-eol
