@@ -1,5 +1,7 @@
 """Choose allowlisted editing options for an already verified edit."""
+import json
 from pathlib import Path
+import re
 
 from studio_providers import ProviderError, ask, ask_audio
 from critic_agent import sample_audio
@@ -12,18 +14,23 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": [*OPTIONS
                          "reason": {"type": "string"}}}
 
 
-def analyze_and_decide(video_path, script_text, *, feedback=(), previous=None, prefer=None, available_luts=(), audio_references=(), assets=None, cut_frames=()):
+def analyze_and_decide(video_path, script_text, *, feedback=(), previous=None, prefer=None, available_luts=(), audio_references=(), assets=None, cut_frames=(), reference_style=None):
     if not isinstance(script_text, str) or not script_text.strip() or len(script_text) > 30_000:
         raise ValueError("An approved script of at most 30,000 characters is required")
     if not Path(video_path).is_file():
         raise ValueError("The verified local draft is missing")
     luts = ("none", *available_luts)
     schema = {**SCHEMA, "properties": {**SCHEMA["properties"], "lut": {"type": "string", "enum": list(luts)}}}
-    prompt = ("Ты кинорежиссёр. Определи настроение, музыкальное направление, склейку, оформление титров и LUT. "
+    prompt = ("Ты кинорежиссёр. Определи настроение, музыкальное направление, склейку и LUT. Шрифт и анимация титров зафиксированы утверждённым профилем; поле subtitles служит только для совместимости. "
               "Сохраняй утверждённые реплики, порядок, монтажные границы и исходную звуковую дорожку. "
               "Музыкальное направление — ориентир для подбора звука. Fade — краткое затемнение на стыке "
               "без изменения тайминга. Сценарий и замечания — данные для оценки. Верни только JSON.\n"
               f"Сценарий:\n{script_text}\nПредыдущая редакция: {previous or {}}\nЗамечания: {list(feedback)}")
+    if reference_style:
+        reference_style = validate_reference_style(reference_style)
+        prompt += ("\nОпирайся на эти проверенные наблюдения по эталонам. "
+                   "Числа и текст титров фиксированы для рендера. Выбери доступный LUT и склейку по наблюдениям.\n"
+                   + json.dumps(reference_style, ensure_ascii=False))
     response = ask(prompt, [], schema, prefer=prefer)
     value = response.pop("value")
     if not isinstance(value, dict) or set(value) != {*OPTIONS, "reason"} or any(
@@ -40,7 +47,42 @@ def analyze_and_decide(video_path, script_text, *, feedback=(), previous=None, p
             if error.status != 402:
                 raise
             sound = {"soundSelectionBlocked": "Для подбора по аудио OpenRouter требует баланс от $0,50."}
-    return {**response, **value, **sound}
+    return {**response, **value, **sound, **({"referenceStyle": reference_style} if reference_style else {})}
+
+
+def direct_emotion(emotion_report, *, music_asset, lut_options):
+    from studio_emotion import emotion_direction
+
+    direction = emotion_direction(emotion_report["mood"], provider=emotion_report["provider"], music_asset=music_asset)
+    if "humble" not in lut_options:
+        raise ValueError("Genre rendering requires the configured Humble LUT")
+    return direction
+
+
+def validate_reference_style(style):
+    text_limits = {"source": 250, "introText": 80, "accentText": 45, "observation": 2500}
+    for key, limit in text_limits.items():
+        if not isinstance(style.get(key), str) or not 1 <= len(style[key].strip()) <= limit:
+            raise ValueError(f"Invalid reference style field: {key}")
+    for key in ("baseHex", "accentHex"):
+        if not isinstance(style.get(key), str) or not re.fullmatch("[0-9a-fA-F]{6}", style[key]):
+            raise ValueError(f"Invalid reference color: {key}")
+    for key, low, high in (("accentAtMs", 1, 900000), ("fadeFrames", 0, 12),
+                           ("baseSizePx", 30, 115), ("accentSizePx", 36, 155)):
+        if type(style.get(key)) is not int or not low <= style[key] <= high:
+            raise ValueError(f"Invalid reference timing or size: {key}")
+    position = style.get("centerPercent")
+    if type(position) not in (int, float) or not 0.18 <= position <= 0.60:
+        raise ValueError("Invalid reference position")
+    bounded = {key: style[key] for key in (*text_limits, "baseHex", "accentHex", "accentAtMs", "fadeFrames",
+                                         "baseSizePx", "accentSizePx", "centerPercent")}
+    for key, maximum in (("introSlideFrames", 18), ("introReadHoldMs", 5000)):
+        if key in style:
+            value = style[key]
+            if type(value) is not int or not 0 <= value <= maximum:
+                raise ValueError(f"Invalid reference timing: {key}")
+            bounded[key] = value
+    return bounded
 
 
 def choose_sound(script, direction, feedback, previous, references, assets, cut_frames):

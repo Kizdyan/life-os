@@ -6,6 +6,7 @@ import {access,copyFile,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises'
 import {basename,dirname,join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {getVisualPreset} from './persona-creative-director.mjs';
+import {PRODUCTION_LUT_MIX} from './persona-media-paths.mjs';
 
 const presets=[
  ['natural-clean','Natural Clean','colorbalance=rm=.006:gm=-.002:bm=.008:rh=.003:gh=-.001:bh=.004,eq=brightness=0:contrast=1.025:saturation=.99:gamma=1.015'],
@@ -23,9 +24,9 @@ function env(ffmpegDir){
  if(ffmpegDir)e[key]=resolve(ffmpegDir)+(process.platform==='win32'?';':':')+(e[key]||'');
  return e;
 }
-function run(binary,args,environment,{captureStdout=false}={}){
+function run(binary,args,environment,{captureStdout=false,cwd}={}){
  return new Promise((ok,bad)=>{
-  const child=spawn(binary,args,{shell:false,windowsHide:true,env:environment,stdio:['ignore','pipe','pipe']});
+  const child=spawn(binary,args,{shell:false,windowsHide:true,env:environment,cwd,stdio:['ignore','pipe','pipe']});
   let stderr='',stdout='';
   const max=2*1024*1024;
   child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-max)});
@@ -60,19 +61,30 @@ async function preflight(input,environment){
 }
 /** Local CLI: node tools/persona-color-variants.mjs <original.mp4> <new-output-dir> [ffmpeg-dir] */
 export async function inspectVisualInput(inputPath,ffmpegDir){return preflight(resolve(inputPath),env(ffmpegDir))}
-export async function renderVisualPreset({inputPath,outputPath,presetId,ffmpegDir}={}){
- const preset=getVisualPreset(presetId),input=resolve(inputPath),output=resolve(outputPath),environment=env(ffmpegDir);
+export async function renderVisualPreset({inputPath,outputPath,presetId,ffmpegDir,productionLut}={}){
+ const preset=productionLut?{
+  id:'humble-60',name:'Humble 60%',
+  filter:`format=yuv444p,split[original][grade];[grade]lut3d=file=grade.cube,format=yuv444p[graded];[graded][original]blend=all_mode=normal:all_opacity=${PRODUCTION_LUT_MIX}`,
+ }:getVisualPreset(presetId);
+ const input=resolve(inputPath),output=resolve(outputPath),environment=env(ffmpegDir);
  if(input===output||!output.toLowerCase().endsWith('.mp4'))fail('Use a new output MP4');
  for(const path of [output,output+'.visual-preset.json'])await access(path).then(()=>fail('output already exists'),e=>{if(e.code!=='ENOENT')throw e});
  const before=await preflight(input,environment),sourceSha256=await sha(input);
  await mkdir(dirname(output),{recursive:true});const temp=await mkdtemp(join(dirname(output),'.persona-grade-'));let owned=false;
  try{
   const staged=join(temp,'grade.mp4');
-  await run('ffmpeg',['-v','error','-n','-i',input,'-map','0:v:0','-map','0:a?','-vf',preset.filter,'-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p','-c:a','copy','-movflags','+faststart',staged],environment);
+  let lut;
+  if(productionLut){
+   const copy=join(temp,'grade.cube');
+   await copyFile(resolve(productionLut),copy,fsConstants.COPYFILE_EXCL);
+   lut={name:'Humble',mix:PRODUCTION_LUT_MIX,sha256:await sha(copy)};
+  }
+  await run('ffmpeg',['-v','error','-n','-i',input,'-map','0:v:0','-map','0:a?','-vf',preset.filter,'-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p','-c:a','copy','-movflags','+faststart',staged],environment,{cwd:temp});
   const after=await preflight(staged,environment);
   if(before.width!==after.width||before.height!==after.height||before.avg_frame_rate!==after.avg_frame_rate||Math.abs(Number(before.duration)-Number(after.duration))>.1)fail('Visual preset changed geometry or timing');
   if(await sha(input)!==sourceSha256)fail('source changed during grading');
-  const result={version:1,presetId:preset.id,label:preset.name,filter:preset.filter,source:{path:input,sha256:sourceSha256},output:{path:output,sha256:await sha(staged)},publicationApproved:false,distributionAllowed:false};
+  const result={version:1,presetId:preset.id,label:preset.name,filter:preset.filter,...(lut?{lut}:{}),
+   source:{path:input,sha256:sourceSha256},output:{path:output,sha256:await sha(staged)},publicationApproved:false,distributionAllowed:false};
   await copyFile(staged,output,fsConstants.COPYFILE_EXCL);owned=true;
   await writeFile(output+'.visual-preset.json',JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result;
  }catch(error){if(owned)await rm(output,{force:true});throw error}finally{await rm(temp,{recursive:true,force:true})}

@@ -9,9 +9,9 @@ it('offers explicit burned-in captions on new renders without claiming old video
  const html=renderToString(<PersonaAiMediaWorker projectId="test" pipeline={importPersonaProductionBrief({brief:fixture})} hasUnsavedDraft={false} record={null} onSave={()=>false}/>);
  expect(html).toContain('Вшить субтитры в MP4');
  expect(html).toMatch(/aria-label="Вшить субтитры в MP4"[^>]*checked=""/);
- expect(html).toContain('2–3 слова');
+ expect(html).toContain('Cormorant Garamond Light');
  expect(html).toMatch(/aria-label="Авто-режиссура \(ИИ\)"[^>]*checked=""/);
  expect(html).not.toContain('aria-label="Ручной визуальный пресет"');
  expect(html).toContain('Повторить анализ Qwen');
- expect(html).toMatch(/<button[^>]+disabled=""[^>]*>Запустить Автономный Монтаж<\/button>/);
+ expect(html).not.toContain('Запустить Автономный Монтаж');
 });

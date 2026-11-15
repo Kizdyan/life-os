@@ -1,0 +1,6 @@
+{
+  "sad": {"motion":"guarded-dissolve","saturation":0.82,"contrast":0.96,"titleMotion":"fade","titleMs":420,"targetLufs":-22,"music":"ambient"},
+  "epic": {"motion":"zoom-to-cut","saturation":1.04,"contrast":1.10,"titleMotion":"fly-in","titleMs":100,"targetLufs":-14,"music":"rhythmic"},
+  "dynamic": {"motion":"accent-zooms","minShotSec":2.0,"targetShotSec":2.5,"accentZoom":1.08,"saturation":1.12,"contrast":1.04,"titleMotion":"zoom","titleMs":200,"targetLufs":-16,"music":"rhythmic"},
+  "calm": {"motion":"slow-push","saturation":0.88,"contrast":0.92,"titleMotion":"fade","titleMs":300,"targetLufs":-23,"music":"ambient"}
+}

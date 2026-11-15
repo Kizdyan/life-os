@@ -3,15 +3,16 @@ import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
  * from an explicit browser file selection to the existing AI reel CLI.
- * It accepts bytes, never client file paths or commands; originals are staged
+ * It accepts bytes and supported public reference links. Originals are staged
  * as copies and every persistent result lives in a new worker-owned folder.
  */
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
 import {createWriteStream,createReadStream} from 'node:fs';
-import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
+import {access,appendFile,mkdir,readFile,rename,rm,stat,writeFile} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
+import {Transform} from 'node:stream';
 import {join,resolve,basename,extname,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -20,7 +21,12 @@ import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mj
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
-import {startStudio,studioAvailability,studioView} from './persona-autonomous-studio.mjs';
+import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
+import {subtitlePreset} from './persona-subtitle-burn.mjs';
+import {runStudioPython} from './persona-studio-python.mjs';
+import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook-variants.mjs';
+import {personaMediaPaths} from './persona-media-paths.mjs';
+import {parseLearnedRules} from './persona-internet-learner.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -32,21 +38,27 @@ const sessions=new Map();
 function fail(message){throw Error('Persona Media Worker: '+message)}
 function respond(res,status,data,headers={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers});res.end(JSON.stringify(data))}
 function envPath(bin){const copy={...process.env};const key=Object.keys(copy).find(k=>k.toLowerCase()==='path')||'PATH';if(bin)copy[key]=resolve(bin)+(process.platform==='win32'?';':':')+(copy[key]||'');return copy}
-function parseArgs(args){
+export function parseWorkerArgs(args){
  const value=(flag,required=true)=>{const i=args.indexOf(flag);const v=i<0?undefined:args[i+1];if(required&&(!v||v.startsWith('--')))fail('missing '+flag);return v};
  const unknown=args.filter((item,i)=>item.startsWith('--')&&!['--port','--output-root','--ffmpeg-dir','--whisper-cli','--whisper-model','--ollama-model'].includes(item)&&!(i&&args[i-1].startsWith('--')));if(unknown.length)fail('unknown argument '+unknown[0]);
  const port=Number(value('--port',false)||process.env.PERSONA_MEDIA_WORKER_PORT||47832);
  if(!Number.isInteger(port)||(port!==0&&(port<1024||port>65535)))fail('invalid port');
  return {port,outputRoot:resolve(value('--output-root')||process.env.PERSONA_MEDIA_OUTPUT_ROOT||join(tmpdir(),'persona-ai-media-results')),
   ffmpegDir:value('--ffmpeg-dir',false)||process.env.PERSONA_MEDIA_FFMPEG_DIR,
-  whisperCli:resolve(value('--whisper-cli')||process.env.PERSONA_MEDIA_WHISPER_CLI||''),
-  whisperModel:resolve(value('--whisper-model')||process.env.PERSONA_MEDIA_WHISPER_MODEL||''),
+  musicOriginPort:Number(process.env.PERSONA_MUSIC_ORIGIN_PORT),
+  musicLut:personaMediaPaths().humbleLut,
+  whisperCli:value('--whisper-cli',false)||process.env.PERSONA_MEDIA_WHISPER_CLI||null,
+  whisperModel:value('--whisper-model',false)||process.env.PERSONA_MEDIA_WHISPER_MODEL||null,
   ollamaModel:value('--ollama-model',false)||process.env.PERSONA_MEDIA_OLLAMA_MODEL||'qwen3:4b-instruct'};
 }
 function validBrief(value){return value&&typeof value==='object'&&!Array.isArray(value)&&(value.preEditPlanNeedsReview===undefined||value.preEditPlanNeedsReview===false)&&value.version===1&&value.sourceFormat==='reel'&&Array.isArray(value.script)&&value.script.length>=2&&value.script.length<=30&&Array.isArray(value.shots)&&value.shots.length===value.script.length&&value.script.every((b,i)=>b&&b.order===i+1&&typeof b.line==='string'&&b.line.trim())&&value.shots.every((s,i)=>s&&s.order===i+1)}
 async function json(req,limit=512*1024){let bytes=0,parts=[];for await(const part of req){bytes+=part.length;if(bytes>limit)fail('request too large');parts.push(part)}try{return JSON.parse(Buffer.concat(parts).toString('utf8'))}catch{fail('invalid JSON')}}
 async function exists(file){try{await access(file);return true}catch{return false}}
-function permittedOrigin(origin){return /^http:\/\/(?:localhost|127\.0\.0\.1):(5173|5174|5175|4173)$/.test(origin||'')}
+function permittedOrigin(origin,musicPort){
+ const allowed=/^http:\/\/(?:localhost|127\.0\.0\.1):(5173|5174|5175|4173)$/.test(origin||'');
+ return allowed||Number.isInteger(musicPort)&&musicPort>=1024&&musicPort<=65535&&
+  (origin==='http://localhost:'+musicPort||origin==='http://127.0.0.1:'+musicPort);
+}
 async function ollamaHasModel(model){
  try{const response=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(1500)});const body=await response.json();return Boolean(response.ok&&body?.models?.some(entry=>entry?.name===model))}catch{return false}
 }
@@ -67,19 +79,24 @@ function originalName(header,fallback){
  return name;
 }
 async function fileHash(path){const hash=createHash('sha256');for await(const part of createReadStream(path))hash.update(part);return hash.digest('hex')}
-async function inspectUploadedTake(path,config){
+async function inspectUploadedTake(path,config,{musicMaster=false}={}){
  const bin=config.ffmpegDir?join(config.ffmpegDir,process.platform==='win32'?'ffprobe.exe':'ffprobe'):'ffprobe';
  const media=await new Promise((ok,no)=>{
-  const child=spawn(bin,['-v','error','-show_streams','-show_format','-of','json',path],{windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});let output='',err='';
+  const child=spawn(bin,['-v','error',...(musicMaster?['-protocol_whitelist','file','-format_whitelist','mov,matroska,webm']:[]),'-show_streams','-show_format','-of','json',path],{windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});let output='',err='';
   const timer=setTimeout(()=>{child.kill();no(Error('FFprobe: время проверки файла истекло'))},15000);
   child.stdout.on('data',b=>{output+=b;if(output.length>1024*1024){child.kill();no(Error('FFprobe output limit'))}});child.stderr.on('data',b=>err=(err+b).slice(-1000));
   child.once('error',e=>{clearTimeout(timer);no(e)});child.once('close',code=>{clearTimeout(timer);try{if(code!==0)throw Error('Повреждённый или неподдерживаемый видеофайл: '+err);ok(JSON.parse(output))}catch(e){no(e)}});
  });
  const v=media.streams?.find(s=>s.codec_type==='video');if(!v||!v.width||!v.height)fail('В файле нет видеопотока');
  if(['smpte2084','arib-std-b67'].includes(v.color_transfer)||String(v.color_primaries).startsWith('bt2020'))fail('HDR/BT.2020: скрытая конвертация запрещена; подготовьте отдельную SDR-копию');
- if(Number(v.tags?.rotate||0)!==0||v.side_data_list?.some(s=>Number(s.rotation||0)!==0))fail('Поворот в метаданных требует отдельной подготовки копии; исходник не изменён');
+ if(!musicMaster&&(Number(v.tags?.rotate||0)!==0||v.side_data_list?.some(s=>Number(s.rotation||0)!==0)))fail('Поворот в метаданных требует отдельной подготовки копии; исходник не изменён');
  if(media.streams.some(s=>s.codec_type==='subtitle'))fail('Встроенные субтитры требуют отдельного согласования');
- return {duration:Number(media.format?.duration),videoCodec:v.codec_name,audioCodecs:media.streams.filter(s=>s.codec_type==='audio').map(s=>s.codec_name),width:v.width,height:v.height,colorTransfer:v.color_transfer??'unknown'};
+ const [sarW,sarH]=String(v.sample_aspect_ratio).split(':').map(Number);
+ const displayWidth=sarW>0&&sarH>0?Math.max(2,Math.round(v.width*sarW/sarH/2)*2):v.width;
+ const rotation=Number(v.side_data_list?.find(s=>s.rotation!==undefined)?.rotation??v.tags?.rotate??0);
+ const rotated=Math.round(rotation/90)%2!==0;
+ return {duration:Number(media.format?.duration),videoCodec:v.codec_name,audioCodecs:media.streams.filter(s=>s.codec_type==='audio').map(s=>s.codec_name),width:v.width,height:v.height,colorTransfer:v.color_transfer??'unknown',
+  displayWidth:rotated?v.height:displayWidth,displayHeight:rotated?displayWidth:v.height};
 }
 function sessionView(s){
  const evidence=join(s.output,'evidence','analysis.json'), decisions=join(s.output,'decisions.ai.json'), timeline=join(s.output,'timeline.json'), finished=join(s.output,'ai-edited-reel.mp4');
@@ -99,7 +116,9 @@ function runProcess(s,config){
  if(s.burnSubtitles)args.push('--burn-subtitles','true');
  if(s.visualPreset)args.push('--visual-preset',s.visualPreset);
  if(s.takeBindingsPath)args.push('--take-bindings',s.takeBindingsPath);
- s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],env:envPath(config.ffmpegDir)});
+ s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],
+  env:{...envPath(config.ffmpegDir),PERSONA_WORKER_RENDER:'1',PERSONA_WORKER_HUMBLE_LUT:config.musicLut??'',
+   ...(config.ffmpegDir?{PERSONA_MEDIA_FFMPEG_DIR:config.ffmpegDir}:{})}});
  let stderr='';s.child.stderr.on('data',b=>stderr=(stderr+String(b)).slice(-6000));s.child.stdout.on('data',()=>scan(s));
  s.timer=setInterval(()=>scan(s),750).unref();
  s.child.on('error',error=>{s.state='failed';s.error=String(error.message||error)});
@@ -109,23 +128,322 @@ function runProcess(s,config){
   catch(error){s.state='failed';s.error=String(error.message||error)}
  });
 }
-export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))){
+export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.slice(2))){
  const token=randomUUID();
+ const musicJobs=new Map();let musicBusy=false;
+ const learnedRulesFile=()=>join(config.outputRoot,'learned_rules.json');
+ let referenceBusy=false;
+ async function recordMusicTiming(job,renderStarted,status){
+  const measuredAt=performance.now();
+  const intake=job.intake;
+  const timing={version:1,event:'music-studio-build',status,jobId:job.id,formatId:job.analysis.format.id,
+   startedAt:intake.startedAt,recordedAt:new Date().toISOString(),startSource:intake.source,
+   totalMs:Math.round(measuredAt-intake.start+intake.browserLeadMs),
+   uploadAndAnalysisMs:Math.round(intake.finished-intake.start),
+   waitingBeforeRenderMs:Math.round(renderStarted-intake.finished),
+   renderAndQaMs:Math.round(measuredAt-renderStarted),
+   ...(status==='failed'?{}:{videoSha256:job.report.video.sha256})};
+  try{await appendFile(join(config.outputRoot,'render-timings.jsonl'),JSON.stringify(timing)+'\n',{encoding:'utf8'});}
+  catch{console.error('Persona: could not append render-timings.jsonl');return {...timing,loggingWarning:'Не удалось записать журнал времени.'};}
+  return timing;
+ }
+ const hookJobs=new Map();let hookBusy=false;
+ let producerBusy=false;
+ async function produce(task,input){
+  if(producerBusy)fail('Продюсер уже готовит материал. Дождитесь текущего ответа.');
+  const env=config.apiEnv??process.env;
+  if(!config.producer&&task!=='hook-variants'&&!env.OPENROUTER_API_KEY?.trim())fail('Настройте ключ OpenRouter в локальном Worker.');
+  producerBusy=true;
+  try{
+   return await (config.producer?config.producer(task,input):
+    runStudioPython(config,'./studio_producer.py',[task],task==='social-copy'?180000:task==='hook-variants'?145000:110000,input));
+  }finally{producerBusy=false;}
+ }
+ async function makeHookVersions(req,res,job){
+  const body=await json(req,2048);
+  const hook=typeof body?.hook==='string'?body.hook.trim():'';
+  if(body?.consent!==true)fail('Подтвердите отправку текста хука в OpenRouter.');
+  if(hook.length<3||hook.length>240||/[\p{C}]/u.test(hook))fail('Введите хук одной строкой от 3 до 240 знаков.');
+  if(body.videoSha256!==undefined&&body.videoSha256!==job.sourceSha256)fail('Выбран другой MP4.');
+  const hookStartSec=body.hookStartSec??job.hookStartSec??0;
+  if(!Number.isFinite(hookStartSec)||hookStartSec<(job.hookStartSec??0)||hookStartSec>=900)
+   fail('Укажите начало нового хука после уже вшитого титра.');
+  if(hookBusy)fail('Уже идёт A/B-рендер.');
+  if(job.report&&job.hook===hook&&job.lastHookStartSec===hookStartSec){respond(res,200,job.report);return;}
+  hookBusy=true;
+  try{
+   if(await fileHash(job.video)!==job.sourceSha256)fail('Исходный MP4 изменился.');
+   const drafts=await produce('hook-variants',{hook});
+   draftHookLines(drafts.hooks);
+   const output=join(job.directory,'variants-'+randomUUID());
+   const report=await renderHookVariants({...job,hookStartSec,drafts:drafts.hooks,output,config});
+   const id=randomUUID();
+   // Keep each completed set immutable so that previously returned links stay valid.
+   const result={...report,id,hook,model:drafts.model,provider:drafts.provider};
+   hookJobs.set(id,{output,report:result});
+   job.report=result;job.hook=hook;job.lastHookStartSec=hookStartSec;
+   respond(res,201,result);
+  }finally{hookBusy=false;}
+ }
+ async function socialCopy(req,res,video,formatTitle,expectedHash){
+  const body=await json(req,1024);
+  if(body?.consent!==true)fail('Подтвердите отправку одного стоп-кадра в OpenRouter.');
+  if(body.videoSha256!==undefined&&body.videoSha256!==expectedHash)
+   fail('Ролик изменился. Откройте текущий результат.');
+  const videoSha256=await fileHash(video);
+  if(expectedHash&&videoSha256!==expectedHash)fail('MP4 изменился после проверки.');
+  const file=join(dirname(video),'social-copy.json');
+  if(await exists(file)){
+   const cached=JSON.parse(await readFile(file,'utf8'));
+   if(cached.videoSha256===videoSha256&&cached.formatTitle===formatTitle){
+    respond(res,200,cached);return;
+   }
+  }
+  const draft=await produce('social-copy',{video,formatTitle});
+  if(await fileHash(video)!==videoSha256)fail('MP4 изменился при подготовке текста.');
+  const result={...draft,videoSha256,publicationApproved:false,distributionAllowed:false};
+  const temp=file+'.'+randomUUID()+'.tmp';
+  try{
+   await writeFile(temp,JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+   await rename(temp,file);
+  }finally{await rm(temp,{force:true}).catch(()=>{});}
+  respond(res,201,result);
+ }
  const directorDecisions=new Map();let directorPending=null,ideationBusy=false,activeExport=false,externalBusy=false;const externalCalls=[];
  const briefHash=brief=>createHash('sha256').update(JSON.stringify(brief)).digest('hex');
  const server=createServer(async(req,res)=>{
-  const origin=req.headers.origin;if(origin&&!permittedOrigin(origin)){respond(res,403,{error:'origin_not_allowed'});return}
   const expected=new Set(['127.0.0.1:'+server.address().port,'localhost:'+server.address().port]);if(!expected.has(req.headers.host||'')){respond(res,403,{error:'host_not_allowed'});return}
+  const origin=req.headers.origin;
+  const allowedOrigin=config.frontend?origin==='http://'+req.headers.host:permittedOrigin(origin,config.musicOriginPort);
+  if(origin&&!allowedOrigin){respond(res,403,{error:'origin_not_allowed'});return}
+  const url=new URL(req.url||'/','http://127.0.0.1');
+  if(config.frontend){
+   const prefix='/persona-worker';
+   if(!url.pathname.startsWith(prefix+'/')){config.frontend(req,res,url);return}
+   url.pathname=url.pathname.slice(prefix.length);
+  }
   if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
   if(req.method==='OPTIONS'&&origin){res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Persona-Worker-Token,X-Persona-File-Name,X-Persona-Original-Name'});res.end();return}
-  const url=new URL(req.url||'/','http://127.0.0.1');
   try{
    if(req.method==='GET'&&url.pathname==='/health'){
+    const musicStudio=Boolean(config.musicLut&&await exists(config.musicLut));
+
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),autonomousStudio:studioAvailability(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
-   const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
+   const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
+   const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='PUT'&&url.pathname==='/hook-tests'){
+    const length=Number(req.headers['content-length']);
+    if(!Number.isSafeInteger(length)||length<1024||length>maxFile)fail('Выберите MP4 размером до 2 ГБ.');
+    const id=randomUUID(),directory=join(config.outputRoot,'hook-test-'+id),video=join(directory,'master.mp4');
+    await mkdir(directory,{recursive:true});
+    try{
+     let received=0;
+     const bound=new Transform({transform(chunk,_encoding,callback){
+      received+=chunk.length;
+      callback(received>length?Error('Размер загрузки не совпал с заявленным.'):null,chunk);
+     }});
+     await pipeline(req,bound,createWriteStream(video,{flags:'wx'}));
+     if(received!==length)fail('Размер загрузки не совпал с заявленным.');
+     await inspectHookVideo(video,config.ffmpegDir);
+     const sourceSha256=await fileHash(video);
+     hookJobs.set(id,{directory,video,sourceSha256});
+     respond(res,201,{id,sourceSha256});return;
+    }catch(error){await rm(directory,{recursive:true,force:true}).catch(()=>{});throw error;}
+   }
+   if(hookRoute){
+    const job=hookJobs.get(hookRoute[1]);
+    if(req.method==='POST'&&hookRoute[2]==='render'&&job?.video){
+     await makeHookVersions(req,res,job);return;
+    }
+    const variant=job?.output&&job.report.variants.find(item=>String(item.index)===hookRoute[3]);
+    if(req.method==='GET'&&variant){
+     const path=join(job.output,variant.file);
+     if(await fileHash(path)!==variant.sha256)fail('Файл варианта изменился после проверки.');
+     res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':variant.bytes,'Cache-Control':'no-store',
+      'Content-Disposition':'attachment; filename="'+variant.file+'"'});
+     createReadStream(path).pipe(res);return;
+    }
+    respond(res,404,{error:'Вариант A/B-теста не найден.'});return;
+   }
+   if(req.method==='POST'&&url.pathname==='/preproduction'){
+    const body=await json(req,4096);
+    if(body?.consent!==true)fail('Подтвердите передачу идеи в OpenRouter.');
+    const idea=typeof body.idea==='string'?body.idea.trim():'';
+    if(idea.length<3||idea.length>600||/[\x00-\x1f]/.test(idea))fail('Введите идею одной строкой от 3 до 600 знаков.');
+    const draft=await produce('shot-list',{idea});
+    const id=randomUUID(),project=join(config.outputRoot,'shooting-'+id),path=join(project,'shot_list.md');
+    const result={...draft,id,idea};
+    await mkdir(project,{recursive:true});
+    try{
+     await writeFile(path,draft.markdown,{flag:'wx'});
+     await writeFile(join(project,'SHOT-LIST.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+    }catch(error){
+     await rm(path,{force:true}).catch(()=>{});
+     throw error;
+    }
+    respond(res,201,result);return;
+   }
+   const shotList=/^\/preproduction\/([a-f0-9-]{36})$/.exec(url.pathname);
+   if(req.method==='GET'&&shotList){
+    const file=join(config.outputRoot,'shooting-'+shotList[1],'SHOT-LIST.json');
+    if(!await exists(file)){respond(res,404,{error:'Съёмочный лист не найден.'});return;}
+    respond(res,200,JSON.parse(await readFile(file,'utf8')));return;
+   }
+   if(req.method==='GET'&&url.pathname==='/music-studio/reference'){
+    const rules=await readFile(learnedRulesFile(),'utf8').catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
+    respond(res,200,{rules:rules?JSON.parse(rules):null});return;
+   }
+   if(req.method==='POST'&&url.pathname==='/music-studio/reference'){
+    const body=await json(req,4096);
+    if(body?.consent!==true||typeof body.url!=='string'||!body.url.trim()||body.url.length>2048)
+     fail('Укажите публичную ссылку и подтвердите отправку шести кадров в OpenRouter.');
+    if(referenceBusy)fail('Анализ другого референса уже идёт.');
+    referenceBusy=true;
+    let temp;
+    try{
+     const input={url:body.url.trim()};
+     const rules=config.learnReference?await config.learnReference(input):
+      await runStudioPython(config,'./persona_internet_learner.py',[],360000,input);
+     parseLearnedRules(rules);
+     await mkdir(config.outputRoot,{recursive:true});
+     temp=join(config.outputRoot,'.learned-rules-'+randomUUID()+'.tmp');
+     await writeFile(temp,JSON.stringify(rules,null,2)+'\n',{flag:'wx'});
+     await rename(temp,learnedRulesFile());
+     temp=undefined;
+     respond(res,201,{rules});
+    }finally{
+     referenceBusy=false;
+     if(temp)await rm(temp,{force:true}).catch(()=>{});
+    }
+    return;
+   }
+   const musicRoute=/^\/music-studio\/([a-f0-9-]{36})\/(render|video|source|social-copy|hook-tests)$/.exec(url.pathname);
+   if(req.method==='PUT'&&url.pathname==='/music-studio'){
+    const arrival=Date.now(),intakeStart=performance.now();
+    const clicked=Number(url.searchParams.get('clickedAt'));
+    const clickAge=arrival-clicked;
+    const fromBrowser=Number.isSafeInteger(clicked)&&clickAge>=0&&clickAge<=60000;
+    const intake={start:intakeStart,startedAt:new Date(fromBrowser?clicked:arrival).toISOString(),
+     source:fromBrowser?'browser-click':'worker-intake',browserLeadMs:fromBrowser?clickAge:0};
+    const selected=musicFormats.find(item=>item.id===url.searchParams.get('format'));
+    if(!selected)fail('Выберите один из пяти форматов.');
+    if(selected.missing)fail(selected.missing);
+    if(musicBusy)fail('Музыкальная студия уже обрабатывает файл.');
+    if(!config.musicLut||!await exists(config.musicLut))
+     fail('Не настроен локальный Humble LUT.');
+    const length=Number(req.headers['content-length']);
+    if(!Number.isSafeInteger(length)||length<1024||length>maxFile)fail('Выберите видео размером до 2 ГБ.');
+    const extension=url.searchParams.get('extension');
+    if(!/^\.(mp4|mov|mkv|webm|m4v)$/i.test(extension??''))fail('Поддерживаются MP4, MOV, MKV, WebM и M4V.');
+    if(musicBusy)fail('Музыкальная студия уже обрабатывает файл.');
+    musicBusy=true;
+    let job;
+    try{
+     const id=randomUUID(),output=join(config.outputRoot,'music-'+id),input=join(output,'master'+extension.toLowerCase());
+     await mkdir(config.outputRoot,{recursive:true});
+     await mkdir(output);
+     job={id,output,input};
+     let received=0;
+     const bound=new Transform({transform(chunk,_encoding,callback){
+      received+=chunk.length;
+      callback(received>length?Error('Размер загрузки не совпал с заявленным.'):null,chunk);
+     }});
+     await pipeline(req,bound,createWriteStream(input,{flags:'wx'}));
+     if(received!==length)fail('Размер загрузки не совпал с заявленным.');
+     const media=await inspectUploadedTake(input,config,{musicMaster:true});
+     if(!Number.isFinite(media.duration)||media.duration>900||media.duration<selected.minSec)
+      fail('Длительность мастер-файла должна быть не менее '+selected.minSec+' с и не более 15 минут.');
+     const analysis=await analyzeMusicMaster(input,selected.id,config,media),sourceSha256=await fileHash(input);
+     await writeFile(join(output,'ANALYSIS.json'),JSON.stringify({analysis,sourceSha256,media},null,2)+'\n',{flag:'wx'});
+     musicJobs.set(id,{...job,analysis,sourceSha256,media,intake:{...intake,finished:performance.now()}});
+     respond(res,201,{id,analysis,sourceSha256,media});return;
+    }catch(error){
+     if(job)await rm(job.input,{force:true}).catch(()=>{});
+     throw error;
+    }finally{musicBusy=false;}
+   }
+   if(musicRoute){
+    const job=musicJobs.get(musicRoute[1]), action=musicRoute[2];
+    if(!job){respond(res,404,{error:'unknown_music_job'});return;}
+    if(req.method==='POST'&&action==='hook-tests'){
+     const report=job.report;
+     if(!report||job.rendering)fail('Сначала соберите MP4.');
+     if(job.hookSource?.sourceSha256!==report.video.sha256){
+      const directory=dirname(report.video.path);
+      job.hookSource={video:report.video.path,sourceSha256:report.video.sha256,directory,
+       hookStartSec:report.hooks?.[0]?.endSec??0,
+       hookDurationSec:report.hooks?.[0]?.endSec,kinetic:report.profile==='Dynamic Soft'};
+     }
+     await makeHookVersions(req,res,job.hookSource);return;
+    }
+    if(req.method==='POST'&&action==='social-copy'){
+     if(!job.report||job.rendering)fail('Сначала соберите MP4.');
+     const report=job.report;
+     await socialCopy(req,res,report.video.path,job.analysis.format.title,report.video.sha256);return;
+    }
+    if(req.method==='POST'&&action==='render'){
+     const renderStarted=performance.now();
+     if(musicBusy||job.rendering)fail('Музыкальная студия уже обрабатывает задание.');
+     const body=await json(req,1024);
+     const candidate=job.analysis.candidates.find(item=>item.id===body?.candidateId);
+     if(!candidate||body.approved!==true)fail('Сначала подтвердите один из найденных фрагментов.');
+     if(musicBusy||job.rendering)fail('Музыкальная студия уже обрабатывает задание.');
+     const mode=audioMode(body.autoMusic);
+     const captionStyle=body.captionStyle==='learned-reference'?body.captionStyle:subtitlePreset(body.captionStyle);
+     let learned;
+     if(captionStyle==='learned-reference'){
+      const raw=await readFile(learnedRulesFile(),'utf8').catch(error=>{if(error.code!=='ENOENT')throw error;fail('Сначала обучите систему на референсе.');});
+      const rules=JSON.parse(raw);
+      learned={...parseLearnedRules(rules),sourceUrl:rules.sourceUrl,sha256:createHash('sha256').update(raw).digest('hex')};
+     }
+     if(musicBusy||job.rendering)fail('Музыкальная студия уже обрабатывает задание.');
+     if(job.report?.selection.id===candidate.id&&job.report.audio?.mode===mode&&
+        (job.report.captionStyle??'cinematic')===captionStyle&&
+        job.report.reference?.sha256===learned?.sha256&&
+        !job.report.audio?.music?.visionWarning){
+      const timing=await recordMusicTiming(job,renderStarted,'cached');
+      respond(res,200,{...job.report,timing});return;
+     }
+     const output=join(job.output,'render-'+randomUUID());
+     job.rendering=true;musicBusy=true;
+     try{
+      await mkdir(output);
+      job.report=await renderMusicCandidate({...job,candidate,output,config,mode,captionStyle,learned});
+      const timing=await recordMusicTiming(job,renderStarted,'ready');
+      respond(res,201,{...job.report,timing});return;
+     }catch(error){
+      await recordMusicTiming(job,renderStarted,'failed');
+      throw error;
+     }finally{job.rendering=false;musicBusy=false;}
+    }
+    if(req.method==='GET'&&(action==='video'||action==='source')){
+     const expectedHash=action==='video'?job.report?.video.sha256:job.sourceSha256;
+     if(!expectedHash)fail('Готовый MP4 ещё недоступен.');
+     const file=action==='video'?job.report.video.path:job.input;
+     if(action==='video'&&await fileHash(file)!==expectedHash)fail('MP4 изменился после проверки.');
+     const size=(await stat(file)).size;
+     const sizeHeader={'Cache-Control':'no-store','Accept-Ranges':'bytes'};
+     if(action==='video'&&url.searchParams.get('download')==='1')
+      sizeHeader['Content-Disposition']='attachment; filename="music-reel.mp4"';
+     const ext=extname(file);
+     sizeHeader['Content-Type']=ext==='.mov'?'video/quicktime':ext==='.webm'?'video/webm':ext==='.mkv'?'video/x-matroska':'video/mp4';
+     if(req.headers.range){
+      const range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+      const start=range?.[1]?Number(range[1]):range?.[2]?Math.max(0,size-Number(range[2])):NaN;
+      const end=range?.[1]&&range[2]?Math.min(size-1,Number(range[2])):size-1;
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>end||start>=size){
+       res.writeHead(416,{'Content-Range':'bytes */'+size});res.end();return;
+      }
+      res.writeHead(206,{...sizeHeader,'Content-Range':'bytes '+start+'-'+end+'/'+size,'Content-Length':end-start+1});
+      createReadStream(file,{start,end}).pipe(res);return;
+     }
+     res.writeHead(200,{...sizeHeader,'Content-Length':size});createReadStream(file).pipe(res);return;
+    }
+   }
+
    if(req.method==='POST'&&url.pathname==='/external-ideas'){
     const body=await json(req,8000);if(typeof body.projectId!=='string'||!/^[-a-zA-Z0-9_]{1,160}$/.test(body.projectId))fail('Project identity required');
     const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
@@ -209,24 +527,12 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
     const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
-   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|studio|studio\/video|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
-   if(match[2]==='studio'&&req.method==='GET'){respond(res,200,studioView(s));return}
-   if(match[2]==='studio'&&req.method==='POST'){
-    const body=await json(req,1024),env=config.apiEnv??process.env;
-    if(body.consent!==true)fail('Подтвердите отправку сценария и фрагментов видео/аудио в OpenRouter');
-    if(!studioAvailability(env).configured)fail('Настройте ключ OpenRouter и локальный мост Resolve');
-    if(s.state!=='completed'||s.studio?.state==='running'||[...sessions.values()].some(j=>j.studio?.state==='running'))fail('Нужен готовый локальный монтаж и свободная автономная студия');
-    // Reserve the Resolve workspace before the first asynchronous operation.
-    s.studio={state:'running',report:null,error:null};
-    try{await startStudio(s,{env,script:join(here,'autonomous_loop.py'),ffmpegDir:config.ffmpegDir});}
-    catch(error){s.studio={state:'failed',report:null,error:String(error.message||error)};throw error;}
-    respond(res,202,studioView(s));return;
-   }
-   if(match[2]==='studio/video'&&req.method==='GET'){
-    if(s.studio?.state!=='completed')fail('Автономный MP4 ещё недоступен');
-    const video=s.studio.video,size=(await stat(video)).size;
-    res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':size,'Content-Disposition':'inline; filename="studio.mp4"','Cache-Control':'no-store'});
-    createReadStream(video).pipe(res);return;
+   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   if(match[2]==='social-copy'&&req.method==='POST'){
+    if(s.state!=='completed')fail('Сначала соберите MP4.');
+    const title=typeof s.brief.title==='string'&&s.brief.title.trim()
+     ?s.brief.title.trim().replace(/\s+/g,' ').slice(0,160):'Reels';
+    await socialCopy(req,res,join(s.output,'ai-edited-reel.mp4'),title);return;
    }
    if(req.method==='DELETE'&&!match[2]){
     if(s.state!=='uploading'||s.child)fail('Only an unstarted upload can be discarded');
@@ -263,6 +569,8 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
      const intake={version:1,durationSec,media,...(s.takeBindings?{binding:s.takeBindings[index]}:{}),originalName:sourceName,stagedName:name,bytes:length,sha256:await fileHash(path)};await writeFile(join(s.input,'source-'+index+'.json'),JSON.stringify(intake,null,2)+'\n',{flag:'wx'});s.uploaded.add(index);s.total+=length;respond(res,200,{ok:true,index,sha256:intake.sha256,durationSec:intake.durationSec});}catch(error){if(ownsPartial)await import('node:fs/promises').then(({rm})=>rm(path,{force:true}));throw error}return;
    }
    if(req.method==='POST'&&match[2]==='run'){
+    if(config.musicLut&&!await exists(config.musicLut))
+     fail('Humble LUT не найден в luts/. Проверьте PERSONA_MEDIA_ROOT в .env.local.');
     if(activeExport||ideationBusy||directorPending||[...sessions.values()].some(j=>j!==s&&j.state==='running'))fail('Worker is busy; retry after the current task');
     if(s.takeBindings){
      const frozen=[];for(let i=0;i<s.expected;i++){const intake=JSON.parse(await readFile(join(s.input,'source-'+i+'.json'),'utf8'));frozen.push({...s.takeBindings[i],sha256:intake.sha256})}
@@ -285,7 +593,10 @@ export function createPersonaMediaWorker(config=parseArgs(process.argv.slice(2))
    respond(res,404,{error:'unknown_route'});
   }catch(error){respond(res,400,{error:String(error.message||error).slice(0,3000)})}
  });
- return {server,token,config,start:()=>new Promise(resolveStart=>server.listen(config.port,host,()=>resolveStart(server.address().port)))};
+ return {server,token,config,start:()=>new Promise((resolveStart,reject)=>{
+  server.once('error',reject);
+  server.listen(config.port,host,()=>{server.off('error',reject);resolveStart(server.address().port);});
+ })};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{if(await exists(resolve('.env.local'))){if(typeof process.loadEnvFile!=='function')fail('Use Node22+ to load .env.local');process.loadEnvFile(resolve('.env.local'));}const worker=createPersonaMediaWorker();const port=await worker.start();process.stdout.write('Persona AI Media Worker: http://127.0.0.1:'+port+'\n')}catch(error){process.stderr.write(String(error.message||error)+'\n');process.exitCode=1}}
 

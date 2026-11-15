@@ -7,10 +7,17 @@ import { planLocalDate } from './planner';
 import ErikaSheet from './ErikaSheet';
 import MediaBrainCard from './MediaBrainCard';
 import PersonaFactory from './PersonaFactory';
+import PersonaMusicStudio from './PersonaMusicStudio';
 import DataPortability from './DataPortability';
 import LocalTaskEditor from './LocalTaskEditor';
 import type { Item } from './types';
 import './app.css';
+
+type Page = 'today' | 'persona' | 'music';
+function currentPage(): Page {
+  if (location.hash === '#music-studio') return 'music';
+  return location.hash.startsWith('#persona') ? 'persona' : 'today';
+}
 
 const labels: Record<string, string> = {
   completed: 'Выполнено',
@@ -29,8 +36,7 @@ function cleanError(value: unknown) {
 export default function App() {
   const [viewDate, setViewDate] = useState(() => planLocalDate(new Date()));
   const viewDateRef = useRef(viewDate);
-  const [page, setPage] = useState<'today' | 'persona'>(() =>
-    location.hash.startsWith('#persona') ? 'persona' : 'today');
+  const [page, setPage] = useState<Page>(currentPage);
   const [items, setItems] = useState<Item[]>(() => cachedToday(planLocalDate(new Date())));
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -73,7 +79,7 @@ export default function App() {
   }, [viewDate]);
 
   useEffect(() => {
-    const sync = () => setPage(location.hash.startsWith('#persona') ? 'persona' : 'today');
+    const sync = () => setPage(currentPage());
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
   }, []);
@@ -171,7 +177,7 @@ export default function App() {
     return intervals.slice(0,3);
   }, [items]);
   const mode = backendMode === 'local' ? ' · ЛОКАЛЬНО' : '';
-  const heading = page === 'persona' ? 'Persona' :
+  const heading = page === 'music' ? 'Музыкальная студия' : page === 'persona' ? 'Persona' :
     viewDate === todayDate ? 'Сегодня' :
     viewDate === tomorrowDate ? 'Завтра' : 'Расписание';
 
@@ -234,7 +240,7 @@ export default function App() {
         </article>)}
       </section>
       {backendMode==='local' && <DataPortability />}
-    </> : <PersonaFactory />}
+    </> : page === 'music' ? <PersonaMusicStudio /> : <PersonaFactory />}
     {erika && <ErikaSheet items={items} onClose={() => setErika(false)} onApplied={onErikaApplied}/>}
     {editing && <LocalTaskEditor item={editing}
       onCancel={() => setEditing(null)} onSaved={onEdited}/>}
@@ -243,6 +249,8 @@ export default function App() {
         onClick={() => {setPage('today'); location.hash='today';}}>Сегодня</button>
       <button className={page==='persona'?'selected':''} aria-current={page==='persona'?'page':undefined}
         onClick={() => {setPage('persona'); location.hash='persona';}}>Persona</button>
+      <button className={page==='music'?'selected':''} aria-current={page==='music'?'page':undefined}
+        onClick={() => {setPage('music'); location.hash='music-studio';}}>Музыкальная студия</button>
     </nav>
   </main>;
 }

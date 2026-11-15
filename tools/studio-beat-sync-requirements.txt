@@ -1,0 +1,2 @@
+# Optional dependency for studio_ffmpeg.py --beat-sync.
+scipy==1.15.3

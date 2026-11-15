@@ -11,6 +11,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, mkdir, mkdtemp, rename, rm, stat, writeFile, access } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import {planFraming} from './persona-studio-framing.mjs';
 
 const fail = message => { throw new Error(message); };
 const allowed = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
@@ -45,7 +46,11 @@ function framingFor(value,width,height){
  return {mode,position:{x:position.x,y:position.y},manualReviewRequired:mode==='cover',width,height};
 }
 function videoFilter(framing,width,height,fps){
- const base=framing.mode==='cover'
+ const crop=framing.smartCrop;
+ const normalized=crop?.mode==='face-crop'&&crop.needsSquarePixels?`scale=${crop.displayWidth}:${crop.displayHeight},setsar=1,`:'';
+ const base=crop?.mode==='face-crop'
+  ? normalized+'crop='+[crop.rect[2],crop.rect[3],crop.rect[0],crop.rect[1]].join(':')+':exact=1,scale='+width+':'+height
+  : framing.mode==='cover'
   ? 'scale='+width+':'+height+':force_original_aspect_ratio=increase,crop='+width+':'+height+':(in_w-out_w)*'+framing.position.x+':(in_h-out_h)*'+framing.position.y
   : 'scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2';
  return base+',setsar=1,fps='+fps+',format=yuv420p';
@@ -84,11 +89,17 @@ async function renderFramingPreviews(projectArg,outputArg){
  }catch(error){await rm(output,{recursive:true,force:true});throw error;}
 }
 async function probe(path) {
-  const raw = await run('ffprobe', ['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',path]);
+  const raw = await run('ffprobe', ['-v','error','-show_entries','format=duration:stream=codec_type,width,height,sample_aspect_ratio:stream_side_data=rotation','-of','json',path]);
   const data = JSON.parse(raw);
   const video = data.streams?.find(stream => stream.codec_type === 'video');
   if (!video?.width || !video?.height) fail('Video stream missing: ' + path);
-  return { durationSec: numeric(Number(data.format?.duration), 'source duration', 0.02, 86400), width: video.width, height: video.height, audio: data.streams.some(stream => stream.codec_type === 'audio') };
+  const [a,b]=String(video.sample_aspect_ratio).split(':').map(Number);
+  const sar=a>0&&b>0?a/b:1;
+  const displayWidth=Math.max(2,Math.round(video.width*sar/2)*2);
+  const rotated=Math.round(Number(video.side_data_list?.[0]?.rotation??0)/90)%2!==0;
+  return { durationSec: numeric(Number(data.format?.duration), 'source duration', 0.02, 86400),
+   width:video.width,height:video.height,displayWidth:rotated?video.height:displayWidth,
+   displayHeight:rotated?displayWidth:video.height,sar,audio:data.streams.some(stream=>stream.codec_type==='audio') };
 }
 async function hash(path) {
   const digest = createHash('sha256');
@@ -151,6 +162,13 @@ async function main() {
     const startSec = numeric(clip.startSec ?? 0, 'startSec', 0, media.durationSec - 0.02);
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
     const framing=framingFor(clip.framing??project.framing,width,height);
+    if(process.env.PERSONA_WORKER_RENDER==='1'&&clip.framing===undefined&&project.framing===undefined&&
+       width*16===height*9&&media.displayWidth>media.displayHeight){
+      const crop=await planFraming(path,{startSec,endSec:startSec+durationSec},media,
+       {ffmpegDir:process.env.PERSONA_MEDIA_FFMPEG_DIR,outputRoot:dirname(output)});
+      framing.smartCrop={...crop,displayWidth:media.displayWidth,displayHeight:media.displayHeight,
+       needsSquarePixels:media.sar!==1};
+    }
     if(clip.muteSourceAudio!==undefined&&typeof clip.muteSourceAudio!=='boolean')fail('Invalid muteSourceAudio');
     const muteSourceAudio=clip.muteSourceAudio===true;
     if(clip.preserveOriginalAudio!==undefined&&typeof clip.preserveOriginalAudio!=='boolean')fail('Invalid preserveOriginalAudio');

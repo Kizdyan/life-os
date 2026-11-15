@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "referenceSha256": "96B1359B63359C460ED433A2626F937A2A7094CD55D3521C10BFC6922792A00E",
+  "fontFamily": "Cormorant Garamond",
+  "fontStyle": "Light",
+  "fontFile": "fonts/CormorantGaramond-Light.ttf",
+  "fontSha256": "222C1CE8A9FD74A7E3EEE17C16BEAD630D9B7AA92DF106936CDD128804A633ED",
+  "fontSize1080": 98,
+  "color": "#E8DBA8",
+  "outlinePx": 0,
+  "shadowPx": 0,
+  "xRatio": 0.5,
+  "yRatio": 0.695,
+  "lineBreak": "approved",
+  "case": "uppercase",
+  "animation": {"unit": "cue", "fadeInMs": 167, "movement": "none"}
+}

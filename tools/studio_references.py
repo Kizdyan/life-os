@@ -7,9 +7,13 @@ AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 REFERENCE_FOLDERS = ("color_ref", "edit_ref", "subtitle_ref", "audio_ref")
 
 
+def configured_media_root():
+    configured = os.environ.get("PERSONA_MEDIA_ROOT", "").strip()
+    return Path(configured).expanduser().resolve() if configured else Path.home() / "Documents" / "Persona"
+
+
 def default_reference_root():
-    configured = os.environ.get("PERSONA_STUDIO_REFERENCE_DIR")
-    return Path(configured) if configured else Path("G:/test-persona/reference_videos")
+    return configured_media_root() / "reference_videos"
 
 
 def media_files(root, folder, extensions, limit):
@@ -29,7 +33,8 @@ def media_files(root, folder, extensions, limit):
 
 
 def reference_library(root):
-    return {folder: media_files(root, folder, VIDEO | AUDIO if folder == "audio_ref" else VIDEO, 2)
+    return {folder: media_files(root, folder, VIDEO | AUDIO if folder == "audio_ref" else VIDEO,
+                                3 if folder == "subtitle_ref" else 2)
             for folder in REFERENCE_FOLDERS}
 
 

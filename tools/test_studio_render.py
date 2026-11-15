@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -6,37 +7,63 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from autonomous_loop import run_loop
-from critic_agent import evaluate_video, select_cloud_provider, verdict
+from critic_agent import evaluate_video
 from studio_providers import DEFAULT_OLLAMA_VISION, DEFAULT_OPENROUTER_VISION, ProviderError, _gemini, _post, ask
 
 
-class StudioTests(unittest.TestCase):
-    def test_static_candidate_against_moving_reference_scores_two(self):
-        report = {"scores": {"color": 9, "titles": 9, "composition": 8, "editing": 9},
-                  "observations": "Comparison.",
-                  "scoreEvidence": {name: "Frame evidence." for name in ("color", "titles", "composition", "editing")},
-                  "checklist": [], "subtitleMotion": {"candidate": "static", "reference": "animated"}}
-        candidate = ([0.1, 0.2], [b"candidate1", b"candidate2"])
-        reference = ([0.1, 0.2], [b"reference1", b"reference2"])
-        with TemporaryDirectory() as directory:
-            video = Path(directory) / "output.mp4"
-            video.write_bytes(b"fixture")
-            ref = Path(directory) / "motion.mp4"
-            with patch("critic_agent.sample_frames", side_effect=[candidate, reference]), patch(
-                "critic_agent.contact_sheet", side_effect=[b"candidate-sheet", b"reference-sheet"]
-            ), patch(
-                "critic_agent.ask", return_value={"provider": "openrouter", "value": report}
-            ) as request:
-                review = evaluate_video(video, prefer="openrouter", references={"subtitle_ref": (ref,)})
-            self.assertEqual(request.call_args.args[1], [b"candidate-sheet", b"reference-sheet"])
-            self.assertIn("subtitle_ref", request.call_args.args[0])
-        self.assertEqual(review["scores"]["titles"], 2)
-        self.assertEqual(review["status"], "REJECTED")
-        self.assertIn("Сделать анимацию текста как в референсе", review["checklist"])
+class StudioRenderTests(unittest.TestCase):
+    def test_default_subtitle_profile_matches_the_approved_preview(self):
+        from studio_ffmpeg import reference_caption_config
+        with patch.dict("os.environ", clear=True):
+            profile = reference_caption_config()
+        self.assertEqual(profile["fontFamily"], "Cormorant Garamond")
+        self.assertEqual(profile["fontStyle"], "Light")
+        self.assertEqual(profile["color"], "#E8DBA8")
+        self.assertEqual(profile["animation"]["fadeInMs"], 167)
 
-    def test_resolve_splits_caption_into_word_pops_without_changing_cue_boundaries(self):
-        from studio_resolve import edit_decisions
+    def test_reference_style_is_sent_to_director_and_rendered_as_full_width_cards(self):
+        from director_agent import analyze_and_decide
+        from studio_ffmpeg import edit_decisions
+        refs = {"source": "subtitle_ref/fixture.mp4", "introText": "БЮДЖЕТ ТОЛЬКО НА", "accentText": "ОДНОГО",
+                "accentAtMs": 950, "fadeFrames": 3, "baseHex": "F5F3EF", "accentHex": "CC1036",
+                "baseSizePx": 64, "accentSizePx": 100, "centerPercent": 0.26,
+                "observation": "White lead-in and red keyword. Hard cut."}
+        with TemporaryDirectory() as directory:
+            folder = Path(directory).resolve()
+            video = folder / "take.mp4"
+            video.touch()
+            model = {"mood": "calm", "music": "ambient", "transition": "cut", "subtitles": "cinematic",
+                     "lut": "none", "reason": "Uses reference."}
+            with patch("director_agent.ask", return_value={"provider": "openrouter", "value": model}) as ask_model:
+                decision = analyze_and_decide(video, "Test script", reference_style=refs)
+                self.assertIn("White lead-in and red keyword", ask_model.call_args.args[0])
+            timeline = {"mode": "strict", "fps": 30, "width": 1080, "height": 1920, "clips": [
+                {"path": str(video), "startSec": 0, "durationSec": 1.5},
+                {"path": str(video), "startSec": 0, "durationSec": 1.5},
+            ]}
+            cues = [{"startMs": 100, "endMs": 2800, "text": "БЮДЖЕТ ТОЛЬКО НА ОДНОГО"}]
+            plan = edit_decisions(timeline, cues, decision, folder, folder / "result")
+            self.assertEqual([(row["first"], row["last"], row["text"], row["color"]) for row in plan["captions"]],
+                             [(3, 84, "БЮДЖЕТ ТОЛЬКО НА ОДНОГО", [232, 219, 168])])
+
+    def test_reference_intro_keeps_full_readable_hold_after_slide(self):
+        from director_agent import validate_reference_style
+        from studio_ffmpeg import reference_cards
+        style = validate_reference_style({
+            "source": "fixture.mp4", "introText": "БЮДЖЕТ ТОЛЬКО НА", "accentText": "ОДНОГО",
+            "accentAtMs": 1833, "fadeFrames": 0, "baseHex": "F5F3EF", "accentHex": "E0193A",
+            "baseSizePx": 108, "accentSizePx": 150, "centerPercent": 0.26, "observation": "Reference.",
+            "introSlideFrames": 8, "introReadHoldMs": 1500,
+        })
+        cue = {"first": 2, "last": 86, "text": "БЮДЖЕТ ТОЛЬКО НА ОДНОГО"}
+        intro, accent = reference_cards(cue, style)
+        self.assertEqual((intro["first"], intro["last"], intro["slideFrames"]), (2, 55, 8))
+        self.assertEqual((accent["first"], accent["slideFrames"], accent["fade"]), (55, 0, 0))
+        with self.assertRaisesRegex(ValueError, "readable"):
+            reference_cards(cue, {**style, "accentAtMs": 1500})
+
+    def test_resolve_keeps_full_caption_and_applies_soft_entrance_and_grade_mix(self):
+        from studio_ffmpeg import edit_decisions
         with TemporaryDirectory() as directory:
             folder = Path(directory).resolve()
             path = folder / "take.mp4"
@@ -45,14 +72,51 @@ class StudioTests(unittest.TestCase):
                 {"path": str(path), "startSec": 0, "durationSec": 1},
                 {"path": str(path), "startSec": 0, "durationSec": 1},
             ]}
-            plan = edit_decisions(timeline, [{"startMs": 100, "endMs": 900, "text": "Бюджет на одного"}],
-                                  {"lut": "none", "subtitles": "cinematic", "transition": "cut", "music": "none"},
-                                  folder, folder / "attempt")
-        self.assertEqual([(row["first"], row["last"], row["text"], row["accent"]) for row in plan["captions"]],
-                         [(3, 6, "Бюджет", ""), (6, 9, "Бюджет на", ""), (9, 27, "Бюджет на", "одного")])
+            (folder / "IWLTBAP Humble - Standard.cube").touch()
+            direction = {"lut": "humble", "subtitles": "cinematic", "transition": "cut", "music": "none"}
+            with patch.dict("os.environ", {"PERSONA_STUDIO_LUT_DIR": str(folder), "PERSONA_STUDIO_LUT_MIX": "1.1"}):
+                plan = edit_decisions(timeline, [{"startMs": 100, "endMs": 900, "text": "Бюджет на одного"}],
+                                      direction, folder, folder / "attempt")
+        self.assertEqual(plan["captions"][0]["text"], "БЮДЖЕТ НА ОДНОГО")
+        self.assertEqual(plan["captions"][0]["fadeInFrames"], 5)
+        self.assertEqual(plan["size"], 98)
+        self.assertEqual(plan["lutMix"], .6)
+
+    def test_resolve_reference_config_overrides_font_and_rejects_changed_font_bytes(self):
+        from studio_ffmpeg import edit_decisions
+        with TemporaryDirectory() as directory:
+            folder = Path(directory).resolve()
+            source = folder / "take.mp4"
+            source.touch()
+            font = folder / "caption.ttf"
+            font.write_bytes(b"fixture font bytes")
+            config = folder / "style.json"
+            config.write_text(json.dumps({
+                "version": 1, "referenceSha256": "0" * 64, "fontFamily": "Cormorant Garamond",
+                "fontStyle": "Light", "fontFile": font.name,
+                "fontSha256": hashlib.sha256(font.read_bytes()).hexdigest(),
+                "fontSize1080": 98, "color": "#E8DBA8", "outlinePx": 0, "shadowPx": 0,
+                "xRatio": .5, "yRatio": .695, "lineBreak": "approved", "case": "uppercase",
+                "animation": {"unit": "cue", "fadeInMs": 167, "movement": "none"},
+            }), encoding="utf-8")
+            timeline = {"mode": "strict", "fps": 30, "width": 1080, "height": 1920,
+                        "clips": [{"path": str(source), "startSec": 0, "durationSec": 2}] * 2}
+            direction = {"lut": "none", "subtitles": "cinematic", "transition": "cut", "music": "none"}
+            cues = [{"startMs": 200, "endMs": 2200, "text": "Бюджет только на\nодного"}]
+            config_sha = hashlib.sha256(config.read_bytes()).hexdigest()
+            with patch("studio_ffmpeg.SUBTITLE_STANDARD", config), patch("studio_ffmpeg.SUBTITLE_STANDARD_SHA256", config_sha):
+                plan = edit_decisions(timeline, cues, direction, folder, folder / "attempt")
+                self.assertEqual((plan["font"], plan["weight"], plan["size"]), ("Cormorant Garamond", "Light", 98))
+                self.assertEqual(plan["captions"][0]["text"], "БЮДЖЕТ ТОЛЬКО НА\nОДНОГО")
+                self.assertEqual(plan["captions"][0]["color"], [232, 219, 168])
+                self.assertEqual(plan["captions"][0]["fadeInFrames"], 5)
+                self.assertNotIn("risePx", plan["captions"][0])
+                font.write_bytes(b"changed")
+                with self.assertRaisesRegex(ValueError, "font SHA-256 mismatch"):
+                    edit_decisions(timeline, cues, direction, folder, folder / "attempt")
 
     def test_reviewed_program_audio_replaces_camera_audio_in_resolve_plan(self):
-        from studio_resolve import edit_decisions
+        from studio_ffmpeg import edit_decisions
         with TemporaryDirectory() as directory:
             folder = Path(directory).resolve()
             path = folder / "take.mp4"
@@ -82,54 +146,6 @@ class StudioTests(unittest.TestCase):
             self.assertEqual([path.name for path in refs["subtitle_ref"]], ["title.mp4"])
             self.assertEqual(list(assets), ["music-1", "sfx-1"])
             self.assertEqual(assets["music-1"].name, "piano.wav")
-
-    def test_audio_comparison_sends_actual_samples_and_rejects_mood_mismatch(self):
-        report = {"scores": {"color": 8, "titles": 9, "composition": 8, "editing": 8},
-                  "observations": "Visual evidence.",
-                  "scoreEvidence": {name: "Frame evidence." for name in ("color", "titles", "composition", "editing")},
-                  "checklist": []}
-        with TemporaryDirectory() as directory:
-            video = Path(directory) / "output.mp4"
-            video.touch()
-            ref = Path(directory) / "music.wav"
-            with patch("critic_agent.sample_frames", return_value=([0.1], [b"frame"])), patch(
-                "critic_agent.sample_audio", side_effect=[b"movie", b"reference"]
-            ), patch("critic_agent.ask", return_value={"provider": "openrouter", "value": report}) as request, patch(
-                "critic_agent.ask_audio", return_value={"score": 5, "moodMatch": False, "observation": "Different mood"}
-            ) as audio_request:
-                review = evaluate_video(video, prefer="openrouter", references={"audio_ref": (ref,)})
-            self.assertEqual(audio_request.call_args.args[1], [b"movie", b"reference"])
-            self.assertEqual(request.call_args.args[1], [b"frame"])
-        self.assertEqual(review["status"], "REJECTED")
-        self.assertEqual(review["audioReview"]["score"], 5)
-        self.assertIn("Заменить музыку на более подходящую из эталона", review["checklist"])
-
-    def test_critic_prefers_openrouter_when_its_key_is_available(self):
-        env = {"OPENROUTER_API_KEY": "test", "GEMINI_API_KEY": "test"}
-        self.assertEqual(select_cloud_provider(None, env), "openrouter")
-        self.assertEqual(select_cloud_provider("gemini", env), "gemini")
-        with self.assertRaisesRegex(RuntimeError, "OPENROUTER_API_KEY"):
-            select_cloud_provider("openrouter", {"GEMINI_API_KEY": "test"})
-
-    def test_openrouter_review_requires_four_observations_and_preserves_them(self):
-        model_report = {"scores": {"color": 9, "titles": 9, "composition": 8, "editing": 7},
-                        "observations": "Виден спорный переход.",
-                        "checklist": ["01.2: проверить двоение при переходе."]}
-        with TemporaryDirectory() as directory, patch("critic_agent.sample_frames", return_value=([1.2], [b"frame"])), patch(
-            "critic_agent.ask"
-        ) as ask_model:
-            video = Path(directory) / "fixture.mp4"
-            video.write_bytes(b"fixture")
-            ask_model.side_effect = lambda *args, **kwargs: {"provider": "openrouter", "value": model_report}
-            with self.assertRaisesRegex(ValueError, "justify all four"):
-                evaluate_video(video, prefer="openrouter")
-            model_report["scoreEvidence"] = {criterion: f"1.2: observation for {criterion}"
-                                             for criterion in model_report["scores"]}
-            review = evaluate_video(video, prefer="openrouter")
-        self.assertEqual(review["status"], "REJECTED")
-        self.assertEqual(review["scoreEvidence"], model_report["scoreEvidence"])
-        self.assertEqual(review["checklist"], model_report["checklist"])
-        self.assertFalse(review["publicationApproved"])
 
     def test_openrouter_uses_free_model_and_multimodal_chat_payload(self):
         response = BytesIO(b'{"model":"nvidia/nemotron-3.5-super-vl:free","choices":'
@@ -239,35 +255,39 @@ class StudioTests(unittest.TestCase):
                 ask("prompt", [], {}, env={"OPENAI_API_KEY": "test", "GEMINI_API_KEY": "test"})
             gemini.assert_not_called()
 
-    def test_critic_requires_all_four_scores_and_checklist_on_rejection(self):
-        scores = {"color": 10, "titles": 9, "composition": 10, "editing": 7}
-        self.assertEqual(verdict({"scores": scores, "checklist": ["Улучшить читаемость"]}), "REJECTED")
-        with self.assertRaises(ValueError):
-            verdict({"scores": scores, "checklist": []})
-        with self.assertRaises(ValueError):
-            verdict({"scores": dict(scores, titles=True), "checklist": ["text"]})
-        with self.assertRaises(ValueError):
-            verdict({"scores": {key: value for key, value in scores.items() if key != "editing"},
-                     "checklist": []})
+    def test_technical_gate_requires_evidence_and_reports_precise_caption_shift(self):
+        from critic_agent import technical_checks
+        guide = {"frames": 300, "shots": [{"record": 0}], "captions": [{"first": 0, "last": 300}]}
+        pictures = {"colorJumps": [], "unlocatedFaceFrames": [],
+                    "overlaps": [{"frame": 75, "area": "mouth", "shiftDownPx": 50}]}
+        checks, instructions = technical_checks(guide, actual_frames=300, fps=30, pictures=pictures)
+        self.assertEqual(checks["duration"]["status"], "PASS")
+        self.assertEqual(checks["titleClearance"]["status"], "FAIL")
+        self.assertIn("50", instructions[0])
+        checks, instructions = technical_checks(guide, actual_frames=299, fps=30,
+            pictures={"colorJumps": [], "unlocatedFaceFrames": [0, 1], "overlaps": []})
+        self.assertEqual(checks["duration"]["status"], "FAIL")
+        self.assertEqual(checks["titleClearance"]["status"], "UNVERIFIED")
+        self.assertTrue(instructions)
 
-    def test_loop_stops_after_three_and_never_approves_publication(self):
-        with patch("autonomous_loop.analyze_and_decide", return_value={"provider": "gemini"}) as director, patch(
-            "autonomous_loop.evaluate_video", return_value={"status": "REJECTED", "checklist": ["fix"], "provider": "gemini"}
-        ):
-            result = run_loop(None, None, None, None, renderer=lambda direction, index: f"draft-{index}.mp4")
-            self.assertEqual(director.call_count, 3)
-            self.assertEqual(director.call_args.kwargs["feedback"], ["fix"])
-            self.assertEqual(result["status"], "REJECTED")
-            self.assertFalse(result["publicationApproved"])
-
-    def test_loop_stops_at_first_passing_attempt(self):
-        with patch("autonomous_loop.analyze_and_decide", return_value={"provider": "openai"}), patch(
-            "autonomous_loop.evaluate_video", return_value={"status": "APPROVED", "checklist": [], "provider": "openai"}
-        ) as critic:
-            result = run_loop(None, None, None, None, renderer=lambda direction, index: f"draft-{index}.mp4")
-            self.assertEqual(critic.call_count, 1)
-            self.assertFalse(result["distributionAllowed"])
-
+    def test_caption_overlap_tracks_lateral_clearance_and_technical_gate_has_no_scores(self):
+        from studio_picture_qa import caption_overlap
+        from critic_agent import technical_checks
+        self.assertFalse(caption_overlap((.5, .6, 1, .8), (0, .6, .5, .8)))
+        self.assertTrue(caption_overlap((0, .6, 1, .8), (0, .7, .5, .9)))
+        guide = {"frames": 300, "captions": [{"first": 15, "last": 90}]}
+        pictures = {"colorJumps": [], "unlocatedFaceFrames": [], "overlaps": [], "blackFrames": []}
+        checks, instructions = technical_checks(guide, actual_frames=300, fps="30/1", pictures=pictures)
+        self.assertTrue(all(check["status"] == "PASS" for check in checks.values()))
+        self.assertEqual(instructions, [])
+        pictures["colorJumps"] = [{"frame": 150}]
+        checks, instructions = technical_checks(guide, actual_frames=300, fps="30/1", pictures=pictures)
+        self.assertEqual(checks["whiteBalance"]["status"], "FAIL")
+        self.assertIn("5.00", instructions[0])
+        pictures["blackFrames"] = [0]
+        checks, instructions = technical_checks(guide, actual_frames=300, fps="30/1", pictures=pictures)
+        self.assertEqual(checks["blackFrames"]["status"], "FAIL")
+        self.assertTrue(any("0.00" in line for line in instructions))
 
 if __name__ == "__main__":
     unittest.main()

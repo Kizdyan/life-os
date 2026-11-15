@@ -1,0 +1,177 @@
+{
+  "version": "2.0",
+  "flag": "PERSONA_STYLEPACK_V2_30",
+  "defaultEnabled": false,
+  "timelineFps": 30,
+  "categories": {
+    "graphics": [
+      {
+        "id": "dynamic_captions",
+        "label": "Dynamic white/red captions",
+        "mode": "replace",
+        "font": "Montserrat"
+      },
+      {
+        "id": "typewriter",
+        "label": "Typewriter",
+        "mode": "replace",
+        "font": "Montserrat"
+      },
+      {
+        "id": "red_keywords",
+        "label": "Red keywords",
+        "mode": "replace",
+        "font": "Montserrat"
+      },
+      {
+        "id": "editorial_quote",
+        "label": "Editorial quote",
+        "font": "Cormorant"
+      },
+      {
+        "id": "animated_card",
+        "label": "Animated card",
+        "font": "Montserrat"
+      },
+      {
+        "id": "growing_stamp",
+        "label": "Growing stamp",
+        "font": "Montserrat"
+      },
+      {
+        "id": "number_counter",
+        "label": "Number counter",
+        "font": "Montserrat"
+      },
+      {
+        "id": "cinematic_title",
+        "label": "Cinematic title",
+        "font": "Cormorant"
+      }
+    ],
+    "motion": [
+      {
+        "id": "punch_zoom",
+        "label": "Punch Zoom",
+        "scale": 1.19
+      },
+      {
+        "id": "beat_sync",
+        "label": "Beat Sync",
+        "requires": [
+          "music-only edit",
+          "NumPy",
+          "SciPy"
+        ]
+      },
+      {
+        "id": "micro_shake_glitch",
+        "label": "Micro-shake / RGB glitch"
+      },
+      {
+        "id": "split_screen",
+        "label": "Split Screen",
+        "requires": [
+          "second approved shot"
+        ]
+      },
+      {
+        "id": "picture_in_picture",
+        "label": "Picture-in-Picture",
+        "requires": [
+          "second approved shot"
+        ]
+      },
+      {
+        "id": "slow_push_in",
+        "label": "Slow Push-in",
+        "scale": 1.12
+      },
+      {
+        "id": "whip_pan",
+        "label": "Whip Pan",
+        "maxFrames": 15
+      },
+      {
+        "id": "flash_cut",
+        "label": "Flash Cut",
+        "maxFrames": 8
+      },
+      {
+        "id": "freeze_frame",
+        "label": "Freeze Frame"
+      },
+      {
+        "id": "before_after",
+        "label": "Before / after",
+        "requires": [
+          "active grade"
+        ]
+      }
+    ],
+    "color": [
+      {
+        "id": "look",
+        "label": "SCANNED / Brownie / Quiet Luxury",
+        "variants": [
+          "scanned",
+          "brownie",
+          "quiet-luxury-soft",
+          "quiet-luxury-neutral"
+        ]
+      },
+      {
+        "id": "film_grain",
+        "label": "Film grain"
+      },
+      {
+        "id": "vignette",
+        "label": "Vignette"
+      },
+      {
+        "id": "light_leak",
+        "label": "Light Leak"
+      },
+      {
+        "id": "fog",
+        "label": "Fog"
+      },
+      {
+        "id": "golden_hour",
+        "label": "Golden Hour"
+      },
+      {
+        "id": "fj400_film",
+        "label": "FJ 400 Film-inspired"
+      },
+      {
+        "id": "selective_red",
+        "label": "Selective red"
+      }
+    ],
+    "audio": [
+      {
+        "id": "soft_whoosh",
+        "label": "Soft Whoosh",
+        "asset": "soft_whoosh.wav"
+      },
+      {
+        "id": "interface_click",
+        "label": "Interface Click",
+        "asset": "interface_click.wav"
+      },
+      {
+        "id": "impact_hit",
+        "label": "Impact Hit",
+        "asset": "impact_hit.wav"
+      },
+      {
+        "id": "sidechain_compression",
+        "label": "Sidechain Compression",
+        "requires": [
+          "separate speech and music tracks"
+        ]
+      }
+    ]
+  }
+}

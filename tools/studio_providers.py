@@ -1,8 +1,12 @@
 """Bounded, server-side multimodal requests with quota-only failover."""
 import base64
+import hashlib
 import json
 import os
 import re
+import subprocess
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from time import monotonic
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -13,12 +17,14 @@ DEFAULT_OLLAMA_VISION = "qwen3-vl:2b-instruct"
 DEFAULT_OPENROUTER_VISION = "nvidia/nemotron-3.5-super-vl:free"
 DEFAULT_OPENROUTER_AUDIO = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 OLLAMA_VISION_URL = "http://127.0.0.1:11434/api/generate"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 QUOTA_CODES = {"insufficient_quota", "billing_hard_limit_reached", "organization_usage_limit_exceeded", "billing_not_active"}
 
 
 class ProviderError(RuntimeError):
-    def __init__(self, provider, status, code):
+    def __init__(self, provider, status, code, *, retry_after=None):
         self.provider, self.status, self.code = provider, status, code
+        self.retry_after = retry_after
         super().__init__(f"{provider}: {code} ({status})")
 
 
@@ -35,21 +41,31 @@ def load_local_env():
         match = re.fullmatch(
             r"\s*(OPENAI_API_KEY|GEMINI_API_KEY|PERSONA_STUDIO_OPENAI_MODEL|PERSONA_STUDIO_GEMINI_MODEL|"
             r"OPENROUTER_API_KEY|PERSONA_STUDIO_OPENROUTER_MODEL|PERSONA_STUDIO_OLLAMA_VISION_MODEL|"
-            r"PERSONA_MEDIA_FFMPEG_DIR|PERSONA_STUDIO_REFERENCE_DIR)\s*=\s*(.*?)\s*", line
+            r"PERSONA_MEDIA_FFMPEG_DIR|PERSONA_MEDIA_ROOT|PERSONA_STUDIO_FACE_MODEL|PERSONA_VISION_CACHE_DIR)\s*=\s*(.*?)\s*", line
         )
         if match and match[2] and not os.environ.get(match[1]):
             os.environ[match[1]] = match[2].strip("'\u0022")
 
 
-def _post(provider, url, headers, payload):
+def _post(provider, url, headers, payload, *, text_only=False, vision_timeout=None):
     request = Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", **headers})
     try:
         opener = build_opener(ProxyHandler({}), NoRedirects()) if provider == "ollama" else build_opener(NoRedirects())
-        with opener.open(request, timeout=300 if provider == "ollama" else 65) as response:
-            return json.loads(response.read(2_000_000))
+        deadline = monotonic() + (vision_timeout or (52 if text_only else 25))
+        socket_timeout = min(40, vision_timeout) if vision_timeout else 20 if text_only else 10
+        with opener.open(request, timeout={"ollama": 300, "openrouter": socket_timeout}.get(provider, 65)) as response:
+            if provider != "openrouter":
+                return json.loads(response.read(2_000_000))
+            body = bytearray()
+            while len(body) <= 2_000_000 and monotonic() < deadline:
+                chunk = response.read1(65_536)
+                if not chunk:
+                    return json.loads(body)
+                body.extend(chunk)
+            raise ProviderError(provider, 200, "response_limit" if len(body)>2_000_000 else "response_timeout")
     except HTTPError as error:
         try:
-            detail = json.loads(error.read(64000)).get("error", {})
+            detail = {} if provider == "openrouter" else json.loads(error.read(64000)).get("error", {})
         except (ValueError, AttributeError):
             detail = {}
         if not isinstance(detail, dict):
@@ -60,7 +76,22 @@ def _post(provider, url, headers, payload):
             if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
                 code = value
                 break
-        raise ProviderError(provider, error.code, code) from None
+        # Retry-After is not a billing bypass: it is a delay hint for
+        # transient 429/503 failures. Never log credentials or request bodies.
+        retry_after = None
+        if error.code in (429, 503):
+            hint = error.headers.get("Retry-After") if error.headers else None
+            if hint:
+                try:
+                    retry_after = max(0.0, min(300.0, float(hint)))
+                except ValueError:
+                    from email.utils import parsedate_to_datetime
+                    from datetime import datetime, timezone
+                    try:
+                        retry_after = max(0.0, min(300.0, (parsedate_to_datetime(hint) - datetime.now(timezone.utc)).total_seconds()))
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+        raise ProviderError(provider, error.code, code, retry_after=retry_after) from None
     except (URLError, TimeoutError, OSError):
         raise ProviderError(provider, 0, "network_unavailable") from None
 
@@ -111,7 +142,36 @@ def _gemini(key, model, prompt, frames, schema):
     return json.loads("".join(part["text"] for part in candidate["content"]["parts"] if "text" in part))
 
 
-def _openrouter(key, model, prompt, frames, schema, *, audio=()):
+def _openrouter_windows_transport(payload, key, *, text_only=False, vision_timeout=None):
+    # curl uses Windows' trust store when embedded Python cannot reach OpenRouter.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+        raise ValueError("Invalid OpenRouter key format")
+    budget = vision_timeout or (50 if text_only else 30)
+    with TemporaryDirectory(prefix="persona-openrouter-") as directory:
+        body = Path(directory) / "request.json"
+        body.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        try:
+            response = subprocess.run(
+                ["curl.exe", "-q", "--silent", "--show-error", "--connect-timeout", "10", "--max-time", str(budget),
+                 "--max-filesize", "2000000",
+                 "--config", "-", "--data-binary", "@" + str(body), "-w", "\n%{http_code}",
+                 OPENROUTER_URL],
+                input=f'header = "Authorization: Bearer {key}"\nheader = "Content-Type: application/json"\n'.encode(),
+                capture_output=True, timeout=budget+2)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ProviderError("openrouter", 0, "network_unavailable") from None
+    if response.returncode:
+        raise ProviderError("openrouter", 0, "network_unavailable")
+    raw, _, status = response.stdout.rpartition(b"\n")
+    if not status.isdigit() or len(raw) > 2_000_000:
+        raise ProviderError("openrouter", 0, "invalid_response")
+    code = int(status)
+    if code != 200:
+        raise ProviderError("openrouter", code, "http_error")
+    return json.loads(raw)
+
+
+def _openrouter(key, model, prompt, frames, schema, *, audio=(), vision_timeout=None):
     content = [{"type": "text", "text": prompt + "\nВерни только JSON по схеме: " + json.dumps(schema)}]
     content.extend({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image}} for image in _encoded(frames))
     content.extend({"type": "input_audio", "input_audio": {"data": sample, "format": "wav"}}
@@ -125,16 +185,66 @@ def _openrouter(key, model, prompt, frames, schema, *, audio=()):
         payload["provider"]["max_price"]["audio"] = 0
     else:
         payload["response_format"] = {"type": "json_object"}
-    response = _post("openrouter", "https://openrouter.ai/api/v1/chat/completions",
-                     {"Authorization": "Bearer " + key}, payload)
-    choice = next(iter(response.get("choices") or []), {})
-    message = choice.get("message") or {}
-    if choice.get("finish_reason") != "stop" or message.get("refusal") or not message.get("content"):
-        raise ProviderError("openrouter", 200, "incomplete_or_refused")
-    text = message["content"].strip()
-    if audio and text.startswith("```json") and text.endswith("```"):
-        text = text[7:-3].strip()
-    return json.loads(text)
+    text_only = not frames and not audio
+    timeout_options = {"vision_timeout": vision_timeout} if vision_timeout else {}
+    try:
+        response = _post("openrouter", OPENROUTER_URL,
+                         {"Authorization": "Bearer " + key}, payload, text_only=text_only, **timeout_options)
+    except ProviderError as error:
+        if os.name != "nt" or error.status != 0 or audio:
+            raise
+        response = _openrouter_windows_transport(payload, key, text_only=text_only, **timeout_options)
+    try:
+        choice = next(iter(response.get("choices") or []), {})
+        message = choice.get("message") or {}
+        if choice.get("finish_reason") != "stop" or message.get("refusal") or not message.get("content"):
+            raise ProviderError("openrouter", 200, "incomplete_or_refused")
+        text = message["content"].strip()
+        if audio and text.startswith("```json") and text.endswith("```"):
+            text = text[7:-3].strip()
+        return json.loads(text)
+    except (ValueError, TypeError, AttributeError):
+        raise ProviderError("openrouter", 200, "invalid_response") from None
+
+
+def _vision_cache_path(directory, model, prompt, frames, schema):
+    if directory and frames:
+        materials = [1, model, prompt, [hashlib.sha256(frame).hexdigest() for frame in frames], schema]
+        fingerprint = hashlib.sha256(json.dumps(materials, sort_keys=True).encode("utf-8")).hexdigest()
+        return Path(directory) / (fingerprint + ".json")
+    return None
+
+
+def _read_vision_cache(path, valid):
+    try:
+        if path.stat().st_size <= 64_000:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if valid(value):
+                return value
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _save_vision_cache(path, value):
+    temp = None
+    try:
+        body = json.dumps(value, ensure_ascii=False)
+        if len(body.encode("utf-8")) > 64_000:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+            temp = Path(stream.name)
+            stream.write(body)
+        temp.replace(path)
+    except OSError:
+        pass
+    finally:
+        if temp is not None:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def ask_audio(prompt, samples, schema):
@@ -144,16 +254,32 @@ def ask_audio(prompt, samples, schema):
     return _openrouter(key, DEFAULT_OPENROUTER_AUDIO, prompt, [], schema, audio=samples)
 
 
-def ask(prompt, frames, schema, *, env=None, prefer=None):
+def ask(prompt, frames, schema, *, env=None, prefer=None, validate=None, vision_timeout=None):
     env = os.environ if env is None else env
     if prefer == "openrouter":
-        key = env.get("OPENROUTER_API_KEY", "").strip()
-        if not key:
-            raise RuntimeError("Set OPENROUTER_API_KEY in the local Worker .env.local.")
         model = env.get("PERSONA_STUDIO_OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_VISION
         if not re.fullmatch(r"[a-z0-9._-]+/[a-z0-9._-]+:free", model):
             raise ValueError("OpenRouter Critic requires an explicit :free model")
-        return {"provider": "openrouter", "model": model, "value": _openrouter(key, model, prompt, frames, schema)}
+        path = _vision_cache_path(env.get("PERSONA_VISION_CACHE_DIR"), model, prompt, frames, schema)
+        valid = validate or (lambda value: isinstance(value, dict))
+        result = {"provider": "openrouter", "model": model}
+        if path is not None:
+            cached = _read_vision_cache(path, valid)
+            if cached is not None:
+                return {**result, "value": cached, "cache": "hit"}
+        key = env.get("OPENROUTER_API_KEY", "").strip()
+        if not key:
+            raise ProviderError("openrouter", 0, "missing_OPENROUTER_API_KEY")
+        try:
+            timeout_options = {"vision_timeout": vision_timeout} if vision_timeout else {}
+            value = _openrouter(key, model, prompt, frames, schema, **timeout_options)
+        except (ValueError, TypeError, AttributeError):
+            raise ProviderError("openrouter", 200, "invalid_response") from None
+        if not valid(value):
+            raise ProviderError("openrouter", 200, "invalid_response")
+        if path is not None:
+            _save_vision_cache(path, value)
+        return {**result, "value": value, "cache": "miss"}
     if prefer == "ollama":
         model = env.get("PERSONA_STUDIO_OLLAMA_VISION_MODEL") or DEFAULT_OLLAMA_VISION
         return {"provider": "ollama", "model": model, "value": _ollama_vision(model, prompt, frames, schema)}

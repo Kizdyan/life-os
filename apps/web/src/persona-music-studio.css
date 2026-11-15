@@ -1,0 +1,24 @@
+
+.musicStudio { display:grid; gap:1rem; max-width:40rem; }
+.musicStudio form { display:grid; gap:1rem; padding:clamp(1rem,4vw,1.75rem); background:#fff; border:1px solid #e6e2db; border-radius:18px; }
+.musicStudio label { display:grid; min-width:0; gap:.45rem; color:#49443c; font-weight:600; }
+.musicStudio input,.musicStudio select { width:100%; padding:.7rem; border:1px solid #dad3c7; border-radius:9px; font:inherit; background:#faf9f5; }
+.musicStudio h2 { margin:0; font-size:1.125rem; }
+.musicStudio video { display:block; width:100%; max-height:420px; background:#161412; border-radius:10px; }
+.musicStudio .send:disabled,.musicStudio button:disabled { opacity:.45; }
+.musicStudio .musicCandidate { display:flex; gap:.55rem; align-items:center; flex-wrap:wrap; padding:.55rem 0; border-bottom:1px solid #e6e2db; }
+.musicStudio .musicCandidate span { margin-inline-end:auto; font-variant-numeric:tabular-nums; }
+.musicStudio .musicCandidate button { min-height:2.5rem; border:1px solid #ddd5c8; border-radius:6px; background:white; padding:.36rem .55rem; font:inherit; }
+.musicStudio code { overflow-wrap:anywhere; }
+@media (max-width:400px) { .appNavigation button { padding-inline:.55rem; } }
+
+
+.musicStudio .musicActions { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; justify-content:space-between; }
+.musicStudio .musicToggle { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; }
+.musicStudio .musicToggle input { appearance:none; display:inline-grid; place-items:center start; width:2.7rem; height:1.5rem; padding:2px; margin:0; border-radius:1rem; background:#746e64; cursor:pointer; }
+.musicStudio .musicToggle input::before { content:""; width:1.05rem; height:1.05rem; margin-inline-start:1px; border-radius:50%; background:#fff; }
+.musicStudio .musicToggle input:checked { background:#27231e; }
+.musicStudio .musicToggle input:checked::before { transform:translateX(1.1rem); }
+.musicStudio .musicToggle input:focus-visible { outline:2px solid #5b492e; outline-offset:3px; }
+.musicStudio .musicToggle input:disabled { opacity:.5; cursor:default; }
+.musicStudio form > small { color:#595248; }

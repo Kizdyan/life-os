@@ -303,14 +303,17 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const timing=assessFirstReelTiming(requestedBrief,qa);
   if(timing.status==='needs-human-timing-review')events.push('duration_mismatch_requires_human_review');
   let aiFinishedVideo=null,aiColorPackage=null,aiFinishedQaPath=null;
+  const productionLut=process.env.PERSONA_WORKER_HUMBLE_LUT?.trim();
+  let productionGrade=null;
   if(aiEditorial){
    // Actual FFmpeg output in a NEW package. The model chose a direction from
    // the script, but did NOT visually inspect any frame or prove skin neutrality.
    let selected;
-   if(visualPreset){
-    const grade=await renderVisualPreset({inputPath:output,outputPath:join(root,'directed-color.mp4'),presetId:visualPreset,ffmpegDir});
+   if(productionLut||visualPreset){
+    const grade=await renderVisualPreset({inputPath:output,outputPath:join(root,'directed-color.mp4'),presetId:visualPreset,ffmpegDir,productionLut});
     selected={path:grade.output.path};
-    events.push('validated_director_visual_preset_applied');
+    productionGrade=grade.lut??null;
+    events.push(productionGrade?'production_humble_lut_60_applied':'validated_director_visual_preset_applied');
    }else{
     const colorPackage=await createColorVariants({inputPath:output,outputDir:join(root,'ai-color-options'),ffmpegDir});
     selected=colorPackage.variants.find(item=>item.id===aiEditorial.look);
@@ -326,7 +329,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
    const checked=JSON.parse(await readFile(finishedQa,'utf8'));
    validateDraftQa(checked,finished);
    aiFinishedVideo=finished;
-   aiColorPackage=visualPreset?join(root,'directed-color.mp4.visual-preset.json'):join(root,'ai-color-options','COMPARISON.json');
+   aiColorPackage=productionLut||visualPreset?join(root,'directed-color.mp4.visual-preset.json'):join(root,'ai-color-options','COMPARISON.json');
    aiFinishedQaPath=finishedQa;
    events.push('real_ffmpeg_color_applied_to_edited_mp4');
    events.push('ai_selected_color_mp4_technical_qa_passed');
@@ -334,7 +337,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const summary={version:1,takeBindings,publicationApproved:false,status:'awaiting-author-review',mode,events,sourceSelection,output,qaPath,renderProject:assembled.project,decisions:chosenDecisionPath,aiEditorial,
     aiFinishedVideo,aiColorPackage,aiFinishedQaPath,
     briefFingerprintSha256,briefIdeaId:typeof requestedBrief.ideaId==='string'?requestedBrief.ideaId:null,
-    subtitleDraft,subtitleBurnIn,visualDirection:visualPreset?getVisualPreset(visualPreset):null,timing,
+    subtitleDraft,subtitleBurnIn,visualDirection:productionGrade?{id:'humble-60',...productionGrade}:visualPreset?getVisualPreset(visualPreset):null,timing,
     warning:requestedBrief.manualSource?'Authored storyboard and mapped files preserved. Speech scenes use real Whisper; visual takes do not claim ASR verification. Individually assigned takes are limited to the planned opening window. Budget for One recap inserts reuse the earlier footage with source audio muted. Caption placement, timing, color and acting require author review.':'Neural ASR and Ollama selected REAL cuts and FFmpeg rendered them. Ollama chose a proposed color direction from SCRIPT ONLY, not visual frame inspection. The real color filter was applied and technically verified. This does NOT certify acting, skin tones, emotional impact, musical appropriateness, captions or author approval. Check timing.status before any approval.',
     technicalChecks:qa.evidence??null,distributionAllowed:false};
   await writeFile(join(root,'RESULT.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});

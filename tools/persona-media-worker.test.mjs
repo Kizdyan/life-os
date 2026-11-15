@@ -26,24 +26,21 @@ test('idea selection endpoint rejects a foreign project and a legacy unaudited p
 const brief={version:1,sourceFormat:'reel',script:[
  {order:1,line:'First line'},{order:2,line:'Second line'},
 ],shots:[{order:1},{order:2}]};
-test('autonomous finishing requires the local token, explicit cloud consent and a completed draft',async()=>{
+test('retired studio route is closed even with a valid local token',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-studio-'));
  const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used',
-  apiEnv:{OPENROUTER_API_KEY:'test-only',PERSONA_STUDIO_PYTHON:'test-only',PERSONA_STUDIO_RESOLVE_LAUNCHER:'test-only'}});
+  apiEnv:{OPENROUTER_API_KEY:'test-only',PERSONA_STUDIO_PYTHON:'test-only'}});
  const base='http://127.0.0.1:'+await worker.start();
  const post=(path,body,token=worker.token,origin='http://127.0.0.1:5173')=>fetch(base+path,{method:'POST',
   headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token,Origin:origin},body:JSON.stringify(body)});
  try{
   const health=await(await fetch(base+'/health')).json();
-  assert.deepEqual(health.autonomousStudio,{configured:true,providers:['OpenRouter']});
+  assert.equal(health.autonomousStudio,undefined);
   const created=await post('/session',{brief,variation:'cinematic',takeCount:2});
   const path='/session/'+(await created.json()).id+'/studio';
   assert.equal((await post(path,{consent:true},'invalid')).status,401);
   assert.equal((await post(path,{consent:true},worker.token,'https://other.example')).status,403);
-  const withoutConsent=await post(path,{consent:false});
-  assert.equal(withoutConsent.status,400);assert.match((await withoutConsent.json()).error,/Подтвердите отправку/);
-  const withoutDraft=await post(path,{consent:true});
-  assert.equal(withoutDraft.status,400);assert.match((await withoutDraft.json()).error,/готовый локальный монтаж/);
+  assert.equal((await post(path,{consent:true})).status,404);
  }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true});}
 });
 test('real FFprobe rejects a ten-minute video assigned to a five-second shot before rendering',{skip:spawnSync('ffmpeg',['-version']).status!==0},async()=>{
@@ -146,3 +143,68 @@ test('loopback worker rejects foreign origins and accepts only explicit local au
  }finally{await new Promise(resolve=>worker.server.close(resolve));await rm(root,{recursive:true,force:true});}
 });
 
+
+test('combined server serves the frontend and a same-origin worker without exposing bare API routes', async t=>{
+ const worker=createPersonaMediaWorker({port:0,ollamaModel:'not-used',
+  frontend:(req,res)=>{res.writeHead(req.url==='/'?200:404);res.end('frontend');}});
+ const port=await worker.start(),base='http://127.0.0.1:'+port;
+ t.after(()=>worker.server.close());
+ assert.equal(await (await fetch(base)).text(),'frontend');
+ assert.equal((await fetch(base+'/health')).status,404);
+ const api=base+'/persona-worker/health';
+ const response=await fetch(api,{headers:{Origin:base}});
+ assert.equal(response.status,200);
+ assert.equal((await response.json()).service,'persona-media-worker');
+ assert.equal((await fetch(api,{headers:{Origin:'https://unrelated.test'}})).status,403);
+ assert.equal((await fetch(api,{headers:{Origin:'http://localhost:'+port}})).status,403);
+});
+test('preproduction protects the local route, writes an independent project and reads it back',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-producer-'));
+ let calls=0;
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used',producer:async(mode,input)=>{
+  calls++;
+  assert.equal(mode,'shot-list');
+  return {markdown:'# '+input.idea+'\n',plan:{title:input.idea}};
+ }});
+ const base='http://127.0.0.1:'+await worker.start();
+ t.after(async()=>{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true});});
+ const auth={'X-Persona-Worker-Token':worker.token};
+ const route=base+'/preproduction';
+ const request=(body,headers=auth)=>fetch(route,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const payload={idea:'Надежда через тревогу',consent:true};
+ assert.equal((await request(payload,{})).status,401);
+ assert.equal((await request({...payload,consent:false})).status,400);
+ assert.equal((await request({...payload,idea:''})).status,400);
+ const saved=await request(payload);
+ assert.equal(saved.status,201);
+ const result=await saved.json();
+ assert.equal(await readFile(join(root,'shooting-'+result.id,'shot_list.md'),'utf8'),result.markdown);
+ const read=await fetch(route+'/'+result.id,{headers:auth});
+ assert.equal(read.status,200);
+ assert.deepEqual(await read.json(),result);
+ assert.equal(calls,1);
+ assert.equal((await fetch(base+'/music-studio/'+result.id+'/social-copy',{method:'POST',headers:auth})).status,404);
+});
+
+test('reference analysis persists complete rules and keeps the previous rules when the next analysis fails',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-reference-'));
+ const url='https://www.instagram.com/reel/DceB-cSxIhz/';
+ const rules={version:1,provider:'openrouter',sourceUrl:url,
+  subtitles:{preset:'dynamic-interview',color:'#FFFFFF',sizePx1080:95},
+  colorGrade:{temperature:'warm'},editing:{medianShotSec:2}};
+ let calls=0;
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used',learnReference:async input=>{
+  assert.equal(input.url,url);
+  if(++calls===2)throw Error('Frame 6 did not complete');
+  return rules;
+ }});
+ const route='http://127.0.0.1:'+await worker.start()+'/music-studio/reference';
+ t.after(async()=>{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true});});
+ const headers={'Content-Type':'application/json','X-Persona-Worker-Token':worker.token};
+ const post=consent=>fetch(route,{method:'POST',headers,body:JSON.stringify({url,consent})});
+ assert.equal((await post(false)).status,400);
+ assert.equal((await post(true)).status,201);
+ assert.equal((await post(true)).status,400);
+ assert.deepEqual(await (await fetch(route,{headers})).json(),{rules});
+ assert.deepEqual(await readdir(root),['learned_rules.json']);
+});

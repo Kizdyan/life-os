@@ -83,16 +83,16 @@ async function visualEvidence({videoPath,durationSec,outputPath,env,scenes=[]}){
  const root=join(dirname(resolve(outputPath)),'visual-evidence-'+reportName);
  await mkdir(root,{recursive:false});
  const moments=scenes.length?scenes.map(scene=>({atSec:(scene.outputStartSec+scene.outputEndSec)/2,scene})): 
-  [0,Math.max(0,durationSec/2),Math.max(0,durationSec-.05)].map(atSec=>({atSec,scene:null}));
+  [0,Math.max(0,durationSec/2),Math.max(0,durationSec-.15)].map(atSec=>({atSec,scene:null}));
  const frames=[];
  for(const [index,item] of moments.entries()){
   const atSec=item.atSec;
   const path=join(root,'frame-'+String(index+1).padStart(2,'0')+'.jpg');
-  await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(atSec),'-i',videoPath,'-frames:v','1','-vf','scale=320:-2','-q:v','3',path],{env});
+  await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(atSec),'-i',videoPath,'-frames:v','1','-vf','scale=320:-2:out_range=full,format=yuvj420p','-q:v','3',path],{env});
   frames.push({atSec,timecode:timecode(atSec),path,...(item.scene?{scene:item.scene.beat??item.scene.clipIndex}: {})});
  }
  const contactSheetPath=join(root,'contact-sheet.jpg');
- await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-i',join(root,'frame-%02d.jpg'),'-vf','tile=3x1:padding=4:margin=4','-frames:v','1','-q:v','3',contactSheetPath],{env});
+ await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-i',join(root,'frame-%02d.jpg'),'-vf','tile=3x1:padding=4:margin=4,scale=iw:ih:out_range=full,format=yuvj420p','-frames:v','1','-q:v','3',contactSheetPath],{env});
  return {kind:'persona-visual-evidence-v1',directory:root,frames,contactSheetPath,
   caveat:'Representative decoded frames for local author review; not a visual or artistic approval.'};
 }
