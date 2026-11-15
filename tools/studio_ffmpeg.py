@@ -450,6 +450,8 @@ def ffmpeg_graph(plan, working, *, captions, stylepack_graphics=False):
         filters.append("".join(program) + f"concat=n={shot_count}:v=0:a=1[program]")
         audio_tracks.append(("program", "[program]"))
     for i, bed in enumerate(plan["audioBeds"]):
+        if bed.get("startSec"):
+            inputs.extend(["-ss", f"{bed['startSec']:.9f}"])
         inputs.extend(["-i", bed["path"]])
         effects = [f"[{input_index}:a:0]aformat=sample_rates=48000:channel_layouts=stereo"]
         if bed["fadeIn"]:
