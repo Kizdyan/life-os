@@ -25,6 +25,10 @@ class StrategyAnalyzerTests(TestCase):
             analyzer.parse_result({"status": "UNVERIFIED", "recommendation": "Unknown"})
         self.assertEqual(analyzer.parse_result({"status": "WARNING", "recommendation": "Acting not demonstrated"})["status"], "WARNING")
 
+    def test_forbids_trite_ai_phrasing(self):
+        with self.assertRaisesRegex(ValueError, "generic AI phrasing"):
+            analyzer.parse_result({"status": "WARNING", "recommendation": "Это больше, чем просто ролик"})
+
     def test_no_api_key_never_invents_pass(self):
         with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "", "OPENAI_API_KEY": ""}):
             with self.assertRaisesRegex(RuntimeError, "no strategy assessment"):
