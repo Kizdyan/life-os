@@ -1,15 +1,11 @@
 # Local Windows pilot
 
-Double-click `Start-Persona.cmd` in the repository. No administrator privileges,
-execution-policy changes, public network listener or paid API are required.
-If Windows blocks PowerShell scripts, stop and report the policy message;
-the launcher does not bypass it.
-
-The launcher uses the installed Node, FFmpeg, Whisper small multilingual model,
-and Ollama Qwen. Its CPU profile references installed model weights rather than
-downloading them. It starts localhost services only and checks existing services
-before reusing their ports. A running older Worker must be stopped and restarted
-after updating the code; a health response alone does not prove its version.
+Open `Start-Persona.cmd` or `START_PERSONA.bat` in the repository. Both launch
+the same loopback service at `http://127.0.0.1:3000` with Media Worker under
+`/persona-worker`. Run either script with `--check-config` to print the resolved
+settings without starting the service. The launcher uses installed Node, FFmpeg
+and Whisper. Start your installed Ollama for the script-driven editing route.
+After updating Persona, restart the running service to load the new code.
 
 1. Open Persona and create a separate Reels project.
 2. Prepare the script and explicitly approve its Production Brief.
@@ -25,18 +21,17 @@ compatibility. HDR/rotation protection and recovery remain in the existing runne
 Do not rename MOV to MP4 to bypass compatibility checks.
 
 Originals stay in their selected folders. Worker-owned copies, SHA-256 intake
-records, transcripts, MP4 and QA are stored under
-`Documents\LifeOS\Persona\private-media\worker-results`, each render in a new
-directory. Source filename records are `source-N.json` beside staged copies.
+records, transcripts, MP4 and QA are stored in `PERSONA_MEDIA_OUTPUT_ROOT`
+(default `%LOCALAPPDATA%\LifeOS\Persona\renders`). Each render uses a new
+attempt directory. Source filename records are `source-N.json` beside staged copies.
 MP4 bytes are not stored in localStorage or sent to cloud services.
 
-The «Вшить субтитры в MP4» checkbox burns short outlined Arial phrases into the
-final AI MP4 after color grading. It is enabled for new UI renders; disable it
-to keep only the SRT/VTT sidecars. Short-phrase timings inside an ASR cue are
-proportional estimates and require author sync review. The current Worker
-does not grant artistic or publication approval. Browser reload restores a
-completed result while that Worker session is alive; after a Worker restart,
-the saved paths remain but its in-memory playback session must be recreated.
+The «Вшить субтитры в MP4» checkbox uses the selected ASS title preset after
+color grading. Disable it to keep SRT/VTT sidecars. Review subtitle timing and
+placement before acceptance. Reloading the page after a Worker restart restores
+the registered job, verified media and original brief revision. An interrupted
+render can be retried from the saved copies. Reopen archival jobs created before
+this version directly from their saved artifact folders.
 
 For the first real test, choose only footage actually recorded for the approved
 script. `IMG_3971.MOV` remains a color-test source, not seven-scene footage.

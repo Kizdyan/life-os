@@ -56,6 +56,53 @@ test('real FFprobe rejects a ten-minute video assigned to a five-second shot bef
   assert.deepEqual(await readdir(root),['long.mp4']);assert.equal(createHash('sha256').update(await readFile(source)).digest('hex'),originalSha);
  }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
 });
+
+test('music installation reopens verified MP4 and saves an explicit immutable source moment',{skip:spawnSync('ffmpeg',['-version']).status!==0},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-music-restart-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const lut=join(root,'neutral.cube'),source=join(root,'source.mp4');
+ await writeFile(lut,'LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n');
+ const fixture=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=108x192:r=30',
+  '-t','8.5','-c:v','libx264',source],{timeout:30000});
+ assert.equal(fixture.status,0,fixture.stderr?.toString());
+ let worker,base;
+ async function reopen(){
+  if(worker)await new Promise(resolve=>worker.server.close(resolve));
+  worker=createPersonaMediaWorker({port:0,outputRoot:root,musicLut:lut});
+  base='http://127.0.0.1:'+await worker.start();
+ }
+ function request(path,method='GET',body,extra={}){
+  return fetch(base+path,{method,body,headers:{'X-Persona-Worker-Token':worker.token,...extra}});
+ }
+ const post=(path,body)=>request(path,'POST',JSON.stringify(body),{'Content-Type':'application/json'});
+ try{
+  await reopen();
+  const uploaded=await request('/music-studio?format=Format_OneEmotion&extension=.mp4','PUT',await readFile(source));
+  assert.equal(uploaded.status,201,await uploaded.clone().text());
+  const id=(await uploaded.json()).id,path='/music-studio/'+id;
+  await reopen();
+  const status=await(await request(path+'/status')).json();
+  assert.equal(status.status,'ANALYZING');
+  const response=await post(path+'/render',{candidateId:status.analysis.candidates[0].id,approved:true,autoMusic:false});
+  assert.equal(response.status,201,await response.clone().text());
+  const report=await response.json();
+  await reopen();
+  const restored=await(await request(path+'/status')).json();
+  assert.equal(restored.status,'AWAITING_APPROVAL');
+  assert.equal(restored.report.video.sha256,report.video.sha256);
+  assert.equal(restored.publicationApproved,false);
+  assert.equal((await post(path+'/moments',{approved:false,videoSha256:report.video.sha256})).status,400);
+  assert.equal((await post(path+'/moments',{approved:true,videoSha256:'0'.repeat(64)})).status,400);
+  const approve=()=>post(path+'/moments',{approved:true,videoSha256:report.video.sha256});
+  const first=await approve();
+  assert.equal(first.status,201,await first.clone().text());
+  const moment=await first.json();
+  assert.equal(moment.source.sha256,status.sourceSha256);
+  assert.equal(moment.distributionAllowed,false);
+  assert.deepEqual(await(await approve()).json(),moment);
+  assert.deepEqual(await readdir(join(root,'approved-moments')),[moment.id+'.json']);
+ }finally{if(worker)await new Promise(resolve=>worker.server.close(resolve));}
+});
 test('idea endpoints reject unsupported formats, path injection and another project before any inference',async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-idea-worker-')),id='11111111-1111-4111-8111-111111111111';
  const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'missing-model'}),port=await worker.start();
@@ -136,10 +183,28 @@ test('loopback worker rejects foreign origins and accepts only explicit local au
   const uploaded=await fetch(base+'/session/'+session.id+'/take/0',{method:'PUT',headers,body:videoBytes});assert.equal(uploaded.status,200,JSON.stringify(await uploaded.json()));
   const duplicate=await fetch(base+'/session/'+session.id+'/take/1',{method:'PUT',headers,body:Buffer.alloc(1024,9)});assert.equal(duplicate.status,400);
   const staged=(await readdir(root)).find(name=>name.startsWith('.worker-staging-'));
-  assert.deepEqual(await readFile(join(root,staged,'S01_take01.mp4')),videoBytes,'duplicate upload cannot delete previously staged bytes');
-  const intake=JSON.parse(await readFile(join(root,staged,'source-0.json'),'utf8'));
+  assert.deepEqual(await readFile(join(root,staged,'input','S01_take01.mp4')),videoBytes,'duplicate upload cannot delete previously staged bytes');
+  const intake=JSON.parse(await readFile(join(root,staged,'input','source-0.json'),'utf8'));
   assert.equal(intake.originalName,'Мой дубль.mp4');assert.equal(intake.stagedName,'S01_take01.mp4');
   assert.equal(intake.sha256,createHash('sha256').update(videoBytes).digest('hex'));assert.equal(intake.bytes,videoBytes.length);
+  const restarted=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used'});
+  const restartedBase='http://127.0.0.1:'+await restarted.start();
+  try{
+   const get=()=>fetch(restartedBase+'/session/'+session.id+'/status',{headers:{'X-Persona-Worker-Token':restarted.token}});
+   const recovered=await get();
+   assert.equal(recovered.status,200);
+   assert.equal((await recovered.json()).uploaded,1);
+   const approved=join(root,staged,'approved-production-brief.json');
+   await writeFile(approved,JSON.stringify({...brief,shots:[]}));
+   const tampered=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'not-used'});
+   const tamperedPort=await tampered.start();
+   try{
+    const response=await fetch('http://127.0.0.1:'+tamperedPort+'/session/'+session.id+'/status',
+     {headers:{'X-Persona-Worker-Token':tampered.token}});
+    assert.equal(response.status,400);
+    assert.match((await response.json()).error,/Approved production brief changed/);
+   }finally{await new Promise(done=>tampered.server.close(done));}
+  }finally{await new Promise(done=>restarted.server.close(done));}
  }finally{await new Promise(resolve=>worker.server.close(resolve));await rm(root,{recursive:true,force:true});}
 });
 

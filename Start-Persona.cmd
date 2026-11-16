@@ -1,3 +1,3 @@
 @echo off
-powershell.exe -NoProfile -File "%~dp0tools\start-persona-windows.ps1"
-if errorlevel 1 pause
+call "%~dp0START_PERSONA.bat" %*
+exit /b %errorlevel%

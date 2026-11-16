@@ -65,6 +65,14 @@ async function start() {
  }
  const outputRoot=process.env.PERSONA_MEDIA_OUTPUT_ROOT||
   join(process.env.LOCALAPPDATA||tmpdir(),'LifeOS','Persona','renders');
+ const args=process.argv.slice(2);
+ if(args.some(arg=>!['--check-config','--no-browser'].includes(arg)))throw Error('Unsupported Persona launch option.');
+ const config=parseWorkerArgs(['--port',String(port),'--output-root',outputRoot]);
+ if(args.includes('--check-config')){
+  console.log(JSON.stringify({port,frontend:studio,worker:origin+'/persona-worker',outputRoot:config.outputRoot,
+   ffmpegDir:config.ffmpegDir??null,whisperConfigured:Boolean(config.whisperCli&&config.whisperModel)}));
+  return;
+ }
  let running;
  try {
   const response=await fetch(origin+'/persona-worker/health',{signal:AbortSignal.timeout(2800)});
@@ -72,13 +80,12 @@ async function start() {
    running=(await response.json()).service==='persona-media-worker';
  } catch { /* The server will bind the port below. */ }
  if(!running){
-  const config=parseWorkerArgs(['--port',String(port),'--output-root',outputRoot]);
   const frontend=await buildFrontend();
   const worker=createPersonaMediaWorker({...config,frontend});
   await worker.start();
  }
  console.log('Persona: '+studio);
- openBrowser();
+ if(!args.includes('--no-browser'))openBrowser();
 }
 
 try { await start(); }

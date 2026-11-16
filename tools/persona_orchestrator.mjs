@@ -21,6 +21,16 @@ function fail(message){throw new Error('ProductionJob: '+message)}
 function safeDir(p){if(typeof p!=='string'||!p.trim()) fail('Job path required');return resolve(p)}
 function validState(s){return STATES.includes(s)}
 function validFileName(n){return typeof n==='string' && n===basename(n) && !/[\\/\x00-\x1f:]/.test(n) && VIDEO_EXT.has(extname(n).toLowerCase()) && n.length<=240 && !n.startsWith('.');}
+const digestPattern=/^[a-f0-9]{64}$/;
+const localId=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+function isProcessAlive(pid){
+  if(!Number.isSafeInteger(pid)||pid<1)return true;
+  try{process.kill(pid,0);return true}catch(error){return error.code!=='ESRCH'}
+}
+function advance(data,status,reason,at=new Date().toISOString()){
+  return {...data,status,revision:data.revision+1,updatedAt:at,
+    history:[...data.history,{from:data.status,to:status,at,reason}]};
+}
 async function probeVideo(p){
   const folder=process.env.PERSONA_MEDIA_FFMPEG_DIR;
   const binary=folder ? join(folder,process.platform==='win32'?'ffprobe.exe':'ffprobe') : 'ffprobe';
@@ -68,12 +78,14 @@ function runBatchPhase(phase, source, output, options, timeout) {
 }
 export class ProductionJob {
   constructor(directory){this.directory=safeDir(directory);this.path=join(this.directory,'job.json');}
-  static async create(directory,{title='Persona production'}={}){
+  static async create(directory,{title='Persona production',id=randomUUID(),workflow,context}={}){
+    if(!localId.test(id))fail('Invalid job ID');
     const dir=safeDir(directory);await mkdir(dir,{recursive:false});
     await mkdir(join(dir,'input'));await mkdir(join(dir,'output'));
     const job=new ProductionJob(dir),now=new Date().toISOString();
-    await writeFile(job.path,JSON.stringify({version:1,id:randomUUID(),title,status:'PREPARING',revision:0,
-      createdAt:now,updatedAt:now,assets:[],history:[]},null,2)+'\n',{flag:'wx'});
+    await writeFile(job.path,JSON.stringify({version:1,id,title,status:'PREPARING',revision:0,
+      createdAt:now,updatedAt:now,assets:[],history:[],workflow,context,
+      publicationApproved:false,distributionAllowed:false},null,2)+'\n',{flag:'wx'});
     return job;
   }
   async read(){
@@ -82,8 +94,7 @@ export class ProductionJob {
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
     return data;
   }
-  async transition(to,{reason='',asset=null,batchToken=null,batch=null}={}){
-    if(!validState(to))fail('Unknown stage '+to);
+  async update(mutate,batchToken=null){
     const lock=this.path+'.lock';let handle;
     try{handle=await open(lock,'wx');}catch(e){if(e.code==='EEXIST')fail('Job locked by another worker; investigate stale lock before recovery');throw e}
     try{
@@ -92,21 +103,52 @@ export class ProductionJob {
         return null;
       });
       if(owner!==null&&owner!==batchToken)fail('Cinematic Calm batch has reserved this job');
-      const data=await this.read();
-      if(NEXT.get(data.status)!==to)fail('Illegal transition '+data.status+' -> '+to);
-      if(typeof reason!=='string'||reason.length>1000)fail('Invalid transition reason');
-      if(to==='ANALYZING' && (!asset || !validFileName(asset.name)||!Number.isFinite(asset.durationSec)||
-          !/^[a-f0-9]{64}$/.test(asset.sha256)))fail('Analysis requires verified input file evidence');
-      const now=new Date().toISOString();
-      const update={...data,status:to,revision:data.revision+1,updatedAt:now,
-        ...(batch?{batch}:{}),
-        assets:asset?[...data.assets,asset]:data.assets,
-        history:[...data.history,{from:data.status,to,at:now,reason:reason||'normal progression'}]};
+      const update=mutate(await this.read());
       const tmp=this.path+'.'+randomUUID()+'.tmp';
       try{await writeFile(tmp,JSON.stringify(update,null,2)+'\n',{flag:'wx'});await rename(tmp,this.path)}
       finally{await unlink(tmp).catch(()=>{})}
       return update;
     }finally{await handle.close();await unlink(lock)}
+  }
+  async transition(to,{reason='',asset=null,assets=asset?[asset]:[],batchToken=null,batch=null}={}){
+    if(!validState(to))fail('Unknown stage '+to);
+    return this.update(data=>{
+      if(NEXT.get(data.status)!==to)fail('Illegal transition '+data.status+' -> '+to);
+      if(typeof reason!=='string'||reason.length>1000)fail('Invalid transition reason');
+      if(to==='ANALYZING'&&(!assets.length||assets.some(item=>!validFileName(item.name)||
+          !Number.isFinite(item.durationSec)||item.durationSec<MIN_SECONDS||item.durationSec>MAX_SECONDS||
+          !digestPattern.test(item.sha256))||new Set(assets.map(item=>item.name.toLowerCase())).size!==assets.length))
+        fail('Analysis requires distinct verified input files');
+      return {...advance(data,to,reason||'normal progression'),...(batch?{batch}:{}),assets:[...data.assets,...assets]};
+    },batchToken);
+  }
+  async beginAttempt({folder,requestSha256}){
+    if(!/^render-[a-z0-9-]{1,80}$/.test(folder)||!digestPattern.test(requestSha256))fail('Invalid render attempt');
+    return this.update(data=>{
+      if(!data.workflow||!['ANALYZING','EDITING','AWAITING_APPROVAL'].includes(data.status))
+        fail('Render requires a prepared worker job');
+      if(data.attempt?.state==='running'&&isProcessAlive(data.attempt.pid))fail('A render attempt is already running');
+      if(data.attempt?.folder===folder||data.lastVerifiedAttempt?.folder===folder)fail('A render must use a new folder');
+      return {...advance(data,'EDITING','Confirmed render request saved'),
+        attempt:{folder,requestSha256,pid:process.pid,state:'running'}};
+    });
+  }
+  async failAttempt(folder){
+    return this.update(data=>{
+      if(data.attempt?.folder!==folder||data.attempt.state!=='running')fail('Render is not the current attempt');
+      return {...advance(data,'EDITING','Render interrupted or failed; inputs retained'),
+        attempt:{...data.attempt,state:'failed'}};
+    });
+  }
+  async completeAttempt(folder,resultSha256){
+    if(!digestPattern.test(resultSha256))fail('Invalid verified result digest');
+    return this.update(data=>{
+      if(data.status!=='EDITING'||data.attempt?.folder!==folder||data.attempt.state!=='running')
+        fail('Render is not the current attempt');
+      const verified={...data.attempt,state:'verified',resultSha256};
+      return {...advance(advance(data,'QUALITY_CHECK','Verified output bound to result SHA-256'),
+        'AWAITING_APPROVAL','Output ready for author review'),attempt:verified,lastVerifiedAttempt:verified};
+    });
   }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}
   async scanForFootage(stability){

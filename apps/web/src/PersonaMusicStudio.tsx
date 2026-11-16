@@ -1,5 +1,5 @@
 
-import React, {useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {FormEvent} from 'react';
 import formats from '../../../packages/core/src/persona-music-formats.json';
 import {personaWorkerUrl} from './personaWorkerUrl';
@@ -8,6 +8,15 @@ import './persona-music-studio.css';
 
 type Candidate = {id: string; startSec: number; endSec: number};
 type Analysis = {id: string; token: string; candidates: Candidate[]};
+const activeJobKey = 'persona:music-studio-job:v1';
+const validJobId = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+
+function rememberJob(id?: string) {
+ try {
+  if(id) localStorage.setItem(activeJobKey, id);
+  else localStorage.removeItem(activeJobKey);
+ } catch { /* The active job remains available from this page. */ }
+}
 type RenderResult = {
  video: {durationSec: number; path: string; sha256: string};
  framing?: {warning?: string};
@@ -30,10 +39,41 @@ export default function PersonaMusicStudio() {
  const [analysis, setAnalysis] = useState<Analysis | null>(null);
  const [result, setResult] = useState<RenderResult | null>(null);
  const [error, setError] = useState('');
+ const [moment, setMoment] = useState('');
+ const [savingMoment, setSavingMoment] = useState(false);
  const [pending, setPending] = useState<'analysis' | 'render' | null>(null);
  const source = useRef<HTMLVideoElement>(null);
  const previewEnd = useRef<number | null>(null);
  const jobUrl = analysis ? personaWorkerUrl + '/music-studio/' + analysis.id : '';
+ useEffect(() => {
+  let id: string | null;
+  try {id=localStorage.getItem(activeJobKey);} catch {return;}
+  if(!id||!validJobId.test(id)) return;
+  const savedId=id;
+  const controller=new AbortController();
+  async function restore() {
+   const health=await fetch(personaWorkerUrl+'/health',{signal:controller.signal});
+   if(!health.ok) throw Error('Локальный Worker недоступен.');
+   const {token}=await health.json();
+   const response=await fetch(personaWorkerUrl+'/music-studio/'+savedId+'/status',
+    {headers:{'X-Persona-Worker-Token':token},signal:controller.signal});
+   if(response.status===404){rememberJob();return;}
+   const data=await response.json();
+   if(!response.ok) throw Error(data.error||'Не удалось восстановить задание.');
+   if(controller.signal.aborted)return;
+   setFormat(data.analysis.format.id);
+   setAnalysis({id:savedId,token,candidates:data.analysis.candidates});
+   if(data.report){
+    setAutoMusic(data.report.audio?.mode==='auto');
+    setCaptionStyle(data.report.captionStyle??'cinematic');
+    setResult(data.report);
+   }
+  }
+  setPending('analysis');
+  void restore().catch(e=>{if(!controller.signal.aborted)setError(String(e.message||e));})
+   .finally(()=>{if(!controller.signal.aborted)setPending(null);});
+  return ()=>controller.abort();
+ },[]);
 
  function reset() {
   source.current?.pause();
@@ -41,6 +81,8 @@ export default function PersonaMusicStudio() {
   setAnalysis(null);
   setResult(null);
   setError('');
+  setMoment('');
+  rememberJob();
  }
 
  async function prepare(event: FormEvent<HTMLFormElement>) {
@@ -60,6 +102,7 @@ export default function PersonaMusicStudio() {
    });
    const body = await response.json();
    if (!response.ok) throw Error(body.error || 'Не удалось проанализировать видео.');
+   rememberJob(body.id);
    setAnalysis({id: body.id, token: health.token, candidates: body.analysis.candidates});
   } catch (error) {
    setError(error instanceof TypeError ? 'Локальный Media Worker недоступен.' : (error as Error).message);
@@ -85,6 +128,7 @@ export default function PersonaMusicStudio() {
   source.current?.pause();
   setPending('render');
   setError('');
+  setMoment('');
   try {
    const response = await fetch(jobUrl + '/render', {
     method: 'POST', headers: {'Content-Type': 'application/json', 'X-Persona-Worker-Token': analysis.token},
@@ -98,6 +142,21 @@ export default function PersonaMusicStudio() {
   } finally {
    setPending(null);
   }
+ }
+
+ async function keepMoment(){
+  if(!analysis||!result||savingMoment)return;
+  setSavingMoment(true);
+  setError('');
+  try{
+   const response=await fetch(jobUrl+'/moments',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Persona-Worker-Token':analysis.token},
+    body:JSON.stringify({approved:true,videoSha256:result.video.sha256})});
+   const data=await response.json();
+   if(!response.ok)throw Error(data.error||'Не удалось сохранить фрагмент.');
+   setMoment('Фрагмент утверждён для повторного использования.');
+  }catch(e){setError(String((e as Error).message||e));}
+  finally{setSavingMoment(false);}
  }
 
  return <div className="musicStudio">
@@ -149,6 +208,8 @@ export default function PersonaMusicStudio() {
    <h2>MP4 для просмотра</h2>
    <video controls preload="metadata" src={jobUrl + '/video?token=' + encodeURIComponent(analysis.token)}/>
    <p><a href={jobUrl + '/video?download=1&token=' + encodeURIComponent(analysis.token)} download="music-reel.mp4">Скачать MP4</a></p>
+   <button type="button" disabled={savingMoment||Boolean(moment)} onClick={()=>void keepMoment()}>Утвердить фрагмент для повторного использования</button>
+   {moment&&<p role="status">{moment}</p>}
    <p>{result.audio.music ? 'Музыка · ' + result.audio.music.file : result.audio.source === 'camera' ? 'Звук с камеры' : 'Тишина'}</p>
    {result.audio.music?.warning && <p role="status">{result.audio.music.warning}</p>}
    {result.audio.music?.visionWarning && <p role="status">{result.audio.music.visionWarning}</p>}

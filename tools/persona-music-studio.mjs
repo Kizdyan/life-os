@@ -16,6 +16,14 @@ import {buildSubtitleAss,loadSubtitlePreset,verifySubtitleFont} from './persona-
 
 export const musicFormats = JSON.parse(await readFile(new URL('../packages/core/src/persona-music-formats.json', import.meta.url),'utf8'));
 const dynamicSoft = JSON.parse(await readFile(new URL('./studio-emotion-matrix.json', import.meta.url),'utf8')).dynamic;
+const independentArtist = Object.freeze({id:'independent-artist',version:1,
+ look:'Quiet Luxury',lut:'Humble',mix:PRODUCTION_LUT_MIX,defaultCaptions:'cinematic'});
+
+export function resolveMusicStyle(preset,usesOfflineMusic){
+ const custom=preset!==independentArtist.defaultCaptions;
+ return {contract:independentArtist,profile:usesOfflineMusic&&custom?'Dynamic Soft':null,
+  kinetic:usesOfflineMusic&&custom&&dynamicSoft.titleMotion==='zoom'};
+}
 export function audioMode(value) {
  if (value === undefined || value === false) return 'original';
  if (value === true) return 'auto';
@@ -247,10 +255,10 @@ export async function renderMusicCandidate({input,sourceSha256,analysis,candidat
  const [track,framing]=await Promise.all([mode==='auto'?chooseAutoMusic(input,candidate,output,config):null,
   planFraming(input,candidate,media,config)]);
  const fallback=track?.provider==='local-fallback'?dynamicSoft:null;
- const mix=PRODUCTION_LUT_MIX;
- const profile=fallback?'Dynamic Soft':null;
+ const {contract,profile,kinetic}=resolveMusicStyle(preset,Boolean(fallback));
+ const mix=contract.mix;
  const captions=buildSubtitleAss({cues:[{text:analysis.format.hook,startMs:0,endMs:Math.round(hookEnd*1000),
-  ...(fallback?.titleMotion==='zoom'?{kinetic:true}:{})}],
+  ...(kinetic?{kinetic:true}:{})}],
   width:1080,height:1920,reference:style,preset,typography:learned?.typography});
  await writeFile(join(output,'hook.ass'),captions.ass,{flag:'wx'});
  const durationArg=duration.toFixed(6);
@@ -303,11 +311,12 @@ export async function renderMusicCandidate({input,sourceSha256,analysis,candidat
  if(await hash(input)!==sourceSha256)throw Error('Копия исходника изменилась при рендере.');
  const report={version:1,status:'awaiting-author-review',format:{id:analysis.format.id,version:analysis.format.version},
   source:{sha256:sourceSha256},selection:candidate,selectionConfirmed:true,video:qa.video,qaPath,framing,
-  profile,captionStyle,...(learned?{reference:{sha256:learned.sha256,sourceUrl:learned.sourceUrl,settings:learned.typography}}:{}),
+  profile,captionStyle,styleContract:contract,...(learned?{reference:{sha256:learned.sha256,sourceUrl:learned.sourceUrl,settings:learned.typography}}:{}),
   lut:{name:'Humble',mix,sha256:await hash(join(output,'humble.cube'))},
   font:{name:style.fontFamily,style:style.fontStyle,sha256:style.fontSha256},music:track?'auto-selected':hasCamera?'source-audio':'silence',
   audio:{mode,source:hasCamera?'camera':'silence',...(track?{music:{file:track.file,mood:track.mood,model:track.model,
-   provider:track.provider,selection:track.selection,warning:track.warning,visionWarning:track.visionWarning,
+   provider:track.provider,selection:track.selection,warning:track.warning,
+   visionWarning:fallback&&!profile?'Подбор по настроению недоступен. Выбран локальный трек, стиль Independent Artist сохранён.':track.visionWarning,
    visionCache:track.visionCache,sampleTimes:track.sampleTimes,reason:track.reason}}:{})},hooks:[{startSec:0,endSec:hookEnd,text:analysis.format.hook}],
   publicationApproved:false,distributionAllowed:false};
  await writeFile(join(output,'RESULT.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});

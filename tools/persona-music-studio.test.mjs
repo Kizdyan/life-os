@@ -1,11 +1,19 @@
 
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {analyzeMusicCandidates, audioMode, musicFormats, musicPictureFilters, visualMusicCandidate} from './persona-music-studio.mjs';
+import {analyzeMusicCandidates, audioMode, musicFormats, musicPictureFilters, resolveMusicStyle, visualMusicCandidate} from './persona-music-studio.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
 
 test('production color mixes the Humble LUT at 60%, including Dynamic Soft',()=>{
  assert.match(musicPictureFilters({width:1080,height:1920},{mode:'native'},'Dynamic Soft')[2],/all_opacity=0\.6(?:,|$)/);
+});
+
+test('offline track selection leaves the default Independent Artist picture and titles alone',()=>{
+ const style=resolveMusicStyle('cinematic',true);
+ assert.equal(style.profile,null);
+ assert.equal(style.kinetic,false);
+ assert.equal(style.contract.mix,.6);
+ assert.equal(resolveMusicStyle('dynamic-interview',true).profile,'Dynamic Soft');
 });
 
 test('reference analysis maps to bounded subtitle, color and hook settings',()=>{
