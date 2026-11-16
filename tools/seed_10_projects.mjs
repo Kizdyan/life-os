@@ -42,7 +42,17 @@ async function assertExisting(directory,entry,sourceSha){
    sha(source)!==sourceSha||
    shots.sourceId!==entry.item.id||shots.shots.length!==entry.scenes.length)
   throw Error('Existing project differs from the seed or was edited: '+entry.item.id+'; refusing to overwrite');
- return {sourceId:entry.item.id,jobId:state.id,title:state.title,status:state.status,directory,created:false,shots:shots.shots.length,strategyStored:Boolean(state.strategy)};
+ // Existing authored state remains intact. Only recognized unmodified source IDs
+ // get the new metadata; the job status and recorded footage are never reset.
+ const updated=state.strategy?state:await job.attachStrategy(expectedStrategy,state.revision);
+ if(shots.strategy===undefined){
+  const shotPath=join(directory,'output','architect-shot-list.json');
+  const tmp=shotPath+'.'+randomUUID()+'.tmp';
+  try{await writeFile(tmp,toJson({...shots,strategy:expectedStrategy}),{flag:'wx'});await rename(tmp,shotPath)}
+  finally{await rm(tmp,{force:true}).catch(()=>{})}
+ }
+ return {sourceId:entry.item.id,jobId:updated.id,title:updated.title,status:updated.status,directory,created:false,
+  shots:shots.shots.length,strategyStored:isPersonaStrategy(updated.strategy),upgradedStrategy:!state.strategy};
 }
 
 async function seedOne(root,entry){
