@@ -3,6 +3,7 @@
 No copies or changes to input videos. A moment is not approved by an LLM.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 
 import argparse
 import hashlib
@@ -71,13 +72,19 @@ class MomentsLibrary:
                 );
             ''')
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
+        """Transaction context that ALSO closes the OS file handle on Windows."""
         db = sqlite3.connect(str(self.database), timeout=15)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA busy_timeout=15000')
-        db.execute('PRAGMA journal_mode=WAL')
-        db.execute('PRAGMA foreign_keys=ON')
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            db.execute('PRAGMA busy_timeout=15000')
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('PRAGMA foreign_keys=ON')
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def add(self, video: str | Path, start_sec: float, end_sec: float, *,
             kind: str, score: int, approved_by: str, confirmed: bool,
