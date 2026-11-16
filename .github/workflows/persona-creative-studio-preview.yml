@@ -7,6 +7,7 @@ on:
       - "tools/persona-creative-studio-screenshots.mjs"
       - "tools/persona-architect-browser-e2e.mjs"
       - "tools/persona-industry-browser-e2e.mjs"
+      - "tools/persona-quick-browser-e2e.mjs"
       - ".github/workflows/persona-creative-studio-preview.yml"
 jobs:
   capture:
