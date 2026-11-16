@@ -56,7 +56,8 @@ test('single run chains media evidence, mock ASR, cut decisions, renderer and QA
  try{
  const videos=[join(d,'actor.mp4'),join(d,'composer.mp4')];
  for(let i=0;i<2;i++){
-  const c=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c='+(i?'blue':'red')+':s=320x240:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=16000','-t','2.6','-c:v','mpeg4','-c:a','aac','-shortest',videos[i]],{encoding:'utf8',timeout:30000});
+  // Distinct speech fixtures must also have distinct WAV bytes for content-addressed ASR.
+  const c=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c='+(i?'blue':'red')+':s=320x240:r=25','-f','lavfi','-i','sine=frequency='+(i?660:440)+':sample_rate=16000','-t','2.6','-c:v','mpeg4','-c:a','aac','-shortest',videos[i]],{encoding:'utf8',timeout:30000});
   assert.equal(c.status,0,c.stderr);
  }
  const originals=await Promise.all(videos.map(f=>readFile(f)));
@@ -65,7 +66,11 @@ test('single run chains media evidence, mock ASR, cut decisions, renderer and QA
  await mk(brief,{version:1,sourceFormat:'reel',script:[{order:1,line:'Я актёр. И ещё пишу музыку.',durationSec:2},{order:2,line:'И у нас есть проблема.',durationSec:2}],shots:[{order:1,durationSec:2},{order:2,durationSec:2}]});
  const exe=join(d,'whisper-stub.cjs');
  await writeFile(exe,`#!/usr/bin/env node
-const fs=require('fs');const a=process.argv,p=a[a.indexOf('-of')+1];let words=p.includes('take0')?['Я','актёр','И','ещё','пишу','музыку']:['И','у','нас','есть','проблема'];fs.writeFileSync(p+'.json',JSON.stringify({transcription:words.map((text,i)=>({text,offsets:{from:i*280,to:(i+1)*280}}))}));
+const fs=require('fs'),{basename}=require('path');const a=process.argv,p=a[a.indexOf('-of')+1];
+const input=basename(a[a.indexOf('-f')+1]);
+const words={'take0-speech.wav':['Я','актёр','И','ещё','пишу','музыку'],'take1-speech.wav':['И','у','нас','есть','проблема']}[input];
+if(!words)throw Error('Unexpected speech input: '+input);
+fs.writeFileSync(p+'.json',JSON.stringify({transcription:words.map((text,i)=>({text,offsets:{from:i*280,to:(i+1)*280}}))}));
 `);
  await chmod(exe,0o755);
  const model=join(d,'local-model.bin');await writeFile(model,Buffer.alloc(1024*1024+1));
