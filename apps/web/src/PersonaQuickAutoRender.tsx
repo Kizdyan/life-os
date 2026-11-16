@@ -3,7 +3,8 @@ import {personaWorkerUrl} from './personaWorkerUrl';
 import './persona-quick-auto-render.css';
 
 type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
- uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null};
+ uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
+ moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[]};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
 const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
@@ -40,7 +41,7 @@ export default function PersonaQuickAutoRender(){
   const status=await reply.json().catch(()=>({}));
   if(!reply.ok||status.service!=='persona-media-worker'||!status.quickRender||typeof status.token!=='string')
    throw Error('Нужна обновлённая версия локального Media Worker из main.');
-  if(!status.quickRenderConfigured)throw Error('В локальном Worker не найден OPENROUTER_API_KEY или OPENAI_API_KEY из .env.local.');
+  if(!status.quickRenderConfigured)throw Error('В локальном Worker не найден OPENROUTER_API_KEY для поиска выразительных моментов.');
   workerToken.current=status.token;
   return status.token as string;
  }
@@ -128,6 +129,13 @@ export default function PersonaQuickAutoRender(){
     <div><small>{job.ready?'MP4 / РЕЗУЛЬТАТ':'PRODUCTIONJOB / '+job.state.toUpperCase()}</small><h4>{job.title}</h4>
      <p>{statusLabel(job)}{job.strategyStatus&&' · Стратегия: '+job.strategyStatus}</p>
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
+     {job.ready&&Boolean(job.moments?.length)&&<ol aria-label="Автоматически найденные моменты">
+      {job.moments?.map((moment,index)=><li key={index}>
+       <strong>{moment.role==='hook'?'Хук':moment.role==='turn'?'Поворот':moment.role==='finale'?'Финал':'Акцент'}</strong>
+       {' · '+moment.sourceName+' · '+moment.peakSec.toFixed(1)+' с'}
+       {moment.reason&&<span>{' — '+moment.reason}</span>}
+      </li>)}
+     </ol>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
     {job.ready&&workerToken.current&&<a className="personaQuickDownload"
