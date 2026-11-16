@@ -5,6 +5,8 @@ import type {PersonaStrategyAudit} from '../../../packages/core/src/persona-stra
 import {ensurePersonaDemoProject,PERSONA_DEMO_LINK_HASH} from './personaDemoProject';
 import {seedArchitectProjectsInBrowser,PERSONA_ARCHITECT_IMPORT_HASH} from './personaArchitectSeeds';
 import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
+import PersonaActorPortfolio from './PersonaActorPortfolio';
+import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
 
@@ -220,7 +222,7 @@ type Draft={title:string;slides:Slide[];caption:string;platformNotes:{instagram:
 type QA={pass:boolean;score:number;issues:{target:string;instruction:string}[]};
 type MediaProbe={name:string;bytes:number;mime:string;kind:'video'|'image';width?:number;height?:number;durationSec?:number;error?:string};
 type Stage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
-type PersonaScreen='home'|'projects'|'project';
+type PersonaScreen='home'|'projects'|'project'|'actor_portfolio'|'music_sync';
 type WorkspaceStep=PersonaMvpWorkspaceStep;
 type ProductionMilestone={pipeline:PersonaProductionPipeline;stage?:Stage;step?:WorkspaceStep;resetQa?:boolean};
 const HISTORY='lifeos:persona:idea-history:v2';
@@ -238,7 +240,7 @@ function projectIdea(project:PersonaProject):Idea{return{id:project.id,title:pro
 function projectStage(value:unknown):Stage{return value==='strategy'||value==='needs_assets'||value==='production'||value==='marketing_qa'||value==='media_qa'||value==='final_qa'||value==='approval'?value:'strategy'}
 function contentTypeLabel(value:PersonaContentType|undefined){return value==='photo'?'Фото':value==='carousel'?'Карусель':value==='short'?'Shorts':value==='story'?'Stories':'Reels'}
 function stageLabel(value:Stage){return ({strategy:'Идея',needs_assets:'Исходники',production:'В работе',marketing_qa:'Проверка',media_qa:'Проверка медиа',final_qa:'Проверка',approval:'Готово к съёмке'} as Record<Stage,string>)[value]}
-function screenFromHash():PersonaScreen{const hash=typeof location==='undefined'?'':location.hash;return hash.startsWith('#persona/projects')?'projects':hash.startsWith('#persona/project')?'project':'home'}
+function screenFromHash():PersonaScreen{const hash=typeof location==='undefined'?'':location.hash;return hash.startsWith('#persona/actor-portfolio')?'actor_portfolio':hash.startsWith('#persona/music-sync')?'music_sync':hash.startsWith('#persona/projects')?'projects':hash.startsWith('#persona/project')?'project':'home'}
 function workspaceStepsFor(format:PersonaContentType|undefined):[WorkspaceStep,string][]{
  if(format==='photo')return [['assets','Исходник'],['edit','Обработка'],['review','Проверка'],['export','Экспорт']];
  if(format==='carousel')return [['assets','Изображения'],['edit','Оформление'],['review','Проверка'],['export','Экспорт']];
@@ -510,7 +512,7 @@ export default function PersonaFactory(){
   return true;
   }catch{setSaveState('error');setStatus('Новый проект не открыт: браузер не подтвердил сохранение.');return false}
  }
- function navigate(next:PersonaScreen){if(next!==screen&&!canLeaveGuide())return;const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
+ function navigate(next:PersonaScreen){if(next!==screen&&!canLeaveGuide())return;const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':next==='actor_portfolio'?'#persona/actor-portfolio':next==='music_sync'?'#persona/music-sync':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
  function createQuickProject(format:PersonaContentType){const labels:Record<PersonaContentType,string>={reel:'Новый Reels',short:'Новый Shorts',story:'Новая история',photo:'Новое фото',carousel:'Новая карусель'};select({id:newProjectId(),title:labels[format],angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}
  function continueProject(project:PersonaProject){if(openProject(project))window.setTimeout(()=>{window.location.hash='#persona/project/'+project.id},0)}
  function startPilotShoot(){
@@ -758,6 +760,8 @@ export default function PersonaFactory(){
  const isReelMvp=chosen?.format==='reel';const projectSteps=isReelMvp?REEL_MVP_STEPS:workspaceStepsFor(chosen?.format);
   const workspaceIndex=isReelMvp?reelMvpIndex(workspaceStep):Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
  function moveWorkspace(direction:-1|1){const next=projectSteps[workspaceIndex+direction];if(next&&canLeaveGuide())setWorkspaceStep(next[0])}
+ if(screen==='actor_portfolio')return <PersonaActorPortfolio onBack={()=>navigate('home')}/>;
+ if(screen==='music_sync')return <PersonaMusicSyncPortfolio onBack={()=>navigate('home')}/>;
  if(screen==='home')return <section className="personaFactoryV2 personaMobileHome personaCreativeStudio">
   <header className="personaCreativeHero">
    <div className="personaCreativeHeroTop"><span>PERSONA / CREATIVE STUDIO</span><span>ТВОЯ ТВОРЧЕСКАЯ МАСТЕРСКАЯ</span></div>
@@ -777,6 +781,8 @@ export default function PersonaFactory(){
   <div className="personaDemoEntry"><div><strong>10 сценариев от Архитектора</strong><span>Оригинальные хуки, таймкоды, B-roll и музыка. Все 10 проектов без отснятых исходников.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}>Загрузить 10 сценариев ↗</button></div>
   <div className="personaDemoEntry"><div><strong>Хочешь протестировать Persona без съёмок?</strong><span>Три готовые тестовые сцены, Shot List и аниматик — без настоящего MP4.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_DEMO_LINK_HASH}}>Открыть демо-проект ↗</button></div>
   <div className="personaCreativeTools">
+   <button type="button" onClick={()=>navigate('actor_portfolio')}><span aria-hidden="true">◈</span><strong>Создать визитку</strong><small>Актёрский мини-фильм · 30–60 секунд</small></button>
+   <button type="button" onClick={()=>navigate('music_sync')}><span aria-hidden="true">♫</span><strong>Музыка для лицензирования</strong><small>Треки, стемы, права, PDF-пакет</small></button>
    <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот · раскадровка</small></button>
    <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong><small>Портреты и визуальный образ</small></button>
    <button type="button" onClick={()=>createQuickProject('carousel')}><span aria-hidden="true">▤</span><strong>Карусель</strong><small>История в нескольких кадрах</small></button>
@@ -784,7 +790,7 @@ export default function PersonaFactory(){
   <details className="personaCreativeAdvanced"><summary>Advanced / Для разработчика</summary><DataPortability/></details>
  </section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList personaCreativeStudio">
-  <header className="personaCreativeListHead"><button className="backButton" onClick={()=>navigate('home')}>← Мастерская</button><small>PERSONA / АРХИВ ПРОЕКТОВ</small><h2>Мои проекты</h2><p>{projects.length?'Продолжай с того места, где остановился.':'Все твои будущие истории будут здесь.'}</p><button className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button></header>
+  <header className="personaCreativeListHead"><button className="backButton" onClick={()=>navigate('home')}>← Мастерская</button><small>PERSONA / АРХИВ ПРОЕКТОВ</small><h2>Мои проекты</h2><p>{projects.length?'Продолжай с того места, где остановился.':'Все твои будущие истории будут здесь.'}</p><button className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button><div className="personaIndustryPills"><button type="button" onClick={()=>navigate('actor_portfolio')}>Создать визитку</button><button type="button" onClick={()=>navigate('music_sync')}>Музыка для лицензирования</button></div></header>
   {demoNotice&&<p role="status" className="personaDemoNotice">{demoNotice}</p>}
   {projects.length?<div className="personaCreativeGrid">{projects.map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
    <div className="personaCreativeBlank"><h3>Пока нет проектов</h3><p>Открой новую историю, когда будешь готов.</p></div>}
