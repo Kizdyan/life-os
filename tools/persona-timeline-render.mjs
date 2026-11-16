@@ -6,9 +6,9 @@
  * Local only. No uploads, AI calls or destructive source modifications.
  */
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { readFile, mkdir, mkdtemp, rename, rm, stat, writeFile, access } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, constants as fsConstants } from 'node:fs';
+import { readFile, mkdir, mkdtemp, rename, copyFile, rm, stat, writeFile, access } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {planFraming} from './persona-studio-framing.mjs';
@@ -16,6 +16,20 @@ import {cachedFfmpegStage,cachedFfprobe,cachedMp4,stageCacheEnabled,stageFileSha
 import {fileURLToPath} from 'node:url';
 
 const fail = message => { throw new Error(message); };
+async function moveVerifiedRender(source,destination){
+  try { await rename(source,destination); return; }
+  catch(error){ if(error.code!=='EXDEV') throw error; }
+  // On Windows the OS temp folder can be on C: while the project is on D:.
+  // Copy to a unique temp file on the target volume, then rename atomically.
+  const intermediate=destination+'.'+randomUUID()+'.partial';
+  try{
+    await copyFile(source,intermediate,fsConstants.COPYFILE_EXCL);
+    await rename(intermediate,destination);
+  }finally{
+    await rm(intermediate,{force:true});
+  }
+}
+
 const allowed = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const TARGET_DIALOGUE_LUFS = -20;
 const MAX_DIALOGUE_BOOST_DB = 6;
@@ -321,7 +335,7 @@ async function main() {
       outputOffset+=clip.durationSec;
     }
     const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
-    await rename(staged,output);
+    await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
     process.stdout.write(JSON.stringify({output,manifest:output+'.persona.json',durationSec:actual.durationSec,clips:clips.length})+'\n');
