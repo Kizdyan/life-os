@@ -26,6 +26,7 @@ const safeName=(value,kind)=>{
  return value;
 };
 const sha=async(path)=>{const hash=createHash('sha256');for await(const b of createReadStream(path))hash.update(b);return hash.digest('hex');};
+async function verifyUploadedFiles(input,files){for(const f of files){if(await sha(join(input,f.name))!==f.sha256)throw Error('Uploaded source changed since intake');}}
 const toFileName=(index,kind,original)=>kind+'-'+String(index+1).padStart(2,'0')+extname(original).toLowerCase();
 export function quickRenderRoot(env=process.env){
  return resolve(env.PERSONA_QUICK_RENDER_ROOT||
@@ -105,7 +106,7 @@ export function createPersonaQuickRenderService(config={}){
  }
  async function save(job){const view={...job};delete view.child;delete view.promise;jobs.set(job.id,view);await atomicFile(metaFile(job.id),view);return view}
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
-  uploaded:job.uploads.filter(Boolean).length,expected:job.files.length,error:job.error??null,
+  uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   notice:job.state==='completed'?'MP4 создан и технически проверен. Проверьте содержание перед публикацией.':null});
@@ -209,6 +210,7 @@ export function createPersonaQuickRenderService(config={}){
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance},null,2)+'\n',{flag:'wx'});
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
+   await verifyUploadedFiles(input,job.files);
    const sources=plan.choices.map(c=>({
     path:join(input,vids[c.fileIndex].name),startSec:c.startSec,durationSec:c.durationSec,
     framing:{mode:'contain',position:{x:.5,y:.5}},
@@ -240,6 +242,7 @@ export function createPersonaQuickRenderService(config={}){
      ffmpegDir:config.ffmpegDir,preset:'cinematic'});
     video=finished;
    }
+   await verifyUploadedFiles(input,job.files);
    const outputHash=await sha(video),details=await probe(video,config);
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
     publicationApproved:false,id,videoName:basename(video),sha256:outputHash,
@@ -284,7 +287,7 @@ export function createPersonaQuickRenderService(config={}){
   const entries=(await readdir(root,{withFileTypes:true})).filter(x=>x.isDirectory()&&/^quick-[0-9a-f-]{36}$/.test(x.name)).slice(-100);
   const result=[];
   for(const x of entries){const id=x.name.slice(6),job=await get(id);if(job)result.push(view(job))}
-  return result.sort((a,b)=>b.id.localeCompare(a.id)).slice(0,40);
+  return result.reverse().slice(0,40);
  }
  async function handle(req,res,url){
   if(!url.pathname.startsWith('/quick-render'))return false;
