@@ -159,6 +159,25 @@ export function buildPersonaProductionBrief(
     },
     script,
     shots,
+    // Pre-edit intent from the Arsenal: actor reaction -> meaningful object detail -> actor reaction.
+    // All media remain unrecorded and every cut requires author review.
+    ...(isStill?{}:{preEditPlan:{
+      version:1 as const,kind:"persona-pre-edit-plan-v1" as const,status:"intent_only" as const,
+      origin:"scenario_revision" as const,sourceRevisionId:null,
+      researchEvidence:{level:"hypothesis_only" as const,sourceUrls:[],
+       note:"KB-04 associative editing from user brief; no reviewed footage or verified references."},
+      scenes:shots.map((shot,index)=>({
+       order:shot.order,line:script[index].line,durationSec:shot.durationSec,
+       editIntent:index%2===1
+        ?"Предметная крупность с причинным смыслом (бумага, свеча или иной реальный реквизит). Снять и подтвердить права; затем вернуть лицо."
+        :"Лицо актёра, выразительная реакция и подтекст; склейка по действию, без клипового ритма ради эффекта.",
+       audioIntent:"Сохранить утверждённую речь и оригинальную звуковую дорожку; музыка только после проверки прав.",
+       subtitleIntent:"Не закрывать эмоцию лица титром, максимум две строки.",
+       visualIntent:{framing:shot.framing,angle:shot.angle,cameraMovement:shot.cameraMovement,
+        lighting:shot.lighting,performance:shot.action},
+       mediaStatus:"awaiting_author_footage" as const,
+      })),publicationApproved:false as const,
+    }}),
     capture: {
       props: ["Телефон или камера", "Штатив или устойчивая опора", "Предмет из реального рабочего процесса, если он нужен для объяснения"],
       wardrobe: "Однотонная одежда без мелкого контрастного рисунка; выбрать то, в чём автор обычно работает.",
@@ -170,7 +189,7 @@ export function buildPersonaProductionBrief(
       },
     },
     postProduction: {
-      transitions: isStill ? "Не применимо к статичному изображению; нужен отдельный визуальный редактор." : "Жёсткие склейки по завершённым фразам; не использовать декоративные переходы без смысловой причины.",
+      transitions: isStill ? "Не применимо к статичному изображению; нужен отдельный визуальный редактор." : "Арсенал KB-04: лицо актёра → смысловая предметная деталь (бумага/свеча) → реакция лица. Монтаж только из отснятых и одобренных исходников, без случайных переходов.",
       subtitles: {
         instruction: "Субтитры синхронны с речью, максимум две строки, высокий контраст и безопасные поля для интерфейса платформы.",
         maxCharactersPerLine: 42,
@@ -239,9 +258,9 @@ function buildTimedShots(script: PersonaProductionBrief["script"]): PersonaProdu
   return script.map((beat, index) => ({
     order: index + 1,
     durationSec: beat.durationSec,
-    framing: (index === 1 ? "medium" : "close-up") as "medium" | "close-up",
-    angle: index === 1 ? "Три четверти; руки и действие в кадре" : "На уровне глаз",
-    cameraMovement: index === 1 ? "Смысловой переход на деталь" : "Статичный кадр",
+    framing: (index % 2 === 1 ? "detail" : "close-up") as "detail" | "close-up",
+    angle: index % 2 === 1 ? "Предметная крупность; действие и руки в кадре" : "На уровне глаз",
+    cameraMovement: index % 2 === 1 ? "Осмысленная предметная склейка (только после съёмки)" : "Статичный крупный план лица",
     lighting: "Единая цветовая температура; мягкий ключевой свет",
     action: beat.action,
     ...(index < script.length - 1 && beat.durationSec >= 1.5
