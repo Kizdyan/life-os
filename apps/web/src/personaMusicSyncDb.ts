@@ -14,7 +14,7 @@ export function validateMusicSyncTrack(value:unknown):MusicSyncTrack{
  const t=value as Partial<MusicSyncTrack>;
  if(t.version!==1||typeof t.id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(t.id)||
   !str(t.title,120)||!str(t.genre,90)||!str(t.mood,90)||!str(t.rightsOwner,180)||
-  !Number.isInteger(t.durationSec)||t.durationSec!<1||t.durationSec!>14400||
+  !Number.isInteger(t.durationSec)||(t.durationSec??0)<1||(t.durationSec??0)>14400||
   typeof t.stems!=='boolean'||!['owned','licensed','unverified'].includes(t.rightsStatus??'' )||
   !Number.isFinite(Date.parse(t.createdAt??''))||!Number.isFinite(Date.parse(t.updatedAt??'')))
   throw Error('Заполни название, жанр, настроение, длительность, стемы и владельца прав');
