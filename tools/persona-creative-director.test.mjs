@@ -14,7 +14,7 @@ test('local director protocol allows only a configured preset, never a model-sup
  const soft=getVisualPreset('SoftCinematic');
  assert.equal(soft.id,'SoftCinematic');
  assert.equal(soft.name,'Soft Cinematic');
- assert.equal(soft.filter,'eq=contrast=1.04:saturation=0.98:gamma=1.01,colorbalance=rs=-0.01:bs=0.015:rm=0.005:gm=-0.003:bm=-0.003:pl=1');
+ assert.equal(soft.filter,'eq=contrast=1.04:saturation=0.98:gamma=1.01,colorbalance=rs=-0.01:bs=0.015:rm=0.005:gm=-0.003:bm=-0.003:pl=0');
  assert.equal(soft.editorialVariation,'cinematic');
 });
 test('offline, malformed JSON and invented presets fail without a fallback',async()=>{
