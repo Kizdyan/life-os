@@ -46,6 +46,16 @@ jobs:
         run: node tools/persona-architect-browser-e2e.mjs
       - name: Verify industry portfolios and real A4 PDF with browser
         run: node tools/persona-industry-browser-e2e.mjs
+      - name: Verify real one-click browser-to-MP4 workflow
+        run: node tools/persona-quick-browser-e2e.mjs
+      - name: Upload one-click real browser screenshots and MP4 fixture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-one-click-auto-render
+          path: artifacts/persona-one-click/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload actor and Music Sync portfolio screenshots/PDF
         if: always()
         uses: actions/upload-artifact@v4
