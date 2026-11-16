@@ -1,6 +1,7 @@
 import {env,json} from './_media-session.js';
 import {readPersonaDirectorProposal} from '../packages/core/src/persona-director-model.js';
 import {CREATIVE_PRODUCER_SYSTEM_PROMPT} from '../packages/core/src/persona-agent-system-prompts.js';
+import {personaGeneratedCopyIssue} from '../packages/core/src/persona-writing-style.mjs';
 
 type Idea={id:string;title:string;angle:string;format:string};
 const FREE_MODEL='nvidia/nemotron-3.5-lightning-free';
@@ -153,6 +154,7 @@ export default{
    if(normalizedHooks.has(proposal.hook.trim().toLowerCase())||
     normalizedHooks.has(proposal.scenes[0].line.trim().toLowerCase()))
     fail('director_repeated_hook');
+   if(personaGeneratedCopyIssue([proposal.title,proposal.hook,...proposal.scenes.map((scene:any)=>scene.line)]))fail('director_generated_cliche');
    return json(proposal);
   }catch(error){
    const code=String((error as Error)?.message||'director_unavailable');
