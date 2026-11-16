@@ -113,6 +113,25 @@ export class ProductionJob {
       return update;
     }finally{await handle.close();await unlink(lock)}
   }
+  /** CAS + exclusive lock: enrich an old seeded job without resetting its status or media. */
+  async attachStrategy(strategy,expectedRevision){
+    if(!isPersonaStrategy(strategy))fail('Invalid strategy');
+    const lock=this.path+'.lock';let handle;
+    try{handle=await open(lock,'wx')}catch(error){if(error.code==='EEXIST')fail('Job locked; retry migration later');throw error}
+    try{
+      const data=await this.read();
+      if(data.strategy!==undefined){
+        if(JSON.stringify(data.strategy)!==JSON.stringify(strategy))fail('Author strategy differs: refuse overwrite');
+        return data;
+      }
+      if(data.revision!==expectedRevision)fail('Job changed before strategy migration');
+      const next={...data,strategy,revision:data.revision+1,updatedAt:new Date().toISOString()};
+      const temp=this.path+'.'+randomUUID()+'.tmp';
+      try{await writeFile(temp,JSON.stringify(next,null,2)+'\\n',{flag:'wx'});await rename(temp,this.path)}
+      finally{await unlink(temp).catch(()=>{})}
+      return next;
+    }finally{await handle.close();await unlink(lock)}
+  }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}
   /** Gate editing on verified source-bound, reviewed shot coverage. */
   async inspectCoverage({brief,bindings,approvalSha256}={}){
