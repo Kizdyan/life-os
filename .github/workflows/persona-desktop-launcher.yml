@@ -1,0 +1,49 @@
+name: Persona Desktop Launcher Windows QA
+
+on:
+  pull_request:
+    paths:
+      - "START_AUTO_RENDER.bat"
+      - "tools/persona-launcher-supervisor.ps1"
+      - ".github/workflows/persona-desktop-launcher.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-launcher:
+    name: native-process-tree-close-to-stop
+    runs-on: windows-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate BAT embedded bootstrap syntax and safe project discovery
+        shell: powershell
+        run: |
+          $text=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
+          if (-not $text.Contains('npm') -and -not $text.Contains('persona-launcher-supervisor.ps1')) { throw 'Missing launcher bootstrap' }
+          $marker='#--PERSONA_BOOTSTRAP--'
+          $index=$text.LastIndexOf($marker)
+          if($index -lt 0) {throw 'Missing BAT bootstrap marker'}
+          $tokens=$null; $parseErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseInput($text.Substring($index+$marker.Length),[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count) {throw "Batch bootstrap PowerShell syntax failed: $($parseErrors[0])"}
+          if(-not $text.Contains('WindowStyle Hidden')) {throw 'Launcher is not hidden'}
+          if(-not $text.Contains('FolderBrowserDialog')) {throw 'First-run repo discovery missing'}
+          Write-Host 'PASS: desktop BAT syntax and project locator'
+      - name: Validate WinForms window types in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $size=New-Object Drawing.Size(460,200)
+          if($size.Width -ne 460) {throw 'Native GUI sizing broken'}
+      - name: Launch hidden CMD/Node processes and verify closing kills both
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & .\tools\persona-launcher-supervisor.ps1 -RepoRoot $PWD.Path -SelfTest
+          if($LASTEXITCODE -ne 0) {throw 'Windows Job Object cleanup test failed'}
