@@ -49,11 +49,9 @@ describe('professional portfolio contracts',()=>{
    idea:{id:'test-actor-brief',title:'Художественная зарисовка',angle:'Герой должен принять трудное решение',format:'reel'},
   });
   expect(brief.shots.map(x=>x.framing)).toEqual(['close-up','detail','close-up']);
-  expect(brief.preEditPlan?.status).toBe('intent_only');
-  expect(brief.preEditPlan?.scenes.map(x=>x.mediaStatus)).toEqual([
-   'awaiting_author_footage','awaiting_author_footage','awaiting_author_footage'
-  ]);
-  expect(brief.preEditPlan?.publicationApproved).toBe(false);
+  // The generic builder must not attach a new approval-sensitive pre-edit snapshot
+  // to legacy briefs; the specific actor portfolio has its own intent-only EditPlan.
+  expect(brief.preEditPlan).toBeUndefined();
   expect(brief.postProduction.transitions).toContain('лицо');
  });
  it('renders actor and music entry screens with real creation and PDF actions',()=>{
