@@ -12,6 +12,7 @@ import { readFile, mkdir, mkdtemp, rename, copyFile, rm, stat, writeFile, access
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {planFraming} from './persona-studio-framing.mjs';
+import {personaIdentityFfmpegFilter} from './persona-visual-identity.mjs';
 import {cachedFfmpegStage,cachedFfprobe,cachedMp4,stageCacheEnabled,stageFileSha} from './persona-stage-cache.mjs';
 import {fileURLToPath} from 'node:url';
 
@@ -61,7 +62,7 @@ function framingFor(value,width,height){
  numeric(position.x,'crop position x',0,1);numeric(position.y,'crop position y',0,1);
  return {mode,position:{x:position.x,y:position.y},manualReviewRequired:mode==='cover',width,height};
 }
-function videoFilter(framing,width,height,fps,intercutFallback=null,durationSec=0){
+function videoFilter(framing,width,height,fps,intercutFallback=null,durationSec=0,identityFilter=''){
  const crop=framing.smartCrop;
  const normalized=crop?.mode==='face-crop'&&crop.needsSquarePixels?`scale=${crop.displayWidth}:${crop.displayHeight},setsar=1,`:'';
  const base=crop?.mode==='face-crop'
@@ -69,7 +70,7 @@ function videoFilter(framing,width,height,fps,intercutFallback=null,durationSec=
   : framing.mode==='cover'
   ? 'scale='+width+':'+height+':force_original_aspect_ratio=increase,crop='+width+':'+height+':(in_w-out_w)*'+framing.position.x+':(in_h-out_h)*'+framing.position.y
   : 'scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2';
- const standard=base+',setsar=1,fps='+fps+',format=yuv420p';
+ const standard=base+',setsar=1,fps='+fps+',format=yuv420p'+(identityFilter?','+identityFilter:'');
  if (!intercutFallback) return standard;
  const frames=Math.round(durationSec*fps),tailFrames=Math.max(1,Math.round(intercutFallback.durationSec*fps));
  const zoomFrom=Math.max(0,frames-tailFrames);
@@ -101,6 +102,7 @@ async function renderFramingPreviews(projectArg,outputArg){
  const project=JSON.parse(await readFile(projectPath,'utf8'));
  if(!project||typeof project!=='object'||Array.isArray(project)||project.version!==1||!Array.isArray(project.clips)||project.clips.length<1||project.clips.length>30)fail('Expected 1–30 clips in version 1 project');
  const width=numeric(project.width??1080,'width',128,3840),height=numeric(project.height??1920,'height',128,3840),fps=numeric(project.fps??30,'fps',15,60);
+ const identityFilter=personaIdentityFfmpegFilter(project.visualIdentity);
  if(width%2||height%2||!Number.isInteger(fps))fail('Dimensions must be even; fps must be integer');
  await access(output).then(()=>fail('Preview directory already exists'),()=>{});
  await mkdir(output,{recursive:false});
@@ -113,7 +115,7 @@ async function renderFramingPreviews(projectArg,outputArg){
    const media=await probe(path),startSec=numeric(clip.startSec??0,'startSec',0,media.durationSec-.02),durationSec=numeric(clip.durationSec??media.durationSec-startSec,'durationSec',.02,media.durationSec-startSec+.001);
    const framing=framingFor(clip.framing??project.framing,width,height),pathOut=join(output,'clip-'+(index+1)+'-framing.jpg');
    const sampleSec=Number((startSec+durationSec/2).toFixed(3));
-   await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(sampleSec),'-i',path,'-frames:v','1','-vf',videoFilter(framing,width,height,fps),'-q:v','3',pathOut]);
+   await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(sampleSec),'-i',path,'-frames:v','1','-vf',videoFilter(framing,width,height,fps,null,0,identityFilter),'-q:v','3',pathOut]);
    previews.push({clip:index+1,path:pathOut,sampleSec,framing});
   }
   const manifest={version:1,kind:'persona-framing-previews-v1',project:projectPath,manualReviewRequired:previews.some(preview=>preview.framing.manualReviewRequired),notice:'These are crop-position inspection images only. They do not detect faces, glasses, hands, instruments, keyboards or safe text areas; review before final rendering.',previews};
@@ -171,11 +173,11 @@ function safeGain(measurement){
   const gain=Math.max(-MAX_DIALOGUE_REDUCTION_DB,Math.min(MAX_DIALOGUE_BOOST_DB,requested,peakLimited));
   return {gainDb:rounded(gain),status:Math.abs(gain)<0.05?'already-close':'levelled',warning:null};
 }
-async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec}) {
+async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter=''}) {
   const segments = [];
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
-    const clipVideoFilter = videoFilter(clip.framing,width,height,fps,clip.intercutFallback,clip.durationSec);
+    const clipVideoFilter = videoFilter(clip.framing,width,height,fps,clip.intercutFallback,clip.durationSec,identityFilter);
     const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
     if (!clip.media.audio||clip.muteSourceAudio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
     const audioFilters=['aresample=async=1:first_pts=0'];
@@ -225,6 +227,7 @@ async function main() {
   if (extname(output).toLowerCase() !== '.mp4') fail('Output must be .mp4');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
   if (!project || typeof project !== 'object' || Array.isArray(project) || project.version !== 1 || !Array.isArray(project.clips) || project.clips.length < 2 || project.clips.length > 30) fail('Expected 2–30 clips in version 1 project');
+  const identityFilter=personaIdentityFfmpegFilter(project.visualIdentity);
   const width = numeric(project.width ?? 1080, 'width', 128, 3840);
   const height = numeric(project.height ?? 1920, 'height', 128, 3840);
   const fps = numeric(project.fps ?? 30, 'fps', 15, 60);
@@ -306,7 +309,7 @@ async function main() {
     const sourceSha=createHash('sha256').update(JSON.stringify(sources.map(source=>source.sha256))).digest('hex');
     let actual;
     await cachedMp4({path:staged,sourceSha,params:recipe,operation:'ffmpeg_timeline_render',render:async()=>{
-     await encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec});
+     await encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter});
      if(recipe)await assertSources();
      actual=await verifyVideo();
     }});
@@ -334,7 +337,7 @@ async function main() {
       audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,visualIdentity:project.visualIdentity??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
