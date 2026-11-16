@@ -81,7 +81,7 @@ try{
  [void](Git @('-C',$local,'remote','set-url','origin',(Join-Path $dir 'nonexistent.git')))
  MustFail { Update-PersonaRepo -RepoRoot $local -LogDirectory $logs } 'offline remote'
  if((Get-FileHash (Join-Path $local '.env.local') -Algorithm SHA256).Hash -ne $before){throw '.env.local lost on failed pull'}
- if((Get-ChildItem -LiteralPath $logs -Filter '*.tmp').Count -ne 0){throw 'Updater leaked temporary git output'}
+ if(@(Get-ChildItem -LiteralPath $logs -Filter '*.tmp').Count -ne 0){throw 'Updater leaked temporary git output'}
  Write-Host 'PASS: no-op, fast-forward, dirty-tree refusal, branch refusal, offline refusal, .env.local untouched.'
 }finally{
  Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
