@@ -34,6 +34,7 @@ def plan_lighting(scene: str) -> dict[str, Any]:
         "preset": selected["id"], "title": selected["title"], "key": selected["key"],
         "fill": selected["fill"], "back": selected["back"],
         "background": selected["background"], "note": selected["note"],
+        **({"rule": selected["rule"]} if "rule" in selected else {}),
         "evidence": DISCLAIMER, "source": "rules-v1",
     }
 
