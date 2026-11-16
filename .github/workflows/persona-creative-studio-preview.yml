@@ -6,6 +6,7 @@ on:
       - "apps/web/**"
       - "tools/persona-creative-studio-screenshots.mjs"
       - "tools/persona-architect-browser-e2e.mjs"
+      - "tools/persona-industry-browser-e2e.mjs"
       - ".github/workflows/persona-creative-studio-preview.yml"
 jobs:
   capture:
@@ -38,6 +39,16 @@ jobs:
         run: node tools/persona-demo-browser-e2e.mjs
       - name: Verify ten Architect project cards in real browser
         run: node tools/persona-architect-browser-e2e.mjs
+      - name: Verify industry portfolios and real A4 PDF with browser
+        run: node tools/persona-industry-browser-e2e.mjs
+      - name: Upload actor and Music Sync portfolio screenshots/PDF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-industry-portfolios
+          path: artifacts/persona-industry-portfolios/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload ten-card dashboard and storyboard evidence
         if: always()
         uses: actions/upload-artifact@v4
