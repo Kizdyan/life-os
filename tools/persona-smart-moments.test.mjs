@@ -48,6 +48,7 @@ test('autonomous dramatic arc from only a generic user prompt; rejects blurry/av
  assert.ok(best.length>=3&&best.length<=5);
  assert.equal(best[0].arcRole,'hook');assert.equal(best[1].arcRole,'turn');
  assert.equal(best.at(-1).arcRole,'finale');
+ assert.equal(best.at(-1).score,Math.max(...best.map(x=>x.score)),'strongest eligible peak must close the scene');
  assert.ok(best.every(x=>x.startSec>=0&&x.startSec+x.durationSec<=videos[x.fileIndex].durationSec+.00001));
  assert.ok(best.every(x=>x.stillSec!==4&&x.stillSec!==1.5));
  const {plan}=makeSmartEditPlan({prompt:'Сделай красиво',videos,scored,
