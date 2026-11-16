@@ -172,3 +172,57 @@
 }
 @media(max-width:360px){.personaCreativeHero h2{font-size:42px}.personaCreativeSectionHead h3{font-size:30px}.personaCreativeStatus{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.personaCreativeStudio *{scroll-behavior:auto!important;transition:none!important}}
+
+
+/* Visual QA corrections: legacy Life OS sets global main/header/article/nav rules.
+   Override them only on Persona pages, rather than changing Today or Erika. */
+main.appPersonaPage{
+ display:flex;
+ flex-direction:column;
+ width:100%;
+ max-width:1330px;
+ padding:23px 30px 85px;
+}
+main.appPersonaPage>header{order:0;flex:none}
+main.appPersonaPage>.appNavigation{
+ position:static;
+ order:1;
+ width:100%;
+ max-width:100%;
+ margin:0 0 25px;
+ padding:8px;
+ display:flex;
+ justify-content:flex-start;
+ gap:5px;
+ border:1px solid #e8e2d7;
+ border-radius:11px;
+ box-shadow:none;
+ background:#f9f7f3;
+ z-index:auto;
+}
+main.appPersonaPage>.appNavigation button{min-height:41px;border-radius:7px;padding:8px 18px}
+main.appPersonaPage>.personaCreativeStudio{order:2;width:100%;min-width:0}
+.personaCreativeStudio header.personaCreativeHero{display:block;align-items:initial;justify-content:initial}
+.personaCreativeStudio header.personaCreativeListHead{display:block}
+.personaCreativeStudio article.personaCreativeCard{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0}
+.personaCreativeStudio article.personaCreativeCard .personaCreativeCover{width:100%;flex:none}
+.personaCreativeStudio article.personaCreativeCard .personaCreativeCardContent{width:100%}
+.personaCreativeStudio article.personaCreativeCard button.personaCreativeCardAction{
+ display:flex;
+ width:100%;
+ height:auto;
+ min-height:49px;
+ background:#121829;
+ color:#e7dfd2;
+ font-size:12px;
+ border-radius:6px;
+}
+.personaCreativeStudio article.personaCreativeCard button.personaCreativeCardAction:hover{background:#2f3a51}
+.personaCreativeStudio .personaCreativeHero h2{color:#e7dfd2}
+@media(max-width:600px){
+ main.appPersonaPage{padding:22px 12px 35px}
+ main.appPersonaPage>.appNavigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;margin:0 0 19px;padding:5px}
+ main.appPersonaPage>.appNavigation button{font-size:11px;padding:8px 4px;min-width:0}
+ .personaCreativeStudio .personaCreativeHeroMain{grid-template-columns:minmax(0,1fr)}
+ .personaCreativeStudio .personaCreativeHeroDescription{max-width:100%}
+}
