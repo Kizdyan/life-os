@@ -51,3 +51,20 @@
 
 .personaShootNowProvenance{margin:0;padding:11px 13px;border-left:3px solid #81735e;border-radius:7px;background:#f4f2ed;color:#3f3930;font-size:13px;line-height:1.55}
 .personaShootNowAiConnection{font-weight:650;overflow-wrap:anywhere}
+
+/* Pre-production lighting scheme: clear on mobile, no imaginary light diagram. */
+.personaShootLighting{display:grid;gap:10px;border-top:1px solid #dfddd8;padding-top:12px;margin-top:3px}
+.personaShootLightingToggle{justify-self:start;min-height:43px;border-radius:10px;border:1px solid #9b8d76;
+ background:#292b31;color:#f7f0e4;padding:9px 15px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.personaShootLightingToggle span{margin-right:6px;color:#d0b78b;font-size:17px}
+.personaShootLightingToggle:focus-visible{outline:3px solid #a6824b;outline-offset:3px}
+.personaShootLightingPlan{display:grid;gap:11px;border-radius:13px;border:1px solid #e0d6c6;
+ background:linear-gradient(140deg,#fcfaf5,#f0ede6);padding:16px;box-shadow:0 5px 20px rgba(24,25,29,.04)}
+.personaShootLightingPlanTop{display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;
+ border-bottom:1px solid #dfd4c6;padding-bottom:10px}
+.personaShootLightingPlanTop span{font-size:9px;letter-spacing:.16em;font-weight:700;color:#8a7455}
+.personaShootLightingPlanTop strong{font-size:13px;color:#24272b}
+.personaShootLightingPlan p{margin:0;line-height:1.52;font-size:12px;color:#404047}
+.personaShootLightingPlan p b{display:block;font-size:11px;color:#272a30;margin-bottom:2px}
+.personaShootLightingPlan small{font-size:11px;color:#766b60;line-height:1.4;border-top:1px solid #e1dacf;padding-top:8px}
+@media(max-width:600px){.personaShootLightingPlan{padding:12px}}
