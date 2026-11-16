@@ -28,6 +28,7 @@ import {cachedFfprobe,fullProbeArgs} from './persona-stage-cache.mjs';
 import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook-variants.mjs';
 import {personaMediaPaths} from './persona-media-paths.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
+import {createPersonaQuickRenderService} from './persona-quick-render.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -133,6 +134,7 @@ function runProcess(s,config){
 }
 export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.slice(2))){
  const token=randomUUID();
+ const quickRender=createPersonaQuickRenderService(config);
  const musicJobs=new Map();let musicBusy=false;
  const learnedRulesFile=()=>join(config.outputRoot,'learned_rules.json');
  let referenceBusy=false;
@@ -232,11 +234,12 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     const musicStudio=Boolean(config.musicLut&&await exists(config.musicLut));
 
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean((config.apiEnv??process.env).OPENROUTER_API_KEY||(config.apiEnv??process.env).OPENAI_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
    const videoToken=req.method==='GET'&&(url.pathname.endsWith('/video')||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(await quickRender.handle(req,res,url))return;
    if(req.method==='PUT'&&url.pathname==='/hook-tests'){
     const length=Number(req.headers['content-length']);
     if(!Number.isSafeInteger(length)||length<1024||length>maxFile)fail('Выберите MP4 размером до 2 ГБ.');
