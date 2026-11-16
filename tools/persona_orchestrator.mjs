@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {cachedFfprobe} from './persona-stage-cache.mjs';
 import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './persona-p3-adapter.mjs';
 import {renderApprovedBroll} from './persona-approved-broll.mjs';
+import {proposeIntercuts,applyReviewedZoomFallback} from './persona-intercut-planner.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
 ]);
@@ -142,6 +143,28 @@ export class ProductionJob {
   async economics({command,args=[]}={}){
     return economicsCommand({database:join(this.directory,'economics.sqlite3'),command,args});
   }
+  /** Generate metadata-based cut-risk proposals. This does not approve or insert footage. */
+  async prepareIntercuts({timelinePath}={}){
+    if((await this.read()).status!=='EDITING')fail('Intercut planning requires EDITING');
+    if(typeof timelinePath!=='string'||!timelinePath.trim())fail('Existing EditPlan required');
+    const source=await readFile(resolve(timelinePath),'utf8');
+    const timeline=JSON.parse(source);
+    const plan={...proposeIntercuts(timeline),timelineSha256:createHash('sha256').update(source).digest('hex')};
+    const output=join(this.directory,'output','intercut-'+randomUUID()+'.json');
+    await writeFile(output,JSON.stringify(plan,null,2)+'\n',{flag:'wx'});
+    return {status:'AWAITING_INTERCUT_REVIEW',path:output,suggestions:plan.suggestions};
+  }
+  /** Apply only reviewed slow push-in choices to an exact, hash-matched EditPlan. */
+  async applyIntercutZoom({timelinePath,intercutPath,reviewedAfterClips=[]}={}){
+    if((await this.read()).status!=='EDITING')fail('Intercut changes require EDITING');
+    const source=await readFile(resolve(timelinePath),'utf8');
+    const timeline=JSON.parse(source),plan=JSON.parse(await readFile(resolve(intercutPath),'utf8'));
+    if(plan.timelineSha256!==createHash('sha256').update(source).digest('hex'))fail('Stale intercut plan');
+    const output=join(this.directory,'output','intercut-reviewed-'+randomUUID()+'.json');
+    const edited=applyReviewedZoomFallback(timeline,plan,{reviewedAfterClips});
+    await writeFile(output,JSON.stringify(edited,null,2)+'\n',{flag:'wx'});
+    return {status:'REVIEWED_EDIT_PLAN_READY',path:output,publicationApproved:false};
+  }
   /** Reuse existing SHA/rights-reviewed B-roll renderer, never select media without approval. */
   async renderReviewedBroll({timelinePath,matchesPath,catalogPath,captionsPath,selectionPath}={}){
     if((await this.read()).status!=='EDITING')fail('B-roll render requires EDITING');
@@ -269,8 +292,8 @@ export class ProductionJob {
 }
 async function cli(){
   const [action,rawDir,...args]=process.argv.slice(2),target=args[0];
-  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics','broll'].includes(action)||!rawDir)
-    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics|broll JOB_DIR [options]');
+  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics','broll','intercut','zoom'].includes(action)||!rawDir)
+    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics|broll|intercut|zoom JOB_DIR [options]');
   if(action==='init'){const job=await ProductionJob.create(rawDir);console.log(JSON.stringify(await job.read(),null,2));return}
   const job=new ProductionJob(rawDir);
   if(action==='ready'){console.log(JSON.stringify(await job.markReady(),null,2));return}
@@ -289,6 +312,19 @@ async function cli(){
     const opts={};
     for(let i=0;i<args.length;i+=2){if(!['--plan','--contract'].includes(args[i])||!args[i+1])fail('Invalid style option');opts[args[i]]=args[i+1]}
     console.log(JSON.stringify(await job.checkStyle({plan:opts['--plan'],contract:opts['--contract']}),null,2));return;
+  }
+  if(action==='intercut'){
+    if(args.length!==2||args[0]!=='--timeline')fail('Intercut usage: intercut JOB_DIR --timeline PATH');
+    console.log(JSON.stringify(await job.prepareIntercuts({timelinePath:args[1]}),null,2));return;
+  }
+  if(action==='zoom'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){
+      if(!['--timeline','--intercut-plan','--reviewed-after'].includes(args[i])||!args[i+1])fail('Invalid zoom option');
+      opts[args[i]]=args[i+1];
+    }
+    const reviewedAfterClips=opts['--reviewed-after']?.split(',').map(Number)??[];
+    console.log(JSON.stringify(await job.applyIntercutZoom({timelinePath:opts['--timeline'],intercutPath:opts['--intercut-plan'],reviewedAfterClips}),null,2));return;
   }
   if(action==='broll'){
     const opts={};
