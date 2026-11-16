@@ -94,19 +94,21 @@ export function chooseSmartMoments(scored,{videos,speech=[]}={}){
  if(!Array.isArray(scored)||!scored.length||!Array.isArray(videos))throw Error('Missing frame evidence');
  const viable=scored.filter(eligible).map(f=>({...f,score:frameRank(f)+speechWeight(f,speech)}));
  if(viable.length<3)throw Error('Not enough sharp, camera-facing actor frames for three reliable emotional peaks');
- const selected=[],spacing=2.5;
+ const selected=[],spacing=3.2;
  const apart=f=>selected.every(x=>x.fileIndex!==f.fileIndex||Math.abs(x.atSec-f.atSec)>=spacing);
  const high=pool=>pool.filter(apart).sort((a,b)=>b.score-a.score||a.fileIndex-b.fileIndex||a.atSec-b.atSec)[0];
- // Semantic order: bright hook, contrasting emotional turn, strongest closer.
+ // Reserve the absolute strongest available peak for the FINAL shot first.
+ // Otherwise choosing the hook first consumes the best frame and leaves a weaker ending.
+ const final=high(viable);
+ selected.push(final);
  const hook=high(viable.filter(f=>f.emotion==='smile'||f.emotion==='expressive'))||high(viable);
+ if(!hook)throw Error('No independent bright opening after reserving the strongest closing peak');
  selected.push(hook);
  const turns=viable.filter(f=>f.emotion!==hook.emotion&&(f.transition||f.emotion==='serious'));
  const pivot=high(turns)||high(viable.filter(f=>f.emotion!==hook.emotion))||high(viable);
- if(!pivot)throw Error('No distinct second emotional peak');
- selected.push(pivot);
- const final=high(viable);
- if(!final)throw Error('No visually independent closing peak');
- selected.push(final);
+ if(!pivot)throw Error('No independent contrasting emotional turn');
+ // From here on keep dramaturgical order: hook → turn → strongest finale.
+ selected.splice(0,selected.length,hook,pivot,final);
  // Preserve at least one usable point of view from every submitted take, up to five.
  // A video lacking any sharp/direct-look frame is never forced into the cut.
  for(let fileIndex=0;fileIndex<videos.length&&selected.length<5;fileIndex++){
