@@ -100,7 +100,7 @@ try{
   const shootPage=await shootContext.newPage();
   shootPage.on('pageerror',error=>summary.errors.push('shoot-first: '+error.message));
   await shootPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
-  await shootPage.getByRole('button',{name:'Показать 7 кадров и начать съёмку'}).click();
+  await shootPage.getByRole('button',{name:/Актёр \+ композитор/}).click();
   const board=shootPage.getByRole('region',{name:'Снять ролик сейчас'});
   await board.waitFor({state:'visible',timeout:15000});
   await board.getByText('Я актёр. И ещё пишу музыку.').waitFor();
@@ -161,7 +161,7 @@ try{
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(response)});
   });
   await aiPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
-  await aiPage.getByRole('button',{name:'Создать Reels'}).click();
+  await aiPage.getByRole('button',{name:/Новый Reels/}).click();
   // A new Reel starts at Idea: explicitly open the Shoot stage for this browser test.
   await aiPage.getByRole('navigation',{name:'Пять этапов создания Reels'})
    .getByRole('button',{name:/Съёмка/}).click();
@@ -182,7 +182,7 @@ try{
  page=await context.newPage();
  page.on('pageerror',error=>summary.errors.push(error.message));
  await page.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
- await page.getByRole('button',{name:'Создать Reels'}).click();
+ await page.getByRole('button',{name:/Новый Reels/}).click();
  const comparison=await openComparison(page);
  assert.equal(await comparison.count(),1,'Comparison Studio should not be duplicated in DOM');
  step('Created a Reels project and opened a single Comparison Studio panel');

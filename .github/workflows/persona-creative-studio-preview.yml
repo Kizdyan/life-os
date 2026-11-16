@@ -1,0 +1,43 @@
+name: Persona Creative Studio Visual QA
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "tools/persona-creative-studio-screenshots.mjs"
+      - ".github/workflows/persona-creative-studio-preview.yml"
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install app and pinned Playwright for screenshots
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Start isolated localhost Vite server
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/persona-creative-vite.log 2>&1 &
+          for attempt in {1..40}; do
+            if curl --silent --fail http://127.0.0.1:4173/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/persona-creative-vite.log
+          exit 1
+      - name: Take real screenshots and verify fixed footer
+        run: node tools/persona-creative-studio-screenshots.mjs
+      - name: Upload 390px and 1440px screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-creative-studio-screenshots
+          path: artifacts/persona-creative-studio/
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,5 +1,9 @@
 import {PersonaManualScript} from './PersonaManualScript';
 import React from 'react';
+import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
+import PersonaPreparationStudio from './PersonaPreparationStudio';
+import './persona-creative-studio.css';
+
 import PersonaMvpSteps,{REEL_MVP_STEPS,reelMvpIndex,type PersonaMvpWorkspaceStep} from './PersonaMvpSteps';
 import PersonaPhotoEditor from './PersonaPhotoEditor';
 import PersonaCarouselEditor from './PersonaCarouselEditor';
@@ -701,19 +705,41 @@ export default function PersonaFactory(){
  const isReelMvp=chosen?.format==='reel';const projectSteps=isReelMvp?REEL_MVP_STEPS:workspaceStepsFor(chosen?.format);
   const workspaceIndex=isReelMvp?reelMvpIndex(workspaceStep):Math.max(0,projectSteps.findIndex(([id])=>id===workspaceStep));
  function moveWorkspace(direction:-1|1){const next=projectSteps[workspaceIndex+direction];if(next&&canLeaveGuide())setWorkspaceStep(next[0])}
- if(screen==='home')return <section className="personaFactoryV2 personaMobileHome"><header className="pfHead"><div><h2>Мастерская</h2><p>Создавайте и продолжайте материалы в одном месте.</p></div></header><section className="personaTodayShoot" aria-label="Что снять сегодня">
-  <small>СЕГОДНЯ · 31 СЕКУНДА · 7 КАДРОВ</small>
-  <h3>Сними короткую сцену: актёр + композитор</h3>
-  <p><b>Первая реплика:</b> «Я актёр. И ещё пишу музыку.» Две роли, телефон на штативе, одна комната. Дальше — точные реплики, кадры, свет, игра и монтаж.</p>
-  <button type="button" className="primary" onClick={startPilotShoot}>Показать 7 кадров и начать съёмку</button>
-  <small>Рабочий пример, не утверждённая публикация. Старые проекты и сценарии сохраняются.</small>
- </section><div className="personaHomeActions"><button className="primary" onClick={()=>createQuickProject('reel')}>Создать Reels</button><button className="primary" onClick={startPilotShoot}>Открыть съёмку: актёр + композитор · 7 кадров</button><button onClick={()=>createQuickProject('photo')}>Обработать фото</button><button onClick={()=>createQuickProject('carousel')}>Создать карусель</button></div><section className="personaHomeContinue"><h3>Продолжить последний проект</h3>{projects.find(project=>project.id===activeProjectId)?<button className="projectCard" onClick={()=>continueProject(projects.find(project=>project.id===activeProjectId)!)}><b>{projects.find(project=>project.id===activeProjectId)!.title}</b><span>{contentTypeLabel(projects.find(project=>project.id===activeProjectId)!.contentType)} · {stageLabel(projectStage(projects.find(project=>project.id===activeProjectId)!.stage))}</span></button>:<button disabled>Продолжить последний проект</button>}<button className="ghost" onClick={()=>navigate('projects')}>Мои проекты</button></section><DataPortability/></section>;
- if(screen==='projects')return <section className="personaFactoryV2 personaProjectList"><header className="pfHead"><div><button className="backButton" onClick={()=>navigate('home')}>← Persona</button><h2>Мои проекты</h2><p>{projects.length?'Выберите материал, чтобы продолжить.':'Здесь появятся ваши материалы.'}</p></div><button className="primary" onClick={()=>navigate('home')}>Новый проект</button></header><div className="projectRows">{projects.map(project=><article key={project.id}><div><b>{project.title}</b><span>{contentTypeLabel(project.contentType)} · {stageLabel(projectStage(project.stage))} · сохранён {new Date(project.updatedAt).toLocaleDateString('ru-RU')}</span></div><button onClick={()=>continueProject(project)}>Открыть</button></article>)}</div></section>;
- return <section className="personaFactoryV2">
+ if(screen==='home')return <section className="personaFactoryV2 personaMobileHome personaCreativeStudio">
+  <header className="personaCreativeHero">
+   <div className="personaCreativeHeroTop"><span>PERSONA / CREATIVE STUDIO</span><span>ТВОЯ ТВОРЧЕСКАЯ МАСТЕРСКАЯ</span></div>
+   <div className="personaCreativeHeroMain">
+    <div><p className="personaCreativeEyebrow">ТВОИ ИСТОРИИ ЗАСЛУЖИВАЮТ КРАСИВОГО НАЧАЛА</p>
+     <h2>Истории начинаются <em>здесь.</em></h2>
+     <p className="personaCreativeHeroDescription">От первой идеи до последнего кадра. Создавай сценарии, собирай раскадровки и возвращайся к работе в собственном ритме.</p>
+     <button className="personaCreativeHeroButton" type="button" onClick={()=>createQuickProject('reel')}>Новый Reels <span aria-hidden="true">↗</span></button>
+    </div>
+    <div className="personaCreativeHeroArt" aria-hidden="true"><span className="personaCreativeHeroArtOutline">P</span><span>EST. 2026 · YOUR STORY</span></div>
+   </div>
+  </header>
+  <div className="personaCreativeSectionHead"><div><small>01 / ПРОЕКТЫ</small><h3>Продолжить работу</h3><p>Все материалы сохраняются в твоей мастерской.</p></div><button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
+  {projects.length?<div className="personaCreativeGrid">{projects.slice(0,4).map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
+   <div className="personaCreativeBlank"><span aria-hidden="true">✦</span><h3>Первая история ждёт тебя</h3><p>Начни с идеи или подготовь сценарий без съёмок.</p><button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
+  <div className="personaCreativeSectionHead personaCreativeToolsHead"><div><small>02 / ВОЗМОЖНОСТИ</small><h3>Свобода творчества</h3></div></div>
+  <div className="personaCreativeTools">
+   <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот · раскадровка</small></button>
+   <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong><small>Портреты и визуальный образ</small></button>
+   <button type="button" onClick={()=>createQuickProject('carousel')}><span aria-hidden="true">▤</span><strong>Карусель</strong><small>История в нескольких кадрах</small></button>
+  </div>
+  <details className="personaCreativeAdvanced"><summary>Advanced / Для разработчика</summary><DataPortability/></details>
+ </section>;
+ if(screen==='projects')return <section className="personaFactoryV2 personaProjectList personaCreativeStudio">
+  <header className="personaCreativeListHead"><button className="backButton" onClick={()=>navigate('home')}>← Мастерская</button><small>PERSONA / АРХИВ ПРОЕКТОВ</small><h2>Мои проекты</h2><p>{projects.length?'Продолжай с того места, где остановился.':'Все твои будущие истории будут здесь.'}</p><button className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button></header>
+  {projects.length?<div className="personaCreativeGrid">{projects.map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
+   <div className="personaCreativeBlank"><h3>Пока нет проектов</h3><p>Открой новую историю, когда будешь готов.</p></div>}
+ </section>;
+ return <section className="personaFactoryV2 personaCreativeStudio personaCreativeWorkspace">
   <header className="pfHead personaProjectHead"><div><button className="backButton" onClick={()=>navigate('projects')}>← Мои проекты</button><h2>{chosen?.title||'Новый проект'}</h2><p>{contentTypeLabel(chosen?.format as PersonaContentType|undefined)} · {stageLabel(stage)} · {saveState==='saved'?'Сохранено на этом устройстве':saveState==='saving'?'Сохранение…':'Сохранение не удалось'}</p></div><button className="ghost" onClick={()=>navigate('home')}>Persona</button></header>
   {guideGuardMessage&&<p className="personaGuideNavigationWarning" role="alert">{guideGuardMessage}</p>}
   {isReelMvp?<PersonaMvpSteps step={workspaceStep} onSelect={next=>{if(canLeaveGuide())setWorkspaceStep(next)}}/>:
    <nav className="personaWorkspaceSteps" aria-label="Этапы производства">{projectSteps.map(([id,label],index)=><button key={id} type="button" className={workspaceStep===id?'current':''} onClick={()=>{if(canLeaveGuide())setWorkspaceStep(id)}} aria-current={workspaceStep===id?'step':undefined}><span>{index+1}</span>{label}</button>)}</nav>}
+  {chosen?.format==='reel'&&(workspaceStep==='script'||workspaceStep==='guide')&&
+   <PersonaPreparationStudio scenes={scenarioWorkspace?.script?.currentRevision.beats??production?.materials.productionBrief?.script}/>}
   {isReelMvp&&(workspaceStep==='guide'||workspaceStep==='assets')&&
    <div className="personaMvpSubsteps" role="group" aria-label="Съёмка и исходники">
     <button type="button" aria-pressed={workspaceStep==='guide'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('guide')}}>План съёмки</button>
@@ -725,8 +751,9 @@ export default function PersonaFactory(){
     <button type="button" aria-pressed={workspaceStep==='export'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('export')}}>Скачать MP4</button>
    </div>}
   {!chosen&&<section className="personaQuickStart" aria-label="Быстрый старт Persona"><h3>Быстрый старт</h3><div className="personaQuickStartGrid">{(['reel','photo','carousel'] as const).map(format=><button key={format} type="button" onClick={()=>select({id:crypto.randomUUID(),title:format==='reel'?'Новый Reels':format==='photo'?'Новое фото':'Новая карусель',angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}>{format==='reel'?'Создать Reels':format==='photo'?'Обработать фото':'Создать карусель'}</button>)}</div><p>Экспорт MP4 с телефона пока не подключён.</p></section>}
-  <details className="personaDeveloperDisclosure"><summary>Дополнительные инструменты</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}}/></details>
-  {chosen&&<label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label>}
+  <details className="personaDeveloperDisclosure"><summary>Advanced / Для разработчика</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}}/>
+  {chosen&&<details className="personaCreativeAdvanced"><summary>Импорт технического JSON-брифа</summary><label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label></details>}
+  </details>
   {chosen&&status&&<p className="personaWorkspaceStatus" role="status">{status}</p>}
   {false&&<div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>

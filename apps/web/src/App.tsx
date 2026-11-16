@@ -181,7 +181,7 @@ export default function App() {
     viewDate === todayDate ? 'Сегодня' :
     viewDate === tomorrowDate ? 'Завтра' : 'Расписание';
 
-  return <main>
+  return <main className={page==='persona'?'appPersonaPage':undefined}>
     <header>
       <div><small>LIFE OS{mode}{offline ? ' · ОФЛАЙН' : ''}</small><h1>{heading}</h1></div>
       <button className="erika" onClick={() => setErika(true)}>Эрика</button>
