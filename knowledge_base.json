@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "id": "persona-arsenal-knowledge-2026-11-16",
+  "purpose": "Professional actor/composer/director portfolio and practical shoot planning",
+  "provenance": {
+    "status": "user-specified-and-select-verified-references",
+    "note": "10 actionable rules. Only explicitly recalled reference numbers are attached. Not a frame-by-frame audit of unavailable video files."
+  },
+  "policies": {
+    "authorApprovalRequired": true,
+    "originalMediaImmutable": true,
+    "claimsRequireEvidence": true,
+    "professionalOutcomeOverEmptyVirality": true,
+    "visualStyle": "Quiet Luxury",
+    "writingStyle": "docs/my-writing-style.md"
+  },
+  "rules": [
+    {
+      "id": "KB-01",
+      "area": "acting",
+      "name": "Художественная визитка",
+      "referenceId": null,
+      "verified": "user-master-mission",
+      "trigger": "actor_portfolio",
+      "effect": "Build 30–60-second mini-film with protagonist goal, obstacle, escalation, turn, actor range and author-reviewed dialogue; never pass off fiction as biography."
+    },
+    {
+      "id": "KB-02",
+      "area": "acting",
+      "name": "Match Cut",
+      "referenceId": 139,
+      "verified": "prior-reference-notes",
+      "trigger": "character_shift",
+      "effect": "Hold identical framing, pose and screen position between takes; switch costume, emotional task and movement. No unapproved identity manipulation."
+    },
+    {
+      "id": "KB-03",
+      "area": "acting",
+      "name": "Top-down Flat lay",
+      "referenceId": 141,
+      "verified": "prior-reference-notes",
+      "trigger": "comedy_object_scene",
+      "effect": "Tell a comic situation through hands and props from overhead; the comic reveal is the gap between planned and actual action."
+    },
+    {
+      "id": "KB-04",
+      "area": "editing",
+      "name": "Associative intercut",
+      "referenceId": 135,
+      "verified": "prior-reference-notes",
+      "trigger": "edit_plan",
+      "effect": "Suggest alternation of face/reaction and reviewed object inserts (paper, candle, flame) when an emotional causal link exists; no fabricated footage or auto-insert."
+    },
+    {
+      "id": "KB-05",
+      "area": "lighting",
+      "name": "Dramatic rim light",
+      "referenceId": 140,
+      "verified": "prior-reference-notes",
+      "trigger": "dramatic_scene",
+      "effect": "Recommend controlled back/rim light to separate silhouette, only when safe and available; do not claim actual measurements."
+    },
+    {
+      "id": "KB-06",
+      "area": "lighting",
+      "name": "Interview 45-degree key",
+      "referenceId": 140,
+      "verified": "user-master-mission",
+      "trigger": "interview_scene",
+      "effect": "Recommend soft key at ~45 degrees and slightly above eye line; fill is optional and the face must remain legible."
+    },
+    {
+      "id": "KB-07",
+      "area": "production",
+      "name": "Second-phone monitor",
+      "referenceId": null,
+      "verified": "user-master-mission",
+      "trigger": "shoot_checklist",
+      "effect": "Second phone may serve as monitoring aid using supported camera preview or local link; verify compatibility, delay and privacy. Never assume remote screen control."
+    },
+    {
+      "id": "KB-08",
+      "area": "business",
+      "name": "Signaling theory",
+      "referenceId": 138,
+      "verified": "prior-reference-notes",
+      "trigger": "strategy_audit",
+      "effect": "Review whether tangible observable competence in acting, music or direction is demonstrated rather than claimed; weak evidence despite virality -> WARNING."
+    },
+    {
+      "id": "KB-09",
+      "area": "workflow",
+      "name": "90/90/1 protected practice",
+      "referenceId": null,
+      "verified": "prior-conversation",
+      "trigger": "professional_development",
+      "effect": "Choose one important professional result for 90 days, protect up to 90 minutes daily for focused work without accumulating missed-day debt. Adapt to real schedule."
+    },
+    {
+      "id": "KB-10",
+      "area": "music",
+      "name": "Music sync proof and rights",
+      "referenceId": null,
+      "verified": "user-master-mission",
+      "trigger": "music_sync_portfolio",
+      "effect": "Track genre, mood, length, stems, rights owner, licensed/owned/unknown rights, accessible HTTPS links and cue metadata; do not claim cleared licensing without evidence."
+    }
+  ],
+  "guardrails": {
+    "editing": "Suggestion only; insert only uploaded verified cleared media after author review",
+    "music": "Rights owner is a statement by the author, not legal clearance",
+    "actor": "Portfolio script/shot list is a draft until approved"
+  }
+}
