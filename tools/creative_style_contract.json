@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "styleId": "independent-artist-quiet-luxury",
+  "name": "Independent Artist / Quiet Luxury",
+  "forbiddenEffects": [
+    "glitch", "micro_shake_glitch", "rgb_split", "flash_cut",
+    "whip_pan", "shake", "neon_glow", "red_keywords", "punch_zoom"
+  ],
+  "allowedEffects": [
+    "film_grain", "vignette", "slow_push_in", "subtle_fade", "cinematic_title"
+  ],
+  "allowedTransitions": ["cut", "match_cut", "dissolve", "cross_dissolve"],
+  "allowedCaptionStyles": ["cinematic", "editorial_quote"],
+  "allowedColorPresets": ["natural-clean", "muted-filmic", "manual-sdr"],
+  "maxLutMix": 0.6,
+  "minHorizontalMarginRatio": 0.1,
+  "minVerticalMarginRatio": 0.15,
+  "maxTextWidthRatio": 0.8,
+  "maxCaptionLines": 2,
+  "requireCompleteEffectInventory": true,
+  "requireAuthorReviewBeforePublishing": true
+}

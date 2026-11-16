@@ -6,9 +6,9 @@
  * Local only. No uploads, AI calls or destructive source modifications.
  */
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { readFile, mkdir, mkdtemp, rename, rm, stat, writeFile, access } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, constants as fsConstants } from 'node:fs';
+import { readFile, mkdir, mkdtemp, rename, copyFile, rm, stat, writeFile, access } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {planFraming} from './persona-studio-framing.mjs';
@@ -16,6 +16,20 @@ import {cachedFfmpegStage,cachedFfprobe,cachedMp4,stageCacheEnabled,stageFileSha
 import {fileURLToPath} from 'node:url';
 
 const fail = message => { throw new Error(message); };
+async function moveVerifiedRender(source,destination){
+  try { await rename(source,destination); return; }
+  catch(error){ if(error.code!=='EXDEV') throw error; }
+  // On Windows the OS temp folder can be on C: while the project is on D:.
+  // Copy to a unique temp file on the target volume, then rename atomically.
+  const intermediate=destination+'.'+randomUUID()+'.partial';
+  try{
+    await copyFile(source,intermediate,fsConstants.COPYFILE_EXCL);
+    await rename(intermediate,destination);
+  }finally{
+    await rm(intermediate,{force:true});
+  }
+}
+
 const allowed = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
 const TARGET_DIALOGUE_LUFS = -20;
 const MAX_DIALOGUE_BOOST_DB = 6;
@@ -47,7 +61,7 @@ function framingFor(value,width,height){
  numeric(position.x,'crop position x',0,1);numeric(position.y,'crop position y',0,1);
  return {mode,position:{x:position.x,y:position.y},manualReviewRequired:mode==='cover',width,height};
 }
-function videoFilter(framing,width,height,fps){
+function videoFilter(framing,width,height,fps,intercutFallback=null,durationSec=0){
  const crop=framing.smartCrop;
  const normalized=crop?.mode==='face-crop'&&crop.needsSquarePixels?`scale=${crop.displayWidth}:${crop.displayHeight},setsar=1,`:'';
  const base=crop?.mode==='face-crop'
@@ -55,7 +69,24 @@ function videoFilter(framing,width,height,fps){
   : framing.mode==='cover'
   ? 'scale='+width+':'+height+':force_original_aspect_ratio=increase,crop='+width+':'+height+':(in_w-out_w)*'+framing.position.x+':(in_h-out_h)*'+framing.position.y
   : 'scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2';
- return base+',setsar=1,fps='+fps+',format=yuv420p';
+ const standard=base+',setsar=1,fps='+fps+',format=yuv420p';
+ if (!intercutFallback) return standard;
+ const frames=Math.round(durationSec*fps),tailFrames=Math.max(1,Math.round(intercutFallback.durationSec*fps));
+ const zoomFrom=Math.max(0,frames-tailFrames);
+ const zoomRange=Number((intercutFallback.maxZoom-1).toFixed(6));
+ const zoom='1+'+zoomRange+'*min(1,max(0,(on-'+zoomFrom+')/'+tailFrames+'))';
+ // d=1 preserves one output frame per input frame. The camera audio is untouched.
+ return standard+",zoompan=z='"+zoom+"':x='(iw-iw/zoom)*"+framing.position.x+"':y='(ih-ih/zoom)*"+framing.position.y+"':d=1:s="+width+"x"+height+":fps="+fps;
+
+}
+function intercutFor(value,durationSec){
+ if(value===undefined)return null;
+ if(!value||value.kind!=='slow_push_in'||value.authorReviewed!==true)
+  fail('Unreviewed or unsupported intercut fallback');
+ const seconds=numeric(value.durationSec,'zoom tail duration',.2,.65);
+ const maxZoom=numeric(value.maxZoom,'zoom factor',1.001,1.04);
+ if(durationSec<1.2||seconds>durationSec*.5)fail('Zoom fallback requires a long enough clip');
+ return {kind:'slow_push_in',durationSec:seconds,maxZoom,authorReviewed:true};
 }
 function audioTreatmentFor(value,durationSec,hasAudio){
  if(value===undefined)return null;
@@ -144,7 +175,7 @@ async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,
   const segments = [];
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
-    const clipVideoFilter = videoFilter(clip.framing,width,height,fps);
+    const clipVideoFilter = videoFilter(clip.framing,width,height,fps,clip.intercutFallback,clip.durationSec);
     const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
     if (!clip.media.audio||clip.muteSourceAudio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
     const audioFilters=['aresample=async=1:first_pts=0'];
@@ -212,6 +243,7 @@ async function main() {
     const startSec = numeric(clip.startSec ?? 0, 'startSec', 0, media.durationSec - 0.02);
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
     const framing=framingFor(clip.framing??project.framing,width,height);
+    const intercutFallback=intercutFor(clip.intercutFallback,durationSec);
     if(process.env.PERSONA_WORKER_RENDER==='1'&&clip.framing===undefined&&project.framing===undefined&&
        width*16===height*9&&media.displayWidth>media.displayHeight){
       const crop=await planFraming(path,{startSec,endSec:startSec+durationSec},media,
@@ -227,7 +259,7 @@ async function main() {
     const loudnessDuration=audioTreatment?.speechDurationSec??durationSec;
     const loudness=media.audio&&!muteSourceAudio?await measureLoudness(path,startSec,loudnessDuration):null;
     const musicTail=audioTreatment?await measureLoudness(path,startSec+audioTreatment.speechDurationSec,durationSec-audioTreatment.speechDurationSec):null;
-    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing,
+    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing, intercutFallback,
       beat:Number.isSafeInteger(clip.beat)?clip.beat:null,
       brollAfterBeat:Number.isSafeInteger(clip.brollAfterBeat)?clip.brollAfterBeat:null,
       muteSourceAudio, preserveOriginalAudio, audioTreatment, loudness, musicTail, audioLeveling:preserveOriginalAudio?{gainDb:0,status:'original-music-preserved',warning:null}:safeGain(loudness) });
@@ -303,7 +335,7 @@ async function main() {
       outputOffset+=clip.durationSec;
     }
     const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
-    await rename(staged,output);
+    await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
     process.stdout.write(JSON.stringify({output,manifest:output+'.persona.json',durationSec:actual.durationSec,clips:clips.length})+'\n');

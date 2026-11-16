@@ -84,6 +84,14 @@ export interface PersonaProductionBrief {
     cameraMovement: string;
     lighting: string;
     action: string;
+    /** Shot-list suggestion only: neither footage nor rights are implied. */
+    bRollIntent?: {
+      purpose: "mask_jump_cut";
+      preferredDurationSec: number;
+      captureSuggestion: string;
+      fallback: "slow_push_in";
+      requiresAuthorReview: true;
+    };
   }>;
   capture: {
     props: string[];
@@ -236,5 +244,14 @@ function buildTimedShots(script: PersonaProductionBrief["script"]): PersonaProdu
     cameraMovement: index === 1 ? "Смысловой переход на деталь" : "Статичный кадр",
     lighting: "Единая цветовая температура; мягкий ключевой свет",
     action: beat.action,
+    ...(index < script.length - 1 && beat.durationSec >= 1.5
+      ? { bRollIntent: {
+          purpose: "mask_jump_cut" as const,
+          preferredDurationSec: 1.5,
+          captureSuggestion: "Снимите при необходимости 1–2 секунды предметного действия или реакции, имеющей прямое отношение к сцене. Не имитируйте отсутствующий материал.",
+          fallback: "slow_push_in" as const,
+          requiresAuthorReview: true as const,
+        } }
+      : {}),
   }));
 }

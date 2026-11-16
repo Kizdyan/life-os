@@ -6,6 +6,9 @@ import {spawn} from 'node:child_process';
 import {basename, dirname, extname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cachedFfprobe} from './persona-stage-cache.mjs';
+import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './persona-p3-adapter.mjs';
+import {renderApprovedBroll} from './persona-approved-broll.mjs';
+import {proposeIntercuts,applyReviewedZoomFallback} from './persona-intercut-planner.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
 ]);
@@ -109,6 +112,72 @@ export class ProductionJob {
     }finally{await handle.close();await unlink(lock)}
   }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}
+  /** Gate editing on verified source-bound, reviewed shot coverage. */
+  async inspectCoverage({brief,bindings,approvalSha256}={}){
+    if((await this.read()).status!=='ANALYZING')fail('P3 coverage requires ANALYZING');
+    if(!brief||!bindings||!approvalSha256)fail('P3 requires approved brief, bindings, and approved SHA');
+    const output=join(this.directory,'output','coverage-'+randomUUID()+'.json');
+    const result=await coverageGate({brief,bindings,approvalSha256,input:join(this.directory,'input'),output});
+    if(result.status==='PASS')await this.transition('EDITING',{reason:'P3 shot coverage and author evidence verified'});
+    return {status:result.status,reportPath:output,summary:result.report.summary};
+  }
+  /** Return candidates, not a replacement for author selection. */
+  async suggestApprovedMoments({file,database,kind,minScore=4}={}){
+    const state=await this.read();
+    if(state.status!=='EDITING')fail('Moment lookup requires EDITING');
+    if(!validFileName(file))fail('Invalid source filename');
+    const asset=state.assets.find(a=>a.name===file);
+    if(!asset)fail('Source is not a verified job asset');
+    const video=join(this.directory,'input',file);
+    if((await lstat(video)).isSymbolicLink()||asset.sha256!==await fingerprint(video))
+      fail('Moment source has changed');
+    return approvedCandidates({database:database?resolve(database):join(this.directory,'approved-moments.sqlite3'),video,kind,minScore});
+  }
+  /** Apply the style contract to final, complete effective render intent. */
+  async checkStyle({plan,contract}={}){
+    if((await this.read()).status!=='EDITING')fail('Style gate requires EDITING');
+    if(!plan)fail('Resolved render intent required');
+    return styleGate({plan,...(contract?{contract}:{})});
+  }
+  /** Separate accounting; never automatically mark human work complete. */
+  async economics({command,args=[]}={}){
+    return economicsCommand({database:join(this.directory,'economics.sqlite3'),command,args});
+  }
+  /** Generate metadata-based cut-risk proposals. This does not approve or insert footage. */
+  async prepareIntercuts({timelinePath}={}){
+    if((await this.read()).status!=='EDITING')fail('Intercut planning requires EDITING');
+    if(typeof timelinePath!=='string'||!timelinePath.trim())fail('Existing EditPlan required');
+    const source=await readFile(resolve(timelinePath),'utf8');
+    const timeline=JSON.parse(source);
+    const plan={...proposeIntercuts(timeline),timelineSha256:createHash('sha256').update(source).digest('hex')};
+    const output=join(this.directory,'output','intercut-'+randomUUID()+'.json');
+    await writeFile(output,JSON.stringify(plan,null,2)+'\n',{flag:'wx'});
+    return {status:'AWAITING_INTERCUT_REVIEW',path:output,suggestions:plan.suggestions};
+  }
+  /** Apply only reviewed slow push-in choices to an exact, hash-matched EditPlan. */
+  async applyIntercutZoom({timelinePath,intercutPath,reviewedAfterClips=[]}={}){
+    if((await this.read()).status!=='EDITING')fail('Intercut changes require EDITING');
+    const source=await readFile(resolve(timelinePath),'utf8');
+    const timeline=JSON.parse(source),plan=JSON.parse(await readFile(resolve(intercutPath),'utf8'));
+    if(plan.timelineSha256!==createHash('sha256').update(source).digest('hex'))fail('Stale intercut plan');
+    const output=join(this.directory,'output','intercut-reviewed-'+randomUUID()+'.json');
+    const edited=applyReviewedZoomFallback(timeline,plan,{reviewedAfterClips});
+    await writeFile(output,JSON.stringify(edited,null,2)+'\n',{flag:'wx'});
+    return {status:'REVIEWED_EDIT_PLAN_READY',path:output,publicationApproved:false};
+  }
+  /** Reuse existing SHA/rights-reviewed B-roll renderer, never select media without approval. */
+  async renderReviewedBroll({timelinePath,matchesPath,catalogPath,captionsPath,selectionPath}={}){
+    if((await this.read()).status!=='EDITING')fail('B-roll render requires EDITING');
+    if(![timelinePath,matchesPath,catalogPath,captionsPath,selectionPath].every(x=>typeof x==='string'&&x.trim()))
+      fail('Reviewed B-roll needs five explicit source files');
+    const outputDir=join(this.directory,'output','reviewed-broll-'+randomUUID());
+    const result=await renderApprovedBroll({timelinePath,matchesPath,catalogPath,captionsPath,selectionPath,outputDir});
+    if(result.status!=='AWAITING_AUTHOR_REVIEW'||result.publicationApproved!==false||result.distributionAllowed!==false)
+      fail('B-roll result did not pass safe review contract');
+    await this.transition('QUALITY_CHECK',{reason:'Approved B-roll was rendered and technical QA completed'});
+    await this.transition('AWAITING_APPROVAL',{reason:'B-roll montage requires author review'});
+    return result;
+  }
   async scanForFootage(stability){
     const state=await this.read();if(state.status!=='WAITING_FOR_FOOTAGE')return {changed:false,status:state.status};
     const dir=join(this.directory,'input');
@@ -143,7 +212,7 @@ export class ProductionJob {
       await new Promise(resolve=>setTimeout(resolve,pollMs));
     }
   }
-  async runBatch({count=4,protectedFile,stylepackFile}={}){
+  async runBatch({count=4,protectedFile,stylepackFile,styleIntentFile}={}){
     if(!Number.isInteger(count)||count<3||count>5)fail('Batch count must be 3, 4 or 5');
     if((await this.read()).status==='WAITING_FOR_FOOTAGE')await this.watchForFootage();
     const path=this.path+'.batch.lock', token=randomUUID();
@@ -152,7 +221,8 @@ export class ProductionJob {
       if(error.code==='EEXIST')fail('Cinematic Calm batch is already running');
       throw error;
     }
-    let output;
+    let output, economicStageId=null, economicJobId=null;
+    const economicsDb=join(this.directory,'economics.sqlite3');
     try{
       await lock.writeFile(token);
       const state=await this.read();
@@ -172,8 +242,23 @@ export class ProductionJob {
         ...(protectedFile?['--protected',resolve(protectedFile)]:[])],600_000);
       if(state.status==='ANALYZING')await this.transition('EDITING',
         {reason:'Cinematic Calm phrase plan created',batchToken:token});
+      if(styleIntentFile){
+        const gate=await styleGate({plan:resolve(styleIntentFile)});
+        await writeFile(join(output,'P3-STYLE-GATE.json'),JSON.stringify(gate.result,null,2)+'\n',{flag:'wx'});
+        if(gate.status!=='PASS')fail('P3 creative style contract blocked this batch');
+      }else if(process.env.PERSONA_P3_REQUIRE_STYLE==='1')fail('P3 style contract requires --style-intent');
+      if(process.env.PERSONA_P3_ECONOMICS==='1'){
+        economicJobId='batch-'+folder;
+        await economicsCommand({database:economicsDb,command:'create',args:[economicJobId]});
+        const started=await economicsCommand({database:economicsDb,command:'start',args:[economicJobId,'EDITING']});
+        economicStageId=started.stageId;
+      }
       await runBatchPhase('render-batch',source,output,
         stylepackFile?['--stylepack',resolve(stylepackFile)]:[],1_200_000);
+      if(economicStageId){
+        await economicsCommand({database:economicsDb,command:'finish',args:[economicStageId]});
+        economicStageId=null;
+      }
       const manifest=join(output,'BATCH-RESULT.json');
       const result=JSON.parse(await readFile(manifest,'utf8'));
       if(result.version!==1||result.sourceSha256!==asset.sha256||await fingerprint(source)!==asset.sha256
@@ -184,11 +269,18 @@ export class ProductionJob {
         if(reel.path!==expected||reel.sha256!==await fingerprint(join(output,expected)))
           fail('A batch render is missing or changed');
       }
+      if(economicJobId){
+        const started=await economicsCommand({database:economicsDb,command:'start',args:[economicJobId,'QUALITY_CHECK']});
+        await economicsCommand({database:economicsDb,command:'finish',args:[started.stageId]});
+        const report=await economicsCommand({database:economicsDb,command:'report',args:[economicJobId]});
+        await writeFile(join(output,'P3-ECONOMICS.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+      }
       const batch={folder,count,manifestSha256:await fingerprint(manifest)};
       await this.transition('QUALITY_CHECK',{reason:'All batch MP4s passed decode, duration and audio QA',batchToken:token,batch});
       await this.transition('AWAITING_APPROVAL',{reason:'Batch package ready for author review',batchToken:token});
       return {output, ...result};
     }catch(error){
+      if(economicStageId)await economicsCommand({database:economicsDb,command:'finish',args:[economicStageId,'--failed']}).catch(()=>{});
       if(output)await writeFile(join(output,'BATCH-ERROR.json'),
         JSON.stringify({status:'failed',error:error.message})+'\n',{flag:'wx'}).catch(()=>{});
       throw error;
@@ -200,15 +292,55 @@ export class ProductionJob {
 }
 async function cli(){
   const [action,rawDir,...args]=process.argv.slice(2),target=args[0];
-  if(!['init','ready','status','watch','advance','batch'].includes(action)||!rawDir)
-    fail('Usage: init|ready|status|watch|advance|batch JOB_DIR [NEXT_STAGE or batch options]');
+  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics','broll','intercut','zoom'].includes(action)||!rawDir)
+    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics|broll|intercut|zoom JOB_DIR [options]');
   if(action==='init'){const job=await ProductionJob.create(rawDir);console.log(JSON.stringify(await job.read(),null,2));return}
   const job=new ProductionJob(rawDir);
   if(action==='ready'){console.log(JSON.stringify(await job.markReady(),null,2));return}
   if(action==='status'){console.log(JSON.stringify(await job.read(),null,2));return}
+  if(action==='coverage'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--brief','--bindings','--approval-sha256'].includes(args[i])||!args[i+1])fail('Invalid coverage option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.inspectCoverage({brief:opts['--brief'],bindings:opts['--bindings'],approvalSha256:opts['--approval-sha256']}),null,2));return;
+  }
+  if(action==='moments'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--file','--db','--kind','--min-score'].includes(args[i])||!args[i+1])fail('Invalid moments option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.suggestApprovedMoments({file:opts['--file'],database:opts['--db'],kind:opts['--kind'],minScore:opts['--min-score']?Number(opts['--min-score']):4}),null,2));return;
+  }
+  if(action==='style'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--plan','--contract'].includes(args[i])||!args[i+1])fail('Invalid style option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.checkStyle({plan:opts['--plan'],contract:opts['--contract']}),null,2));return;
+  }
+  if(action==='intercut'){
+    if(args.length!==2||args[0]!=='--timeline')fail('Intercut usage: intercut JOB_DIR --timeline PATH');
+    console.log(JSON.stringify(await job.prepareIntercuts({timelinePath:args[1]}),null,2));return;
+  }
+  if(action==='zoom'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){
+      if(!['--timeline','--intercut-plan','--reviewed-after'].includes(args[i])||!args[i+1])fail('Invalid zoom option');
+      opts[args[i]]=args[i+1];
+    }
+    const reviewedAfterClips=opts['--reviewed-after']?.split(',').map(Number)??[];
+    console.log(JSON.stringify(await job.applyIntercutZoom({timelinePath:opts['--timeline'],intercutPath:opts['--intercut-plan'],reviewedAfterClips}),null,2));return;
+  }
+  if(action==='broll'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){
+      if(!['--timeline','--matches','--catalog','--captions','--selection'].includes(args[i])||!args[i+1])fail('Invalid B-roll option');
+      opts[args[i]]=args[i+1];
+    }
+    console.log(JSON.stringify(await job.renderReviewedBroll({timelinePath:opts['--timeline'],matchesPath:opts['--matches'],catalogPath:opts['--catalog'],captionsPath:opts['--captions'],selectionPath:opts['--selection']}),null,2));return;
+  }
+  if(action==='economics'){
+    const [economicAction,...economicArgs]=args;
+    console.log(JSON.stringify(await job.economics({command:economicAction,args:economicArgs}),null,2));return;
+  }
   if(action==='batch'){
     const options={};
-    const names={'--count':'count','--protected':'protectedFile','--stylepack':'stylepackFile'};
+    const names={'--count':'count','--protected':'protectedFile','--stylepack':'stylepackFile','--style-intent':'styleIntentFile'};
     for(let i=0;i<args.length;i+=2){
       const name=names[args[i]],value=args[i+1];
       if(!name||!value||value.startsWith('--')||Object.hasOwn(options,name))fail('Invalid batch option');
