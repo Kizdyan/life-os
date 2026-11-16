@@ -22,6 +22,15 @@ from urllib.request import Request, urlopen
 KEYS = ("worldview", "visualStyle", "delivery", "targetAudience",
         "formatType", "mainGoal", "retentionStrategy")
 STATES = {"PASS", "WARNING", "BLOCKED"}
+KNOWLEDGE_BASE = Path(__file__).resolve().parent.parent / "knowledge_base.json"
+
+def signaling_rule() -> str:
+    base = json.loads(KNOWLEDGE_BASE.read_text(encoding="utf-8"))
+    matches = [rule for rule in base.get("rules", []) if rule.get("id") == "KB-08"]
+    if base.get("version") != 1 or len(matches) != 1:
+        raise RuntimeError("Missing or invalid Arsenal signaling rule")
+    return "KB-08 / Теория сигналов: " + matches[0]["effect"]
+
 BANNED_AI_CLICHES = ("это больше, чем", "открой новую главу", "раскрой свой потенциал", "погрузись в удивительный мир", "вдохновение повсюду", "контент, который цепляет")
 PROMPT = (
     "Ты — независимый стратег личного бренда актёра, композитора и режиссёра. "
@@ -94,7 +103,7 @@ def analyze(payload: dict, preferred: str | None = None) -> dict:
     body = json.dumps({
         "model": model, "temperature": 0.2, "max_tokens": 700,
         "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": PROMPT},
+        "messages": [{"role": "system", "content": PROMPT+"\\n"+signaling_rule()},
                      {"role": "user", "content": json.dumps(source, ensure_ascii=False)}],
     }, ensure_ascii=False).encode("utf-8")
     request = Request(url, data=body, method="POST", headers={
