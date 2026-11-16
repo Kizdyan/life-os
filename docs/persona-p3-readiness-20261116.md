@@ -45,6 +45,28 @@ node tools/persona_orchestrator.mjs batch ".\private-media\jobs\music-job" --cou
 
 An `economics.sqlite3` report is generated; calculated savings remain **UNVERIFIED** until real accepted MP4s, baseline and all manual work are recorded.
 
+## Jump-Cut metadata workflow
+
+While ProductionJob is in `EDITING`, construct a cut-risk proposal from an immutable, author-reviewed EditPlan:
+
+```powershell
+node tools/persona_orchestrator.mjs intercut ".\\private-media\\jobs\\my-job" --timeline ".\\timeline.json"
+```
+
+For every `ZOOM_FALLBACK_CANDIDATE`, preview the outgoing clip. An author may approve the fallback, yielding a **new** EditPlan (original untouched):
+
+```powershell
+node tools/persona_orchestrator.mjs zoom ".\\private-media\\jobs\\my-job" --timeline ".\\timeline.json" --intercut-plan ".\\intercut-proposal.json" --reviewed-after "1,3"
+```
+
+The plan and exact source timeline are bound by SHA-256 to reject stale decisions. Submit the returned plan to the existing `persona-timeline-render.mjs` for FFmpeg. For author-reviewed **real** B-roll, prefer the existing `persona-approved-broll.mjs` path or the ProductionJob wrapper:
+
+```powershell
+node tools/persona_orchestrator.mjs broll ".\\private-media\\jobs\\my-job" --timeline ".\\timeline.json" --matches ".\\ASSET-MATCHES.json" --catalog ".\\persona-assets-v1.json" --captions ".\\captions.review.json" --selection ".\\broll-selection.reviewed.json"
+```
+
+This B-roll path produces a reviewed MP4 and moves ProductionJob to `AWAITING_APPROVAL`; it does not publish. Suggestions are **not** equivalent to scene recognition and no film material or rights are invented.
+
 ## B-roll and fallback operation
 
 1. Generate the current Persona asset catalog and shot-matching report, with exact source hashes.
