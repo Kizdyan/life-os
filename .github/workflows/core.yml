@@ -50,6 +50,13 @@ jobs:
           command -v ffprobe
           ffmpeg -hide_banner -version | head -n 1
           ffprobe -hide_banner -version | head -n 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Persona P3 coverage, moments, economics and B-roll regression tests
+        run: |
+          python -m unittest discover -s tools -p 'test_p3_modules.py' -v
+          PERSONA_PYTHON=python node --test tools/persona-intercut-planner.test.mjs tools/persona-p3-adapter.test.mjs tools/persona-p3-production.test.mjs
       - name: Persona calendar and distribution regression tests
         run: |
           set -o pipefail
