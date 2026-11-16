@@ -82,7 +82,7 @@ def parse_result(data: object) -> dict:
     status, recommendation = data.get("status"), data.get("recommendation")
     if status not in STATES or not isinstance(recommendation, str) or not recommendation.strip() or len(recommendation) > 2000:
         raise ValueError("Model returned invalid status/recommendation")
-    normalized = re.sub(r"\\s+", " ", recommendation.lower())
+    normalized = re.sub(r"\s+", " ", recommendation.lower())
     if any(phrase in normalized for phrase in BANNED_AI_CLICHES):
         raise ValueError("Model response contains generic AI phrasing")
     return {"status": status, "recommendation": recommendation.strip()}
