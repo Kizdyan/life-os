@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+/** Real Chromium one-click flow with real FFmpeg and injectable test-only model.
+ * No user footage, no third-party API calls or fabricated model PASS claims.
+ */
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdtemp,mkdir,readFile,rm,stat} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
+import {createPersonaMediaWorker} from './persona-media-worker.mjs';
+
+const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
+const output=resolve(process.env.PERSONA_QUICK_SCREENSHOT_DIR||'artifacts/persona-one-click');
+await mkdir(output,{recursive:true});
+const temp=await mkdtemp(join(tmpdir(),'persona-one-click-browser-'));
+const source=join(temp,'browser-source.mp4');
+const generated=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i',
+ 'testsrc2=size=192x320:rate=24:duration=15','-f','lavfi','-i','sine=frequency=440:duration=15',
+ '-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest','-y',source],
+ {encoding:'utf8',timeout:60000});
+assert.equal(generated.status,0,generated.stderr);
+const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
+const original=hash(await readFile(source));
+const worker=createPersonaMediaWorker({
+ port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
+ quickPlanner:async({candidates,frames})=>{
+  assert.ok(frames.length>=2&&frames[0].subarray(0,2).equals(Buffer.from([0xff,0xd8])));
+  return {stylePack:'Commercial',creativeIntent:'Actor reaction to object detail',
+   choices:[{candidateId:candidates[0].id,role:'actor',caption:'КОГДА ВСЁ МЕНЯЕТСЯ'},
+            {candidateId:candidates[1].id,role:'broll',caption:'ОДНА ПАУЗА'}]};
+ },
+ quickStrategy:async()=>({status:'WARNING',recommendation:'Усилить актёрскую реакцию на последнем крупном плане'}),
+ quickLighting:async()=>({style:'Quiet Luxury',key:'45°',fill:'по необходимости',back:'контровой при драме'}),
+ ollamaModel:'none-for-this-integration-test'
+});
+const port=await worker.start();assert.equal(port,47832);
+const browser=await chromium.launch({headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:900}});
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
+ const block=page.getByTestId('persona-quick-auto-render');
+ await block.waitFor({timeout:20000});
+ assert.equal(await block.locator('textarea').count(),1);
+ assert.equal(await block.locator('input[type=file]').count(),1);
+ await page.screenshot({path:join(output,'before-1440.png'),fullPage:true,animations:'disabled'});
+ await page.locator('#persona-quick-files').setInputFiles(source);
+ await page.locator('#persona-quick-prompt').fill('Сделай кинематографично: выбери выразительные моменты и добавь титры');
+ await block.getByRole('button',{name:/Сделать всё/}).click();
+ const job=block.locator('[data-quick-status="completed"]');
+ await job.waitFor({timeout:210000});
+ await job.getByText('Готов к скачиванию').waitFor();
+ assert.match(await job.textContent(),/WARNING/);
+ const download=job.getByRole('link',{name:'Скачать готовый MP4'});
+ assert.equal(await download.count(),1);
+ await page.screenshot({path:join(output,'ready-1440.png'),fullPage:true,animations:'disabled'});
+ const pending=page.waitForEvent('download',{timeout:120000});
+ await download.click();
+ const file=await pending;
+ assert.match(file.suggestedFilename(),/\.mp4$/);
+ const destination=join(output,'real-one-click-qa.mp4');
+ await file.saveAs(destination);
+ assert.ok((await stat(destination)).size>20000);
+ const check=spawnSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',destination],{encoding:'utf8'});
+ assert.equal(check.status,0,check.stderr);
+ const parsed=JSON.parse(check.stdout);
+ assert.equal(parsed.streams.find(s=>s.codec_type==='video').width,720);
+ assert.equal(parsed.streams.find(s=>s.codec_type==='video').height,1280);
+ assert.ok(Number(parsed.format.duration)>7);
+ assert.equal(hash(await readFile(source)),original,'original user media untouched');
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByTestId('persona-quick-auto-render').locator('[data-quick-status="completed"]').waitFor({timeout:15000});
+ const mobile=await browser.newPage({viewport:{width:390,height:844}});
+ await mobile.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
+ await mobile.getByTestId('persona-quick-auto-render').waitFor({timeout:20000});
+ await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
+ assert.deepEqual(errors,[]);
+ await mobile.close();await page.close();
+ console.log('PASS actual browser one-click upload, mocked LLM, real FFmpeg/ASS render, clickable MP4 download, reload and mobile');
+}finally{
+ await browser.close();await new Promise(resolve=>worker.server.close(resolve));
+ await rm(temp,{recursive:true,force:true});
+}
