@@ -72,7 +72,11 @@ export async function selectEditPlan({prompt,candidates,frames,env=process.env,f
   'Ответ строго JSON: {"stylePack":"Commercial|Cinematic|Dynamic","creativeIntent":"...","choices":[{"candidateId":"v0_0","role":"actor|broll","caption":"..."}]}'
  ].join(' ')},{role:'user',content:[
   {type:'text',text:JSON.stringify({prompt,candidates:candidates.map(({id,fileIndex,startSec,durationSec,stillSec})=>({id,fileIndex,startSec,durationSec,stillSec})),goal:'Select up to 12 verified windows, max 75 seconds. Captions are AI title overlays, not transcription.'})},
-  ...frames.map((frame,i)=>({type:'image_url',image_url:{url:'data:image/jpeg;base64,'+frame.toString('base64'),detail:'low'}})),
+  ...frames.flatMap((frame,i)=>[
+   {type:'text',text:'РЕАЛЬНЫЙ ВЫБОРОЧНЫЙ КАДР: candidateId='+candidates[i].id+
+     ', файл '+(candidates[i].fileIndex+1)+', временная точка '+candidates[i].stillSec+' сек. Только этот ID соответствует следующему JPEG.'},
+   {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+frame.toString('base64'),detail:'low'}},
+  ]),
  ]}];
  const req={model:provider.model,temperature:0.2,max_tokens:1300,response_format:{type:'json_object'},messages};
  let response;
