@@ -37,10 +37,10 @@ export default function PersonaQuickAutoRender(){
   if(workerToken.current)return workerToken.current;
   let reply:Response;
   try{reply=await fetch(personaWorkerUrl+'/health',{signal:AbortSignal.timeout(4500),cache:'no-store'})}
-  catch{throw Error('Локальный Media Worker не запущен. Запусти npm run media:worker на своём компьютере.')}
+  catch{throw Error('Локальный Media Worker не запущен. Дважды нажми START_AUTO_RENDER.bat на рабочем столе.')}
   const status=await reply.json().catch(()=>({}));
   if(!reply.ok||status.service!=='persona-media-worker'||!status.quickRender||typeof status.token!=='string')
-   throw Error('Нужна обновлённая версия локального Media Worker из main.');
+   throw Error('Нужна обновлённая Persona. Закрой окно и снова запусти START_AUTO_RENDER.bat: он проверит обновления.');
   if(!status.quickRenderConfigured)throw Error('В локальном Worker не найден OPENROUTER_API_KEY для поиска выразительных моментов.');
   workerToken.current=status.token;
   return status.token as string;
