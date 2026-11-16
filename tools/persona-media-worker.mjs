@@ -29,6 +29,7 @@ import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook
 import {personaMediaPaths} from './persona-media-paths.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
 import {createPersonaQuickRenderService} from './persona-quick-render.mjs';
+import {ProductionJob} from './persona_orchestrator.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -36,7 +37,6 @@ const maxFile=2*1024*1024*1024, maxTotal=4*1024*1024*1024;
 const takeName=/^(?:S(?:0[1-9]|[12]\d|30)_take(?:0[1-9]|[1-9]\d)|(?:A|B)0[1-4]_[a-z0-9_-]+_take(?:0[1-9]|[1-9]\d))\.(?:mp4|mov|mkv|webm|m4v)$/i;
 const modelName=/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,119}$/;
 const variations=new Set(['cinematic','humor','intimate','unexpected']);
-const sessions=new Map();
 function fail(message){throw Error('Persona Media Worker: '+message)}
 function respond(res,status,data,headers={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers});res.end(JSON.stringify(data))}
 function envPath(bin){const copy={...process.env};const key=Object.keys(copy).find(k=>k.toLowerCase()==='path')||'PATH';if(bin)copy[key]=resolve(bin)+(process.platform==='win32'?';':':')+(copy[key]||'');return copy}
@@ -102,13 +102,18 @@ async function inspectUploadedTake(path,config,{musicMaster=false}={}){
  return {duration:Number(media.format?.duration),videoCodec:v.codec_name,audioCodecs:media.streams.filter(s=>s.codec_type==='audio').map(s=>s.codec_name),width:v.width,height:v.height,colorTransfer:v.color_transfer??'unknown',
   displayWidth:rotated?v.height:displayWidth,displayHeight:rotated?displayWidth:v.height};
 }
-function sessionView(s){
+async function sessionView(s){
+ const canonical=await s.production.read();
+ const state=canonical.status==='FAILED'?(s.cancelled?'cancelled':'failed'):
+  canonical.status==='AWAITING_APPROVAL'?'completed':
+  ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':'uploading';
+ const error=canonical.status==='FAILED'?canonical.failure?.message??'Ошибка рендера':null;
  const evidence=join(s.output,'evidence','analysis.json'), decisions=join(s.output,'decisions.ai.json'), timeline=join(s.output,'timeline.json'), finished=join(s.output,'ai-edited-reel.mp4');
  let stage=s.stage;
- if(s.state==='running')stage=s.files.has('result')?'technical_qa':s.files.has('finished')?'color_render':s.files.has('timeline')?'ffmpeg_timeline':s.files.has('decisions')?'ollama_selection':s.files.has('evidence')?'whisper_asr':'intake';
- return {id:s.id,state:s.state,stage,uploaded:s.uploaded.size,expected:s.expected,totalBytes:s.total,error:s.error??null,
-  outputPath:s.state==='completed'?s.output:null,videoPath:s.state==='completed'?finished:null,
-  resultPath:s.state==='completed'?join(s.output,'RESULT.json'):null,qaPath:s.state==='completed'?join(s.output,'ai-edited-qa.json'):null,
+ if(state==='running')stage=s.files.has('result')?'technical_qa':s.files.has('finished')?'color_render':s.files.has('timeline')?'ffmpeg_timeline':s.files.has('decisions')?'ollama_selection':s.files.has('evidence')?'whisper_asr':'intake';
+ return {id:s.id,state,stage,uploaded:s.uploaded.size,expected:s.expected,totalBytes:s.total,error,
+  outputPath:state==='completed'?s.output:null,videoPath:state==='completed'?finished:null,
+  resultPath:state==='completed'?join(s.output,'RESULT.json'):null,qaPath:state==='completed'?join(s.output,'ai-edited-qa.json'):null,
   result:s.resultSummary??null,
   exports:s.exports??null,
   artifacts:{evidence:s.files.has('evidence'),decisions:s.files.has('decisions'),timeline:s.files.has('timeline'),finished:s.files.has('finished')}};
@@ -126,16 +131,77 @@ function runProcess(s,config){
    ...(config.ffmpegDir?{PERSONA_MEDIA_FFMPEG_DIR:config.ffmpegDir}:{})}});
  let stderr='';s.child.stderr.on('data',b=>stderr=(stderr+String(b)).slice(-6000));s.child.stdout.on('data',()=>scan(s));
  s.timer=setInterval(()=>scan(s),750).unref();
- s.child.on('error',error=>{s.state='failed';s.error=String(error.message||error)});
- s.child.on('close',async code=>{clearInterval(s.timer);s.child=null;scan(s);if(s.cancelled){s.state='cancelled';s.error='Cancelled by the author; originals were not changed.';return}
-  if(code!==0){s.state='failed';s.error=(stderr||'AI reel process exited '+code).slice(-3000);return}
-  try{const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')fail('runner did not provide a verified unpublished AI MP4');s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,sourceSelection:result.sourceSelection,takeBindings:result.takeBindings??null,aiEditorial:result.aiEditorial,output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,aiFinishedQaPath:result.aiFinishedQaPath,creativeDirection:s.direction??null,subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};s.state='completed';s.stage='awaiting_author_review';}
-  catch(error){s.state='failed';s.error=String(error.message||error)}
+ let spawnError=null;
+ s.child.on('error',error=>{spawnError=error});
+ s.child.on('close',async code=>{
+  clearInterval(s.timer);s.child=null;scan(s);
+  try{
+   if(s.cancelled)throw Error('Монтаж отменён автором. Исходники не изменены.');
+   if(spawnError||code!==0)throw Error((spawnError?.message||stderr||'AI reel process exited '+code).slice(-3000));
+   const result=JSON.parse(await readFile(join(s.output,'RESULT.json'),'utf8'));
+   if(result.status!=='awaiting-author-review'||result.distributionAllowed!==false||typeof result.aiFinishedVideo!=='string')
+    fail('runner did not provide a verified unpublished AI MP4');
+   // Authoritative lifecycle first. The UI can never report success ahead of job.json.
+   await s.production.transition('EDITING',{reason:'Renderer produced a verified editorial timeline'});
+   await s.production.transition('QUALITY_CHECK',{reason:'Finished MP4 and technical checks verified'});
+   await s.production.transition('AWAITING_APPROVAL',{reason:'Verified draft awaiting author review'});
+   s.resultSummary={status:result.status,briefFingerprintSha256:result.briefFingerprintSha256,
+    sourceSelection:result.sourceSelection,takeBindings:result.takeBindings??null,aiEditorial:result.aiEditorial,
+    output:result.output,aiFinishedVideo:result.aiFinishedVideo,aiColorPackage:result.aiColorPackage,
+    aiFinishedQaPath:result.aiFinishedQaPath,creativeDirection:s.direction??null,
+    subtitleBurnIn:result.subtitleBurnIn??null,technicalChecks:result.technicalChecks,distributionAllowed:false};
+   s.state='completed';s.stage='awaiting_author_review';
+  }catch(error){
+   const message=String(error.message||error).slice(0,1000);
+   try{await s.production.markFailed(message)}catch(persistError){
+    console.error('Persona: could not persist FAILED job state: '+String(persistError.message||persistError));
+   }
+   s.state=s.cancelled?'cancelled':'failed';s.error=message;
+  }
+
  });
 }
 export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.slice(2))){
+ const sessions=new Map();
  const token=randomUUID();
  const quickRender=createPersonaQuickRenderService(config);
+ // Read only operation metadata from worker-session.json; job.json is the state authority.
+ async function restoreSession(id){
+  if(!/^[a-f0-9-]{36}$/.test(id))return null;
+  const input=join(config.outputRoot,'.worker-staging-'+id);
+  const production=new ProductionJob(join(input,'production'));
+  let manifest,canonical,brief;
+  try{
+   manifest=JSON.parse(await readFile(join(input,'worker-session.json'),'utf8'));
+   canonical=await production.read();
+   brief=JSON.parse(await readFile(join(input,'approved-production-brief.json'),'utf8'));
+  }catch{return null}
+  if(manifest?.version!==1||manifest.id!==id||!validBrief(brief))return null;
+  if(!['AWAITING_APPROVAL','FAILED'].includes(canonical.status)){
+   try{canonical=await production.markFailed('Worker был перезапущен до завершения проверки MP4. Исходники сохранены; начните новый монтаж.')}
+   catch{return null}
+  }
+  const uploaded=new Set();let total=0;
+  for(let i=0;i<manifest.expected;i++){
+   try{const intake=JSON.parse(await readFile(join(input,'source-'+i+'.json'),'utf8'));
+    if(intake?.sha256&&intake?.bytes){uploaded.add(i);total+=intake.bytes}}
+   catch{}
+  }
+  const output=join(config.outputRoot,'ai-reel-'+id);
+  let resultSummary=null;
+  if(canonical.status==='AWAITING_APPROVAL'){
+   try{resultSummary=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'))}catch{}
+  }
+  const direction=JSON.parse(await readFile(join(input,'AI-DIRECTOR.json'),'utf8').catch(()=>'null'));
+  const state=canonical.status==='AWAITING_APPROVAL'?'completed':'failed';
+  const session={id,input,output,production,brief,briefPath:join(input,'approved-production-brief.json'),
+   direction,visualPreset:manifest.visualPreset,variation:manifest.variation,model:manifest.model,
+   burnSubtitles:manifest.burnSubtitles,subtitlePreset:manifest.subtitlePreset,
+   masterAsset:manifest.masterAsset,expected:manifest.expected,takeBindings:manifest.takeBindings??null,
+   uploaded,total,state,stage:state==='completed'?'awaiting_author_review':'intake',
+   files:new Set(),child:null,cancelled:false,error:canonical.failure?.message??null,resultSummary};
+  sessions.set(id,session);return session;
+ }
  const musicJobs=new Map();let musicBusy=false;
  const learnedRulesFile=()=>join(config.outputRoot,'learned_rules.json');
  let referenceBusy=false;
@@ -528,14 +594,20 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     if(!Number.isInteger(body.takeCount)||body.takeCount<(body.masterAsset?1:2)||body.takeCount>12||body.masterAsset&&body.takeCount!==1)fail('choose 2–12 explicitly named takes');
     if(body.masterAsset&&body.brief.manualSource?.scenes.some(s=>s.kind==='visual'))fail('Для визуального авторского сценария назначьте отдельный короткий файл каждому кадру');
     await mkdir(config.outputRoot,{recursive:true});const id=randomUUID(),input=join(config.outputRoot,'.worker-staging-'+id),output=join(config.outputRoot,'ai-reel-'+id);await mkdir(input,{recursive:false});
+    const production=await ProductionJob.create(join(input,'production'),{title:'Persona AI Media Worker'});
+    await production.markReady();
     // The established runner owns output creation and rejects a pre-existing
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
     if(direction)await writeFile(join(input,'AI-DIRECTOR.json'),JSON.stringify(direction,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,subtitlePreset:subtitleStyle,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
-    if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
+    const s={id,input,output,production,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,subtitlePreset:subtitleStyle,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');
+    await writeFile(join(input,'worker-session.json'),JSON.stringify({version:1,id,
+     variation:s.variation,model:s.model,burnSubtitles:s.burnSubtitles,subtitlePreset:s.subtitlePreset,
+     masterAsset:s.masterAsset,expected:s.expected,visualPreset:s.visualPreset,takeBindings:s.takeBindings})+'\n',{flag:'wx'});
+    sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
-   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&(sessions.get(match[1])||await restoreSession(match[1]));if(!s){respond(res,404,{error:'unknown_session'});return}
    if(match[2]==='social-copy'&&req.method==='POST'){
     if(s.state!=='completed')fail('Сначала соберите MP4.');
     const title=typeof s.brief.title==='string'&&s.brief.title.trim()
@@ -565,7 +637,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     if(await fileHash(entry.videoPath)!==entry.sha256)fail('Platform MP4 changed after QA');
     const size=(await stat(entry.videoPath)).size;res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':size,'Content-Disposition':'attachment; filename="'+match[4]+'.mp4"','Cache-Control':'no-store'});createReadStream(entry.videoPath).pipe(res);return;
    }
-   if(req.method==='GET'&&match[2]==='status'){scan(s);respond(res,200,sessionView(s));return}
+   if(req.method==='GET'&&match[2]==='status'){scan(s);respond(res,200,await sessionView(s));return}
    if(req.method==='PUT'&&match[2]?.startsWith('take/')){
     const index=Number(match[3]),name=req.headers['x-persona-file-name'];const length=Number(req.headers['content-length']);if(s.state!=='uploading'||!Number.isInteger(index)||index<0||index>=s.expected||s.uploaded.has(index)||!safeFile(name)||!Number.isSafeInteger(length)||length<1024||length>maxFile||s.total+length>maxTotal)fail('invalid explicit take upload');
     if(s.takeBindings&&Number(/^S(\d{2})_take01\./i.exec(name)?.[1])!==s.takeBindings[index]?.sceneOrder)fail('File does not match its declared frame');
@@ -590,7 +662,12 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      s.sourceManifest=join(s.input,'master-sources.json');
      await writeFile(s.sourceManifest,JSON.stringify({version:1,sources:[{id:'master',path:intake.stagedName}]}),{flag:'wx'});
     }
-    if(s.state!=='uploading'||s.uploaded.size!==s.expected)fail('all selected takes must finish uploading');s.state='running';s.stage='intake';runProcess(s,config);respond(res,202,sessionView(s));return;
+    if(s.state!=='uploading'||s.uploaded.size!==s.expected)fail('all selected takes must finish uploading');const intake=JSON.parse(await readFile(join(s.input,'source-0.json'),'utf8'));
+    await s.production.transition('ANALYZING',{reason:'Verified media received for local render',
+     asset:{name:intake.stagedName,sha256:intake.sha256,durationSec:intake.durationSec}});
+    s.state='running';s.stage='intake';
+    try{runProcess(s,config)}catch(error){await s.production.markFailed(String(error.message||error));s.state='failed';throw error}
+    respond(res,202,await sessionView(s));return;
    }
    if(req.method==='POST'&&match[2]==='cancel'){
     if(s.state!=='running'||!s.child)fail('no active worker job');s.cancelled=true;s.child.kill();respond(res,202,{ok:true,notice:'Cancellation requested; partial artifacts remain for inspection.'});return;

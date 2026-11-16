@@ -152,7 +152,10 @@ try {
         $splash.Show()
         $splash.Refresh()
         [Windows.Forms.Application]::DoEvents()
-        [void](Update-PersonaRepo -RepoRoot $root -LogDirectory $settings)
+        # Network/update failures must not block the local studio.
+        try{[void](Update-PersonaRepo -RepoRoot $root -LogDirectory $settings)}
+        catch{[IO.File]::WriteAllText((Join-Path $settings 'last-update-warning.txt'),
+          'Автообновление пропущено: '+$_.Exception.Message,(New-Object Text.UTF8Encoding($false)))}
     }finally{$splash.Close();$splash.Dispose()}
 
     # Use the freshly pulled supervisor even from an older Desktop BAT.
@@ -359,7 +362,7 @@ $form.Add_Shown({
   if(-not(Get-Command node.exe -ErrorAction SilentlyContinue) -or -not(Get-Command npm.cmd -ErrorAction SilentlyContinue)){throw 'Не найден Node.js 22+ (вместе с npm).'}
   $ver=(& node -p 'process.versions.node' 2>$null);if(([Version]$ver).Major -lt 22){throw 'Для Persona нужен Node.js 22 или новее.'}
   if((Port-Busy 47832) -or (Port-Busy 5173)){throw 'Persona уже запущена или порты заняты.'}
-  if(-not(Has-OpenRouterKey)){throw 'Нужен OPENROUTER_API_KEY в файле .env.local (корень Life OS). Без него Vision не запускается.'}
+  # OpenRouter is optional: the local quick-render falls back to verified offline cuts.
   $state.lockHash=Lock-Hash
   $state.job=New-Object PersonaLauncher.OwnedProcesses
   $installed=if(Test-Path -LiteralPath $installStamp){[IO.File]::ReadAllText($installStamp).Trim()}else{''}

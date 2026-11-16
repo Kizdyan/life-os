@@ -9,10 +9,10 @@ describe('one-click dashboard intake',()=>{
   expect(html).toContain('Быстрый автомонтаж');
   expect(html).toContain('Сделать всё');
   expect(html).toContain('Перетащи сюда видео');
-  expect(html).toContain('каждые 0,5 секунды');
-  expect(html).toContain('OpenRouter Vision');
-  expect(html).toContain('локальный Whisper');
-  expect(html).toContain('оплачиваемых токенов');
+  expect(html).toContain('с шагом 0,5 секунды');
+  expect(html).toContain('При доступном OpenRouter');
+  expect(html).toContain('при наличии Whisper');
+  expect(html).toContain('платных запросов');
   expect(html).toContain('data-testid="persona-quick-auto-render"');
   expect(html).toContain('disabled=""');
   expect(html).toContain('type="file"');

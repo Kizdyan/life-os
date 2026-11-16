@@ -11,9 +11,9 @@ import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './pers
 import {renderApprovedBroll} from './persona-approved-broll.mjs';
 import {proposeIntercuts,applyReviewedZoomFallback} from './persona-intercut-planner.mjs';
 export const STATES = Object.freeze([
-  'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
+  'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL','FAILED'
 ]);
-const NEXT = new Map(STATES.slice(0,-1).map((s,i)=>[s,STATES[i+1]]));
+const NEXT = new Map(STATES.slice(0,-2).map((s,i)=>[s,STATES[i+1]]));
 const VIDEO_EXT = new Set(['.mp4','.mov','.m4v','.mkv','.webm']);
 const PROBE_TIMEOUT_MS = 15_000;
 const MAX_SECONDS = 900;
@@ -98,12 +98,13 @@ export class ProductionJob {
       });
       if(owner!==null&&owner!==batchToken)fail('Cinematic Calm batch has reserved this job');
       const data=await this.read();
-      if(NEXT.get(data.status)!==to)fail('Illegal transition '+data.status+' -> '+to);
+      if(to==='FAILED'?['AWAITING_APPROVAL','FAILED'].includes(data.status):NEXT.get(data.status)!==to)fail('Illegal transition '+data.status+' -> '+to);
       if(typeof reason!=='string'||reason.length>1000)fail('Invalid transition reason');
       if(to==='ANALYZING' && (!asset || !validFileName(asset.name)||!Number.isFinite(asset.durationSec)||
           !/^[a-f0-9]{64}$/.test(asset.sha256)))fail('Analysis requires verified input file evidence');
       const now=new Date().toISOString();
       const update={...data,status:to,revision:data.revision+1,updatedAt:now,
+        ...(to==='FAILED'?{failure:{message:reason||'Производственная задача завершилась с ошибкой',at:now}}:{}),
         ...(batch?{batch}:{}),
         assets:asset?[...data.assets,asset]:data.assets,
         history:[...data.history,{from:data.status,to,at:now,reason:reason||'normal progression'}]};
@@ -133,6 +134,11 @@ export class ProductionJob {
     }finally{await handle.close();await unlink(lock)}
   }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}
+  /** Durable terminal failure for Worker and quick-render; the job.json transition is authoritative. */
+  async markFailed(message){
+    if(typeof message!=='string'||!message.trim())fail('Failure explanation required');
+    return this.transition('FAILED',{reason:message.trim().slice(0,1000)});
+  }
   /** Gate editing on verified source-bound, reviewed shot coverage. */
   async inspectCoverage({brief,bindings,approvalSha256}={}){
     if((await this.read()).status!=='ANALYZING')fail('P3 coverage requires ANALYZING');

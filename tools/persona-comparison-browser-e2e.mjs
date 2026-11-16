@@ -49,6 +49,11 @@ async function waitForImport(page,word){
 async function openComparison(page){
  await page.getByRole('navigation',{name:/Пять этапов создания Reels|Этапы производства/})
   .getByRole('button',{name:/Монтаж/}).click();
+ // CODE RED: alternative renderers are preserved but collapsed in Advanced.
+ const summary=page.locator('details.personaDeveloperDisclosure > summary')
+  .filter({hasText:'Advanced (Для разработчика) · Comparison Studio'});
+ await summary.waitFor();
+ if(!(await summary.evaluate(element=>element.parentElement.open)))await summary.click();
  await page.getByRole('region',{name:'Persona Comparison Studio'}).waitFor();
  return page.getByRole('region',{name:'Persona Comparison Studio'});
 }

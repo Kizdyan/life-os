@@ -25,6 +25,7 @@ export default function PersonaQuickAutoRender(){
  const [dragging,setDragging]=useState(false);
  const [submitting,setSubmitting]=useState(false);
  const [serviceError,setServiceError]=useState('');
+ const [visionAvailable,setVisionAvailable]=useState<boolean|null>(null);
  const [error,setError]=useState('');
  const [jobs,setJobs]=useState<QuickRenderJob[]>([]);
  const [activeId,setActiveId]=useState<string|null>(null);
@@ -41,7 +42,7 @@ export default function PersonaQuickAutoRender(){
   const status=await reply.json().catch(()=>({}));
   if(!reply.ok||status.service!=='persona-media-worker'||!status.quickRender||typeof status.token!=='string')
    throw Error('Нужна обновлённая Persona. Закрой окно и снова запусти START_AUTO_RENDER.bat: он проверит обновления.');
-  if(!status.quickRenderConfigured)throw Error('В локальном Worker не найден OPENROUTER_API_KEY для поиска выразительных моментов.');
+  if(mounted.current)setVisionAvailable(Boolean(status.quickRenderConfigured));
   workerToken.current=status.token;
   return status.token as string;
  }
@@ -117,7 +118,8 @@ export default function PersonaQuickAutoRender(){
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
    </label>
-   <p className="personaQuickPrivacy">Исходные файлы остаются у тебя в локальном Worker. По нажатию «Сделать всё» кадры через каждые 0,5 секунды отправляются в OpenRouter Vision для поиска выразительных моментов. Если локальный Whisper настроен и распознаёт речь, текст фраз также может отправляться в OpenRouter для оценки драматургии. Полный ролик и аудиофайл в облако не передаются. Анализ длинных видео может потребовать много запросов и оплачиваемых токенов. Посторонний B-roll не загружается.</p>
+   {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
+   <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':'При доступном OpenRouter для поиска моментов используются кадры с шагом 0,5 секунды; при наличии Whisper текст распознанной речи тоже может передаваться в OpenRouter. Полный MP4 и музыкальный файл в облако не передаются. Анализ длинного видео может требовать платных запросов.'} Посторонний B-roll не загружается.</p>
    <button type="submit" className="personaQuickGo" disabled={submitting||files.length===0||prompt.trim().length<3}>
     {submitting?'Загружаю файлы…':'Сделать всё'} <span aria-hidden="true">✦</span>
    </button>
@@ -136,6 +138,7 @@ export default function PersonaQuickAutoRender(){
        {moment.reason&&<span>{' — '+moment.reason}</span>}
       </li>)}
      </ol>}
+     {job.notice&&<p>{job.notice}</p>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
     {job.ready&&workerToken.current&&<a className="personaQuickDownload"

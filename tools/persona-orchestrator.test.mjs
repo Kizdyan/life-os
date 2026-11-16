@@ -25,3 +25,19 @@ test('batch lock excludes manual advances and concurrent batch jobs',async t=>{
   await unlink(job.path+'.batch.lock');
   assert.equal((await job.markReady()).status,'WAITING_FOR_FOOTAGE');
 });
+
+test('render failures persist as terminal FAILED in job.json and survive a restart',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-canonical-failed-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const job=await ProductionJob.create(join(root,'job'));
+ await job.markReady();
+ const failed=await job.markFailed('FFmpeg завершился с ошибкой');
+ assert.equal(failed.status,'FAILED');
+ assert.match(failed.failure.message,/FFmpeg/);
+ assert.equal(failed.history.at(-1).to,'FAILED');
+ const restored=await new ProductionJob(job.directory).read();
+ assert.equal(restored.status,'FAILED');
+ assert.equal(restored.revision,2);
+ await assert.rejects(job.transition('ANALYZING'),/Illegal transition/);
+ await assert.rejects(job.markFailed('another failure'),/Illegal transition/);
+});

@@ -113,7 +113,7 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   assert.ok(Number(inspected.format.duration)>7);
   assert.equal(sha(await readFile(source)),sourceHash,'original uploader file must remain untouched');
   const metadata=JSON.parse(await readFile(join(rootJob,'quick-state.json'),'utf8'));
-  assert.equal(metadata.state,'completed');
+  assert.equal(metadata.state,undefined,'quick-state.json must not duplicate the authoritative ProductionJob status');
   await new Promise(resolve=>worker.server.close(resolve));
   restarted=makeWorker();
   const secondBase='http://127.0.0.1:'+await restarted.start(),newToken=(await(await fetch(secondBase+'/health')).json()).token;
