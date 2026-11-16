@@ -12,6 +12,8 @@ on:
       - "scripts/**"
       - "tools/**"
       - "package.json"
+      - "knowledge_base.json"
+      - "config/persona-visual-identity.json"
       - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
@@ -25,6 +27,8 @@ on:
       - "scripts/**"
       - "tools/**"
       - "package.json"
+      - "knowledge_base.json"
+      - "config/persona-visual-identity.json"
       - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/core.yml"
@@ -62,6 +66,8 @@ jobs:
           node --test tools/persona-strategy.test.mjs tools/persona-lighting.test.mjs tools/persona-writing-style.test.mjs
           python -m unittest discover -s tools -p 'test_strategy_analyzer.py' -v
           python -m unittest discover -s tools -p 'test_lighting_planner.py' -v
+          python -m unittest discover -s tools -p 'test_persona_arsenal.py' -v
+          node --test tools/persona-arsenal.test.mjs
       - name: ProductionJob persistence and restart regression tests
         run: node --test tools/persona-production-recovery.test.mjs
       - name: Persona demo project seeding and persistence regression
