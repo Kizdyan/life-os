@@ -1,6 +1,7 @@
 import {PersonaManualScript} from './PersonaManualScript';
 import React from 'react';
 import {ensurePersonaDemoProject,PERSONA_DEMO_LINK_HASH} from './personaDemoProject';
+import {seedArchitectProjectsInBrowser,PERSONA_ARCHITECT_IMPORT_HASH} from './personaArchitectSeeds';
 import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
@@ -281,6 +282,18 @@ export default function PersonaFactory(){
  };window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[activeProjectId]);
  useEffect(()=>{
   const importDemoFromLink=()=>{
+   if(window.location.hash===PERSONA_ARCHITECT_IMPORT_HASH){
+    try{
+     const result=seedArchitectProjectsInBrowser(localStorage);
+     setProjects(result.collection.projects);
+     setDemoNotice(result.created
+      ?'Загружено '+result.created+' сценариев Архитектора. Всего 10 планов; исходники ещё не отсняты.'
+      :'10 сценариев уже сохранены. Существующие правки не перезаписаны.');
+     window.history.replaceState(null,'',window.location.pathname+window.location.search+'#persona/projects');
+     setScreen('projects');
+    }catch(error){setDemoNotice('Ошибка импорта 10 сценариев: '+String((error as Error).message||error));}
+    return;
+   }
    if(window.location.hash!==PERSONA_DEMO_LINK_HASH)return;
    try{
     const result=ensurePersonaDemoProject(localStorage);
@@ -743,6 +756,7 @@ export default function PersonaFactory(){
   {projects.length?<div className="personaCreativeGrid">{projects.slice(0,4).map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
    <div className="personaCreativeBlank"><span aria-hidden="true">✦</span><h3>Первая история ждёт тебя</h3><p>Начни с идеи или подготовь сценарий без съёмок.</p><button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
   <div className="personaCreativeSectionHead personaCreativeToolsHead"><div><small>02 / ВОЗМОЖНОСТИ</small><h3>Свобода творчества</h3></div></div>
+  <div className="personaDemoEntry"><div><strong>10 сценариев от Архитектора</strong><span>Оригинальные хуки, таймкоды, B-roll и музыка. Все 10 проектов без отснятых исходников.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}>Загрузить 10 сценариев ↗</button></div>
   <div className="personaDemoEntry"><div><strong>Хочешь протестировать Persona без съёмок?</strong><span>Три готовые тестовые сцены, Shot List и аниматик — без настоящего MP4.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_DEMO_LINK_HASH}}>Открыть демо-проект ↗</button></div>
   <div className="personaCreativeTools">
    <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот · раскадровка</small></button>
