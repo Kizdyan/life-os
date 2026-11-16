@@ -112,6 +112,7 @@ export function createPersonaQuickRenderService(config={}){
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
+  moments:job.moments??[],
   notice:job.state==='completed'?'MP4 создан и технически проверен. Проверьте содержание перед публикацией.':null});
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
@@ -249,6 +250,11 @@ export function createPersonaQuickRenderService(config={}){
     const chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
      audio:ranked,visionProvider:vision.provider,visionModel:vision.model});
     plan=chosen.plan;
+    job.moments=chosen.moments.map(m=>({
+     sourceName:vids[m.fileIndex].originalName,
+     startSec:m.startSec,peakSec:m.stillSec,role:m.arcRole,emotion:m.emotion,
+     reason:m.visualReason}));
+    await save(job);
     const evidence={version:1,kind:'persona-smart-moment-evidence',prompt:job.prompt,
      frameIntervalSec:0.5,manualTimecodes:false,
      sourceVideos:vids.map(f=>({originalName:f.originalName,durationSec:f.media.durationSec,sha256:f.sha256})),
