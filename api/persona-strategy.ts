@@ -15,7 +15,7 @@ const PROMPT=[
  'BLOCKED только для критического несоответствия или недостатка материала для стратегической оценки.',
  'PASS — стратегический, не означает готовность к рендеру, авторское утверждение или разрешение публикации.',
  'Выдай ТОЛЬКО JSON: {"status":"PASS|WARNING|BLOCKED","recommendation":"Конкретный совет по-русски"}'
-].join('\\n');
+].join('\n');
 function modelConfig(){
  const router=env('OPENROUTER_API_KEY'),openai=env('OPENAI_API_KEY');
  const preview=env('VERCEL_ENV');
