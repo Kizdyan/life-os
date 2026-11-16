@@ -88,7 +88,7 @@ export default function PersonaActorPortfolio({onBack}:{onBack:()=>void}){
    <h3>Мои визитки ({projects.length})</h3>
    <div className="personaIndustryPills">{projects.map(p=><button key={p.id} type="button" aria-pressed={active?.id===p.id} onClick={()=>selectProject(p)}>{p.title} · {p.durationSec} с</button>)}</div>
   </div>}
-  {active&&<div className="personaIndustryPanel" aria-label="Сценарий художественной визитки">
+  {active&&<div className="personaIndustryPanel" role="region" aria-label="Сценарий художественной визитки">
    <div className="personaIndustryToolbar">
     <div><small>ACTOR PORTFOLIO · {active.durationSec} SEC</small><h3>{active.title}</h3>
      <p><b>Конфликт:</b> {active.conflict}</p>
