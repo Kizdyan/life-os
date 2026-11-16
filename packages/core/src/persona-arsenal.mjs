@@ -54,6 +54,8 @@ const profiles={
 };
 const formatTime=duration=>String(Math.floor(duration/60)).padStart(2,'0')+':'+String(duration%60).padStart(2,'0');
 export function buildAssociativeEditPlan(shots, availableAssets=[]){
+ const rule=arsenalRule('KB-04');
+ if(!rule||rule.area!=='editing')throw Error('Missing Arsenal associative edit rule');
  if(!Array.isArray(shots)||shots.length<2||shots.length>30||
   !shots.every(s=>s&&typeof s.action==='string'&&typeof s.kind==='string'))
   throw Error('EditPlan requires 2–30 described shots with kind and action');
@@ -73,9 +75,11 @@ export function buildAssociativeEditPlan(shots, availableAssets=[]){
    ...(approved?{approvedAssetId:approved.assetId}:{}),authorReviewRequired:true};
  });
  return {version:1,kind:'persona-associative-edit-plan-v1',status:'intent_only',palette:visualIdentity.id,
-  rule:'KB-04',publicationApproved:false,beats};
+  rule:rule.id,publicationApproved:false,beats};
 }
 export function generateActorPortfolio({id,title,genre='drama',now=new Date().toISOString()}){
+ for(const rule of ['KB-01','KB-02',...(genre==='comedy'?['KB-03']:[])])
+  if(!arsenalRule(rule))throw Error('Missing required Arsenal actor reference: '+rule);
  if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(id))throw Error('Invalid portfolio project ID');
  if(typeof title!=='string'||title.trim().length<3||title.length>120)throw Error('Enter a 3–120 character project title');
  if(!Object.hasOwn(profiles,genre))throw Error('Genre must be drama, comedy or musical');
