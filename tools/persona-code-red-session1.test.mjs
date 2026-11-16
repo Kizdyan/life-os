@@ -14,7 +14,7 @@ const close=worker=>new Promise(resolve=>worker.server.close(resolve));
 const brief={version:1,sourceFormat:'reel',script:[{order:1,line:'Первый дубль'},{order:2,line:'Второй дубль'}],shots:[{order:1},{order:2}]};
 const mkVideo=path=>{
  const generated=spawnSync('ffmpeg',['-hide_banner','-nostdin','-v','error','-f','lavfi','-i',
-  'testsrc2=s=160x284:r=12:d=4','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-y',path],{timeout:50000});
+  'testsrc2=s=160x284:r=12:d=9','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-y',path],{timeout:50000});
  assert.equal(generated.status,0,generated.stderr?.toString());
 };
 test('offline planner uses only verified intervals and never reports inferred emotions',()=>{
@@ -48,7 +48,7 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const create=await fetch(base+'/quick-render',{method:'POST',headers:{...headers,'Content-Type':'application/json'},
    body:JSON.stringify({prompt:'Собери тестовый MP4 без облачных сервисов',consent:true,
     files:[{kind:'video',name:'original.mp4',size:bytes.length}]})});
-  assert.equal(create.status,201,await create.text());
+  assert.equal(create.status,201,await create.clone().text());
   const job=(await(await fetch(base+'/quick-render',{headers})).json()).jobs[0];
   const sent=await fetch(base+'/quick-render/'+job.id+'/upload/0',{method:'PUT',
    headers:{...headers,'X-Persona-Original-Name':'original.mp4'},body:bytes});
@@ -125,7 +125,7 @@ test('Worker subprocess failure writes FAILED and survives a fresh Worker instan
  try{
   const create=await fetch(base+'/session',{method:'POST',headers:{...head,'Content-Type':'application/json'},
    body:JSON.stringify({brief,variation:'cinematic',takeCount:2})});
-  assert.equal(create.status,201,await create.text());
+  assert.equal(create.status,201,await create.clone().text());
   const id=(await create.json()).id;
   for(let i=0;i<2;i++){
    const sent=await fetch(base+'/session/'+id+'/take/'+i,{method:'PUT',
@@ -133,7 +133,7 @@ test('Worker subprocess failure writes FAILED and survives a fresh Worker instan
    assert.equal(sent.status,200,await sent.text());
   }
   const run=await fetch(base+'/session/'+id+'/run',{method:'POST',headers:head});
-  assert.equal(run.status,202,await run.text());
+  assert.equal(run.status,202,await run.clone().text());
   let state;for(let n=0;n<160;n++){
    state=await(await fetch(base+'/session/'+id+'/status',{headers:head})).json();
    if(state.state==='failed')break;
