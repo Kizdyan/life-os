@@ -30,6 +30,8 @@ describe('Persona AI media job',()=>{
   expect(readPersonaAiMediaJob(JSON.parse(JSON.stringify({...job,creativeDirection})))?.creativeDirection).toEqual(creativeDirection);
    const softCinematic={mode:'manual' as const,selected_preset:'SoftCinematic' as const,model:null};
    expect(readPersonaAiMediaJob({...job,creativeDirection:softCinematic})?.creativeDirection).toEqual(softCinematic);
+   const detailCinematic={mode:'manual' as const,selected_preset:'DetailCinematic' as const,model:null};
+   expect(readPersonaAiMediaJob({...job,creativeDirection:detailCinematic})?.creativeDirection).toEqual(detailCinematic);
   expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,selected_preset:'invented'}})).toBeNull();
   expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,model:42}})).toBeNull();
  });
