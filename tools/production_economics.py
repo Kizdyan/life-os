@@ -5,6 +5,7 @@ Time saved is calculated only when a baseline per approved MP4 was supplied
 and the operator explicitly marks human-time logging complete.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 
 import argparse
 import hashlib
@@ -65,13 +66,19 @@ class ProductionEconomics:
                 );
             ''')
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
+        """Transaction context that ALSO closes the OS file handle on Windows."""
         db = sqlite3.connect(self.path, timeout=15)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA foreign_keys=ON')
-        db.execute('PRAGMA journal_mode=WAL')
-        db.execute('PRAGMA busy_timeout=15000')
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            db.execute('PRAGMA foreign_keys=ON')
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('PRAGMA busy_timeout=15000')
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def create(self, job_id: str, baseline_minutes: float | None = None) -> None:
         if not job_id or len(job_id) > 120:
