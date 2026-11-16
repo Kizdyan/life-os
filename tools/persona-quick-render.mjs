@@ -50,7 +50,7 @@ export function runBounded(command,args,{env=process.env,timeoutMs=60000,maxStdo
   const out=[],err=[];let total=0,errorText='';let finished=false;
   const timer=setTimeout(()=>{child.kill();finish(Error('Media processing step timed out'))},timeoutMs);
   function finish(error,output){if(finished)return;finished=true;clearTimeout(timer);error?reject(error):resolveJob(output);}
-  child.stdout.on('data',b=>{total+=b.length;if(total>maxStdout)finish(Error('Media evidence exceeded size limit'));else out.push(b)});
+  child.stdout.on('data',b=>{total+=b.length;if(total>maxStdout){child.kill();finish(Error('Media evidence exceeded size limit'))}else out.push(b)});
   child.stderr.on('data',b=>{errorText=(errorText+b.toString()).slice(-1500)});
   child.on('error',()=>finish(Error('Required local processor is unavailable')));
   child.on('close',code=>code===0?finish(null,Buffer.concat(out)):finish(Error('Media processor failed (code '+code+'): '+errorText.slice(-300))));
@@ -92,6 +92,7 @@ export function createPersonaQuickRenderService(config={}){
  const env=workerEnv(config);
  const root=resolve(config.quickRenderRoot||quickRenderRoot(env));
  const jobs=new Map();
+ const inFlightUploads=new Set();
  let active=null;
  const directory=id=>join(root,'quick-'+checkedJobId(id));
  const metaFile=id=>join(directory(id),'quick-state.json');
@@ -143,8 +144,14 @@ export function createPersonaQuickRenderService(config={}){
   const original=decode(req.headers['x-persona-original-name']);
   if(original!==entry.originalName)throw Error('Selected file identity changed during upload');
   const path=join(directory(id),'input',entry.name);
+  const guard=id+':'+index;
+  if(inFlightUploads.has(guard))throw Error('This media upload is already in progress');
+  inFlightUploads.add(guard);
+  let owned=false;
   try{
-   await pipeline(req,createWriteStream(path,{flags:'wx'}));
+   const sink=createWriteStream(path,{flags:'wx'});
+   sink.once('open',()=>{owned=true});
+   await pipeline(req,sink);
    if((await stat(path)).size!==entry.size)throw Error('Upload was incomplete');
    const media=await probe(path,config,{audioOnly:entry.kind==='audio'});
    entry.sha256=await sha(path);
@@ -152,9 +159,10 @@ export function createPersonaQuickRenderService(config={}){
    job.uploads.push(index);job.updatedAt=new Date().toISOString();await save(job);
    return {ok:true,index,sha256:entry.sha256};
   }catch(error){
-   await rm(path,{force:true}).catch(()=>{});
+   // Never delete a file owned by another concurrent uploader when O_EXCL failed.
+   if(owned)await rm(path,{force:true}).catch(()=>{});
    throw error;
-  }
+  }finally{inFlightUploads.delete(guard)}
  }
  async function execute(job){
   const id=job.id,dir=directory(id),out=join(dir,'output'),input=join(dir,'input');
