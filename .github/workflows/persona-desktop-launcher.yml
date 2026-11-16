@@ -24,7 +24,7 @@ jobs:
         shell: powershell
         run: |
           $text=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
-          if (-not $text.Contains('npm') -or -not $text.Contains('persona-launcher-supervisor.ps1')) { throw 'Missing launcher bootstrap' }
+          if (-not $text.Contains('npm run media:worker') -or -not $text.Contains('npm run web:dev')) { throw 'Missing embedded worker/web launch commands' }
           $marker='#--PERSONA_BOOTSTRAP--'
           $embedMarker='#--PERSONA_SUPERVISOR--'
           $index=$text.LastIndexOf($marker)
