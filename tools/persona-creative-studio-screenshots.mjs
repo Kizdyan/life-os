@@ -16,12 +16,20 @@ try{
   page.on('pageerror',error=>console.error('UI page error:',error.message));
   await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
   await page.locator('.personaCreativeHero').waitFor({timeout:20000});
+  const hero=page.locator('.personaCreativeHero');
+  const heroBounds=await hero.boundingBox();
+  const rootNavPosition=await page.locator('.appNavigation').evaluate(element=>getComputedStyle(element).position);
+  assert.equal(rootNavPosition,'static','global navigation must not obscure Persona content');
+  assert.ok((heroBounds?.width??0)>width*(width===1440?.65:.65),'creative dashboard must use available width');
+
   await page.screenshot({path:join(dir,'dashboard-empty-'+width+'.png'),fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:/Новый Reels/}).first().click();
   await page.locator('.personaCreativeWorkspace').waitFor({timeout:20000});
   await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded',timeout:30000});
   const card=page.getByTestId('persona-creative-card').first();
   await card.waitFor({timeout:20000});
+  const actionColor=await card.getByRole('button').evaluate(element=>getComputedStyle(element).backgroundColor);
+  assert.equal(actionColor,'rgb(18, 24, 41)','project CTA must remain a high-contrast graphite button');
   await page.screenshot({path:join(dir,'dashboard-project-'+width+'.png'),fullPage:true,animations:'disabled'});
   await card.getByRole('button').click();
   await page.locator('.personaCreativeWorkspace').waitFor({timeout:20000});
