@@ -184,7 +184,8 @@ export class ProductionJob {
       if(error.code==='EEXIST')fail('Cinematic Calm batch is already running');
       throw error;
     }
-    let output;
+    let output, economicStageId=null, economicJobId=null;
+    const economicsDb=join(this.directory,'economics.sqlite3');
     try{
       await lock.writeFile(token);
       const state=await this.read();
@@ -209,8 +210,18 @@ export class ProductionJob {
         await writeFile(join(output,'P3-STYLE-GATE.json'),JSON.stringify(gate.result,null,2)+'\n',{flag:'wx'});
         if(gate.status!=='PASS')fail('P3 creative style contract blocked this batch');
       }else if(process.env.PERSONA_P3_REQUIRE_STYLE==='1')fail('P3 style contract requires --style-intent');
+      if(process.env.PERSONA_P3_ECONOMICS==='1'){
+        economicJobId='batch-'+folder;
+        await economicsCommand({database:economicsDb,command:'create',args:[economicJobId]});
+        const started=await economicsCommand({database:economicsDb,command:'start',args:[economicJobId,'EDITING']});
+        economicStageId=started.stageId;
+      }
       await runBatchPhase('render-batch',source,output,
         stylepackFile?['--stylepack',resolve(stylepackFile)]:[],1_200_000);
+      if(economicStageId){
+        await economicsCommand({database:economicsDb,command:'finish',args:[economicStageId]});
+        economicStageId=null;
+      }
       const manifest=join(output,'BATCH-RESULT.json');
       const result=JSON.parse(await readFile(manifest,'utf8'));
       if(result.version!==1||result.sourceSha256!==asset.sha256||await fingerprint(source)!==asset.sha256
@@ -221,11 +232,18 @@ export class ProductionJob {
         if(reel.path!==expected||reel.sha256!==await fingerprint(join(output,expected)))
           fail('A batch render is missing or changed');
       }
+      if(economicJobId){
+        const started=await economicsCommand({database:economicsDb,command:'start',args:[economicJobId,'QUALITY_CHECK']});
+        await economicsCommand({database:economicsDb,command:'finish',args:[started.stageId]});
+        const report=await economicsCommand({database:economicsDb,command:'report',args:[economicJobId]});
+        await writeFile(join(output,'P3-ECONOMICS.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+      }
       const batch={folder,count,manifestSha256:await fingerprint(manifest)};
       await this.transition('QUALITY_CHECK',{reason:'All batch MP4s passed decode, duration and audio QA',batchToken:token,batch});
       await this.transition('AWAITING_APPROVAL',{reason:'Batch package ready for author review',batchToken:token});
       return {output, ...result};
     }catch(error){
+      if(economicStageId)await economicsCommand({database:economicsDb,command:'finish',args:[economicStageId,'--failed']}).catch(()=>{});
       if(output)await writeFile(join(output,'BATCH-ERROR.json'),
         JSON.stringify({status:'failed',error:error.message})+'\n',{flag:'wx'}).catch(()=>{});
       throw error;
