@@ -55,5 +55,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          & .\tools\persona-launcher-supervisor.ps1 -RepoRoot $PWD.Path -SelfTest
-          if($LASTEXITCODE -ne 0) {throw 'Windows Job Object cleanup test failed'}
+          $bat=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
+          $marker='#--PERSONA_SUPERVISOR--'
+          $source=$bat.Substring($bat.LastIndexOf($marker)+$marker.Length).TrimStart([char[]]@(13,10,65279))
+          $tempScript=Join-Path $env:TEMP ('persona-launcher-embedded-'+[guid]::NewGuid().ToString('N')+'.ps1')
+          try {
+            [IO.File]::WriteAllText($tempScript,$source,(New-Object Text.UTF8Encoding($true)))
+            & $tempScript -RepoRoot $PWD.Path -SelfTest
+            if($LASTEXITCODE -ne 0) {throw 'Windows Job Object cleanup test failed'}
+          } finally {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+          }
