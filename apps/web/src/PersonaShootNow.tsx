@@ -138,6 +138,7 @@ export function PersonaShootNow({
     <p><b>Камера:</b> {plan.setup.camera}</p>
     <p><b>Свет:</b> {plan.setup.lighting}</p>
     <p><b>Звук:</b> {plan.setup.sound}</p>
+    <p><b>Монитор:</b> Если есть второй телефон, используй его как монитор через совместимый предпросмотр камеры. Перед съёмкой проверь задержку, соединение, конфиденциальность и заряд; такая функция поддерживается не всеми телефонами.</p>
     {current&&<div className="personaShootLighting">
      <button type="button" className="personaShootLightingToggle"
       aria-expanded={showLighting} aria-controls="persona-shoot-lighting-plan"

@@ -1,0 +1,85 @@
+.personaIndustry{--industry-ink:#171b24;--industry-paper:#f7f4ee;--industry-warm:#c49b66;min-width:0;display:grid;gap:20px;padding:24px clamp(12px,4vw,48px) 70px;max-width:1280px;margin:0 auto;color:var(--industry-ink);font:inherit}
+.personaIndustry *{box-sizing:border-box;min-width:0}
+.personaIndustryHeader{background:var(--industry-ink);color:#f7f4ee;padding:clamp(24px,5vw,48px);border-radius:22px;display:grid;gap:9px}
+.personaIndustryHeader>button{justify-self:start;background:none;color:#f0e9df;border:1px solid #978b7b;border-radius:10px;padding:9px 13px;cursor:pointer}
+.personaIndustryHeader small,.personaIndustryToolbar small{letter-spacing:.17em;font-size:11px;color:var(--industry-warm);font-weight:700}
+.personaIndustryHeader h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(30px,5vw,56px);margin:8px 0 0}
+.personaIndustryHeader p{max-width:66ch;color:#ded5c9;font-size:14px;line-height:1.55;margin:0}
+.personaIndustryPanel{background:#fff;border:1px solid #dfdad0;border-radius:16px;padding:clamp(15px,3vw,24px);display:grid;gap:14px}
+.personaIndustryPanel h3{font-family:Georgia,'Times New Roman',serif;font-size:clamp(20px,3vw,27px);margin:0}
+.personaIndustryPanel>p,.personaIndustryToolbar p{font-size:13px;line-height:1.5;color:#68635b;margin:0}
+.personaIndustryForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;align-items:end}
+.personaIndustryForm>button{align-self:end;background:var(--industry-ink);color:#fff;border:none;border-radius:10px;min-height:43px;padding:8px 16px;font-weight:700;cursor:pointer;font:inherit;font-size:13px}
+.personaIndustryForm>label,.personaIndustryDuration>label{display:grid;gap:5px;font-size:12px;font-weight:650}
+.personaIndustryForm input,.personaIndustryForm select,.personaIndustryShots textarea{width:100%;min-height:42px;padding:10px;border:1px solid #d5d1c9;border-radius:9px;background:#fefdfa;font:inherit;color:var(--industry-ink)}
+.personaIndustryForm input:focus-visible,.personaIndustryForm select:focus-visible,.personaIndustryShots textarea:focus-visible{outline:2px solid var(--industry-warm)}
+.personaIndustryDuration{display:flex;gap:10px;align-items:end}
+.personaIndustryDuration>label{flex:1}
+.personaIndustryCheckbox{display:flex!important;align-items:center;gap:9px;font-size:13px!important}
+.personaIndustryCheckbox input{width:19px;height:19px;min-height:0}
+.personaIndustryToolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+.personaIndustryToolbar h3{margin:3px 0 7px}
+.personaIndustryPills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.personaIndustryPills button,.personaMusicTrackList button{border:1px solid #c9bca8;border-radius:9px;background:#f7f3ed;color:#29231b;padding:9px 13px;cursor:pointer;font-size:12px;font-weight:700;min-height:40px}
+.personaIndustryPills button[aria-pressed=true]{background:var(--industry-ink);border-color:var(--industry-ink);color:#fff}
+.personaIndustryPills button:disabled,.personaMusicTrackList button:disabled,.personaIndustryForm>button:disabled{opacity:.55;cursor:not-allowed}
+.personaIndustryShots{display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));gap:13px}
+.personaIndustryShots article{display:grid;gap:11px;border:1px solid #e3ddd3;border-radius:13px;padding:15px;background:linear-gradient(140deg,#fdfcf9,#f7f4ee);align-content:start}
+.personaIndustryShotTop{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #e6e0d8;padding-bottom:8px;font-size:11px;color:#8b7254;letter-spacing:.05em}
+.personaIndustryShots label{display:grid;gap:4px;font-size:12px;font-weight:700}
+.personaIndustryShots textarea{resize:vertical;min-height:66px;font-size:13px;line-height:1.45}
+.personaIndustryShots p{margin:0;font-size:12px;line-height:1.5}
+.personaIndustryShots details{font-size:12px;line-height:1.45}
+.personaIndustryShots details summary{cursor:pointer;font-weight:700}
+.personaIndustryShots details p{margin:8px 0}
+.personaIndustryNotice{margin:0;font-size:12px;color:#696158;line-height:1.55}
+.personaIndustryError{background:#fff2ed;border:1px solid #d99884;border-radius:9px;padding:12px;color:#85392a}
+.personaIndustryEditHint{background:#edeae4;padding:9px;border-radius:8px}
+.personaMusicTrackList{display:grid;gap:10px}
+.personaMusicTrackList article{display:flex;justify-content:space-between;gap:18px;padding:14px 0;border-top:1px solid #e3dfd8;align-items:center}
+.personaMusicTrackList article>div{display:grid;gap:5px}
+.personaMusicTrackList strong{font-size:16px}
+.personaMusicTrackList small{font-size:12px;color:#67635f;line-height:1.35}
+.personaMusicTrackList a{font-size:13px;color:#27567a;text-decoration:underline;overflow-wrap:anywhere}
+.personaMusicPrint{display:none}
+@media(max-width:700px){.personaIndustry{padding:12px 12px 80px}.personaIndustryHeader{border-radius:15px}.personaIndustryForm{grid-template-columns:1fr}.personaIndustryShots{grid-template-columns:1fr}.personaMusicTrackList article{align-items:flex-start}}
+@media print{
+ @page{size:A4;margin:17mm}
+ body *{visibility:hidden!important}
+ .personaMusicPrint,.personaMusicPrint *{visibility:visible!important}
+ .personaMusicPrint{display:block!important;position:absolute;top:0;left:0;width:100%;background:white;color:#1a1d22;font-family:Arial,sans-serif;padding:0}
+ .personaMusicPrint h1{font-family:Georgia,'Times New Roman',serif;font-size:25pt;margin:0 0 8mm}
+ .personaMusicPrintSub{font-size:10pt;color:#726e65}
+ .personaMusicPrint article{break-inside:avoid;border-bottom:1px solid #ddd;margin:0 0 6mm;padding:0 0 5mm}
+ .personaMusicPrint h2{font-size:14pt}
+ .personaMusicPrint p{font-size:10pt;line-height:1.35}
+ .personaMusicPrint a{color:#214c79;overflow-wrap:anywhere}
+ .personaMusicPrint footer{font-size:9pt;line-height:1.4;border-top:1px solid #999;padding-top:5mm}
+}
+
+/* Isolate portfolio cards from inherited multi-column production-card CSS. */
+.personaIndustryShots article{grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;align-content:start!important}
+.personaIndustryShots article>*{grid-column:1!important;max-width:100%!important}
+.personaIndustryShots article label{grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;display:grid!important}
+.personaIndustryShots article textarea{display:block!important;width:100%!important;min-width:0!important}
+.personaIndustryShots article .personaIndustryShotTop{display:flex!important;justify-content:space-between!important}
+/* Print is a standalone, single-column dossier, not a production dashboard. */
+@media print{
+ html,body,#root{margin:0!important;padding:0!important;height:auto!important;min-height:0!important;overflow:visible!important}
+ .personaIndustry{display:block!important;position:static!important;margin:0!important;padding:0!important;
+  width:100%!important;max-width:none!important;min-height:0!important;background:#fff!important}
+ .personaIndustry>:not(.personaMusicPrint){display:none!important}
+ .personaMusicPrint{position:static!important;display:block!important;width:100%!important;max-width:none!important;
+  min-height:0!important;height:auto!important;background:#fff!important;margin:0!important;padding:0!important}
+ .personaMusicPrint article{display:block!important;float:none!important;position:static!important;min-height:0!important;
+  height:auto!important;max-width:100%!important;width:100%!important;grid-template-columns:none!important;
+  box-shadow:none!important;border:0!important;border-bottom:1px solid #bbb!important;border-radius:0!important;
+  padding:4mm 0!important;margin:0 0 6mm!important;background:#fff!important}
+ .personaMusicPrint article>*{display:block!important;float:none!important;position:static!important;
+  width:100%!important;min-width:0!important;max-width:100%!important;grid-column:auto!important;
+  margin:1mm 0!important;overflow-wrap:anywhere!important}
+ .personaMusicPrint article h2{font-size:14pt!important;line-height:1.25!important}
+ .personaMusicPrint article p{font-size:10pt!important;line-height:1.4!important}
+ .personaMusicPrint article a{word-break:break-all!important}
+ .personaMusicPrint footer{display:block!important;width:100%!important;height:auto!important}
+}

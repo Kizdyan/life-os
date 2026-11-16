@@ -170,7 +170,7 @@ export function buildPersonaProductionBrief(
       },
     },
     postProduction: {
-      transitions: isStill ? "Не применимо к статичному изображению; нужен отдельный визуальный редактор." : "Жёсткие склейки по завершённым фразам; не использовать декоративные переходы без смысловой причины.",
+      transitions: isStill ? "Не применимо к статичному изображению; нужен отдельный визуальный редактор." : "Арсенал KB-04: лицо актёра → смысловая предметная деталь (бумага/свеча) → реакция лица. Монтаж только из отснятых и одобренных исходников, без случайных переходов.",
       subtitles: {
         instruction: "Субтитры синхронны с речью, максимум две строки, высокий контраст и безопасные поля для интерфейса платформы.",
         maxCharactersPerLine: 42,
@@ -239,9 +239,9 @@ function buildTimedShots(script: PersonaProductionBrief["script"]): PersonaProdu
   return script.map((beat, index) => ({
     order: index + 1,
     durationSec: beat.durationSec,
-    framing: (index === 1 ? "medium" : "close-up") as "medium" | "close-up",
-    angle: index === 1 ? "Три четверти; руки и действие в кадре" : "На уровне глаз",
-    cameraMovement: index === 1 ? "Смысловой переход на деталь" : "Статичный кадр",
+    framing: (index % 2 === 1 ? "detail" : "close-up") as "detail" | "close-up",
+    angle: index % 2 === 1 ? "Предметная крупность; действие и руки в кадре" : "На уровне глаз",
+    cameraMovement: index % 2 === 1 ? "Осмысленная предметная склейка (только после съёмки)" : "Статичный крупный план лица",
     lighting: "Единая цветовая температура; мягкий ключевой свет",
     action: beat.action,
     ...(index < script.length - 1 && beat.durationSec >= 1.5
