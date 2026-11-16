@@ -126,7 +126,9 @@ class StageCache:
         payload = value if encoding == "bytes" else canonical(value).encode()
         if len(payload) > ENTRY_LIMIT:
             return
-        if shutil.disk_usage(self.path.parent).free < 64 * 1024 * 1024 + 3 * len(payload):
+        # Large artifacts need headroom for the rendered copy and SQLite's WAL.
+        reserve = (64 if len(payload) >= 1024 * 1024 else 16) * 1024 * 1024
+        if shutil.disk_usage(self.path.parent).free < reserve + 3 * len(payload):
             log_stage("WRITE_SKIPPED_LOW_DISK", operation)
             return
         now = time.time_ns() // 1_000_000

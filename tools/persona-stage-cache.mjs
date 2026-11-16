@@ -90,7 +90,9 @@ export async function cachedStage(operation,sha,version,params,producer,{env=pro
   const encoding=Buffer.isBuffer(value)?'bytes':'json';
   const payload=encoding==='bytes'?value:Buffer.from(JSON.stringify(value));
   const {bavail,bsize}=await statfs(dirname(path));
-  if(bavail*bsize<64*1024*1024+3*payload.length)log(env,'WRITE_SKIPPED_LOW_DISK',operation);
+  // Large artifacts share the volume with their rendered copies and SQLite's WAL.
+  const reserve=payload.length>=1024*1024?64*1024*1024:16*1024*1024;
+  if(bavail*bsize<reserve+3*payload.length)log(env,'WRITE_SKIPPED_LOW_DISK',operation);
   else if(payload.length<=entryLimit)await withDatabase(path,db=>{
    const now=Date.now();
    db.exec('BEGIN IMMEDIATE');
