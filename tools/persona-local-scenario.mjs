@@ -3,6 +3,7 @@ import {readFile,writeFile,unlink} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {LOCAL_SCENARIO_RESPONSE_SCHEMA,LOCAL_SCENARIO_DURATION_REPAIR_SCHEMA} from './persona-local-scenario-schema.mjs';
+import {personaGeneratedCopyIssue} from '../packages/core/src/persona-writing-style.mjs';
 
 const FIELDS=['premise','hook','protagonistGoal','obstacle','escalation','turn','payoff','actingAction','visualMoment'];
 const MODEL_DEFAULT='qwen2.5-coder:7b';
@@ -40,6 +41,7 @@ function applyDurationRepair(value,durations,invalid){if(!Array.isArray(duration
 function makeOutput(v,input,model){
  if(!v||typeof v!=='object'||!Array.isArray(v.beats)||v.beats.length<3||v.beats.length>12)throw Error('Модель вернула неполный сценарий. Файл не создаётся.');
  const beats=v.beats.map((beat,i)=>{if(!beat||typeof beat!=='object'||!Number.isFinite(beat.durationSec)||beat.durationSec<1||beat.durationSec>10)throw Error('Некорректный кадр '+(i+1));return {order:i+1,durationSec:beat.durationSec,line:required(beat.line,'beat.line',220),action:required(beat.action,'beat.action',500)}});
+ if(personaGeneratedCopyIssue(beats.map(beat=>beat.line)))throw Error('Нейросеть вернула шаблонные фразы. Требуется новая редакция; файл не создан.');
  const distinctLines=new Set(beats.map(beat=>beat.line.toLocaleLowerCase('ru-RU').replace(/\s+/g,' ').trim()));
  if(distinctLines.size!==beats.length)throw Error('Модель повторяет одну и ту же реплику вместо развития сцены. Файл не создаётся.');
  if(beats.length>=4&&new Set(beats.map(beat=>beat.durationSec)).size===1)throw Error('Модель задала механически одинаковые длительности. Нужен осмысленный ритм сцены. Файл не создаётся.');
