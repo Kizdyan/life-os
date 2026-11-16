@@ -44,8 +44,15 @@ async function assertExisting(directory,entry,sourceSha){
 async function seedOne(root,entry){
  const {item,scenes}=entry,shaSource=sha(item);
  const directory=join(root,item.id);
- try{await access(directory);return await assertExisting(directory,entry,shaSource)}
+ // Check the directory's existence separately from validating its contents.
+ // A missing manifest inside an *existing* job is not permission to recreate it.
+ let directoryExists=false;
+ try{await access(directory);directoryExists=true}
  catch(error){if(error?.code!=='ENOENT')throw error}
+ if(directoryExists){
+  try{return await assertExisting(directory,entry,shaSource)}
+  catch(error){throw Error('Existing project differs from the seed or was edited: '+item.id+'; refusing to overwrite ('+String(error?.message||error)+')')}
+ }
  const staging=join(root,'.pending-'+item.id+'-'+randomUUID());
  let createdStage=false;
  try{
