@@ -53,9 +53,9 @@ try{
   const lighting=page.getByRole('region',{name:'Планировщик света'});
   await lighting.waitFor({timeout:10000});
   assert.match(await lighting.innerText(),/Quiet Luxury/i);
-  assert.match(await lighting.innerText(),/Рисующий \\/ Key/);
-  assert.match(await lighting.innerText(),/Заполняющий \\/ Fill/);
-  assert.match(await lighting.innerText(),/Контровой \\/ Back/);
+  assert.ok((await lighting.innerText()).includes('Рисующий / Key'));
+  assert.ok((await lighting.innerText()).includes('Заполняющий / Fill'));
+  assert.ok((await lighting.innerText()).includes('Контровой / Back'));
   assert.match(await lighting.innerText(),/рояля/);
   await page.screenshot({path:join(output,'architect-01-lighting-'+width+'.png'),fullPage:true,animations:'disabled'});
   await page.goto(origin+'/#persona/seed10',{waitUntil:'domcontentloaded',timeout:45000});
