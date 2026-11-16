@@ -7,6 +7,7 @@ import {basename, dirname, extname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cachedFfprobe} from './persona-stage-cache.mjs';
 import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './persona-p3-adapter.mjs';
+import {renderApprovedBroll} from './persona-approved-broll.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
 ]);
@@ -141,6 +142,19 @@ export class ProductionJob {
   async economics({command,args=[]}={}){
     return economicsCommand({database:join(this.directory,'economics.sqlite3'),command,args});
   }
+  /** Reuse existing SHA/rights-reviewed B-roll renderer, never select media without approval. */
+  async renderReviewedBroll({timelinePath,matchesPath,catalogPath,captionsPath,selectionPath}={}){
+    if((await this.read()).status!=='EDITING')fail('B-roll render requires EDITING');
+    if(![timelinePath,matchesPath,catalogPath,captionsPath,selectionPath].every(x=>typeof x==='string'&&x.trim()))
+      fail('Reviewed B-roll needs five explicit source files');
+    const outputDir=join(this.directory,'output','reviewed-broll-'+randomUUID());
+    const result=await renderApprovedBroll({timelinePath,matchesPath,catalogPath,captionsPath,selectionPath,outputDir});
+    if(result.status!=='AWAITING_AUTHOR_REVIEW'||result.publicationApproved!==false||result.distributionAllowed!==false)
+      fail('B-roll result did not pass safe review contract');
+    await this.transition('QUALITY_CHECK',{reason:'Approved B-roll was rendered and technical QA completed'});
+    await this.transition('AWAITING_APPROVAL',{reason:'B-roll montage requires author review'});
+    return result;
+  }
   async scanForFootage(stability){
     const state=await this.read();if(state.status!=='WAITING_FOR_FOOTAGE')return {changed:false,status:state.status};
     const dir=join(this.directory,'input');
@@ -255,8 +269,8 @@ export class ProductionJob {
 }
 async function cli(){
   const [action,rawDir,...args]=process.argv.slice(2),target=args[0];
-  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics'].includes(action)||!rawDir)
-    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics JOB_DIR [options]');
+  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics','broll'].includes(action)||!rawDir)
+    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics|broll JOB_DIR [options]');
   if(action==='init'){const job=await ProductionJob.create(rawDir);console.log(JSON.stringify(await job.read(),null,2));return}
   const job=new ProductionJob(rawDir);
   if(action==='ready'){console.log(JSON.stringify(await job.markReady(),null,2));return}
@@ -275,6 +289,14 @@ async function cli(){
     const opts={};
     for(let i=0;i<args.length;i+=2){if(!['--plan','--contract'].includes(args[i])||!args[i+1])fail('Invalid style option');opts[args[i]]=args[i+1]}
     console.log(JSON.stringify(await job.checkStyle({plan:opts['--plan'],contract:opts['--contract']}),null,2));return;
+  }
+  if(action==='broll'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){
+      if(!['--timeline','--matches','--catalog','--captions','--selection'].includes(args[i])||!args[i+1])fail('Invalid B-roll option');
+      opts[args[i]]=args[i+1];
+    }
+    console.log(JSON.stringify(await job.renderReviewedBroll({timelinePath:opts['--timeline'],matchesPath:opts['--matches'],catalogPath:opts['--catalog'],captionsPath:opts['--captions'],selectionPath:opts['--selection']}),null,2));return;
   }
   if(action==='economics'){
     const [economicAction,...economicArgs]=args;
