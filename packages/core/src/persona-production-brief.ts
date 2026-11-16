@@ -159,25 +159,6 @@ export function buildPersonaProductionBrief(
     },
     script,
     shots,
-    // Pre-edit intent from the Arsenal: actor reaction -> meaningful object detail -> actor reaction.
-    // All media remain unrecorded and every cut requires author review.
-    ...(isStill?{}:{preEditPlan:{
-      version:1 as const,kind:"persona-pre-edit-plan-v1" as const,status:"intent_only" as const,
-      origin:"scenario_revision" as const,sourceRevisionId:null,
-      researchEvidence:{level:"hypothesis_only" as const,sourceUrls:[],
-       note:"KB-04 associative editing from user brief; no reviewed footage or verified references."},
-      scenes:shots.map((shot,index)=>({
-       order:shot.order,line:script[index].line,durationSec:shot.durationSec,
-       editIntent:index%2===1
-        ?"Предметная крупность с причинным смыслом (бумага, свеча или иной реальный реквизит). Снять и подтвердить права; затем вернуть лицо."
-        :"Лицо актёра, выразительная реакция и подтекст; склейка по действию, без клипового ритма ради эффекта.",
-       audioIntent:"Сохранить утверждённую речь и оригинальную звуковую дорожку; музыка только после проверки прав.",
-       subtitleIntent:"Не закрывать эмоцию лица титром, максимум две строки.",
-       visualIntent:{framing:shot.framing,angle:shot.angle,cameraMovement:shot.cameraMovement,
-        lighting:shot.lighting,performance:shot.action},
-       mediaStatus:"awaiting_author_footage" as const,
-      })),publicationApproved:false as const,
-    }}),
     capture: {
       props: ["Телефон или камера", "Штатив или устойчивая опора", "Предмет из реального рабочего процесса, если он нужен для объяснения"],
       wardrobe: "Однотонная одежда без мелкого контрастного рисунка; выбрать то, в чём автор обычно работает.",
