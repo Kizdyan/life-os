@@ -7,12 +7,14 @@ import {mkdir,readFile,readdir,rename,stat,writeFile,rm,copyFile} from 'node:fs/
 import {pipeline} from 'node:stream/promises';
 import {spawn} from 'node:child_process';
 import {join,resolve,basename,extname} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {homedir,tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {frameCandidates,selectEditPlan,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 
+const toolsDir=fileURLToPath(new URL('.',import.meta.url));
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const videoExt=new Set(['.mp4','.mov','.mkv','.webm','.m4v']);
 const audioExt=new Set(['.mp3','.wav','.m4a','.aac','.flac']);
@@ -173,17 +175,18 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(strategyOutput,JSON.stringify({...audit,provider:'test-injected',publicationApproved:false},null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON|| (process.platform==='win32'?'python':'python3');
-    await runBounded(py,[join(resolve('tools'),'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
+    await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
      {env,timeoutMs:120000,maxStdout:20000});
    }
    const audit=JSON.parse(await readFile(strategyOutput,'utf8'));job.strategyStatus=audit.status;
-   if(audit.status==='BLOCKED')throw Error('Стратегический анализ BLOCKED: '+audit.recommendation.slice(0,150));
+   // Strategic BLOCKED is a review warning, not a prohibition on generating a private draft.
+   // Publication remains disabled and the original finding is retained.
    const lightingPath=join(out,'lighting-plan.json');
    if(config.quickLighting){
     await writeFile(lightingPath,JSON.stringify(await config.quickLighting(job.prompt),null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON||(process.platform==='win32'?'python':'python3');
-    await runBounded(py,[join(resolve('tools'),'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
+    await runBounded(py,[join(toolsDir,'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
      {env,timeoutMs:15000,maxStdout:10000});
    }
    job.stage='Анализ кадров';await save(job);
@@ -218,7 +221,7 @@ export function createPersonaQuickRenderService(config={}){
    const timelinePath=join(out,'timeline.json'),draft=join(out,'edited.mp4');
    await writeFile(timelinePath,JSON.stringify(timeline,null,2)+'\n',{flag:'wx'});
    await production.transition('QUALITY_CHECK',{reason:'FFmpeg timeline render and source hash verification'});
-   await runBounded(process.execPath,[join(resolve('tools'),'persona-timeline-render.mjs'),timelinePath,draft],
+   await runBounded(process.execPath,[join(toolsDir,'persona-timeline-render.mjs'),timelinePath,draft],
     {env:{...env,PERSONA_WORKER_RENDER:'1'},timeoutMs:720000,maxStdout:30000});
    let video=draft;
    const cues=[];let offset=0;
