@@ -31,6 +31,15 @@ function advance(data,status,reason,at=new Date().toISOString()){
   return {...data,status,revision:data.revision+1,updatedAt:at,
     history:[...data.history,{from:data.status,to:status,at,reason}]};
 }
+async function readBatchOwner(path){
+  const raw=await readFile(path,'utf8').catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+  if(raw===null)return null;
+  try{
+    const owner=JSON.parse(raw);
+    if(localId.test(owner?.token)&&Number.isSafeInteger(owner.pid)&&owner.pid>0)return owner;
+  }catch{/* Legacy locks have no process identity and need operator review. */}
+  return {token:raw};
+}
 async function probeVideo(p){
   const folder=process.env.PERSONA_MEDIA_FFMPEG_DIR;
   const binary=folder ? join(folder,process.platform==='win32'?'ffprobe.exe':'ffprobe') : 'ffprobe';
@@ -76,6 +85,25 @@ function runBatchPhase(phase, source, output, options, timeout) {
     });
   });
 }
+async function checkedBatch(source,asset,output,count,expectedManifestSha256){
+  const manifest=join(output,'BATCH-RESULT.json');
+  if(!(await lstat(output)).isDirectory()||!(await lstat(manifest)).isFile())
+    fail('Batch manifest is not a regular production artifact');
+  const result=JSON.parse(await readFile(manifest,'utf8'));
+  const manifestSha256=await fingerprint(manifest);
+  if(expectedManifestSha256!==undefined&&manifestSha256!==expectedManifestSha256)
+    fail('Verified batch manifest changed');
+  if(result.version!==1||result.sourceSha256!==asset.sha256||await fingerprint(source)!==asset.sha256
+      ||result.publicationApproved!==false||result.distributionAllowed!==false||result.reels?.length!==count)
+    fail('Batch result did not verify against the original source');
+  for(const [i,reel] of result.reels.entries()){
+    const part='reel-'+String(i+1).padStart(2,'0'),expected=part+'/studio.mp4',video=join(output,expected);
+    if(reel.path!==expected||!(await lstat(join(output,part))).isDirectory()||
+       !(await lstat(video)).isFile()||reel.sha256!==await fingerprint(video))
+      fail('A batch render is missing or changed');
+  }
+  return {manifestSha256,result};
+}
 export class ProductionJob {
   constructor(directory){this.directory=safeDir(directory);this.path=join(this.directory,'job.json');}
   static async create(directory,{title='Persona production',id=randomUUID(),workflow,context}={}){
@@ -94,21 +122,23 @@ export class ProductionJob {
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
     return data;
   }
-  async update(mutate,batchToken=null){
+  async withJobLock(operation){
     const lock=this.path+'.lock';let handle;
     try{handle=await open(lock,'wx');}catch(e){if(e.code==='EEXIST')fail('Job locked by another worker; investigate stale lock before recovery');throw e}
     try{
-      const owner=await readFile(this.path+'.batch.lock','utf8').catch(error=>{
-        if(error.code!=='ENOENT')throw error;
-        return null;
-      });
-      if(owner!==null&&owner!==batchToken)fail('Cinematic Calm batch has reserved this job');
+      return await operation();
+    }finally{await handle.close();await unlink(lock)}
+  }
+  async update(mutate,batchToken=null){
+    return this.withJobLock(async()=>{
+      const owner=await readBatchOwner(this.path+'.batch.lock');
+      if(owner&&owner.token!==batchToken)fail('Cinematic Calm batch has reserved this job');
       const update=mutate(await this.read());
       const tmp=this.path+'.'+randomUUID()+'.tmp';
       try{await writeFile(tmp,JSON.stringify(update,null,2)+'\n',{flag:'wx'});await rename(tmp,this.path)}
       finally{await unlink(tmp).catch(()=>{})}
       return update;
-    }finally{await handle.close();await unlink(lock)}
+    });
   }
   async transition(to,{reason='',asset=null,assets=asset?[asset]:[],batchToken=null,batch=null}={}){
     if(!validState(to))fail('Unknown stage '+to);
@@ -189,24 +219,39 @@ export class ProductionJob {
     if(!Number.isInteger(count)||count<3||count>5)fail('Batch count must be 3, 4 or 5');
     if((await this.read()).status==='WAITING_FOR_FOOTAGE')await this.watchForFootage();
     const path=this.path+'.batch.lock', token=randomUUID();
-    let lock;
-    try{lock=await open(path,'wx');}catch(error){
-      if(error.code==='EEXIST')fail('Cinematic Calm batch is already running');
-      throw error;
-    }
+    await this.withJobLock(async()=>{
+      const owner=await readBatchOwner(path);
+      if(owner){
+        if(isProcessAlive(owner.pid))fail('Cinematic Calm batch is already running');
+        await unlink(path);
+      }
+      // Reserve while holding the same mutex as state transitions. A leftover
+      // reservation from a dead process can only be reclaimed by one caller.
+      await writeFile(path,JSON.stringify({token,pid:process.pid})+'\n',{flag:'wx'});
+    });
     let output;
     try{
-      await lock.writeFile(token);
       const state=await this.read();
-      if(!['ANALYZING','EDITING'].includes(state.status)||state.assets.length!==1)
+      if(!['ANALYZING','EDITING','QUALITY_CHECK'].includes(state.status)||state.assets.length!==1)
         fail('Batch requires one verified source at ANALYZING or EDITING');
       const asset=state.assets[0];
-      if(!validFileName(asset.name)||asset.durationSec>MAX_SECONDS||asset.durationSec<count*18)
+      if(!validFileName(asset.name)||asset.durationSec>MAX_SECONDS||
+         (state.status!=='QUALITY_CHECK'&&asset.durationSec<count*18))
         fail('Batch needs enough verified footage, up to 15 minutes');
       const input=join(this.directory,'input'), root=join(this.directory,'output'), source=join(input,asset.name);
       if(!(await lstat(input)).isDirectory()||!(await lstat(root)).isDirectory()
           ||!(await lstat(source)).isFile()||asset.sha256!==await fingerprint(source))
         fail('A verified input or production directory changed');
+      if(state.status==='QUALITY_CHECK'){
+        const batch=state.batch;
+        if(!/^batch-[a-f0-9-]{36}$/.test(batch?.folder)||!digestPattern.test(batch?.manifestSha256)||
+           !Number.isInteger(batch.count)||batch.count<3||batch.count>5)
+          fail('Missing verified batch checkpoint');
+        const previousOutput=join(root,batch.folder);
+        const {result}=await checkedBatch(source,asset,previousOutput,batch.count,batch.manifestSha256);
+        await this.transition('AWAITING_APPROVAL',{reason:'Verified batch restored for author review',batchToken:token});
+        return {output:previousOutput,...result};
+      }
       const folder='batch-'+randomUUID();
       output=join(root,folder);
       await mkdir(output);
@@ -216,17 +261,8 @@ export class ProductionJob {
         {reason:'Cinematic Calm phrase plan created',batchToken:token});
       await runBatchPhase('render-batch',source,output,
         stylepackFile?['--stylepack',resolve(stylepackFile)]:[],1_200_000);
-      const manifest=join(output,'BATCH-RESULT.json');
-      const result=JSON.parse(await readFile(manifest,'utf8'));
-      if(result.version!==1||result.sourceSha256!==asset.sha256||await fingerprint(source)!==asset.sha256
-          ||result.publicationApproved!==false||result.distributionAllowed!==false||result.reels?.length!==count)
-        fail('Batch result did not verify against the original source');
-      for(const [i,reel] of result.reels.entries()){
-        const expected='reel-'+String(i+1).padStart(2,'0')+'/studio.mp4';
-        if(reel.path!==expected||reel.sha256!==await fingerprint(join(output,expected)))
-          fail('A batch render is missing or changed');
-      }
-      const batch={folder,count,manifestSha256:await fingerprint(manifest)};
+      const {result,manifestSha256}=await checkedBatch(source,asset,output,count);
+      const batch={folder,count,manifestSha256};
       await this.transition('QUALITY_CHECK',{reason:'All batch MP4s passed decode, duration and audio QA',batchToken:token,batch});
       await this.transition('AWAITING_APPROVAL',{reason:'Batch package ready for author review',batchToken:token});
       return {output, ...result};
@@ -235,7 +271,6 @@ export class ProductionJob {
         JSON.stringify({status:'failed',error:error.message})+'\n',{flag:'wx'}).catch(()=>{});
       throw error;
     }finally{
-      await lock.close();
       await unlink(path);
     }
   }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readdir, rm, unlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, rm, unlink, writeFile} from 'node:fs/promises';
+import {createHash, randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {test} from 'node:test';
@@ -74,4 +75,35 @@ test('a killed worker can resume verified inputs in a fresh attempt directory',a
   assert.equal(retry.attempt.folder,'render-next');
   assert.equal(retry.assets[0].sha256,digest);
   assert.equal(retry.history.filter(event=>event.to==='EDITING').length,2);
+});
+
+test('batch recovers a dead reservation at the verified quality checkpoint',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'persona-batch-resume-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const job=await ProductionJob.create(join(root,'job'));
+  const source='source bytes',sha=value=>createHash('sha256').update(value).digest('hex');
+  const asset={name:'master.mp4',durationSec:56,sha256:sha(source)};
+  await writeFile(join(job.directory,'input',asset.name),source);
+  await job.markReady();
+  await job.transition('ANALYZING',{asset});
+  await job.transition('EDITING');
+  const folder='batch-'+randomUUID(),output=join(job.directory,'output',folder);
+  await mkdir(output);
+  const reels=[];
+  for(let i=1;i<=3;i++){
+    const part='reel-0'+i,bytes='verified fixture '+i;
+    await mkdir(join(output,part));
+    await writeFile(join(output,part,'studio.mp4'),bytes);
+    reels.push({path:part+'/studio.mp4',sha256:sha(bytes)});
+  }
+  const manifest=JSON.stringify({version:1,sourceSha256:asset.sha256,reels,publicationApproved:false,distributionAllowed:false});
+  await writeFile(join(output,'BATCH-RESULT.json'),manifest);
+  await job.transition('QUALITY_CHECK',{batch:{folder,count:3,manifestSha256:sha(manifest)}});
+  const child=spawn(process.execPath,['-e',''],{stdio:'ignore'}),pid=child.pid;
+  await once(child,'close');
+  await writeFile(job.path+'.batch.lock',JSON.stringify({token:randomUUID(),pid}));
+  const restored=await job.runBatch();
+  assert.equal(restored.output,output);
+  assert.equal((await job.read()).status,'AWAITING_APPROVAL');
+  assert.deepEqual(await readdir(join(job.directory,'output')),[folder]);
 });

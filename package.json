@@ -22,7 +22,7 @@
     "persona:check": "npm run persona:preflight && npm run media:test && npm run web:build",
     "media:verify": "node tools/persona-verify-render.mjs",
     "media:verify:test": "node --test tools/persona-verify-render.test.mjs",
-    "persona:core:test": "node --test packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs",
+    "persona:core:test": "node --test packages/core/src/persona-editorial-calendar.test.mjs packages/core/src/persona-distribution-plan.test.mjs packages/core/src/persona-media-handoff.test.mjs tools/persona-orchestrator.test.mjs",
     "media:semantic:analyze": "node tools/persona-semantic-montage.mjs analyze",
     "media:semantic:assemble": "node tools/persona-semantic-montage.mjs assemble",
     "media:semantic:transcribe": "node tools/persona-semantic-autoselect.mjs transcribe",
