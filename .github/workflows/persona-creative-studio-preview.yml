@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/web/**"
       - "tools/persona-creative-studio-screenshots.mjs"
+      - "tools/persona-architect-browser-e2e.mjs"
       - ".github/workflows/persona-creative-studio-preview.yml"
 jobs:
   capture:
@@ -35,6 +36,16 @@ jobs:
         run: node tools/persona-creative-studio-screenshots.mjs
       - name: Verify real-browser demo project creation and navigation
         run: node tools/persona-demo-browser-e2e.mjs
+      - name: Verify ten Architect project cards in real browser
+        run: node tools/persona-architect-browser-e2e.mjs
+      - name: Upload ten-card dashboard and storyboard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-architect-ten-cards-screenshots
+          path: artifacts/persona-architect-10/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload demo dashboard and storyboard screenshots
         if: always()
         uses: actions/upload-artifact@v4
