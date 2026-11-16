@@ -9,6 +9,8 @@ import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 import {runStudioPython} from './persona-studio-python.mjs';
 import {personaMediaPaths,PRODUCTION_LUT_MIX} from './persona-media-paths.mjs';
 import {planFraming} from './persona-studio-framing.mjs';
+import {cachedFfmpegStage,cachedMp4,stageCacheEnabled,stageFileSha} from './persona-stage-cache.mjs';
+import {fileURLToPath} from 'node:url';
 
 import {buildSubtitleAss,loadSubtitlePreset,verifySubtitleFont} from './persona-subtitle-burn.mjs';
 
@@ -144,10 +146,13 @@ export function analyzeMusicCandidates(samples, formatId) {
   evidence:'Эвристики энергии и хрома-профиля. Изменение тонального состава не определяет аккорд, эмоцию или качество исполнения.'};
 }
 
-function ffmpeg(args,config,{cwd,max=1024*1024,timeout=180000}={}) {
+function ffmpegBinary(config){
  const name=process.platform==='win32'?'ffmpeg.exe':'ffmpeg';
+ return config.ffmpegDir?join(config.ffmpegDir,name):name;
+}
+function ffmpeg(args,config,{cwd,max=1024*1024,timeout=180000}={}) {
  return new Promise((ok,no)=>{
-  const child=spawn(config.ffmpegDir?join(config.ffmpegDir,name):name,['-nostdin',...args],
+  const child=spawn(ffmpegBinary(config),['-nostdin',...args],
    {cwd,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
   let size=0,err='',failure;
   const parts=[];
@@ -174,6 +179,16 @@ async function hash(path){
 
 export async function analyzeMusicMaster(path, formatId, config, media) {
  if (media && !media.audioCodecs.length) return visualMusicCandidate(formatId, media.duration);
+ const env={...process.env,...config.apiEnv};
+ const recipe=stageCacheEnabled(env)?await stageFileSha(fileURLToPath(import.meta.url)):null;
+ const result=await cachedFfmpegStage(path,'music_master_analysis',
+  {formatId,formats:musicFormats,sampleRate,duration:media?.duration??null,recipe},
+  ()=>analyzeMusicAudio(path,formatId,config,media),
+  {env,binary:ffmpegBinary(config),valid:value=>Array.isArray(value?.candidates)});
+ return result.value;
+}
+
+async function analyzeMusicAudio(path,formatId,config,media){
  const {stdout:raw}=await ffmpeg(['-v','error','-xerror','-protocol_whitelist','file','-format_whitelist','mov,matroska,webm','-i',path,'-map','0:a:0','-t','900','-ac','1','-ar',String(sampleRate),
   '-f','f32le','pipe:1'], config, {max:sampleRate*900*4});
  const samples=new Float32Array(raw.length/4);
@@ -256,16 +271,35 @@ export async function renderMusicCandidate({input,sourceSha256,analysis,candidat
  }else if(hasCamera)filters.push(camera+'[audio]');
  else filters.push('anullsrc=r=48000:cl=stereo[audio]');
  const color=['-color_primaries','bt709','-color_trc','bt709','-colorspace','bt709'];
- const exportLog=await ffmpeg(['-hide_banner','-nostats','-xerror','-n',...inputs,
+ const exportArgs=['-hide_banner','-nostats','-xerror','-n',...inputs,
   '-map','[picture]','-map','[audio]','-t',durationArg,'-filter_complex',filters.join(';'),
   '-c:v','libx264','-preset','fast','-crf','17','-pix_fmt','yuv420p',
   '-map_metadata','-1',...color,
-  '-c:a','aac','-b:a','256k','-movflags','+faststart',video],config,{cwd:output});
- verifySubtitleFont(exportLog.stderr,fontPath);
- const qa=await analyzePersonaVideoQuality({videoPath:video,expectedDurationSec:duration,outputPath:qaPath,ffmpegDir:config.ffmpegDir});
- if(qa.video.width!==1080||qa.video.height!==1920||qa.video.codec!=='h264'||qa.video.audioCodec!=='aac'||
-   qa.findings.find(item=>item.id==='decode_integrity')?.measurement?.value!=='pass'||
-   Math.abs(qa.video.durationSec-duration)>.1)throw Error('MP4 не прошёл проверку декодирования, длительности или формата.');
+  '-c:a','aac','-b:a','256k','-movflags','+faststart'];
+ const env={...process.env,...config.apiEnv};
+ const copiedLut=join(output,'humble.cube'),copiedFont=join(output,'fonts',basename(fontPath));
+ const params=stageCacheEnabled(env)?{
+  args:exportArgs.map((value,index)=>exportArgs[index-1]==='-i'?'input':value),
+  music:track?await stageFileSha(track.track):null,lut:await stageFileSha(copiedLut),
+  font:await stageFileSha(copiedFont),ass:await stageFileSha(join(output,'hook.ass')),
+ }:null;
+ const verifyVideo=async()=>{
+  const qa=await analyzePersonaVideoQuality({videoPath:video,expectedDurationSec:duration,outputPath:qaPath,ffmpegDir:config.ffmpegDir});
+  if(qa.video.width!==1080||qa.video.height!==1920||qa.video.codec!=='h264'||qa.video.audioCodec!=='aac'||
+    qa.findings.find(item=>item.id==='decode_integrity')?.measurement?.value!=='pass'||
+    Math.abs(qa.video.durationSec-duration)>.1)throw Error('MP4 не прошёл проверку декодирования, длительности или формата.');
+  return qa;
+ };
+ let qa;
+ await cachedMp4({path:video,sourceSha:sourceSha256,params,env,binary:ffmpegBinary(config),render:async()=>{
+  const exportLog=await ffmpeg([...exportArgs,video],config,{cwd:output});
+  verifySubtitleFont(exportLog.stderr,fontPath);
+  if(params&&(await stageFileSha(input)!==sourceSha256||
+    (track&&await stageFileSha(track.track)!==params.music)))throw Error('Входные файлы изменились при рендере.');
+  qa=await verifyVideo();
+ }});
+ if(params&&track&&await stageFileSha(track.track)!==params.music)throw Error('Музыкальный трек изменился при рендере.');
+ qa??=await verifyVideo();
  if(await hash(input)!==sourceSha256)throw Error('Копия исходника изменилась при рендере.');
  const report={version:1,status:'awaiting-author-review',format:{id:analysis.format.id,version:analysis.format.version},
   source:{sha256:sourceSha256},selection:candidate,selectionConfirmed:true,video:qa.video,qaPath,framing,

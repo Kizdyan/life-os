@@ -5,6 +5,7 @@ import {copyFile, mkdir, mkdtemp, rename, rm, stat, writeFile} from 'node:fs/pro
 import {basename, dirname, join, resolve} from 'node:path';
 import {buildSubtitleAss, loadApprovedSubtitleReference, runSubtitleCommand} from './persona-subtitle-burn.mjs';
 import {planFraming} from './persona-studio-framing.mjs';
+import {cachedFfprobe,fullProbeArgs} from './persona-stage-cache.mjs';
 
 const tones=['intrigue','direct','question'];
 const restriction=['-protocol_whitelist','file','-format_whitelist','mov'];
@@ -18,9 +19,9 @@ async function hash(path){
 function bin(name,dir){return dir?join(resolve(dir),name+(process.platform==='win32'?'.exe':'')):name;}
 
 export async function inspectHookVideo(video,ffmpegDir){
- const {stdout}=await runSubtitleCommand(bin('ffprobe',ffmpegDir),['-v','error',...restriction,
-  '-show_streams','-show_format','-of','json',video]);
- const data=JSON.parse(stdout), stream=data.streams?.find(s=>s.codec_type==='video');
+ const data=await cachedFfprobe(video,{binary:bin('ffprobe',ffmpegDir),run:runSubtitleCommand,
+  args:['-v','error',...restriction,...fullProbeArgs.slice(2)]});
+ const stream=data.streams?.find(s=>s.codec_type==='video');
  const duration=Number(stream?.duration??data.format?.duration);
  if(!stream||stream.pix_fmt!=='yuv420p'||stream.disposition?.attached_pic||
     stream.width<128||stream.height<128||stream.width>3840||stream.height>3840||

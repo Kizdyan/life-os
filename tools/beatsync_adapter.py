@@ -12,6 +12,7 @@ import sys
 from tempfile import TemporaryDirectory
 
 from critic_agent import _bin, probe_video
+from persona_stage_cache import StageCache, cache_path, cached_file_stage, tool_version
 
 UPSTREAM_COMMIT = "48c09c92ee69c2d89b7e44b146bbd7b9c26fff08"
 VENV = Path(__file__).resolve().parents[1] / ".venv-beats"
@@ -193,9 +194,9 @@ def run_command(args, *, timeout):
     return run.stdout
 
 
-def save_json(path, value):
+def save_json(path, value, *, sort_keys=False):
     with path.open("x", encoding="utf-8", newline="\n") as output:
-        json.dump(value, output, indent=2, ensure_ascii=False, allow_nan=False)
+        json.dump(value, output, indent=2, ensure_ascii=False, allow_nan=False, sort_keys=sort_keys)
         output.write("\n")
 
 
@@ -214,16 +215,30 @@ def analyze_upstream(source, output):
         raise RuntimeError(f"Unexpected beat-synced-edit checkout; use {UPSTREAM_COMMIT}")
     if run_command([*git, "diff", "HEAD", "--", "beat_map.py"], timeout=10).strip():
         raise RuntimeError("The pinned beat-synced-edit analyzer has local edits")
-    with TemporaryDirectory(prefix="persona-beats-", dir=output.parent) as folder:
-        audio = Path(folder) / "source.wav"
-        run_command([_bin("ffmpeg"), "-nostdin", "-v", "error", "-n",
-                     "-protocol_whitelist", "file", "-i", source, "-map", "0:a:0", "-vn",
-                     "-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le", audio], timeout=90)
-        internal = Path(folder) / "beatmap.json"
-        run_command([py, "-E", "-B", "-X", "utf8", checkout / "beat_map.py", audio, "-o", internal], timeout=480)
-        beatmap = json.loads(internal.read_text(encoding="utf-8"))
-    beatmap["file"] = source.as_posix()
-    save_json(output, beatmap)
+
+    def compute():
+        with TemporaryDirectory(prefix="persona-beats-", dir=output.parent) as folder:
+            audio = Path(folder) / "source.wav"
+            run_command([_bin("ffmpeg"), "-nostdin", "-v", "error", "-n",
+                         "-protocol_whitelist", "file", "-i", source, "-map", "0:a:0", "-vn",
+                         "-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le", audio], timeout=90)
+            internal = Path(folder) / "beatmap.json"
+            run_command([py, "-E", "-B", "-X", "utf8", checkout / "beat_map.py", audio, "-o", internal], timeout=480)
+            beatmap = json.loads(internal.read_text(encoding="utf-8"))
+            beatmap.pop("file", None)
+            return beatmap
+
+    cache = StageCache(cache_path())
+    site_packages = VENV.glob("Lib/site-packages/*.dist-info" if os.name == "nt" else "lib/python*/site-packages/*.dist-info")
+    result = cached_file_stage(source, "batch_beat_map", UPSTREAM_COMMIT,
+                               {"python": tool_version(py) if cache.path else None,
+                                "ffmpeg": tool_version(_bin("ffmpeg")) if cache.path else None,
+                                "packages": sorted(path.name for path in site_packages),
+                                "audioChannel": "0:a:0", "sampleRate": 22050, "recipe": 1},
+                               compute, cache=cache,
+                               valid=lambda value: isinstance(value, dict) and isinstance(value.get("beats"), list))
+    beatmap = {**result.value, "file": source.as_posix()}
+    save_json(output, beatmap, sort_keys=True)
     return beatmap
 
 

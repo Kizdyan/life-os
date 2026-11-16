@@ -5,6 +5,7 @@ import {open, readFile, writeFile, mkdir, rename, readdir, lstat, stat, unlink} 
 import {spawn} from 'node:child_process';
 import {basename, dirname, extname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {cachedFfprobe} from './persona-stage-cache.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
 ]);
@@ -21,10 +22,11 @@ function safeDir(p){if(typeof p!=='string'||!p.trim()) fail('Job path required')
 function validState(s){return STATES.includes(s)}
 function validFileName(n){return typeof n==='string' && n===basename(n) && !/[\\/\x00-\x1f:]/.test(n) && VIDEO_EXT.has(extname(n).toLowerCase()) && n.length<=240 && !n.startsWith('.');}
 async function probeVideo(p){
-  return new Promise((ok,no)=>{
-    const folder=process.env.PERSONA_MEDIA_FFMPEG_DIR;
-    const ffprobe=folder ? join(folder,process.platform==='win32'?'ffprobe.exe':'ffprobe') : 'ffprobe';
-    const child=spawn(ffprobe,['-v','error','-show_entries','format=duration:stream=codec_type','-of','json',p],
+  const folder=process.env.PERSONA_MEDIA_FFMPEG_DIR;
+  const binary=folder ? join(folder,process.platform==='win32'?'ffprobe.exe':'ffprobe') : 'ffprobe';
+  const args=['-v','error','-show_entries','format=duration:stream=codec_type','-of','json'];
+  const data=await cachedFfprobe(p,{binary,args,run:(command,options)=>new Promise((ok,no)=>{
+    const child=spawn(command,options,
       {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
     let out='',err='',settled=false;
     const finish=(e,value)=>{if(settled)return;settled=true;clearTimeout(timer);if(e)no(e);else ok(value)};
@@ -34,14 +36,13 @@ async function probeVideo(p){
     child.once('error',e=>finish(e));
     child.once('close',code=>{
       if(code!==0)return finish(new Error('ffprobe failed: '+err));
-      try{
-        const data=JSON.parse(out),duration=Number(data.format?.duration);
-        if(!Number.isFinite(duration)||duration<MIN_SECONDS||duration>MAX_SECONDS ||
-           !data.streams?.some(x=>x.codec_type==='video'))throw Error('Unsupported video or duration');
-        finish(null,{durationSec:duration});
-      }catch(e){finish(e)}
+      finish(null,out);
     });
-  });
+  })});
+  const durationSec=Number(data.format?.duration);
+  if(!Number.isFinite(durationSec)||durationSec<MIN_SECONDS||durationSec>MAX_SECONDS ||
+     !data.streams?.some(x=>x.codec_type==='video'))throw Error('Unsupported video or duration');
+  return {durationSec};
 }
 async function fingerprint(path){
   const h=createHash('sha256');for await(const chunk of createReadStream(path))h.update(chunk);return h.digest('hex');

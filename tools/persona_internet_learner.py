@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from critic_agent import _bin, _capture
 from persona_openrouter_retry import with_openrouter_retry
+from persona_stage_cache import cache_path, cached_ffprobe, cached_file_stage, file_sha256, tool_version
 from studio_producer import object_schema, text
 from studio_providers import ProviderError, ask, load_local_env
 
@@ -93,23 +94,29 @@ def download_reference(extractor, url, directory):
 
 
 def inspect_reference(video):
-    data = json.loads(_capture([
-        _bin("ffprobe"), "-v", "error", "-protocol_whitelist", "file",
+    probe, ffmpeg = _bin("ffprobe"), _bin("ffmpeg")
+    args = ["-v", "error", "-protocol_whitelist", "file",
         "-format_whitelist", "mov,matroska,webm", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height:format=duration", "-of", "json", str(video),
-    ], timeout=10))
+        "-show_entries", "stream=width,height:format=duration", "-of", "json"]
+    data = cached_ffprobe(video, binary=probe, args=args, producer=lambda: json.loads(
+        _capture([probe, *args, str(video)], timeout=10)))
     duration = float(data["format"]["duration"])
     streams = data.get("streams", [])
     if not isfinite(duration) or not 1 <= duration <= MAX_DURATION or not streams or any(
             not 1 <= streams[0].get(dimension, 0) <= 4096 for dimension in ("width", "height")):
         raise RuntimeError("Нужен читаемый ролик длительностью от 1 секунды до 3 минут.")
-    scan = subprocess.run([
-        _bin("ffmpeg"), "-hide_banner", "-nostdin", "-protocol_whitelist", "file",
-        "-format_whitelist", "mov,matroska,webm", "-i", str(video), "-map", "0:v:0",
-        "-vf", "fps=8,scale=320:-2,select=gt(scene\\,0.34),showinfo", "-an", "-f", "null", "-",
-    ], capture_output=True, timeout=25, check=True)
-    cuts = [float(t) for t in re.findall(rb"pts_time:([0-9]+(?:\.[0-9]+)?)", scan.stderr)]
-    return duration, [t for t in cuts if 0 < t < duration]
+    graph = "fps=8,scale=320:-2,select=gt(scene\\,0.34),showinfo"
+    def scan():
+        result = subprocess.run([
+            ffmpeg, "-hide_banner", "-nostdin", "-protocol_whitelist", "file",
+            "-format_whitelist", "mov,matroska,webm", "-i", str(video), "-map", "0:v:0",
+            "-vf", graph, "-an", "-f", "null", "-",
+        ], capture_output=True, timeout=25, check=True)
+        cuts = [float(t) for t in re.findall(rb"pts_time:([0-9]+(?:\.[0-9]+)?)", result.stderr)]
+        return [t for t in cuts if 0 < t < duration]
+    cached = cached_file_stage(video, "ffmpeg_reference_scene_scan",
+                               tool_version(ffmpeg) if cache_path() else "", {"graph": graph}, scan)
+    return duration, cached.value
 
 
 def sample_times(duration, cuts):
@@ -123,12 +130,16 @@ def sample_times(duration, cuts):
 
 
 def capture_reference_frame(video, time):
-    return _capture([
-        _bin("ffmpeg"), "-v", "error", "-nostdin", "-protocol_whitelist", "file",
+    ffmpeg = _bin("ffmpeg")
+    graph = "scale=w=640:h=640:force_original_aspect_ratio=decrease"
+    compute = lambda: _capture([
+        ffmpeg, "-v", "error", "-nostdin", "-protocol_whitelist", "file",
         "-format_whitelist", "mov,matroska,webm", "-ss", str(time), "-i", str(video),
-        "-map", "0:v:0", "-frames:v", "1", "-vf",
-        "scale=w=640:h=640:force_original_aspect_ratio=decrease", "-f", "image2pipe", "-vcodec", "mjpeg", "-",
+        "-map", "0:v:0", "-frames:v", "1", "-vf", graph, "-f", "image2pipe", "-vcodec", "mjpeg", "-",
     ], timeout=9)
+    return cached_file_stage(video, "ffmpeg_reference_frame", tool_version(ffmpeg) if cache_path() else "",
+                             {"time": time, "graph": graph}, compute,
+                             valid=lambda frame: isinstance(frame, bytes) and frame.startswith(b"\xff\xd8")).value
 
 
 def valid_profile(value):
@@ -171,6 +182,7 @@ def analyze_reference(value):
     extractor, url = canonical_reference(value)
     with TemporaryDirectory(prefix="persona-reference-") as folder:
         video = download_reference(extractor, url, Path(folder))
+        source_sha = file_sha256(video) if cache_path() else None
         duration, cuts = inspect_reference(video)
         times = sample_times(duration, cuts)
         frames = [capture_reference_frame(video, time) for time in times]
@@ -199,7 +211,7 @@ def analyze_reference(value):
         if remaining < 1:
             raise RuntimeError("Истекло время анализа шести кадров в OpenRouter.")
         return ask(prompt + f"Время кадра: {seconds:.3f} с.", [image], SCHEMA, prefer="openrouter",
-                   validate=valid_profile, vision_timeout=min(30, remaining))
+                   validate=valid_profile, vision_timeout=min(30, remaining), source_sha256=source_sha)
 
     observations = []
     for index, (seconds, image) in enumerate(zip(times, frames), 1):

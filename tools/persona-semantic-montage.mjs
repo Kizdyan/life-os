@@ -12,6 +12,7 @@ import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {cachedFfmpegStage,cachedFfprobe} from './persona-stage-cache.mjs';
 import { inspectTake, overlapsBlackInterval } from './persona-take-qa.mjs';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 
@@ -51,7 +52,8 @@ async function sha256(path) {
   return h.digest('hex');
 }
 async function mediaInfo(path) {
-  const value = JSON.parse(await invoke(FFPROBE,['-v','error','-show_entries','format=duration:stream=codec_type,width,height,avg_frame_rate','-of','json',path]));
+  const value = await cachedFfprobe(path,{binary:FFPROBE,run:invoke,
+    args:['-v','error','-show_entries','format=duration:stream=codec_type,width,height,avg_frame_rate','-of','json']});
   const video = value.streams?.find(stream => stream.codec_type === 'video');
   const durationSec = Number(value.format?.duration);
   assert(video?.width > 0 && video?.height > 0 && finite(durationSec,0.1,MAX_PERSONA_SOURCE_SECONDS), 'Invalid video input or source exceeds 15 minutes');
@@ -89,7 +91,10 @@ async function analyze(inputArg, outputArg) {
       if (source.hasAudio) {
         source.audioPath=join(output,source.id+'-speech.wav');
         await invoke(FFMPEG,['-nostdin','-hide_banner','-loglevel','error','-i',source.path,'-vn','-ac','1','-ar','16000','-c:a','pcm_s16le',source.audioPath]);
-        const silence = await invoke(FFMPEG,['-nostdin','-hide_banner','-i',source.path,'-vn','-af','silencedetect=noise=-35dB:d=0.35','-f','null','-'],{captureError:true});
+        const filter='silencedetect=noise=-35dB:d=0.35';
+        const {value:silence} = await cachedFfmpegStage(source.path,'ffmpeg_speech_silence',{filter},()=>
+          invoke(FFMPEG,['-nostdin','-hide_banner','-i',source.path,'-vn','-af',filter,'-f','null','-'],{captureError:true}),
+          {binary:FFMPEG,valid:value=>typeof value==='string'});
         source.silenceEvents=silence.split('\n').filter(line=>/silence_(start|end):/.test(line)).slice(0,100).map(line=>line.trim().slice(-180));
       }
     }

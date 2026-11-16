@@ -5,6 +5,7 @@ import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {cachedFfmpegStage} from './persona-stage-cache.mjs';
 const ffmpeg=process.env.PERSONA_FFMPEG || 'ffmpeg';
 function command(args){
   return new Promise((ok,bad)=>{
@@ -45,6 +46,11 @@ export function overlapsBlackInterval(startSec,endSec,blackIntervals,thresholdSe
 }
 export async function inspectTake({path,durationSec,hasAudio}){
   if(!path||!(durationSec>0)||durationSec>MAX_PERSONA_SOURCE_SECONDS)throw Error('Invalid take inspection input or source exceeds 15 minutes');
+  const result=await cachedFfmpegStage(path,'ffmpeg_take_diagnostics',{durationSec,hasAudio,recipe:1},
+    ()=>scanTake(path,durationSec,hasAudio),{binary:ffmpeg,valid:value=>value?.kind==='objective-signal-check'});
+  return result.value;
+}
+async function scanTake(path,durationSec,hasAudio){
   const videoLog=await command(['-hide_banner','-nostdin','-i',path,'-vf','fps=1,scale=320:-2,signalstats,metadata=print','-an','-f','null','-']);
   const blackLog=await command(['-hide_banner','-nostdin','-i',path,'-vf','blackdetect=d=0.2:pix_th=0.10','-an','-f','null','-']);
   const audioLog=hasAudio?await command(['-hide_banner','-nostdin','-i',path,'-vn','-af','volumedetect','-f','null','-']):'';

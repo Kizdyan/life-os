@@ -1,5 +1,4 @@
 import {spawn} from 'node:child_process';
-import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export function runStudioPython(config, script, args, timeout, input) {
@@ -8,7 +7,7 @@ export function runStudioPython(config, script, args, timeout, input) {
   const child = spawn(env.PERSONA_STUDIO_PYTHON||'python',['-B','-X','utf8',
    fileURLToPath(new URL(script,import.meta.url)),...args],{
    stdio:[input===undefined?'ignore':'pipe','pipe','pipe'],windowsHide:true,shell:false,
-   env:{...env,PERSONA_VISION_CACHE_DIR:env.PERSONA_VISION_CACHE_DIR||join(config.outputRoot,'vision-cache'),
+    env:{...process.env,...env,
     ...(config.ffmpegDir?{PERSONA_MEDIA_FFMPEG_DIR:config.ffmpegDir}:{})}});
   let stdout='',stderr='',timedOut=false;
   child.stdout.on('data',buf=>{stdout=(stdout+buf.toString('utf8')).slice(-64000);});
@@ -21,6 +20,11 @@ export function runStudioPython(config, script, args, timeout, input) {
   child.once('error',error=>{clearTimeout(timer);reject(error);});
   child.once('close',code=>{
    clearTimeout(timer);
+   if(env.PERSONA_STAGE_CACHE_LOG==='1'){
+    for(const line of stderr.split('\n')){
+     if(/^stage_cache [A-Z_]+ [a-z0-9_]+\r?$/.test(line))console.error(line.trimEnd());
+    }
+   }
    if(timedOut)reject(Object.assign(Error('Истекло время ожидания ответа.'),{code:'ETIMEDOUT'}));
    else if(code!==0)reject(Error(stderr.trim().split('\n').at(-1)||'Ошибка локальной обработки.'));
    else {try{resolve(JSON.parse(stdout));}catch(error){reject(error);}}

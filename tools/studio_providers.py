@@ -5,11 +5,13 @@ import json
 import os
 import re
 import subprocess
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import TemporaryDirectory
 from time import monotonic
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+
+from persona_stage_cache import StageCache, cache_path, cached_llm_vision, canonical
 
 DEFAULT_OPENAI = "gpt-4.1-mini"
 DEFAULT_GEMINI = "gemini-3.5-flash-lite"
@@ -41,7 +43,8 @@ def load_local_env():
         match = re.fullmatch(
             r"\s*(OPENAI_API_KEY|GEMINI_API_KEY|PERSONA_STUDIO_OPENAI_MODEL|PERSONA_STUDIO_GEMINI_MODEL|"
             r"OPENROUTER_API_KEY|PERSONA_STUDIO_OPENROUTER_MODEL|PERSONA_STUDIO_OLLAMA_VISION_MODEL|"
-            r"PERSONA_MEDIA_FFMPEG_DIR|PERSONA_MEDIA_ROOT|PERSONA_STUDIO_FACE_MODEL|PERSONA_VISION_CACHE_DIR)\s*=\s*(.*?)\s*", line
+            r"PERSONA_MEDIA_FFMPEG_DIR|PERSONA_MEDIA_ROOT|PERSONA_STUDIO_FACE_MODEL|PERSONA_VISION_CACHE_DIR|"
+            r"PERSONA_STAGE_CACHE|PERSONA_STAGE_CACHE_DB|PERSONA_STAGE_CACHE_LOG|PERSONA_VISION_MODEL_REVISION)\s*=\s*(.*?)\s*", line
         )
         if match and match[2] and not os.environ.get(match[1]):
             os.environ[match[1]] = match[2].strip("'\u0022")
@@ -207,44 +210,14 @@ def _openrouter(key, model, prompt, frames, schema, *, audio=(), vision_timeout=
         raise ProviderError("openrouter", 200, "invalid_response") from None
 
 
-def _vision_cache_path(directory, model, prompt, frames, schema):
-    if directory and frames:
-        materials = [1, model, prompt, [hashlib.sha256(frame).hexdigest() for frame in frames], schema]
-        fingerprint = hashlib.sha256(json.dumps(materials, sort_keys=True).encode("utf-8")).hexdigest()
-        return Path(directory) / (fingerprint + ".json")
+def _vision_stage_path(env):
+    if env.get("PERSONA_STAGE_CACHE") == "0":
+        return None
+    if "PERSONA_STAGE_CACHE_DB" not in env and env.get("PERSONA_VISION_CACHE_DIR"):
+        return Path(env["PERSONA_VISION_CACHE_DIR"]) / "stage.sqlite3"
+    if env is os.environ or env.get("PERSONA_STAGE_CACHE_DB"):
+        return cache_path(env)
     return None
-
-
-def _read_vision_cache(path, valid):
-    try:
-        if path.stat().st_size <= 64_000:
-            value = json.loads(path.read_text(encoding="utf-8"))
-            if valid(value):
-                return value
-    except (OSError, ValueError):
-        pass
-    return None
-
-
-def _save_vision_cache(path, value):
-    temp = None
-    try:
-        body = json.dumps(value, ensure_ascii=False)
-        if len(body.encode("utf-8")) > 64_000:
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
-            temp = Path(stream.name)
-            stream.write(body)
-        temp.replace(path)
-    except OSError:
-        pass
-    finally:
-        if temp is not None:
-            try:
-                temp.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 def ask_audio(prompt, samples, schema):
@@ -254,32 +227,36 @@ def ask_audio(prompt, samples, schema):
     return _openrouter(key, DEFAULT_OPENROUTER_AUDIO, prompt, [], schema, audio=samples)
 
 
-def ask(prompt, frames, schema, *, env=None, prefer=None, validate=None, vision_timeout=None):
+def ask(prompt, frames, schema, *, env=None, prefer=None, validate=None, vision_timeout=None, source_sha256=None):
     env = os.environ if env is None else env
     if prefer == "openrouter":
         model = env.get("PERSONA_STUDIO_OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_VISION
         if not re.fullmatch(r"[a-z0-9._-]+/[a-z0-9._-]+:free", model):
             raise ValueError("OpenRouter Critic requires an explicit :free model")
-        path = _vision_cache_path(env.get("PERSONA_VISION_CACHE_DIR"), model, prompt, frames, schema)
         valid = validate or (lambda value: isinstance(value, dict))
         result = {"provider": "openrouter", "model": model}
-        if path is not None:
-            cached = _read_vision_cache(path, valid)
-            if cached is not None:
-                return {**result, "value": cached, "cache": "hit"}
-        key = env.get("OPENROUTER_API_KEY", "").strip()
-        if not key:
-            raise ProviderError("openrouter", 0, "missing_OPENROUTER_API_KEY")
-        try:
-            timeout_options = {"vision_timeout": vision_timeout} if vision_timeout else {}
-            value = _openrouter(key, model, prompt, frames, schema, **timeout_options)
-        except (ValueError, TypeError, AttributeError):
-            raise ProviderError("openrouter", 200, "invalid_response") from None
-        if not valid(value):
-            raise ProviderError("openrouter", 200, "invalid_response")
-        if path is not None:
-            _save_vision_cache(path, value)
-        return {**result, "value": value, "cache": "miss"}
+        def send():
+            key = env.get("OPENROUTER_API_KEY", "").strip()
+            if not key:
+                raise ProviderError("openrouter", 0, "missing_OPENROUTER_API_KEY")
+            try:
+                timeout_options = {"vision_timeout": vision_timeout} if vision_timeout else {}
+                value = _openrouter(key, model, prompt, frames, schema, **timeout_options)
+            except (ValueError, TypeError, AttributeError):
+                raise ProviderError("openrouter", 200, "invalid_response") from None
+            if not valid(value):
+                raise ProviderError("openrouter", 200, "invalid_response")
+            return value
+
+        cache = _vision_stage_path(env)
+        if not frames or cache is None:
+            return {**result, "value": send(), "cache": "miss"}
+        hashes = [hashlib.sha256(frame).hexdigest() for frame in frames]
+        evidence_sha = source_sha256 or hashlib.sha256(canonical(hashes).encode()).hexdigest()
+        version = f"openrouter-v1:{model}:{env.get('PERSONA_VISION_MODEL_REVISION', '')}"
+        entry = cached_llm_vision(evidence_sha, version, {"images": hashes, "prompt": prompt, "schema": schema},
+                                  send, cache=StageCache(cache), valid=valid)
+        return {**result, "value": entry.value, "cache": entry.status.lower()}
     if prefer == "ollama":
         model = env.get("PERSONA_STUDIO_OLLAMA_VISION_MODEL") or DEFAULT_OLLAMA_VISION
         return {"provider": "ollama", "model": model, "value": _ollama_vision(model, prompt, frames, schema)}

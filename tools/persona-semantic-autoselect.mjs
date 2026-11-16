@@ -11,10 +11,11 @@ import {budgetFinale,hasCompleteSpokenLine,validateManualSource,readTakeBindings
 import {createHash} from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {MAX_PERSONA_SOURCE_SECONDS} from './persona-media-limits.mjs';
-import { access, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { overlapsBlackInterval } from './persona-take-qa.mjs';
+import {cachedWhisper} from './persona-stage-cache.mjs';
 
 const fail = message => {throw Error(message)};
 const valid = (n,min,max) => typeof n === 'number' && Number.isFinite(n) && n>=min && n<=max;
@@ -277,18 +278,27 @@ async function transcribe(analysisArg,cliArg,modelArg,{sourceIds=null}={}){
     if(!/^[A-Za-z0-9_-]{1,48}$/.test(source.id))fail('Invalid source ID');
     const wav=sourcePath(base,source.audioPath);const output=join(base,source.id+'-whisper');
     await access(output+'.json').then(()=>fail('Whisper output already exists: '+output+'.json'),()=>{});
-    await new Promise((ok,bad)=>{
-      const child=spawn(cli,['-m',model,'-f',wav,'-l','auto','-ml','80','-sow','-ojf','-of',output],
+    const whisperArgs=['-l','auto','-ml','80','-sow','-ojf'];
+    const entry=await cachedWhisper(wav,{binary:cli,model,params:{args:whisperArgs},run:async()=>{
+      const scratch=await mkdtemp(join(base,'.asr-')),prefix=join(scratch,'whisper');
+      try{
+       await new Promise((ok,bad)=>{
+        const child=spawn(cli,['-m',model,'-f',wav,...whisperArgs,'-of',prefix],
         {shell:false,windowsHide:true,stdio:['ignore','ignore','pipe']});
       let err='',done=false;
       const timer=setTimeout(()=>{if(!done){done=true;child.kill();bad(Error('Local ASR timed out'))}},10*60*1000);
       child.stderr.on('data',b=>{err=(err+b).slice(-2000)});
       child.on('error',e=>{if(!done){done=true;clearTimeout(timer);bad(e)}});
       child.on('close',c=>{if(!done){done=true;clearTimeout(timer);c===0?ok():bad(Error('Local ASR failed: '+err))}});
-    });
-    const outputData=await readJson(output+'.json');
-    const parsed=parseWhisperJson(outputData,source.durationSec);
-    completed.push({sourceId:source.id,segments:parsed.length,transcriptPath:output+'.json'});
+       });
+       const raw=await readJson(prefix+'.json');
+       parseWhisperJson(raw,source.durationSec);
+       return raw;
+      }finally{await rm(scratch,{recursive:true,force:true});}
+    }});
+    const parsed=parseWhisperJson(entry.value,source.durationSec);
+    await writeFile(output+'.json',JSON.stringify(entry.value,null,2)+'\n',{flag:'wx'});
+    completed.push({sourceId:source.id,segments:parsed.length,transcriptPath:output+'.json',cache:entry.status});
   }
   return {status:'offline-asr-transcripts-written',results:completed,notice:'Transcriptions are model estimates, not proven verbatim words. Review before author approval.'};
 }

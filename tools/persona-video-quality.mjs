@@ -9,6 +9,7 @@ import {createReadStream} from 'node:fs';
 import {access,mkdir,readFile,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {cachedFfmpegStage,cachedFfprobe} from './persona-stage-cache.mjs';
 
 const fail=message=>{throw Error('Persona video quality: '+message)};
 const hash=async path=>{const h=createHash('sha256');for await(const c of createReadStream(path))h.update(c);return h.digest('hex')};
@@ -74,8 +75,11 @@ function parseSrt(text,durationSec){
  return {cueCount:cue.length,cues:cue,problems};
 }
 async function scan(path,args,env){
- const result=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
- return result.stderr+'\n'+result.stdout;
+ const result=await cachedFfmpegStage(path,'ffmpeg_qa_scan',{args},async()=>{
+  const log=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
+  return log.stderr+'\n'+log.stdout;
+ },{env,valid:value=>typeof value==='string'});
+ return result.value;
 }
 async function visualEvidence({videoPath,durationSec,outputPath,env,scenes=[]}){
  if(!outputPath)return null;
@@ -131,8 +135,9 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  const output=typeof outputPath==='string'&&outputPath.trim()?resolve(outputPath):null;
  if(output)await access(output).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});
  const env=mediaEnv(ffmpegDir);
- const path=resolve(videoPath),info=JSON.parse((await run('ffprobe',['-v','error','-show_entries',
-  'format=format_name,duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation','-of','json',path],{env})).stdout);
+ const path=resolve(videoPath),info=await cachedFfprobe(path,{args:['-v','error','-show_entries',
+  'format=format_name,duration,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation','-of','json'],
+  run:(binary,args)=>run(binary,args,{env}),env});
  const details=await stat(path);if(!details.isFile()||details.size<1024)fail('MP4 is missing or too small');
  const video=info.streams?.find(stream=>stream.codec_type==='video'),audio=info.streams?.find(stream=>stream.codec_type==='audio');
  if(!video)fail('video stream missing');
@@ -143,7 +148,10 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
  try{
   // Decode every selected stream before trusting a quality report. This is a
   // local FFmpeg measurement, not a claim that the visual content is good.
-  await run('ffmpeg',['-hide_banner','-nostdin','-v','error','-xerror','-i',path,'-map','0:v:0','-map','0:a?','-f','null','-'],{env,timeoutMs:Math.max(120000,Math.ceil(durationSec*8000))});
+  await cachedFfmpegStage(path,'ffmpeg_qa_full_decode',{streams:['0:v:0','0:a?']},async()=>{
+   await run('ffmpeg',['-hide_banner','-nostdin','-v','error','-xerror','-i',path,'-map','0:v:0','-map','0:a?','-f','null','-'],{env,timeoutMs:Math.max(120000,Math.ceil(durationSec*8000))});
+   return true;
+  },{env,valid:value=>value===true});
   findings.push(finding('decode_integrity','measured','Полное декодирование','FFmpeg декодировал видео и доступную аудиодорожку без ошибок.',[],{method:'ffmpeg -v error -xerror full decode',units:'pass/fail',algorithmVersion:'v1',value:'pass',confidence:'measured'}));
  }catch(error){
   findings.push(finding('decode_integrity','warning','Полное декодирование','FFmpeg сообщил ошибку при полном декодировании. Не используйте этот файл для финального рендера до проверки контейнера.',[],{method:'ffmpeg -v error -xerror full decode',units:'pass/fail',algorithmVersion:'v1',value:'fail',confidence:'measured',limitation:String(error.message||error).slice(0,500)}));

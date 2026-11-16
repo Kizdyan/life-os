@@ -24,6 +24,7 @@ import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
 import {subtitlePreset} from './persona-subtitle-burn.mjs';
 import {runStudioPython} from './persona-studio-python.mjs';
+import {cachedFfprobe,fullProbeArgs} from './persona-stage-cache.mjs';
 import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook-variants.mjs';
 import {personaMediaPaths} from './persona-media-paths.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
@@ -81,12 +82,14 @@ function originalName(header,fallback){
 async function fileHash(path){const hash=createHash('sha256');for await(const part of createReadStream(path))hash.update(part);return hash.digest('hex')}
 async function inspectUploadedTake(path,config,{musicMaster=false}={}){
  const bin=config.ffmpegDir?join(config.ffmpegDir,process.platform==='win32'?'ffprobe.exe':'ffprobe'):'ffprobe';
- const media=await new Promise((ok,no)=>{
-  const child=spawn(bin,['-v','error',...(musicMaster?['-protocol_whitelist','file','-format_whitelist','mov,matroska,webm']:[]),'-show_streams','-show_format','-of','json',path],{windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});let output='',err='';
+ const args=['-v','error',...(musicMaster?['-protocol_whitelist','file','-format_whitelist','mov,matroska,webm']:[]),...fullProbeArgs.slice(2)];
+ const env={...process.env,...config.apiEnv};
+ const media=await cachedFfprobe(path,{binary:bin,args,env,run:(command,options)=>new Promise((ok,no)=>{
+  const child=spawn(command,options,{env,windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});let output='',err='';
   const timer=setTimeout(()=>{child.kill();no(Error('FFprobe: время проверки файла истекло'))},15000);
   child.stdout.on('data',b=>{output+=b;if(output.length>1024*1024){child.kill();no(Error('FFprobe output limit'))}});child.stderr.on('data',b=>err=(err+b).slice(-1000));
-  child.once('error',e=>{clearTimeout(timer);no(e)});child.once('close',code=>{clearTimeout(timer);try{if(code!==0)throw Error('Повреждённый или неподдерживаемый видеофайл: '+err);ok(JSON.parse(output))}catch(e){no(e)}});
- });
+  child.once('error',e=>{clearTimeout(timer);no(e)});child.once('close',code=>{clearTimeout(timer);if(code!==0)no(Error('Повреждённый или неподдерживаемый видеофайл: '+err));else ok(output)});
+ })});
  const v=media.streams?.find(s=>s.codec_type==='video');if(!v||!v.width||!v.height)fail('В файле нет видеопотока');
  if(['smpte2084','arib-std-b67'].includes(v.color_transfer)||String(v.color_primaries).startsWith('bt2020'))fail('HDR/BT.2020: скрытая конвертация запрещена; подготовьте отдельную SDR-копию');
  if(!musicMaster&&(Number(v.tags?.rotate||0)!==0||v.side_data_list?.some(s=>Number(s.rotation||0)!==0)))fail('Поворот в метаданных требует отдельной подготовки копии; исходник не изменён');

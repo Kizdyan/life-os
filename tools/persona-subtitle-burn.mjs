@@ -5,6 +5,7 @@ import {createReadStream,constants} from 'node:fs';
 import {readFile,writeFile,stat,mkdtemp,mkdir,copyFile,rm,access,realpath} from 'node:fs/promises';
 import {resolve,dirname,join,isAbsolute,relative,basename} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {cachedFfprobe} from './persona-stage-cache.mjs';
 
 const fail=message=>{throw Error('Persona subtitles: '+message)};
 function time(ms){const n=Math.round(ms/10);return `${Math.floor(n/360000)}:${String(Math.floor(n/6000)%60).padStart(2,'0')}:${String(Math.floor(n/100)%60).padStart(2,'0')}.${String(n%100).padStart(2,'0')}`}
@@ -177,7 +178,7 @@ export async function burnPersonaSubtitles({videoPath,reviewPath,outputPath,ffmp
  const reportPath=output+'.persona-subtitles.json',assPath=output+'.ass';
  for(const path of [output,reportPath,assPath])await access(path).then(()=>fail('Output already exists: '+path),()=>{});
  const bin=name=>ffmpegDir?join(resolve(ffmpegDir),name+(process.platform==='win32'?'.exe':'')):name;
- const info=JSON.parse((await run(bin('ffprobe'),['-v','error','-show_streams','-show_format','-of','json',input])).stdout);
+ const info=await cachedFfprobe(input,{binary:bin('ffprobe'),run});
  const video=info.streams?.find(s=>s.codec_type==='video');
  if(!video||!Number.isFinite(Number(info.format?.duration)))fail('Readable video stream required');
  if(['smpte2084','arib-std-b67'].includes(video.color_transfer))fail('HDR requires an explicit tone-mapping policy; burn-in refused');
@@ -196,7 +197,7 @@ export async function burnPersonaSubtitles({videoPath,reviewPath,outputPath,ffmp
   // Fixed relative filter filename avoids Windows drive-colon / quote escaping hazards.
   const render=await run(bin('ffmpeg'),['-hide_banner','-nostdin','-n','-noautorotate','-i',input,'-map','0:v:0','-map','0:a?','-vf','ass=filename=captions.ass:fontsdir=fonts','-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p','-c:a','copy','-map_metadata','0','-movflags','+faststart',staged],temp);
   const fontSelections=verifySubtitleFont(render.stderr,reference.fontPath);
-  const actual=JSON.parse((await run(bin('ffprobe'),['-v','error','-show_streams','-show_format','-of','json',staged])).stdout);
+  const actual=await cachedFfprobe(staged,{binary:bin('ffprobe'),run});
   const v=actual.streams.find(s=>s.codec_type==='video');
   if(v.width!==video.width||v.height!==video.height||Math.abs(Number(actual.format.duration)-Number(info.format.duration))>.1)fail('Burned output geometry or duration changed');
   if(await hash(input)!==sourceSha256)fail('Input changed during rendering');

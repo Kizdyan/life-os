@@ -12,6 +12,8 @@ import { readFile, mkdir, mkdtemp, rename, rm, stat, writeFile, access } from 'n
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {planFraming} from './persona-studio-framing.mjs';
+import {cachedFfmpegStage,cachedFfprobe,cachedMp4,stageCacheEnabled,stageFileSha} from './persona-stage-cache.mjs';
+import {fileURLToPath} from 'node:url';
 
 const fail = message => { throw new Error(message); };
 const allowed = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
@@ -89,8 +91,8 @@ async function renderFramingPreviews(projectArg,outputArg){
  }catch(error){await rm(output,{recursive:true,force:true});throw error;}
 }
 async function probe(path) {
-  const raw = await run('ffprobe', ['-v','error','-show_entries','format=duration:stream=codec_type,width,height,sample_aspect_ratio:stream_side_data=rotation','-of','json',path]);
-  const data = JSON.parse(raw);
+  const data = await cachedFfprobe(path,{run,
+    args:['-v','error','-show_entries','format=duration:stream=codec_type,width,height,sample_aspect_ratio:stream_side_data=rotation','-of','json']});
   const video = data.streams?.find(stream => stream.codec_type === 'video');
   if (!video?.width || !video?.height) fail('Video stream missing: ' + path);
   const [a,b]=String(video.sample_aspect_ratio).split(':').map(Number);
@@ -107,7 +109,13 @@ async function hash(path) {
   return digest.digest('hex');
 }
 function rounded(value){return Number(value.toFixed(2));}
-function measureLoudness(path,startSec,durationSec){
+async function measureLoudness(path,startSec,durationSec){
+  const result=await cachedFfmpegStage(path,'ffmpeg_timeline_loudness',{startSec,durationSec,recipe:1},
+    ()=>scanLoudness(path,startSec,durationSec),
+    {valid:value=>value&&Object.hasOwn(value,'integratedLufs')&&Object.hasOwn(value,'truePeakDb')});
+  return result.value;
+}
+function scanLoudness(path,startSec,durationSec){
   return new Promise((resolveMeasure,reject)=>{
     const child=spawn('ffmpeg',['-hide_banner','-nostdin','-ss',String(startSec),'-i',path,'-t',String(durationSec),'-vn','-af','ebur128=peak=true','-f','null','-'],{shell:false,windowsHide:true,stdio:['ignore','ignore','pipe']});
     let stderr='';
@@ -132,6 +140,48 @@ function safeGain(measurement){
   const gain=Math.max(-MAX_DIALOGUE_REDUCTION_DB,Math.min(MAX_DIALOGUE_BOOST_DB,requested,peakLimited));
   return {gainDb:rounded(gain),status:Math.abs(gain)<0.05?'already-close':'levelled',warning:null};
 }
+async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec}) {
+  const segments = [];
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
+    const clipVideoFilter = videoFilter(clip.framing,width,height,fps);
+    const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
+    if (!clip.media.audio||clip.muteSourceAudio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
+    const audioFilters=['aresample=async=1:first_pts=0'];
+    if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
+    // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
+    if(!clip.preserveOriginalAudio)audioFilters.push('alimiter=limit=0.95:level=0');
+    args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k');
+    if(clip.audioTreatment){
+      const speech=clip.audioTreatment.speechDurationSec,tail=clip.durationSec-speech;
+      const graph='[0:a]atrim=duration='+speech+',asetpts=PTS-STARTPTS,'+audioFilters.join(',')+'[speech];[0:a]atrim=start='+speech+':duration='+tail+',asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[tail];[speech][tail]concat=n=2:v=0:a=1[audio]';
+      args.push('-filter_complex',graph,'-map','[audio]');
+    }else args.push('-map',clip.media.audio&&!clip.muteSourceAudio?'0:a:0':'1:a:0','-af',audioFilters.join(','));
+    args.push('-shortest','-movflags','+faststart',segment);
+    await run('ffmpeg', args);
+    segments.push(segment);
+  }
+  // Concatenation via individual input arguments; no shell or unescaped concat file.
+  const args = ['-hide_banner','-nostdin','-loglevel','error','-y'];
+  for (const segment of segments) args.push('-i',segment);
+  // AAC packets in intermediate MP4s can extend past the cut. Concat uses the
+  // longest stream in each segment, so trim decoded streams at the planned boundary.
+  const normalized = clips.flatMap((clip, i) => [
+    `[${i}:v:0]setpts=PTS-STARTPTS,trim=duration=${clip.durationSec}[v${i}]`,
+    `[${i}:a:0]asetpts=PTS-STARTPTS,apad,atrim=duration=${clip.durationSec}[a${i}]`,
+  ]);
+  const inputs = segments.map((_, i) => `[v${i}][a${i}]`).join('');
+  const concat = normalized.join(';') + ';' + inputs +
+    'concat=n=' + segments.length + ':v=1:a=1[vraw][a];[vraw]fps=' + fps + '[v]';
+  args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
+  if (soundtrack) {
+    const assembled=join(tempDir,'assembled.mp4');
+    await run('ffmpeg',[...args.slice(0,-1),assembled]);
+    const filter='[0:a]volume='+soundtrack.originalVolume+'[original];[1:a]atrim=start='+soundtrack.startSec+',asetpts=PTS-STARTPTS,volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0[a]';
+    await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
+  } else await run('ffmpeg',args);
+}
+
 async function main() {
   const [firstArg,projectArg,previewOutput]=process.argv.slice(2);
   if(firstArg==='preview'){
@@ -189,7 +239,7 @@ async function main() {
     if (!new Set(['.mp3','.m4a','.wav','.aac','.flac','.ogg','.mp4']).has(extname(musicPath).toLowerCase())) fail('Unsupported soundtrack format');
     const musicStat = await stat(musicPath);
     if (!musicStat.isFile() || musicStat.size < 1 || musicStat.size > 250 * 1024 * 1024) fail('Invalid soundtrack size');
-    const info = JSON.parse(await run('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type','-of','json',musicPath]));
+    const info = await cachedFfprobe(musicPath,{run,args:['-v','error','-show_entries','format=duration:stream=codec_type','-of','json']});
     if (!info.streams?.some(s=>s.codec_type==='audio')) fail('Soundtrack has no audio');
     const musicDuration = Number(info.format?.duration);
     if (!Number.isFinite(musicDuration) || musicDuration <= 0 || musicDuration > 86400) fail('Invalid soundtrack duration');
@@ -203,50 +253,33 @@ async function main() {
   const tempDir = await mkdtemp(join(tmpdir(), 'persona-timeline-'));
   await mkdir(dirname(output), { recursive: true });
   const staged = join(tempDir, 'render.mp4');
+  const toleranceSec=Math.max(.25,totalSec*.06);
+  const sources=[...clips,...(soundtrack?[soundtrack]:[])];
+  const assertSources=async()=>{
+    if((await Promise.all(sources.map(async source=>await stageFileSha(source.path)===source.sha256))).some(match=>!match))
+      fail('Timeline source changed during rendering');
+  };
+  const verifyVideo=async()=>{
+    const actual=await probe(staged);
+    if(!actual.audio||actual.width!==width||actual.height!==height)fail('Rendered media streams or dimensions mismatch');
+    if(Math.abs(actual.durationSec-totalSec)>toleranceSec)fail('Timeline output duration mismatch');
+    return actual;
+  };
   try {
-    const segments = [];
-    for (let i = 0; i < clips.length; i++) {
-      const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
-      const clipVideoFilter = videoFilter(clip.framing,width,height,fps);
-      const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
-      if (!clip.media.audio||clip.muteSourceAudio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
-      const audioFilters=['aresample=async=1:first_pts=0'];
-      if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
-      // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
-      if(!clip.preserveOriginalAudio)audioFilters.push('alimiter=limit=0.95:level=0');
-      args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k');
-      if(clip.audioTreatment){
-        const speech=clip.audioTreatment.speechDurationSec,tail=clip.durationSec-speech;
-        const graph='[0:a]atrim=duration='+speech+',asetpts=PTS-STARTPTS,'+audioFilters.join(',')+'[speech];[0:a]atrim=start='+speech+':duration='+tail+',asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[tail];[speech][tail]concat=n=2:v=0:a=1[audio]';
-        args.push('-filter_complex',graph,'-map','[audio]');
-      }else args.push('-map',clip.media.audio&&!clip.muteSourceAudio?'0:a:0':'1:a:0','-af',audioFilters.join(','));
-      args.push('-shortest','-movflags','+faststart',segment);
-      await run('ffmpeg', args);
-      segments.push(segment);
-    }
-    // Concatenation via individual input arguments; no shell or unescaped concat file.
-    const args = ['-hide_banner','-nostdin','-loglevel','error','-y'];
-    for (const segment of segments) args.push('-i',segment);
-    // AAC packets in intermediate MP4s can extend past the cut. Concat uses the
-    // longest stream in each segment, so trim decoded streams at the planned boundary.
-    const normalized = clips.flatMap((clip, i) => [
-      `[${i}:v:0]setpts=PTS-STARTPTS,trim=duration=${clip.durationSec}[v${i}]`,
-      `[${i}:a:0]asetpts=PTS-STARTPTS,apad,atrim=duration=${clip.durationSec}[a${i}]`,
-    ]);
-    const inputs = segments.map((_, i) => `[v${i}][a${i}]`).join('');
-    const concat = normalized.join(';') + ';' + inputs +
-      'concat=n=' + segments.length + ':v=1:a=1[vraw][a];[vraw]fps=' + fps + '[v]';
-    args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
-    if (soundtrack) {
-      const assembled=join(tempDir,'assembled.mp4');
-      await run('ffmpeg',[...args.slice(0,-1),assembled]);
-      const filter='[0:a]volume='+soundtrack.originalVolume+'[original];[1:a]atrim=start='+soundtrack.startSec+',asetpts=PTS-STARTPTS,volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0[a]';
-      await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
-    } else await run('ffmpeg',args);
-    const actual = await probe(staged);
-    if (!actual.audio || actual.width !== width || actual.height !== height) fail('Rendered media streams or dimensions mismatch');
-    const toleranceSec = Math.max(0.25, totalSec * 0.06);
-    if (Math.abs(actual.durationSec - totalSec) > toleranceSec) fail('Timeline output duration mismatch');
+    const recipe=stageCacheEnabled()?{
+      version:await stageFileSha(fileURLToPath(import.meta.url)),width,height,fps,
+      clips:clips.map(({path,beat,brollAfterBeat,...settings})=>settings),
+      soundtrack:soundtrack?{...soundtrack,path:null}:null,
+    }:null;
+    const sourceSha=createHash('sha256').update(JSON.stringify(sources.map(source=>source.sha256))).digest('hex');
+    let actual;
+    await cachedMp4({path:staged,sourceSha,params:recipe,operation:'ffmpeg_timeline_render',render:async()=>{
+     await encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec});
+     if(recipe)await assertSources();
+     actual=await verifyVideo();
+    }});
+    if(recipe)await assertSources();
+    actual??=await verifyVideo();
     let outputOffset=0;
     const outputTimeline=[];
     const audioLeveling={version:1,strategy:'per-clip-integrated-loudness-gain-capped',targetLufs:TARGET_DIALOGUE_LUFS,maxBoostDb:MAX_DIALOGUE_BOOST_DB,maxReductionDb:MAX_DIALOGUE_REDUCTION_DB,

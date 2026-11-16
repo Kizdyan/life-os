@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from urllib.error import HTTPError
 from unittest.mock import patch
@@ -36,7 +39,11 @@ class InternetLearnerTest(unittest.TestCase):
         reply = {"provider": "openrouter", "model": "free", "value": {
             "subtitles": profile["subtitles"], "colorGrade": profile["colorGrade"],
         }}
-        with patch("persona_internet_learner.download_reference") as download, \
+        def downloaded(_extractor, _url, directory):
+            source = directory / "test.mp4"
+            source.write_bytes(b"fixture")
+            return source
+        with patch("persona_internet_learner.download_reference", side_effect=downloaded) as download, \
                 patch("persona_internet_learner.inspect_reference", return_value=(10, [2, 4, 6, 8])), \
                 patch("persona_internet_learner.capture_reference_frame", side_effect=samples), \
                 patch("persona_internet_learner.sleep") as sleep, \
@@ -64,6 +71,33 @@ class InternetLearnerTest(unittest.TestCase):
             with self.assertRaises(ProviderError) as raised:
                 _post("openrouter", error.url, {}, {})
         self.assertEqual(raised.exception.retry_after, 7)
+
+    def test_second_import_of_same_bytes_skips_all_six_vision_requests(self):
+        source_url = "https://www.instagram.com/reel/DceB-cSxIhz/"
+        frames = [bytes([index]) for index in range(6)]
+        profile = {"subtitles": {"fontEstimate": "bold sans", "preset": "dynamic-interview",
+                                 "color": "#FFFFFF", "sizePx1080": 104},
+                   "colorGrade": {"temperature": "warm", "description": "warm skin and neutral shadows"}}
+
+        def download(_extractor, _url, directory):
+            path = directory / "copy.mp4"
+            path.write_bytes(b"identical content at a new path")
+            return path
+
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "PERSONA_STAGE_CACHE": "1",
+            "PERSONA_STAGE_CACHE_DB": str(Path(directory) / "cache.sqlite3"),
+            "PERSONA_STUDIO_OPENROUTER_MODEL": "test/vision:free",
+            "OPENROUTER_API_KEY": "test-key",
+        }), patch("persona_internet_learner.download_reference", side_effect=download), \
+                patch("persona_internet_learner.inspect_reference", return_value=(10, [2, 4, 6, 8])), \
+                patch("persona_internet_learner.capture_reference_frame", side_effect=frames * 2), \
+                patch("studio_providers._openrouter", return_value=profile) as transport:
+            first = analyze_reference(source_url)
+            second = analyze_reference(source_url)
+        self.assertEqual(transport.call_count, 6)
+        self.assertEqual(first["subtitles"], second["subtitles"])
+        self.assertEqual(first["editing"], second["editing"])
 
     def test_auth_billing_invalid_data_and_missing_key_are_terminal(self):
         for status, code in ((400, "http_error"), (401, "http_error"), (402, "http_error"),

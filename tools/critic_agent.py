@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from studio_providers import load_local_env
+from persona_stage_cache import DEFAULT_PROBE_ARGS, cached_ffprobe
 
 
 def _bin(name):
@@ -23,7 +24,9 @@ def _capture(args, timeout=20):
 
 
 def probe_video(path):
-    return json.loads(_capture([_bin("ffprobe"), "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)]))
+    binary = _bin("ffprobe")
+    return cached_ffprobe(path, binary=binary, producer=lambda: json.loads(
+        _capture([binary, *DEFAULT_PROBE_ARGS, str(path)])))
 
 
 def sample_audio(path, *, seconds=8):

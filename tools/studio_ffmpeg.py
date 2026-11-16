@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from critic_agent import _bin, _capture, probe_video
 from apply_stylepack import apply_to_edit_plan, prepare_beat_sync
 from kinocut_render_adapter import render_edit_plan
+from persona_stage_cache import StageCache, cache_path, cached_file_stage, cached_mp4, canonical, file_sha256, tool_version
 from studio_references import configured_media_root
 from stylepack_renderer import active_pack, audio_layers, enabled as stylepack_enabled, picture_layers, write_graphics
 
@@ -499,8 +500,16 @@ def verify_render(path, frames, *, target_lufs, output):
             or video.get("avg_frame_rate") != "30/1" or int(video.get("nb_frames", 0)) != frames
             or audio.get("codec_name") != "aac"):
         raise RuntimeError("FFprobe rejected the rendered picture, duration or audio")
-    measured = measure_loudness(path, output, full_decode=True)
-    peak, loudness = measured["peak"], measured["loudness"]
+    def measure():
+        values = measure_loudness(path, output, full_decode=True)
+        return {key: None if value == float("-inf") else value for key, value in values.items()}
+
+    cache = StageCache(cache_path())
+    measured = cached_file_stage(path, "ffmpeg_studio_loudness", tool_version(_bin("ffmpeg")) if cache.path else "",
+                                 {"fullDecode": True, "recipe": 1}, measure, cache=cache,
+                                 valid=lambda value: isinstance(value, dict) and {"peak", "loudness"} <= value.keys()).value
+    peak = measured["peak"] if measured["peak"] is not None else float("-inf")
+    loudness = measured["loudness"] if measured["loudness"] is not None else float("-inf")
     audio_qa = {"truePeakDbTP": peak if peak != float("-inf") else None,
                 "integratedLufs": loudness if loudness != float("-inf") else None,
                 "targetLufs": target_lufs, "fullDecode": True}
@@ -664,17 +673,46 @@ def render_prepared_plan(plan, output, *, approved_cues=None, name="studio.mp4",
         def render_ffmpeg(edit_plan, destination):
             inputs, graph = ffmpeg_graph(edit_plan, working, captions=bool(baseline_cues),
                                          stylepack_graphics=has_style_titles)
-            log = run_ffmpeg(["-hide_banner", "-xerror", "-filter_complex_threads", "2",
+            args = ["-hide_banner", "-xerror", "-filter_complex_threads", "2",
                               *inputs, "-filter_complex", graph, "-map", "[video]", "-map", "[audio]",
                               "-t", f'{edit_plan["frames"]/30:.9f}', "-c:v", "libx264", "-preset", "fast",
                               "-crf", "17", "-threads", "4", "-c:a", "aac", "-b:a", "192k",
-                              "-movflags", "+faststart", str(destination)], cwd=working)
-            if used_fonts:
-                selections = [line.split("->")[-1] for line in log.splitlines() if "fontselect:" in line]
-                if (not all(any(font in line for line in selections) for font in used_fonts)
-                        or not all(any(font in line for font in used_fonts) for line in selections)):
-                    raise RuntimeError("libass did not confirm the expected subtitle fonts")
-            verify_render(destination, edit_plan["frames"], target_lufs=target_lufs, output=output)
+                              "-movflags", "+faststart"]
+
+            def encode():
+                log = run_ffmpeg([*args, str(destination)], cwd=working)
+                if used_fonts:
+                    selections = [line.split("->")[-1] for line in log.splitlines() if "fontselect:" in line]
+                    if (not all(any(font in line for line in selections) for font in used_fonts)
+                            or not all(any(font in line for font in used_fonts) for line in selections)):
+                        raise RuntimeError("libass did not confirm the expected subtitle fonts")
+
+            cache = StageCache(cache_path())
+            if cache.path:
+                sources = [working / args[index+1] for index, arg in enumerate(args) if arg == "-i"]
+                source_digests = [file_sha256(path) for path in sources]
+                input_key = hashlib.sha256(canonical(source_digests).encode()).hexdigest()
+                prepared = {path.relative_to(working).as_posix(): file_sha256(path)
+                            for path in working.rglob("*") if path.is_file()}
+                recipe = [arg if index == 0 or args[index-1] != "-i" else "input"
+                          for index, arg in enumerate(args)]
+
+                def checked_encode():
+                    encode()
+                    verify_render(destination, edit_plan["frames"], target_lufs=target_lufs, output=output)
+                    if [file_sha256(path) for path in sources] != source_digests:
+                        raise RuntimeError("Source changed during render")
+
+                status = cached_mp4(destination, input_key, tool_version(_bin("ffmpeg")),
+                                    {"args": recipe, "files": prepared, "fonts": sorted(used_fonts),
+                                     "targetLufs": target_lufs, "recipe": 1}, checked_encode, cache=cache)
+                if status == "HIT":
+                    verify_render(destination, edit_plan["frames"], target_lufs=target_lufs, output=output)
+                if [file_sha256(path) for path in sources] != source_digests:
+                    raise RuntimeError("Source changed during render lookup")
+            else:
+                encode()
+                verify_render(destination, edit_plan["frames"], target_lufs=target_lufs, output=output)
             return graph
 
         renderer, graph = render_edit_plan(plan, intermediate, render_ffmpeg)
