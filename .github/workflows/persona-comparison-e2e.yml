@@ -83,7 +83,8 @@ jobs:
 
   webkit:
     # WebKit (Linux) approximates Safari rendering, not real iOS Safari.
-    runs-on: ubuntu-latest
+    # The pinned Playwright 1.56 WebKit build supports Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
