@@ -11,6 +11,23 @@ import {fileURLToPath} from 'node:url';
 import {homedir,tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {frameCandidates,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
+
+/** No inference or fabricated emotion labels when Vision is unavailable. */
+export function offlineEditPlan(videos){
+ const candidates=frameCandidates(videos);
+ if(candidates.length<2){
+  const half=Number((videos[0].durationSec/2).toFixed(3));
+  if(half<.25)throw Error('Для офлайн-монтажа требуется хотя бы полсекунды видео.');
+  candidates.splice(0,candidates.length,
+   {id:'offline-0',fileIndex:0,startSec:0,durationSec:half,stillSec:half/2,sourceSha256:videos[0].sha256},
+   {id:'offline-1',fileIndex:0,startSec:half,durationSec:half,stillSec:half*1.5,sourceSha256:videos[0].sha256});
+ }
+ const first=candidates[0],second=candidates.find(c=>c.fileIndex!==first.fileIndex)||candidates[candidates.length-1];
+ const plan=validateEditPlan({stylePack:'Commercial',creativeIntent:'Офлайн-черновик без Vision: последовательность проверенных исходных фрагментов. Выбор дублей и эмоций остаётся за автором.',
+  choices:[first,second].map(c=>({candidateId:c.id,role:'actor',caption:''}))},candidates);
+ return {...plan,mediaEvidence:'ffprobe-verified-offline-intervals',audioUnderstanding:'not_transcribed'};
+}
+
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
@@ -100,14 +117,32 @@ export function createPersonaQuickRenderService(config={}){
  const metaFile=id=>join(directory(id),'quick-state.json');
  async function get(id){
   checkedJobId(id);
-  if(jobs.has(id))return jobs.get(id);
-  let meta;
-  try{meta=JSON.parse(await readFile(metaFile(id),'utf8'))}catch{return null}
-  if(meta.id!==id||!['uploading','running','completed','failed','interrupted'].includes(meta.state))return null;
-  if(meta.state==='running')meta={...meta,state:'interrupted',error:'Local Worker restarted before MP4 verification. Re-create this one-click job.'};
-  return meta;
+  const cached=jobs.get(id);
+  let meta=cached;
+  if(!meta){try{meta=JSON.parse(await readFile(metaFile(id),'utf8'))}catch{return null}}
+  if(meta.id!==id||!Array.isArray(meta.files)||!Array.isArray(meta.uploads))return null;
+  const production=new ProductionJob(directory(id));
+  let canonical;try{canonical=await production.read()}catch{return null}
+  // Crash recovery: a running job without its owning process is not falsely advertised as running.
+  if(!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
+   canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
+  }
+  const state=canonical.status==='FAILED'?'failed':canonical.status==='AWAITING_APPROVAL'?'completed':
+   ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':'uploading';
+  const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null};
+  if(state==='completed'&&(!job.sha256||!job.videoName)){
+   try{const result=JSON.parse(await readFile(join(directory(id),'output','RESULT.json'),'utf8'));
+    job.sha256=result.sha256;job.videoName=result.videoName;}catch{}
+  }
+  return job;
  }
- async function save(job){const view={...job};delete view.child;delete view.promise;jobs.set(job.id,view);await atomicFile(metaFile(job.id),view);return view}
+ async function save(job){
+  const view={...job};delete view.child;delete view.promise;
+  jobs.set(job.id,view);
+  // quick-state.json retains upload/UX metadata only. job.json owns lifecycle and failure.
+  const disk={...view};delete disk.state;delete disk.error;
+  await atomicFile(metaFile(job.id),disk);return view;
+ }
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
   strategyStatus:job.strategyStatus??null,
@@ -128,10 +163,7 @@ export function createPersonaQuickRenderService(config={}){
    return {index,kind:file.kind,originalName:name,name:toFileName(index,file.kind,name),size:file.size};
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
-  if(!config.quickPlanner&&!config.quickVisionBatch){
-   const provider=editPlanProvider(env);
-   if(provider.provider!=='openrouter')throw Error('Smart Moment Detection requires an OpenRouter Vision key in the local Worker');
-  } // reject missing Vision key before user uploads private media
+  // Vision is an optional enhancement. The offline timeline still creates a real MP4.
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
@@ -190,8 +222,13 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(strategyOutput,JSON.stringify({...audit,provider:'test-injected',publicationApproved:false},null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON|| (process.platform==='win32'?'python':'python3');
-    await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
-     {env,timeoutMs:120000,maxStdout:20000});
+    if(!env.OPENROUTER_API_KEY?.trim()&&!env.OPENAI_API_KEY?.trim()){
+     await writeFile(strategyOutput,JSON.stringify({status:'WARNING',recommendation:'Нет облачного ключа: стратегический анализ пропущен, доступен офлайн-монтаж.',provider:'offline',publicationApproved:false}));
+    }else{
+     try{await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
+      {env,timeoutMs:120000,maxStdout:20000});}
+     catch(error){await writeFile(strategyOutput,JSON.stringify({status:'WARNING',recommendation:'Облачный стратегический анализ недоступен: '+String(error.message||error).slice(0,120),provider:'offline',publicationApproved:false}));}
+    }
    }
    const audit=JSON.parse(await readFile(strategyOutput,'utf8'));job.strategyStatus=audit.status;
    // Strategic BLOCKED is a review warning, not a prohibition on generating a private draft.
@@ -201,8 +238,9 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(lightingPath,JSON.stringify(await config.quickLighting(job.prompt),null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON||(process.platform==='win32'?'python':'python3');
-    await runBounded(py,[join(toolsDir,'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
-     {env,timeoutMs:15000,maxStdout:10000});
+    try{await runBounded(py,[join(toolsDir,'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
+     {env,timeoutMs:15000,maxStdout:10000});}
+    catch{await writeFile(lightingPath,JSON.stringify({status:'unavailable',note:'План света не обязателен для монтажа уже снятого видео.'}));}
    }
    const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
    let plan,provenance;
@@ -216,6 +254,12 @@ export function createPersonaQuickRenderService(config={}){
     provenance={version:1,kind:'one-click-planning-evidence',provider:'test-injected',model:'test-only',
      sampleCount:frames.length,sourceShas:vids.map(f=>f.sha256),
      note:'Fixture-only candidate selection; no real Vision/Whisper inference.',rightsConfirmed:false};
+   }else if(!config.quickVisionBatch&&!env.OPENROUTER_API_KEY?.trim()){
+    job.stage='Офлайн-монтаж: Vision отключён';await save(job);
+    plan=offlineEditPlan(candidateInput);
+    provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
+     reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',
+     sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
    }else{
     job.stage='Whisper: проверка речи';await save(job);
     const audio=[];
@@ -233,7 +277,7 @@ export function createPersonaQuickRenderService(config={}){
      }
     }
     const speechRanking=config.quickVisionBatch?{highlights:[],status:'test-skipped'}:
-     await rankSpeechHighlights({audio,env});
+     await rankSpeechHighlights({audio,env}).catch(()=>({highlights:[],status:'unavailable'}));
     job.stage='Vision: анализ каждые 0,5 с';await save(job);
     const vision=await runSmartVision({videos:candidateInput,
      frameAt:async(frame)=>jpegFrame(join(input,vids[frame.fileIndex].name),frame.atSec,config),
@@ -241,7 +285,16 @@ export function createPersonaQuickRenderService(config={}){
      onProgress:async(progress)=>{
       job.stage='Vision: '+progress.completedFrames+'/'+progress.totalFrames+' кадров';
       await save(job);
-     }});
+     }}).catch(error=>{
+      if(config.quickVisionBatch)throw error; // test failures must remain visible
+      return {unavailable:String(error.message||error).slice(0,200)};
+     });
+    if(vision.unavailable){
+     job.stage='Vision недоступен — собираю офлайн-черновик';await save(job);
+     plan=offlineEditPlan(candidateInput);
+     provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
+      reason:vision.unavailable,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
+    }else{
     job.stage='Выбор эмоциональных пиков';await save(job);
     const ranked=audio.map((track,fileIndex)=>({...track,
      segments:track.segments.map(segment=>({...segment,
@@ -273,6 +326,7 @@ export function createPersonaQuickRenderService(config={}){
      speechRanking:speechRanking.status,evidenceSha256:vision.evidenceSha256,
      note:'Half-second Vision + optional local Whisper. See smart-moments.json.',
      rightsConfirmed:false};
+    }
    }
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance},null,2)+'\n',{flag:'wx'});
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
@@ -327,8 +381,10 @@ export function createPersonaQuickRenderService(config={}){
     strategyStatus:audit.status,stylePack:plan.stylePack};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
-   job.state='failed';job.stage='Ошибка';
-   job.error=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
+   job.stage='Ошибка';
+   const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
+   await production.markFailed(message);
+   job.state='failed';job.error=message;
    job.updatedAt=new Date().toISOString();await save(job);
   }finally{active=null}
  }
