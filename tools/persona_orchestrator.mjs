@@ -6,6 +6,7 @@ import {spawn} from 'node:child_process';
 import {basename, dirname, extname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cachedFfprobe} from './persona-stage-cache.mjs';
+import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './persona-p3-adapter.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL'
 ]);
@@ -109,6 +110,37 @@ export class ProductionJob {
     }finally{await handle.close();await unlink(lock)}
   }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}
+  /** Gate editing on verified source-bound, reviewed shot coverage. */
+  async inspectCoverage({brief,bindings,approvalSha256}={}){
+    if((await this.read()).status!=='ANALYZING')fail('P3 coverage requires ANALYZING');
+    if(!brief||!bindings||!approvalSha256)fail('P3 requires approved brief, bindings, and approved SHA');
+    const output=join(this.directory,'output','coverage-'+randomUUID()+'.json');
+    const result=await coverageGate({brief,bindings,approvalSha256,input:join(this.directory,'input'),output});
+    if(result.status==='PASS')await this.transition('EDITING',{reason:'P3 shot coverage and author evidence verified'});
+    return {status:result.status,reportPath:output,summary:result.report.summary};
+  }
+  /** Return candidates, not a replacement for author selection. */
+  async suggestApprovedMoments({file,database,kind,minScore=4}={}){
+    const state=await this.read();
+    if(state.status!=='EDITING')fail('Moment lookup requires EDITING');
+    if(!validFileName(file))fail('Invalid source filename');
+    const asset=state.assets.find(a=>a.name===file);
+    if(!asset)fail('Source is not a verified job asset');
+    const video=join(this.directory,'input',file);
+    if((await lstat(video)).isSymbolicLink()||asset.sha256!==await fingerprint(video))
+      fail('Moment source has changed');
+    return approvedCandidates({database:database?resolve(database):join(this.directory,'approved-moments.sqlite3'),video,kind,minScore});
+  }
+  /** Apply the style contract to final, complete effective render intent. */
+  async checkStyle({plan,contract}={}){
+    if((await this.read()).status!=='EDITING')fail('Style gate requires EDITING');
+    if(!plan)fail('Resolved render intent required');
+    return styleGate({plan,...(contract?{contract}:{})});
+  }
+  /** Separate accounting; never automatically mark human work complete. */
+  async economics({command,args=[]}={}){
+    return economicsCommand({database:join(this.directory,'economics.sqlite3'),command,args});
+  }
   async scanForFootage(stability){
     const state=await this.read();if(state.status!=='WAITING_FOR_FOOTAGE')return {changed:false,status:state.status};
     const dir=join(this.directory,'input');
@@ -143,7 +175,7 @@ export class ProductionJob {
       await new Promise(resolve=>setTimeout(resolve,pollMs));
     }
   }
-  async runBatch({count=4,protectedFile,stylepackFile}={}){
+  async runBatch({count=4,protectedFile,stylepackFile,styleIntentFile}={}){
     if(!Number.isInteger(count)||count<3||count>5)fail('Batch count must be 3, 4 or 5');
     if((await this.read()).status==='WAITING_FOR_FOOTAGE')await this.watchForFootage();
     const path=this.path+'.batch.lock', token=randomUUID();
@@ -172,6 +204,11 @@ export class ProductionJob {
         ...(protectedFile?['--protected',resolve(protectedFile)]:[])],600_000);
       if(state.status==='ANALYZING')await this.transition('EDITING',
         {reason:'Cinematic Calm phrase plan created',batchToken:token});
+      if(styleIntentFile){
+        const gate=await styleGate({plan:resolve(styleIntentFile)});
+        await writeFile(join(output,'P3-STYLE-GATE.json'),JSON.stringify(gate.result,null,2)+'\n',{flag:'wx'});
+        if(gate.status!=='PASS')fail('P3 creative style contract blocked this batch');
+      }else if(process.env.PERSONA_P3_REQUIRE_STYLE==='1')fail('P3 style contract requires --style-intent');
       await runBatchPhase('render-batch',source,output,
         stylepackFile?['--stylepack',resolve(stylepackFile)]:[],1_200_000);
       const manifest=join(output,'BATCH-RESULT.json');
@@ -200,15 +237,34 @@ export class ProductionJob {
 }
 async function cli(){
   const [action,rawDir,...args]=process.argv.slice(2),target=args[0];
-  if(!['init','ready','status','watch','advance','batch'].includes(action)||!rawDir)
-    fail('Usage: init|ready|status|watch|advance|batch JOB_DIR [NEXT_STAGE or batch options]');
+  if(!['init','ready','status','watch','advance','batch','coverage','moments','style','economics'].includes(action)||!rawDir)
+    fail('Usage: init|ready|status|watch|advance|batch|coverage|moments|style|economics JOB_DIR [options]');
   if(action==='init'){const job=await ProductionJob.create(rawDir);console.log(JSON.stringify(await job.read(),null,2));return}
   const job=new ProductionJob(rawDir);
   if(action==='ready'){console.log(JSON.stringify(await job.markReady(),null,2));return}
   if(action==='status'){console.log(JSON.stringify(await job.read(),null,2));return}
+  if(action==='coverage'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--brief','--bindings','--approval-sha256'].includes(args[i])||!args[i+1])fail('Invalid coverage option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.inspectCoverage({brief:opts['--brief'],bindings:opts['--bindings'],approvalSha256:opts['--approval-sha256']}),null,2));return;
+  }
+  if(action==='moments'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--file','--db','--kind','--min-score'].includes(args[i])||!args[i+1])fail('Invalid moments option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.suggestApprovedMoments({file:opts['--file'],database:opts['--db'],kind:opts['--kind'],minScore:opts['--min-score']?Number(opts['--min-score']):4}),null,2));return;
+  }
+  if(action==='style'){
+    const opts={};
+    for(let i=0;i<args.length;i+=2){if(!['--plan','--contract'].includes(args[i])||!args[i+1])fail('Invalid style option');opts[args[i]]=args[i+1]}
+    console.log(JSON.stringify(await job.checkStyle({plan:opts['--plan'],contract:opts['--contract']}),null,2));return;
+  }
+  if(action==='economics'){
+    const [economicAction,...economicArgs]=args;
+    console.log(JSON.stringify(await job.economics({command:economicAction,args:economicArgs}),null,2));return;
+  }
   if(action==='batch'){
     const options={};
-    const names={'--count':'count','--protected':'protectedFile','--stylepack':'stylepackFile'};
+    const names={'--count':'count','--protected':'protectedFile','--stylepack':'stylepackFile','--style-intent':'styleIntentFile'};
     for(let i=0;i<args.length;i+=2){
       const name=names[args[i]],value=args[i+1];
       if(!name||!value||value.startsWith('--')||Object.hasOwn(options,name))fail('Invalid batch option');
