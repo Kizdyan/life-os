@@ -1,4 +1,4 @@
-# Windows-only Persona launcher supervisor, called by START_AUTO_RENDER.bat.
+﻿# Windows-only Persona launcher supervisor, called by START_AUTO_RENDER.bat.
 param([Parameter(Mandatory=$true)][string]$RepoRoot,[switch]$SelfTest)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
