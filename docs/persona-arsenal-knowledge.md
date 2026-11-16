@@ -35,8 +35,10 @@ filming, recording, commercial submission, or publication.
 
 ## Associative EditPlan
 
-For new standard production briefs the generated `preEditPlan` includes
-face → meaningful object detail → actor reaction. Object inserts such as
+For new standard production briefs the shot list and post-production instructions suggest
+face → meaningful object detail → actor reaction. The separate Actor Portfolio produces
+an explicit versioned associative `editPlan`. Existing legacy briefs are not automatically
+augmented with approval-sensitive pre-edit snapshots. Object inserts such as
 paper, a candle or a safe light source are **shoot instructions only**.
 There is no automatic mixing-in of B-roll from the Internet, and no claim
 that an insert was actually filmed. Existing approved productions and
