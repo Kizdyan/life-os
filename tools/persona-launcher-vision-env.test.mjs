@@ -52,8 +52,8 @@ test('Node 22 Worker reads ignored .env.local and enables only OpenRouter for re
   const create=await fetch(base+'/quick-render',{method:'POST',
    headers:{'X-Persona-Worker-Token':health.token,'Content-Type':'application/json'},
    body:JSON.stringify(body)});
-  assert.equal(create.status,201,await create.text());
-  const created=await create.json().catch(()=>null);
+  const created=await create.json();
+  assert.equal(create.status,201,JSON.stringify(created));
   assert.ok(created?.id);
  });
 });
