@@ -86,12 +86,13 @@ function eligible(frame){return frame.faceVisible&&frame.lookingAtCamera&&frame.
 function frameRank(f){
  return f.intensity*1.6+f.clarity*.8+(f.transition?2.7:0)+(f.emotion==='smile'||f.emotion==='serious'?1.25:0);
 }
-function speechNear(f,speech){
- return speech.some(s=>s.fileIndex===f.fileIndex&&f.atSec>=s.startSec-.4&&f.atSec<=s.endSec+.4);
+function speechWeight(f,speech){
+ const touching=speech.filter(s=>s.fileIndex===f.fileIndex&&f.atSec>=s.startSec-.4&&f.atSec<=s.endSec+.4);
+ return touching.length?Math.max(...touching.map(s=>s.emphasis>=4?3:1)):0;
 }
 export function chooseSmartMoments(scored,{videos,speech=[]}={}){
  if(!Array.isArray(scored)||!scored.length||!Array.isArray(videos))throw Error('Missing frame evidence');
- const viable=scored.filter(eligible).map(f=>({...f,score:frameRank(f)+(speechNear(f,speech)?1.0:0)}));
+ const viable=scored.filter(eligible).map(f=>({...f,score:frameRank(f)+speechWeight(f,speech)}));
  if(viable.length<3)throw Error('Not enough sharp, camera-facing actor frames for three reliable emotional peaks');
  const selected=[],spacing=2.5;
  const apart=f=>selected.every(x=>x.fileIndex!==f.fileIndex||Math.abs(x.atSec-f.atSec)>=spacing);
@@ -106,13 +107,30 @@ export function chooseSmartMoments(scored,{videos,speech=[]}={}){
  const final=high(viable);
  if(!final)throw Error('No visually independent closing peak');
  selected.push(final);
- // Up to two more useful transitions, but avoid extra cuts for Quiet Luxury.
+ // Preserve at least one usable point of view from every submitted take, up to five.
+ // A video lacking any sharp/direct-look frame is never forced into the cut.
+ for(let fileIndex=0;fileIndex<videos.length&&selected.length<5;fileIndex++){
+  if(selected.some(x=>x.fileIndex===fileIndex))continue;
+  const alternate=high(viable.filter(f=>f.fileIndex===fileIndex));
+  if(alternate)selected.push(alternate);
+ }
+ // Additional expressive transitions only when visually supported.
  const good=viable.filter(f=>f.transition&&f.score>=5.5);
- for(let i=0;i<2;i++){const next=high(good);if(!next)break;selected.push(next)}
+ while(selected.length<5){const next=high(good);if(!next)break;selected.push(next)}
  const choices=selected.map((f,i)=>{
   const video=videos[f.fileIndex];
-  const durationSec=round(Math.min(3.1,video.durationSec));
-  const startSec=round(clamp(f.atSec-durationSec*.46,0,video.durationSec-durationSec));
+  const phrase=speech.filter(x=>x.fileIndex===f.fileIndex&&x.startSec<=f.atSec+.25&&x.endSec>=f.atSec-.25)
+   .sort((a,b)=>(b.emphasis||0)-(a.emphasis||0))[0];
+  let startSec=clamp(f.atSec-1.43,0,video.durationSec-3.1),durationSec=3.1;
+  // If Whisper reliably timed a short phrase near this peak, use the full phrase
+  // plus small handles; never knowingly amputate a word just to fit a template.
+  if(phrase&&phrase.endSec-phrase.startSec<=4.2){
+   const start=Math.min(startSec,Math.max(0,phrase.startSec-.22));
+   const end=Math.max(startSec+durationSec,Math.min(video.durationSec,phrase.endSec+.22));
+   startSec=start;durationSec=Math.min(5,video.durationSec-start,end-start);
+  }
+  startSec=round(clamp(startSec,0,video.durationSec-durationSec));
+  durationSec=round(durationSec);
   return {id:'peak_'+i,fileIndex:f.fileIndex,startSec,durationSec,stillSec:f.atSec,
    sourceSha256:video.sha256,emotion:f.emotion,score:round(f.score),
    visualReason:f.reason,arcRole:i===0?'hook':i===1?'turn':i===2?'finale':'support',
