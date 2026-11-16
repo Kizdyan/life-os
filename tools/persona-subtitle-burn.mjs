@@ -44,7 +44,7 @@ export async function loadApprovedSubtitleReference(){
 }
 
 export function subtitlePreset(value='cinematic'){
- if(value!=='cinematic'&&value!=='dynamic-interview')fail('Unsupported subtitle preset');
+ if(value!=='cinematic'&&value!=='dynamic-interview'&&value!=='signature-gold')fail('Unsupported subtitle preset');
  return value;
 }
 
@@ -55,7 +55,23 @@ const interviewFont={
 const interviewSize=95,interviewAccentSize=120;
 
 export async function loadSubtitlePreset(preset){
- if(subtitlePreset(preset)==='cinematic')return loadApprovedSubtitleReference();
+ const selected=subtitlePreset(preset);
+ if(selected==='cinematic')return loadApprovedSubtitleReference();
+ if(selected==='signature-gold'){
+  // Reuse the approved, integrity-pinned Cormorant font. Never rely on an
+  // uninstalled Windows/macOS font or silently substitute another typeface.
+  const base=await loadApprovedSubtitleReference();
+  const configPath=fileURLToPath(new URL('./subtitle-signature-gold-v1/preset.json',import.meta.url));
+  const gold=JSON.parse(await readFile(configPath,'utf8'));
+  if(gold?.id!=='signature-gold'||gold.displayName!=='Quiet Luxury / Signature Subtitles v1.0'||
+   gold.fontFamily!==base.style.fontFamily||gold.fontStyle!==base.style.fontStyle||
+   gold.fontWeight!==500||gold.fontSize1080!==87||gold.letterWidthPercent!==106||
+   gold.color!=='#8F6639'||gold.lowerThirdYRatio!==0.755||
+   gold.fadeInMs!==150||gold.fadeOutMs!==330||gold.outlinePx!==0||
+   gold.shadowPx!==0||gold.backdrop!==false||gold.capitalization!=='uppercase')
+   fail('Signature Gold preset config does not match approved v1.0 contract');
+  return {style:{...base.style,...gold,fontSha256:base.style.fontSha256,preset:'signature-gold'},fontPath:base.fontPath};
+ }
  const fontPath=fileURLToPath(new URL('./subtitle-dynamic-interview-v1/Montserrat-ExtraBold.ttf',import.meta.url));
  if(await hash(fontPath)!==interviewFont.fontSha256)fail('Dynamic Interview font SHA-256 mismatch');
  return {style:interviewFont,fontPath};
@@ -96,6 +112,31 @@ function referenceAss(cues,width,height,style){
   // ASS is centisecond-based. Flooring the event avoids missing a 30 fps beat frame.
   const start=time(Math.floor(c.startMs/10)*10);
   return `Dialogue: 0,${start},${time(Math.floor(c.endMs/10)*10)},Persona,,0,0,0,,{\\pos(${x},${y})}${text}`;
+ }).join('\n')+'\n';
+ return {ass,cues,style:{...style,font,size,position:{x,y}},timingMethod:'approved-cues'};
+}
+
+function signatureGoldAss(cues,width,height,style){
+ // This is deliberately separate from the immutable Cinematic reference.
+ // Existing typography, geometry and rendering code remain byte-identical.
+ if(style?.preset!=='signature-gold'||style.color!=='#8F6639'||
+    style.fontSize1080!==87||style.letterWidthPercent!==106||
+    style.outlinePx!==0||style.shadowPx!==0||style.backdrop!==false)
+  fail('Signature Gold requires the verified signature preset');
+ const font=style.fontFamily+' '+style.fontStyle;
+ const x=Math.round(width*.5),y=Math.round(height*style.lowerThirdYRatio);
+ const size=Math.round(width*style.fontSize1080/1080);
+ const primary='&H0039668F'; // ASS is BBGGRR; #8F6639 is RGB
+ const header=assHeader(width,height,
+  [font,size,primary,'&H00000000','&H00000000','&H00000000',
+   style.fontWeight,0,0,0,style.letterWidthPercent,100,0,0,1,0,0,5,0,0,0,1].join(','));
+ const ass=header+cues.map(c=>{
+  const duration=c.endMs-c.startMs;
+  const fadeIn=Math.min(c.fadeMs??style.fadeInMs,Math.floor(duration*.35));
+  const fadeOut=Math.min(style.fadeOutMs,Math.max(0,Math.floor(duration*.45)));
+  const text=c.text.replace(/\r?\n/g,'\\N');
+  return 'Dialogue: 0,'+time(c.startMs)+','+time(c.endMs)+
+   ',Persona,,0,0,0,,{\\pos('+x+','+y+')\\fscx106\\fad('+fadeIn+','+fadeOut+')}'+text;
  }).join('\n')+'\n';
  return {ass,cues,style:{...style,font,size,position:{x,y}},timingMethod:'approved-cues'};
 }
@@ -165,8 +206,10 @@ export function buildSubtitleAss({cues,width,height,reference,preset,typography}
   short.push({...cue,text,...(cue.keywords?{keywords:cue.keywords.map(word=>word.toUpperCase())}:{})});
   previous=cue.endMs;
  }
- return selected==='dynamic-interview'?interviewAss(short,width,height,typography):referenceAss(short,width,height,
-  typography?{...reference,color:typography.color??reference.color,fontSize1080:typography.sizePx1080??reference.fontSize1080}:reference);
+ return selected==='dynamic-interview'?interviewAss(short,width,height,typography):
+  selected==='signature-gold'?signatureGoldAss(short,width,height,reference):
+  referenceAss(short,width,height,
+   typography?{...reference,color:typography.color??reference.color,fontSize1080:typography.sizePx1080??reference.fontSize1080}:reference);
 }
 async function hash(path){const h=createHash('sha256');for await(const b of createReadStream(path))h.update(b);return h.digest('hex')}
 function run(bin,args,cwd){return new Promise((ok,no)=>{const child=spawn(bin,args,{cwd,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';const timer=setTimeout(()=>{child.kill();no(Error('Subtitle FFmpeg task timed out'))},300000);child.stdout.on('data',b=>stdout=(stdout+b).slice(-1000000));child.stderr.on('data',b=>stderr=(stderr+b).slice(-20000));child.on('error',e=>{clearTimeout(timer);no(e)});child.on('close',code=>{clearTimeout(timer);code===0?ok({stdout,stderr}):no(Error('Subtitle process failed: '+stderr.slice(-1800)))})})}
