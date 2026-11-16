@@ -127,7 +127,10 @@ export function createPersonaQuickRenderService(config={}){
    return {index,kind:file.kind,originalName:name,name:toFileName(index,file.kind,name),size:file.size};
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
-  if(!config.quickPlanner&&!config.quickVisionBatch)editPlanProvider(env); // require real model key before uploading private media
+  if(!config.quickPlanner&&!config.quickVisionBatch){
+   const provider=editPlanProvider(env);
+   if(provider.provider!=='openrouter')throw Error('Smart Moment Detection requires an OpenRouter Vision key in the local Worker');
+  } // reject missing Vision key before user uploads private media
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
