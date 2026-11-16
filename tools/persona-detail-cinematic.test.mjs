@@ -69,10 +69,16 @@ test('Detail Cinematic: preserves chroma, skin-tone control, garment texture and
   assert.ok(skin.every((channel,i)=>Math.abs(channel-originalSkin[i])<9),'skin-tone swatch shifted strongly during sharpening');
   const clothGain=edgeEnergy(detail,135,350,240,485)/edgeEnergy(base,135,350,240,485);
   assert.ok(clothGain>1.04,'garment-like textile contrast did not improve');
+  const strandGain=edgeEnergy(detail,45,250,310,330)/edgeEnergy(base,45,250,310,330);
+  assert.ok(strandGain>1.04,'strand-like fine texture did not improve');
   const skinGain=edgeEnergy(detail,163,100,235,210)/edgeEnergy(base,163,100,235,210);
   assert.ok(skinGain<1.30,'skin-like patch microcontrast increased excessively (noise risk)');
   const halo=haloDelta(base,detail,145,110,156,200);
   assert.ok(halo<12,'luma overshoot near skin-like swatch edge is too large');
+  // Verify that the originally requested 0.35 really is harsher on this control.
+  const oversharp=rgb(source,DETAIL.replace('luma_amount=0.20','luma_amount=0.35'));
+  const oversharpSkinGain=edgeEnergy(oversharp,163,100,235,210)/edgeEnergy(base,163,100,235,210);
+  assert.ok(oversharpSkinGain>skinGain+0.04,'unsafe 0.35 must measurably amplify fine skin-like noise');
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
