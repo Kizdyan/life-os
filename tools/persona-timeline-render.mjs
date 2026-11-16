@@ -47,7 +47,7 @@ function framingFor(value,width,height){
  numeric(position.x,'crop position x',0,1);numeric(position.y,'crop position y',0,1);
  return {mode,position:{x:position.x,y:position.y},manualReviewRequired:mode==='cover',width,height};
 }
-function videoFilter(framing,width,height,fps){
+function videoFilter(framing,width,height,fps,intercutFallback=null,durationSec=0){
  const crop=framing.smartCrop;
  const normalized=crop?.mode==='face-crop'&&crop.needsSquarePixels?`scale=${crop.displayWidth}:${crop.displayHeight},setsar=1,`:'';
  const base=crop?.mode==='face-crop'
@@ -55,7 +55,24 @@ function videoFilter(framing,width,height,fps){
   : framing.mode==='cover'
   ? 'scale='+width+':'+height+':force_original_aspect_ratio=increase,crop='+width+':'+height+':(in_w-out_w)*'+framing.position.x+':(in_h-out_h)*'+framing.position.y
   : 'scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2';
- return base+',setsar=1,fps='+fps+',format=yuv420p';
+ const standard=base+',setsar=1,fps='+fps+',format=yuv420p';
+ if (!intercutFallback) return standard;
+ const frames=Math.round(durationSec*fps),tailFrames=Math.max(1,Math.round(intercutFallback.durationSec*fps));
+ const zoomFrom=Math.max(0,frames-tailFrames);
+ const zoomRange=Number((intercutFallback.maxZoom-1).toFixed(6));
+ const zoom='1+'+zoomRange+'*min(1,max(0,(on-'+zoomFrom+')/'+tailFrames+'))';
+ // d=1 preserves one output frame per input frame. The camera audio is untouched.
+ return standard+",zoompan=z='"+zoom+"':x='(iw-iw/zoom)*"+framing.position.x+"':y='(ih-ih/zoom)*"+framing.position.y+"':d=1:s="+width+"x"+height+":fps="+fps;
+
+}
+function intercutFor(value,durationSec){
+ if(value===undefined)return null;
+ if(!value||value.kind!=='slow_push_in'||value.authorReviewed!==true)
+  fail('Unreviewed or unsupported intercut fallback');
+ const seconds=numeric(value.durationSec,'zoom tail duration',.2,.65);
+ const maxZoom=numeric(value.maxZoom,'zoom factor',1.001,1.04);
+ if(durationSec<1.2||seconds>durationSec*.5)fail('Zoom fallback requires a long enough clip');
+ return {kind:'slow_push_in',durationSec:seconds,maxZoom,authorReviewed:true};
 }
 function audioTreatmentFor(value,durationSec,hasAudio){
  if(value===undefined)return null;
@@ -144,7 +161,7 @@ async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,
   const segments = [];
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
-    const clipVideoFilter = videoFilter(clip.framing,width,height,fps);
+    const clipVideoFilter = videoFilter(clip.framing,width,height,fps,clip.intercutFallback,clip.durationSec);
     const args = ['-hide_banner','-nostdin','-loglevel','error','-y','-ss',String(clip.startSec),'-i',clip.path];
     if (!clip.media.audio||clip.muteSourceAudio) args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000');
     const audioFilters=['aresample=async=1:first_pts=0'];
@@ -212,6 +229,7 @@ async function main() {
     const startSec = numeric(clip.startSec ?? 0, 'startSec', 0, media.durationSec - 0.02);
     const durationSec = numeric(clip.durationSec ?? media.durationSec - startSec, 'durationSec', 0.02, media.durationSec - startSec + 0.001);
     const framing=framingFor(clip.framing??project.framing,width,height);
+    const intercutFallback=intercutFor(clip.intercutFallback,durationSec);
     if(process.env.PERSONA_WORKER_RENDER==='1'&&clip.framing===undefined&&project.framing===undefined&&
        width*16===height*9&&media.displayWidth>media.displayHeight){
       const crop=await planFraming(path,{startSec,endSec:startSec+durationSec},media,
@@ -227,7 +245,7 @@ async function main() {
     const loudnessDuration=audioTreatment?.speechDurationSec??durationSec;
     const loudness=media.audio&&!muteSourceAudio?await measureLoudness(path,startSec,loudnessDuration):null;
     const musicTail=audioTreatment?await measureLoudness(path,startSec+audioTreatment.speechDurationSec,durationSec-audioTreatment.speechDurationSec):null;
-    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing,
+    clips.push({ path, startSec, durationSec, media, sha256: await hash(path), framing, intercutFallback,
       beat:Number.isSafeInteger(clip.beat)?clip.beat:null,
       brollAfterBeat:Number.isSafeInteger(clip.brollAfterBeat)?clip.brollAfterBeat:null,
       muteSourceAudio, preserveOriginalAudio, audioTreatment, loudness, musicTail, audioLeveling:preserveOriginalAudio?{gainDb:0,status:'original-music-preserved',warning:null}:safeGain(loudness) });
