@@ -61,6 +61,18 @@ jobs:
         run: node --test tools/persona-production-recovery.test.mjs
       - name: Persona demo project seeding and persistence regression
         run: node --test tools/seed-persona-demo.test.mjs
+      - name: Seed ten file-backed Architect ProductionJobs and verify persistence
+        run: |
+          node --test tools/seed_10_projects.test.mjs
+          node tools/seed_10_projects.mjs --output-root "${RUNNER_TEMP}/persona-architect-10"
+          tar -czf "${RUNNER_TEMP}/persona-architect-10-jobs.tar.gz" -C "${RUNNER_TEMP}" persona-architect-10
+      - name: Upload reproducible ten-job seeded data
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-architect-ten-production-jobs
+          path: ${{ runner.temp }}/persona-architect-10-jobs.tar.gz
+          retention-days: 14
+          if-no-files-found: error
       - name: Persona calendar and distribution regression tests
         run: |
           set -o pipefail
