@@ -12,10 +12,11 @@ const available=spawnSync('ffmpeg',['-version']).status===0&&spawnSync('ffprobe'
 
 test('director whitelist renders distinct pixels while preserving geometry, original and decoded audio',{skip:!available,timeout:120000},()=>withTemp(async root=>{
  const input=join(root,'original.mp4');makeSample(input);const original=await readFile(input),audio=decodedAudioHash(input),pixels=[];
- for(const presetId of ['Dynamic','Cinematic','Commercial','SoftCinematic']){
+ for(const presetId of ['Dynamic','Cinematic','Commercial','SoftCinematic','DetailCinematic']){
   const output=join(root,presetId+'.mp4');const result=await renderVisualPreset({inputPath:input,outputPath:output,presetId});
   assert.equal(result.presetId,presetId);assert.equal(decodedAudioHash(output),audio);
    if(presetId==='SoftCinematic')assert.equal(result.filter,'eq=contrast=1.04:saturation=0.98:gamma=1.01,colorbalance=rs=-0.01:bs=0.015:rm=0.005:gm=-0.003:bm=-0.003:pl=0');
+   if(presetId==='DetailCinematic')assert.equal(result.filter,'eq=contrast=1.045:saturation=0.985:gamma=1.01,colorbalance=rs=-0.008:bs=0.012:rm=0.004:gm=-0.002:bm=-0.003:pl=0,unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.20:chroma_msize_x=3:chroma_msize_y=3:chroma_amount=0.0');
   const probe=spawnSync('ffprobe',['-v','error','-show_streams','-of','json',output],{encoding:'utf8'});
   const video=JSON.parse(probe.stdout).streams.find(s=>s.codec_type==='video');
   assert.equal(video.width,320);assert.equal(video.height,568);assert.equal(video.avg_frame_rate,'30/1');

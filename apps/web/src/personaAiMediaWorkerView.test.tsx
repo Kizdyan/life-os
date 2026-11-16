@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {renderToString} from 'react-dom/server';
 import {expect,it} from 'vitest';
 import {PersonaAiMediaWorker} from './PersonaAiMediaWorker.tsx';
+import type {PersonaAiMediaJob} from './personaAiMediaWorker.ts';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
 it('offers explicit burned-in captions on new renders without claiming old video already contains them',()=>{
  const fixture=JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json',import.meta.url),'utf8'));
@@ -20,4 +21,15 @@ it('offers explicit burned-in captions on new renders without claiming old video
  expect(html).not.toContain('aria-label="Ручной визуальный пресет"');
  expect(html).toContain('Повторить анализ Qwen');
  expect(html).not.toContain('Запустить Автономный Монтаж');
+});
+
+it('lists Detail Cinematic in the manual color selection and restores its saved choice',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('../../../docs/persona-delivery/editorial-candidate-production-brief.json',import.meta.url),'utf8'));
+ const record={creativeDirection:{mode:'manual',selected_preset:'DetailCinematic',model:null}} as unknown as PersonaAiMediaJob;
+ const html=renderToString(<PersonaAiMediaWorker projectId="test" pipeline={importPersonaProductionBrief({brief:fixture})} hasUnsavedDraft={false} record={record} onSave={()=>false}/>);
+ expect(html).toContain('aria-label="Ручной визуальный пресет"');
+ expect(html).toContain('value="SoftCinematic"');
+ expect(html).toContain('value="DetailCinematic"');
+ expect(html).toContain('Detail Cinematic · мягкая детализация');
+ expect(html).toMatch(/value="DetailCinematic"[^>]*selected=""/);
 });

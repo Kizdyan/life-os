@@ -36,7 +36,7 @@ test('retired studio route is closed even with a valid local token',async()=>{
  try{
   const health=await(await fetch(base+'/health')).json();
   assert.equal(health.autonomousStudio,undefined);
-  const created=await post('/session',{brief,variation:'cinematic',takeCount:2,directionMode:'manual',visualPreset:'SoftCinematic'});assert.equal(created.status,201);
+  const created=await post('/session',{brief,variation:'cinematic',takeCount:2,directionMode:'manual',visualPreset:'DetailCinematic'});assert.equal(created.status,201);
   const path='/session/'+(await created.json()).id+'/studio';
   assert.equal((await post(path,{consent:true},'invalid')).status,401);
   assert.equal((await post(path,{consent:true},worker.token,'https://other.example')).status,403);
