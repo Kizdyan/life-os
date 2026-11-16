@@ -24,13 +24,23 @@ jobs:
         shell: powershell
         run: |
           $text=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
-          if (-not $text.Contains('npm') -and -not $text.Contains('persona-launcher-supervisor.ps1')) { throw 'Missing launcher bootstrap' }
+          if (-not $text.Contains('npm') -or -not $text.Contains('persona-launcher-supervisor.ps1')) { throw 'Missing launcher bootstrap' }
           $marker='#--PERSONA_BOOTSTRAP--'
+          $embedMarker='#--PERSONA_SUPERVISOR--'
           $index=$text.LastIndexOf($marker)
-          if($index -lt 0) {throw 'Missing BAT bootstrap marker'}
+          $end=$text.LastIndexOf($embedMarker)
+          if($index -lt 0 -or $end -le $index) {throw 'Missing BAT bootstrap or embedded supervisor'}
           $tokens=$null; $parseErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseInput($text.Substring($index+$marker.Length),[ref]$tokens,[ref]$parseErrors) | Out-Null
+          $bootstrap=$text.Substring($index+$marker.Length,$end-$index-$marker.Length)
+          [System.Management.Automation.Language.Parser]::ParseInput($bootstrap,[ref]$tokens,[ref]$parseErrors) | Out-Null
           if($parseErrors.Count) {throw "Batch bootstrap PowerShell syntax failed: $($parseErrors[0])"}
+          $embedded=$text.Substring($end+$embedMarker.Length).TrimStart([char[]]@(13,10)).Replace("&#10;",[Environment]::NewLine)
+          $tracked=[IO.File]::ReadAllText((Resolve-Path .\tools\persona-launcher-supervisor.ps1),[Text.Encoding]::UTF8)
+          $embeddedNormalized=$embedded.Replace([string][char]13+[char]10,[string][char]10).Trim()
+          $trackedNormalized=$tracked.Replace([string][char]13+[char]10,[string][char]10).Trim()
+          if($embeddedNormalized -ne $trackedNormalized) {throw 'Embedded BAT supervisor differs from tested source'}
+          [System.Management.Automation.Language.Parser]::ParseInput($tracked,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count) {throw "Supervisor PowerShell syntax failed: $($parseErrors[0])"}
           if(-not $text.Contains('WindowStyle Hidden')) {throw 'Launcher is not hidden'}
           if(-not $text.Contains('FolderBrowserDialog')) {throw 'First-run repo discovery missing'}
           Write-Host 'PASS: desktop BAT syntax and project locator'
