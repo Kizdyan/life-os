@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {ProductionJob} from './persona_orchestrator.mjs';
+import {seedDemoProductionJob} from './seed-persona-demo.mjs';
+
+test('CLI demo seeder persists PREPARING ProductionJob and 3 shot/scene sidecars',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-demo-seed-test-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const created=await seedDemoProductionJob(root);
+ assert.equal(created.created,true);
+ assert.equal(created.status,'PREPARING');
+ assert.equal(created.scenes,3);
+ assert.equal(created.shots,3);
+ const job=await new ProductionJob(created.directory).read();
+ assert.equal(job.status,'PREPARING');
+ assert.equal(job.id,created.jobId);
+ assert.equal(job.revision,0);
+ assert.deepEqual(job.assets,[]);
+ const script=JSON.parse(await readFile(created.scriptPath,'utf8'));
+ const shots=JSON.parse(await readFile(created.shotsPath,'utf8'));
+ const manifest=JSON.parse(await readFile(created.manifestPath,'utf8'));
+ assert.equal(script.scenes.length,3);
+ assert.equal(shots.shots.length,3);
+ assert.equal(script.approved,false);
+ assert.equal(manifest.footageAvailable,false);
+ const before=await readdir(join(created.directory,'output'));
+ const again=await seedDemoProductionJob(root);
+ assert.equal(again.created,false);
+ assert.equal(again.jobId,created.jobId);
+ assert.deepEqual(await readdir(join(created.directory,'output')),before);
+});
+test('existing unrelated ProductionJob is never overwritten',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-demo-conflict-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const fixture=JSON.parse(await readFile(new URL('../packages/core/src/persona-demo-project.json',import.meta.url),'utf8'));
+ const job=await ProductionJob.create(join(root,fixture.id),{title:'Not our demo'});
+ const before=await job.read();
+ await assert.rejects(seedDemoProductionJob(root),/not the expected PREPARING demo/);
+ assert.deepEqual(await job.read(),before);
+});
