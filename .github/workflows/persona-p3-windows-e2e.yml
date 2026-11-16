@@ -1,0 +1,63 @@
+name: Persona P3 Windows real-MP4 E2E
+on:
+  pull_request:
+    paths:
+      - "tools/persona-p3-windows-e2e.mjs"
+      - "tools/persona-p3-adapter.mjs"
+      - "tools/persona-intercut-planner.mjs"
+      - "tools/persona-timeline-render.mjs"
+      - "tools/coverage_inspector.py"
+      - "tools/approved_moments_library.py"
+      - "tools/production_economics.py"
+      - "tools/creative_style_validator.py"
+      - "tools/creative_style_contract.json"
+      - ".github/workflows/persona-p3-windows-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-p3-technical-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Ensure FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            $extra = "C:\ProgramData\chocolatey\bin"
+            $extra2 = "C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin"
+            $env:PATH += ";" + $extra + ";" + $extra2
+            $extra | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $extra2 | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+          python --version
+          node --version
+      - name: P3 Python regression tests
+        shell: pwsh
+        run: python -m unittest discover -s tools -p "test_p3_modules.py" -v
+      - name: Two MP4 full-chain E2E with actual FFmpeg renderer
+        shell: pwsh
+        env:
+          PERSONA_PYTHON: python
+          PERSONA_STAGE_CACHE: '0'
+          PERSONA_E2E_OUTPUT_DIR: ${{ runner.temp }}\persona-p3-e2e-artifacts
+        run: node tools/persona-p3-windows-e2e.mjs
+      - name: Archive test-only MP4 and coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-p3-windows-e2e-artifacts
+          path: ${{ runner.temp }}\persona-p3-e2e-artifacts\
+          if-no-files-found: ignore
+          retention-days: 3
