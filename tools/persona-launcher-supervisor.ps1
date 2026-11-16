@@ -74,6 +74,26 @@ function Url-Ready([string]$Address,[string]$Service){
   finally{$response.Dispose()}
  }catch{return $false}
 }
+
+# Check only presence, never log or expose the key. Actual provider checks are in Worker.
+function Has-OpenRouterKey {
+ if(-not [string]::IsNullOrWhiteSpace($env:OPENROUTER_API_KEY)){return $true}
+ $dotenv=Join-Path $RepoRoot '.env.local'
+ if(-not(Test-Path -LiteralPath $dotenv -PathType Leaf)){return $false}
+ foreach($line in [IO.File]::ReadAllLines($dotenv,[Text.Encoding]::UTF8)){
+  if($line -match '^\s*OPENROUTER_API_KEY\s*=\s*(.*?)\s*$'){
+   $value=$Matches[1].Trim().Trim('"',"'")
+   return $value.Length -gt 4 -and -not $value.StartsWith('#')
+  }
+ }
+ return $false
+}
+function Lock-Hash {
+ $lock=Join-Path $RepoRoot 'package-lock.json'
+ if(-not(Test-Path -LiteralPath $lock -PathType Leaf)){throw 'Не найден package-lock.json. Невозможно безопасно установить зависимости.'}
+ return (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash
+}
+
 if($SelfTest){
  $dir=Join-Path $env:TEMP ('persona-launcher-test-'+[Guid]::NewGuid().ToString('N'));[void](New-Item -Path $dir -ItemType Directory)
  $job=$null
@@ -98,6 +118,8 @@ Add-Type -AssemblyName System.Drawing
 $session=Join-Path $env:LOCALAPPDATA ('LifeOS\Persona\launcher\session-'+[Guid]::NewGuid().ToString('N'))
 [void](New-Item -Path $session -ItemType Directory -Force)
 $workerLog=Join-Path $session 'worker.log';$webLog=Join-Path $session 'web.log';$installLog=Join-Path $session 'install.log'
+$installStamp=Join-Path (Split-Path $session -Parent) 'installed-package-lock-sha256.txt'
+$installSucceeded=Join-Path $session 'install-succeeded.txt'
 $form=New-Object Windows.Forms.Form
 $form.Text='Persona — быстрый автомонтаж';$form.StartPosition='CenterScreen';$form.ClientSize=New-Object Drawing.Size(460,200)
 $form.FormBorderStyle='FixedDialog';$form.MaximizeBox=$false;$form.BackColor=[Drawing.Color]::FromArgb(247,244,238)
@@ -113,7 +135,7 @@ $stop=New-Object Windows.Forms.Button
 $stop.Text='Завершить работу';$stop.Location=New-Object Drawing.Point(190,132);$stop.Size=New-Object Drawing.Size(150,40);$form.Controls.Add($stop)
 $logs=New-Object Windows.Forms.Button
 $logs.Text='Журнал';$logs.Location=New-Object Drawing.Point(350,132);$logs.Size=New-Object Drawing.Size(90,40);$form.Controls.Add($logs)
-$state=@{phase='init';job=$null;workerId=0;webId=0;installId=0;began=[DateTime]::MinValue;browser=$false}
+$state=@{phase='init';job=$null;workerId=0;webId=0;installId=0;began=[DateTime]::MinValue;browser=$false;lockHash=''}
 function Fail-Launch([string]$Message){
  $state.phase='failed';$status.Text=$Message+[Environment]::NewLine+'Подробности — в журнале.';$open.Enabled=$false
  if($state.job){$state.job.Dispose();$state.job=$null}
@@ -132,7 +154,11 @@ $timer.Add_Tick({
  try{
   if($state.phase -eq 'install'){
    if(Is-Alive $state.installId){return}
-   if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){throw 'Не удалось установить зависимости. Открой журнал.'}
+   if(-not(Test-Path -LiteralPath $installSucceeded -PathType Leaf) -or
+      -not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){
+    throw 'Не удалось установить зависимости. Открой журнал.'
+   }
+   [IO.File]::WriteAllText($installStamp,$state.lockHash,(New-Object Text.UTF8Encoding($false)))
    Start-Services;return
   }
   if($state.phase -ne 'waiting' -and $state.phase -ne 'running'){return}
@@ -153,10 +179,14 @@ $form.Add_Shown({
   if(-not(Get-Command node.exe -ErrorAction SilentlyContinue) -or -not(Get-Command npm.cmd -ErrorAction SilentlyContinue)){throw 'Не найден Node.js 22+ (вместе с npm).'}
   $ver=(& node -p 'process.versions.node' 2>$null);if(([Version]$ver).Major -lt 22){throw 'Для Persona нужен Node.js 22 или новее.'}
   if((Port-Busy 47832) -or (Port-Busy 5173)){throw 'Persona уже запущена или порты заняты.'}
+  if(-not(Has-OpenRouterKey)){throw 'Нужен OPENROUTER_API_KEY в файле .env.local (корень Life OS). Без него Vision не запускается.'}
+  $state.lockHash=Lock-Hash
   $state.job=New-Object PersonaLauncher.OwnedProcesses
-  if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){
-   $status.Text='Первый запуск: устанавливаю зависимости автоматически...'
-   $wrapper=Join-Path $session 'install.cmd';Write-Wrapper $wrapper 'call npm ci --no-audit --no-fund' $installLog
+  $installed=if(Test-Path -LiteralPath $installStamp){[IO.File]::ReadAllText($installStamp).Trim()}else{''}
+  if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js')) -or $installed -ne $state.lockHash){
+   $status.Text='Проверяю зависимости после обновления...'
+   $wrapper=Join-Path $session 'install.cmd'
+   Write-Wrapper $wrapper ('call npm ci --no-audit --no-fund && echo READY>"'+$installSucceeded+'"') $installLog
    $state.installId=$state.job.Start($wrapper,$RepoRoot);$state.phase='install'
   }else{Start-Services}
   $timer.Start()
