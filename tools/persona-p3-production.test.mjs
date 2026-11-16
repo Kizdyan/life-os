@@ -38,3 +38,30 @@ test('P3 style gate blocks unverified inventory and economics never invents savi
   assert.equal((await job.read()).status,'EDITING');
  }finally{await rm(root,{recursive:true,force:true})}
 });
+
+
+test('ProductionJob binds intercut suggestions to the exact timeline and requires author review',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-intercut-job-'));
+ try{
+  const job=await ProductionJob.create(join(root,'job'));
+  await job.markReady();
+  await job.transition('ANALYZING',{asset:{name:'take.mp4',sha256:'a'.repeat(64),bytes:2048,durationSec:5}});
+  await job.transition('EDITING',{reason:'test setup'});
+  const timelinePath=join(root,'timeline.json');
+  const timeline={version:1,clips:[
+   {path:'take.mp4',startSec:0,durationSec:2},
+   {path:'take.mp4',startSec:3,durationSec:2}
+  ]};
+  await writeFile(timelinePath,JSON.stringify(timeline));
+  const proposed=await job.prepareIntercuts({timelinePath});
+  assert.equal(proposed.status,'AWAITING_INTERCUT_REVIEW');
+  assert.equal(proposed.suggestions[0].status,'ZOOM_FALLBACK_CANDIDATE');
+  const reviewed=await job.applyIntercutZoom({timelinePath,intercutPath:proposed.path,reviewedAfterClips:[1]});
+  assert.equal(reviewed.status,'REVIEWED_EDIT_PLAN_READY');
+  const actual=JSON.parse(await (await import('node:fs/promises')).readFile(reviewed.path,'utf8'));
+  assert.equal(actual.clips[0].intercutFallback.kind,'slow_push_in');
+  assert.equal(actual.publicationApproved,false);
+  await writeFile(timelinePath,JSON.stringify({...timeline,version:2}));
+  await assert.rejects(job.applyIntercutZoom({timelinePath,intercutPath:proposed.path,reviewedAfterClips:[1]}),/Stale intercut plan/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
