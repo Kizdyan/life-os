@@ -14,7 +14,7 @@ export function personaGeneratedCopyIssue(parts){
  if(!Array.isArray(parts))throw Error('Expected generated copy fragments');
  for(const value of parts){
   if(typeof value!=='string')continue;
-  const text=value.toLocaleLowerCase('ru-RU').replace(/\\s+/g,' ').trim();
+  const text=value.toLocaleLowerCase('ru-RU').replace(/\s+/g,' ').trim();
   const match=banned.find(([token])=>text.includes(token));
   if(match)return {code:'AI_CLICHE',phrase:match[1]};
  }
