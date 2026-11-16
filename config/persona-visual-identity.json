@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "persona-visual-identity-v1",
+  "label": "Persona Quiet Luxury",
+  "source": "Persona creative direction / user brief",
+  "colors": {
+    "ink": "#171B24",
+    "paper": "#F7F4EE",
+    "sand": "#DFD2BC",
+    "warm": "#C49B66",
+    "muted": "#76716C",
+    "warning": "#D7A64F",
+    "accentShadow": "#253F43"
+  },
+  "fonts": {
+    "primary": "Georgia, 'Times New Roman', serif",
+    "secondary": "Inter, Arial, sans-serif",
+    "subtitles": "Arial, sans-serif"
+  },
+  "layout": {
+    "aspectRatio": "9:16",
+    "safeZonePct": 8,
+    "marginPct": 6,
+    "portraitKeyAngleDeg": 45,
+    "backgroundLowerContrast": true,
+    "ruleOfThirds": true,
+    "maxSubtitleLines": 2
+  },
+  "motion": {
+    "matchCutFramingToleranceNote": "Mark tripod position, pose and eye line; no automated pose verification",
+    "associativeCutsRequireApproval": true
+  },
+  "grading": {
+    "defaultPreset": "Natural Clean",
+    "skinTonePriority": true,
+    "grain": "restrained",
+    "avoid": "aggressive teal-orange or novelty filters"
+  },
+  "ffmpeg": {
+    "workingColor": "#171B24",
+    "subtitleFontFamily": "Arial",
+    "subtitlePrimaryHex": "F7F4EE",
+    "subtitleOutlineHex": "171B24",
+    "subtitleFontSize1080p": 49,
+    "subtitleOutlinePx1080p": 2
+  }
+}
