@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {createHash, randomUUID} from 'node:crypto';
+import {isPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {createReadStream} from 'node:fs';
 import {open, readFile, writeFile, mkdir, rename, readdir, lstat, stat, unlink} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
@@ -71,17 +72,18 @@ function runBatchPhase(phase, source, output, options, timeout) {
 }
 export class ProductionJob {
   constructor(directory){this.directory=safeDir(directory);this.path=join(this.directory,'job.json');}
-  static async create(directory,{title='Persona production'}={}){
+  static async create(directory,{title='Persona production',strategy}={}){
+    if(strategy!==undefined&&!isPersonaStrategy(strategy))fail('Invalid project strategy');
     const dir=safeDir(directory);await mkdir(dir,{recursive:false});
     await mkdir(join(dir,'input'));await mkdir(join(dir,'output'));
     const job=new ProductionJob(dir),now=new Date().toISOString();
     await writeFile(job.path,JSON.stringify({version:1,id:randomUUID(),title,status:'PREPARING',revision:0,
-      createdAt:now,updatedAt:now,assets:[],history:[]},null,2)+'\n',{flag:'wx'});
+      createdAt:now,updatedAt:now,assets:[],history:[],...(strategy?{strategy}:{})},null,2)+'\n',{flag:'wx'});
     return job;
   }
   async read(){
     const data=JSON.parse(await readFile(this.path,'utf8'));
-    if(data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
+    if((data.strategy!==undefined&&!isPersonaStrategy(data.strategy))||data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
     return data;
   }
@@ -109,6 +111,25 @@ export class ProductionJob {
       try{await writeFile(tmp,JSON.stringify(update,null,2)+'\n',{flag:'wx'});await rename(tmp,this.path)}
       finally{await unlink(tmp).catch(()=>{})}
       return update;
+    }finally{await handle.close();await unlink(lock)}
+  }
+  /** CAS + exclusive lock: enrich an old seeded job without resetting its status or media. */
+  async attachStrategy(strategy,expectedRevision){
+    if(!isPersonaStrategy(strategy))fail('Invalid strategy');
+    const lock=this.path+'.lock';let handle;
+    try{handle=await open(lock,'wx')}catch(error){if(error.code==='EEXIST')fail('Job locked; retry migration later');throw error}
+    try{
+      const data=await this.read();
+      if(data.strategy!==undefined){
+        if(JSON.stringify(data.strategy)!==JSON.stringify(strategy))fail('Author strategy differs: refuse overwrite');
+        return data;
+      }
+      if(data.revision!==expectedRevision)fail('Job changed before strategy migration');
+      const next={...data,strategy,revision:data.revision+1,updatedAt:new Date().toISOString()};
+      const temp=this.path+'.'+randomUUID()+'.tmp';
+      try{await writeFile(temp,JSON.stringify(next,null,2)+'\n',{flag:'wx'});await rename(temp,this.path)}
+      finally{await unlink(temp).catch(()=>{})}
+      return next;
     }finally{await handle.close();await unlink(lock)}
   }
   async markReady(){return this.transition('WAITING_FOR_FOOTAGE',{reason:'approved shooting brief is ready'})}

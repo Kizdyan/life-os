@@ -4,6 +4,8 @@ import {validatePersonaProductionGuide,type PersonaProductionGuide} from './pers
 import type {PersonaColorComparisonRecord} from './personaColorComparison';
 import {readPersonaAiMediaJob,type PersonaAiMediaJob} from './personaAiMediaWorker';
 import type {PersonaCommercialDevelopment} from './personaCommercialDevelopment';
+import {defaultPersonaStrategy,isPersonaStrategy,readPersonaStrategyAudit} from '../../../packages/core/src/persona-strategy.mjs';
+import type {PersonaStrategy,PersonaStrategyAudit} from '../../../packages/core/src/persona-strategy.mjs';
 
 export type PersonaContentType='reel'|'short'|'story'|'photo'|'carousel';
 export type PersonaProjectStage='strategy'|'needs_assets'|'production'|'marketing_qa'|'media_qa'|'final_qa'|'approval';
@@ -24,6 +26,10 @@ export type PersonaProject={
  colorComparison?:PersonaColorComparisonRecord;
  /** Local Worker paths and SHA-bound provenance; never stores MP4 bytes. */
  aiMediaJob?:PersonaAiMediaJob;
+ /** Seven creative positioning fields; optional on legacy v1 records. */
+ strategy?:PersonaStrategy;
+ /** A real model response, bound to an exact scenario snapshot. */
+ strategyAudit?:PersonaStrategyAudit;
  /** Local few-shot idea versions; optional damaged records never erase projects. */
  commercialDevelopment?:PersonaCommercialDevelopment;
  captions:unknown|null;
@@ -109,7 +115,7 @@ function isScenarioWorkspace(value:unknown):value is PersonaScenarioWorkspace{
 function isProject(value:unknown):value is PersonaProject{
  if(!value||typeof value!=='object')return false;
  const project=value as Partial<PersonaProject>;
- return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.scenarioWorkspace===undefined||isScenarioWorkspace(project.scenarioWorkspace));
+ return typeof project.id==='string'&&typeof project.title==='string'&&isContentType(project.contentType)&&typeof project.sourceIdea==='string'&&isStage(project.stage)&&typeof project.createdAt==='string'&&typeof project.updatedAt==='string'&&project.schemaVersion===1&&Number.isInteger(project.revision)&&project.revision>0&&Array.isArray(project.mediaAssets)&&Array.isArray(project.cloudAssetRefs)&&(project.lastOpenStep===undefined||typeof project.lastOpenStep==='string')&&(project.scenarioWorkspace===undefined||isScenarioWorkspace(project.scenarioWorkspace))&&(project.strategy===undefined||isPersonaStrategy(project.strategy))&&(project.strategyAudit===undefined||Boolean(readPersonaStrategyAudit(project.strategyAudit)));
 }
 export function validatePersonaProjectCollection(value:unknown):PersonaProjectCollection{
  const parsed=value as Partial<PersonaProjectCollection>;
@@ -143,7 +149,7 @@ function readCollection(storage:PersonaProjectStorage):PersonaProjectCollection|
 function parseLegacy<T>(storage:PersonaProjectStorage,key:string):T|null{try{const raw=storage.getItem(key);return raw===null?null:JSON.parse(raw) as T}catch{return null}}
 
 export function createPersonaProject(input:{id:string;title:string;contentType:PersonaContentType;sourceIdea:string;now:string}):PersonaProject{
- return {id:input.id,title:input.title,contentType:input.contentType,sourceIdea:input.sourceIdea,script:null,shootingPlan:null,editPlan:null,timeline:null,mediaAssets:[],cloudAssetRefs:[],processing:null,captions:null,socialCaptions:null,stage:'strategy',qa:null,createdAt:input.now,updatedAt:input.now,schemaVersion:1,revision:1};
+ return {id:input.id,title:input.title,contentType:input.contentType,sourceIdea:input.sourceIdea,strategy:defaultPersonaStrategy(),script:null,shootingPlan:null,editPlan:null,timeline:null,mediaAssets:[],cloudAssetRefs:[],processing:null,captions:null,socialCaptions:null,stage:'strategy',qa:null,createdAt:input.now,updatedAt:input.now,schemaVersion:1,revision:1};
 }
 
 /** Imported Production Briefs persist scenario, shoot/edit plans and navigation

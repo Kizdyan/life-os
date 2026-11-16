@@ -45,6 +45,8 @@ describe('Persona direct filming experience',()=>{
   expect(html).toContain('СКАЖИ В КАДРЕ');
   expect(html).toContain('Я актёр. И ещё пишу музыку.');
   expect(html).toContain('Как поставить камеру');
+  expect(html).toContain('Схема света');
+  expect(html).toContain('aria-expanded="false"');
   expect(html).toContain('Сохранить эти 7 сцен');
   expect(html).toContain('Публикация не разрешена автоматически');
  });

@@ -1,6 +1,7 @@
 import {env,json} from './_media-session.js';
 import {readPersonaDirectorProposal} from '../packages/core/src/persona-director-model.js';
 import {CREATIVE_PRODUCER_SYSTEM_PROMPT} from '../packages/core/src/persona-agent-system-prompts.js';
+import {personaGeneratedCopyIssue} from '../packages/core/src/persona-writing-style.mjs';
 
 type Idea={id:string;title:string;angle:string;format:string};
 const FREE_MODEL='nvidia/nemotron-3.5-lightning-free';
@@ -43,6 +44,8 @@ const DIRECTOR_SYSTEM=[
  'Конфликт или интрига в первые три секунды; причинное развитие, поворот и конкретный панчлайн.',
  'Каждая сцена: точная реплика, действие, камера, свет, актёрская задача, монтажный приём.',
  'Съёмка: один человек, телефон, штатив, одна комната, опционально клавиши, мягкий свет.',
+ 'Авторский стиль (docs/my-writing-style.md): лаконичный разговорный русский, чаще предложения средней длины, лёгкая ситуационная самоирония, без пафоса, лозунгов, клише, шаблонных фраз ИИ и однотипных афоризмов.',
+ 'Хук, реплики и описание должны строиться на конкретной сцене, актёрском действии, препятствии и повороте. Не повторяй выражения «это больше, чем», «раскрой потенциал», «погрузись» и рекламные штампы.',
  'Тон: харизма, небанальный юмор, киноязык, но без дешёвых клише.',
  'Не заявляй, что проанализировал реальные кадры или сделал монтаж: ты создаёшь план.',
  'Цвет: единая узнаваемая натуральная палитра, но параметры адаптируются к конкретному свету.',
@@ -151,6 +154,7 @@ export default{
    if(normalizedHooks.has(proposal.hook.trim().toLowerCase())||
     normalizedHooks.has(proposal.scenes[0].line.trim().toLowerCase()))
     fail('director_repeated_hook');
+   if(personaGeneratedCopyIssue([proposal.title,proposal.hook,...proposal.scenes.map((scene:any)=>scene.line)]))fail('director_generated_cliche');
    return json(proposal);
   }catch(error){
    const code=String((error as Error)?.message||'director_unavailable');

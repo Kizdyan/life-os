@@ -1,4 +1,5 @@
 import data from '../../../packages/core/src/persona-architect-ten-reels.json';
+import {strategyForArchitect,isPersonaStrategy} from '../../../packages/core/src/persona-strategy.mjs';
 import {parseArchitectTimedShots,validateArchitectIdeas} from '../../../packages/core/src/persona-architect-shot-parser.mjs';
 import {buildPersonaProductionBrief,type PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
@@ -58,6 +59,15 @@ export function seedArchitectProjectsInBrowser(storage:PersonaProjectStorage,now
  const existing=loadPersonaProjects(storage,()=> 'unused-seed10-migration-id',()=>now);
  const collisions=entries.filter(({item})=>existing.projects.some(p=>p.id===item.id));
  // Existing project IDs are preserved unchanged. They may be authored edits.
+ // Upgrade only untouched Architect seed provenance; never replace an authored strategy
+ // or collide with a user-owned project reusing the same id.
+ const migrated=existing.projects.map(project=>{
+  const entry=entries.find(({item})=>item.id===project.id);
+  const original=(project as typeof project & {architectSeed?:{source?:unknown}}).architectSeed?.source;
+  if(!entry||JSON.stringify(original)!==JSON.stringify(entry.item)||isPersonaStrategy(project.strategy))return project;
+  return {...project,strategy:strategyForArchitect(entry.item),revision:project.revision+1,updatedAt:now};
+ });
+ const upgrades=migrated.filter((project,i)=>project!==existing.projects[i]).length;
  const newProjects=entries.filter(({item})=>!existing.projects.some(p=>p.id===item.id))
   .map(({item,scenes})=>{
    const brief=buildArchitectProductionBrief(item);
@@ -71,7 +81,7 @@ export function seedArchitectProjectsInBrowser(storage:PersonaProjectStorage,now
     throw Error('architect_scene_count_mismatch:'+item.id);
    const project=createPersonaProject({id:item.id,title:item.title,
     contentType:'reel',sourceIdea:item.hook,now});
-   return {...project,
+   return {...project,strategy:strategyForArchitect(item),
     // Browser-only stage mirrors the file-backed WAITING_FOR_FOOTAGE workflow;
     // it is not a live ProductionJob status read.
     stage:'needs_assets' as const,lastOpenStep:'script',
@@ -80,11 +90,11 @@ export function seedArchitectProjectsInBrowser(storage:PersonaProjectStorage,now
      synchronizedWithWorker:false as const},
    };
   });
- if(newProjects.length===0)return {created:0,skipped:collisions.length,collection:existing};
+ if(newProjects.length===0&&upgrades===0)return {created:0,skipped:collisions.length,upgraded:0,collection:existing};
  // One validated atomic localStorage write; never replace or select a user's active project.
  const collection={
   schemaVersion:1 as const,activeProjectId:existing.activeProjectId??(newProjects[0]?.id??null),
-  projects:[...existing.projects,...newProjects],
+  projects:[...migrated,...newProjects],
  };
  // Additional safety before any write: the project store may have changed in a parallel tab.
  const before=storage.getItem(PERSONA_PROJECTS_KEY);
@@ -95,5 +105,5 @@ export function seedArchitectProjectsInBrowser(storage:PersonaProjectStorage,now
  // Validate project snapshots before writing, including the scenario and existing projects.
  validatePersonaProjectCollection(collection);
  storage.setItem(PERSONA_PROJECTS_KEY,target);
- return {created:newProjects.length,skipped:collisions.length,collection};
+ return {created:newProjects.length,skipped:collisions.length,upgraded:upgrades,collection};
 }

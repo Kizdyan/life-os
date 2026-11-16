@@ -5,6 +5,7 @@ import {createPersonaProject,loadPersonaProjects,savePersonaProject,PERSONA_PROJ
 import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import {seedArchitectProjectsInBrowser,buildArchitectProductionBrief,PERSONA_ARCHITECT_IDS,PERSONA_ARCHITECT_IMPORT_HASH} from './personaArchitectSeeds';
 import data from '../../../packages/core/src/persona-architect-ten-reels.json';
+import {isPersonaStrategy,strategyForArchitect} from '../../../packages/core/src/persona-strategy.mjs';
 
 function memoryStorage():PersonaProjectStorage{
  const values=new Map<string,string>();
@@ -27,6 +28,8 @@ describe('Persona Architect 10 Reel browser import',()=>{
    expect(item.title).toBe(data[index].title);
    expect(item.contentType).toBe('reel');
    expect(item.stage).toBe('needs_assets');
+   expect(isPersonaStrategy(item.strategy)).toBe(true);
+   expect(item.strategy).toEqual(strategyForArchitect(data[index]));
    expect(item.lastOpenStep).toBe('script');
    expect(item.mediaAssets).toEqual([]);
    expect((item as any).architectSeed).toMatchObject({plannedStatus:'WAITING_FOR_FOOTAGE',synchronizedWithWorker:false});
@@ -59,6 +62,19 @@ describe('Persona Architect 10 Reel browser import',()=>{
   expect(second.skipped).toBe(10);
   expect(storage.getItem(PERSONA_PROJECTS_KEY)).toBe(snapshot);
   expect(second.collection.projects.find(p=>p.id==='reel-02')!.title).toBe('Author revision');
+ });
+ it('enriches only provenance-matching legacy seed records without rewriting author edits',()=>{
+  const storage=memoryStorage();
+  const original=seedArchitectProjectsInBrowser(storage).collection;
+  const seed=original.projects.find(p=>p.id==='reel-01')!;
+  const modified={...seed,revision:seed.revision+1};
+  delete modified.strategy;
+  savePersonaProject(storage,modified,original.activeProjectId!);
+  const upgraded=seedArchitectProjectsInBrowser(storage);
+  expect(upgraded.created).toBe(0);
+  expect(upgraded.upgraded).toBe(1);
+  expect(upgraded.collection.projects.find(p=>p.id==='reel-01')?.strategy).toEqual(strategyForArchitect(data[0]));
+  expect(upgraded.collection.projects.find(p=>p.id==='reel-01')?.revision).toBe(modified.revision+1);
  });
  it('retains exact original timed descriptions without inventing lines or media',()=>{
   for(const source of data){

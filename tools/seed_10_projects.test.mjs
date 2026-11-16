@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ProductionJob} from './persona_orchestrator.mjs';
+import {isPersonaStrategy,strategyForArchitect} from '../packages/core/src/persona-strategy.mjs';
 import {seedTenProductionJobs} from './seed_10_projects.mjs';
 import {parseArchitectTimedShots,validateArchitectIdeas} from '../packages/core/src/persona-architect-shot-parser.mjs';
 
@@ -36,11 +37,14 @@ test('seed_10_projects executes 10 real ProductionJob transitions to WAITING_FOR
   assert.equal(state.history[0].from,'PREPARING');
   assert.equal(state.history[0].to,'WAITING_FOR_FOOTAGE');
   assert.deepEqual(state.assets,[]);
+  assert.equal(isPersonaStrategy(state.strategy),true);
+  assert.deepEqual(state.strategy,strategyForArchitect(source[i]));
   const fixture=JSON.parse(await readFile(join(entry.directory,'input','architect-source.json'),'utf8'));
   const shots=JSON.parse(await readFile(join(entry.directory,'output','architect-shot-list.json'),'utf8'));
   const manifest=JSON.parse(await readFile(join(entry.directory,'output','architect-manifest.json'),'utf8'));
   assert.deepEqual(fixture,source[i],'The original author text must be lossless');
   assert.equal(shots.shots.length,5);
+  assert.deepEqual(shots.strategy,state.strategy);
   assert.equal(shots.brollIdeas,source[i].broll);
   assert.equal(shots.musicalDirection,source[i].music);
   assert.equal(manifest.editorialApproved,false);
@@ -61,4 +65,30 @@ test('refuse to overwrite an unrelated job with a colliding source ID',async t=>
  const before=await job.read();
  await assert.rejects(seedTenProductionJobs(root),/Existing project differs/);
  assert.deepEqual(await job.read(),before);
+});
+
+test('upgrade known legacy disk job while retaining author state and exact source',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-strategy-migration-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await seedTenProductionJobs(root);
+ const folder=join(root,'reel-01');
+ const jobFile=join(folder,'job.json'),shotFile=join(folder,'output','architect-shot-list.json');
+ const prior=JSON.parse(await readFile(jobFile,'utf8'));
+ const shots=JSON.parse(await readFile(shotFile,'utf8'));
+ delete prior.strategy;delete shots.strategy;
+ await writeFile(jobFile,JSON.stringify(prior,null,2)+'\n');
+ await writeFile(shotFile,JSON.stringify(shots,null,2)+'\n');
+ const result=await seedTenProductionJobs(root);
+ const after=await new ProductionJob(folder).read();
+ const afterShots=JSON.parse(await readFile(shotFile,'utf8'));
+ assert.equal(result.created,0);
+ assert.equal(result.existing,10);
+ assert.equal(after.status,'WAITING_FOR_FOOTAGE');
+ assert.equal(after.revision,prior.revision+1);
+ assert.deepEqual(after.history,prior.history);
+ assert.deepEqual(after.assets,prior.assets);
+ assert.equal(isPersonaStrategy(after.strategy),true);
+ assert.deepEqual(afterShots.strategy,after.strategy);
+ const again=await seedTenProductionJobs(root);
+ assert.equal(again.jobs[0].upgradedStrategy,false);
 });

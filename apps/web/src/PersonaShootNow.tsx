@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react';
+import {personaLightingPlan} from '../../../packages/core/src/persona-lighting.mjs';
 import {
  makeShootSheet,markShootTake,readShootProgress,shootPlanFingerprint,
  shootProgressKey,shootTimecode,type PersonaShootPlan,type PersonaShootProgress,
@@ -26,6 +27,7 @@ export function PersonaShootNow({
   catch{return null}
  });
  const [feedback,setFeedback]=useState('');
+ const [showLighting,setShowLighting]=useState(false);
  const canGenerate=Boolean(onGenerateAi);
  const [directorHealth,setDirectorHealth]=useState<{status:string;provider?:string;model?:string}|null>(null);
  useEffect(()=>{
@@ -45,10 +47,12 @@ export function PersonaShootNow({
  const fingerprint=shootPlanFingerprint(plan);
  useEffect(()=>{
   setCurrentIndex(0);
+  setShowLighting(false);
   try{setSaved(readShootProgress(JSON.parse(localStorage.getItem(shootProgressKey(projectId))||'null'),plan))}
   catch{setSaved(null)}
  },[projectId,fingerprint]);
  const current=plan.scenes[currentIndex];
+ const lighting=current?personaLightingPlan(current.action+' · '+current.line):null;
  const completed=new Set(saved?.completedIds??[]);
  const recordedCount=plan.scenes.filter(scene=>completed.has(scene.id)).length;
  const totalDuration=plan.scenes.reduce((sum,scene)=>sum+scene.seconds,0);
@@ -134,6 +138,22 @@ export function PersonaShootNow({
     <p><b>Камера:</b> {plan.setup.camera}</p>
     <p><b>Свет:</b> {plan.setup.lighting}</p>
     <p><b>Звук:</b> {plan.setup.sound}</p>
+    {current&&<div className="personaShootLighting">
+     <button type="button" className="personaShootLightingToggle"
+      aria-expanded={showLighting} aria-controls="persona-shoot-lighting-plan"
+      onClick={()=>setShowLighting(open=>!open)}>
+      <span aria-hidden="true">◐</span> {showLighting?'Скрыть схему света':'Схема света'}
+     </button>
+     {showLighting&&lighting&&<section id="persona-shoot-lighting-plan" className="personaShootLightingPlan" aria-label="Планировщик света">
+      <div className="personaShootLightingPlanTop"><span>PRE-PRODUCTION / QUIET LUXURY</span><strong>Кадр {currentIndex+1} · {lighting.title}</strong></div>
+      <p><b>Рисующий / Key</b> {lighting.key}</p>
+      <p><b>Заполняющий / Fill</b> {lighting.fill}</p>
+      <p><b>Контровой / Back</b> {lighting.back}</p>
+      <p><b>Фон</b> {lighting.background}</p>
+      <p><b>Проверка</b> {lighting.note}</p>
+      <small>{lighting.evidence}</small>
+     </section>}
+    </div>}
     <details>
      <summary>Костюм, реквизит и расположение</summary>
      <p><b>В кадре:</b> {plan.setup.wardrobe}</p>
