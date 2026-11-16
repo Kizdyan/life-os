@@ -7,6 +7,7 @@ import {seedArchitectProjectsInBrowser,PERSONA_ARCHITECT_IMPORT_HASH} from './pe
 import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaActorPortfolio from './PersonaActorPortfolio';
 import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
+import PersonaQuickAutoRender from './PersonaQuickAutoRender';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
 
@@ -774,6 +775,7 @@ export default function PersonaFactory(){
     <div className="personaCreativeHeroArt" aria-hidden="true"><span className="personaCreativeHeroArtOutline">P</span><span>EST. 2026 · YOUR STORY</span></div>
    </div>
   </header>
+  <PersonaQuickAutoRender/>
   <div className="personaCreativeSectionHead"><div><small>01 / ПРОЕКТЫ</small><h3>Продолжить работу</h3><p>Все материалы сохраняются в твоей мастерской.</p></div><button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
   {projects.length?<div className="personaCreativeGrid">{projects.slice(0,4).map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
    <div className="personaCreativeBlank"><span aria-hidden="true">✦</span><h3>Первая история ждёт тебя</h3><p>Начни с идеи или подготовь сценарий без съёмок.</p><button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
