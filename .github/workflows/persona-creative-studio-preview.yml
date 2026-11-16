@@ -7,6 +7,7 @@ on:
       - "tools/persona-creative-studio-screenshots.mjs"
       - "tools/persona-architect-browser-e2e.mjs"
       - "tools/persona-industry-browser-e2e.mjs"
+      - "tools/persona-quick-browser-e2e.mjs"
       - ".github/workflows/persona-creative-studio-preview.yml"
 jobs:
   capture:
@@ -24,6 +25,10 @@ jobs:
           npm ci --no-audit --no-fund
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install chromium --with-deps
+      - name: Install FFmpeg for real one-click MP4 integration
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Start isolated localhost Vite server
         run: |
           nohup npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/persona-creative-vite.log 2>&1 &
@@ -41,6 +46,16 @@ jobs:
         run: node tools/persona-architect-browser-e2e.mjs
       - name: Verify industry portfolios and real A4 PDF with browser
         run: node tools/persona-industry-browser-e2e.mjs
+      - name: Verify real one-click browser-to-MP4 workflow
+        run: node tools/persona-quick-browser-e2e.mjs
+      - name: Upload one-click real browser screenshots and MP4 fixture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-one-click-auto-render
+          path: artifacts/persona-one-click/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload actor and Music Sync portfolio screenshots/PDF
         if: always()
         uses: actions/upload-artifact@v4

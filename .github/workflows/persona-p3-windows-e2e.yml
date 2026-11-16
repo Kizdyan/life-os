@@ -6,6 +6,11 @@ on:
       - "tools/persona-p3-adapter.mjs"
       - "tools/persona-intercut-planner.mjs"
       - "tools/persona-timeline-render.mjs"
+      - "tools/persona-quick-render.mjs"
+      - "tools/persona-quick-edit-plan.mjs"
+      - "tools/persona-quick-render.test.mjs"
+      - "tools/persona-quick-edit-plan.test.mjs"
+      - "tools/persona-media-worker.mjs"
       - "tools/coverage_inspector.py"
       - "tools/approved_moments_library.py"
       - "tools/production_economics.py"
@@ -46,6 +51,12 @@ jobs:
       - name: P3 Python regression tests
         shell: pwsh
         run: python -m unittest discover -s tools -p "test_p3_modules.py" -v
+      - name: One-click real FFmpeg intake and subtitles on Windows
+        shell: pwsh
+        env:
+          PERSONA_PYTHON: python
+          PERSONA_STAGE_CACHE: '0'
+        run: node --test tools/persona-quick-edit-plan.test.mjs tools/persona-quick-render.test.mjs
       - name: Two MP4 full-chain E2E with actual FFmpeg renderer
         shell: pwsh
         env:
