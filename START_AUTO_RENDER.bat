@@ -14,6 +14,74 @@ function Is-PersonaRepo([string]$folder){
     return (Test-Path -LiteralPath (Join-Path $folder 'package.json') -PathType Leaf) -and
       (Test-Path -LiteralPath (Join-Path $folder 'tools\persona-media-worker.mjs') -PathType Leaf)
 }
+
+# Git runs hidden and with bounded time; never reset, stash, force-pull or overwrite user edits.
+function Invoke-PersonaGit {
+    param([string]$Repository,[string[]]$GitArgs,[string]$LogDirectory)
+    $git=Get-Command git.exe -ErrorAction SilentlyContinue
+    if(-not $git){throw 'Не найден Git. Для автоматического обновления Life OS установи Git for Windows.'}
+    if($Repository.Contains('"')){throw 'Недопустимый символ в пути к проекту.'}
+    $stdout=Join-Path $LogDirectory ('git-out-'+[Guid]::NewGuid().ToString('N')+'.tmp')
+    $stderr=Join-Path $LogDirectory ('git-err-'+[Guid]::NewGuid().ToString('N')+'.tmp')
+    $oldPrompt=$env:GIT_TERMINAL_PROMPT
+    $oldInteractive=$env:GCM_INTERACTIVE
+    try {
+        $env:GIT_TERMINAL_PROMPT='0'
+        $env:GCM_INTERACTIVE='never'
+        $arguments='-C "'+$Repository+'" '+($GitArgs -join ' ')
+        $process=Start-Process -FilePath $git.Source -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        try{
+            if(-not $process.WaitForExit(60000)){
+                $process.Kill()
+                [void]$process.WaitForExit(2500)
+                throw 'Git не ответил за 60 секунд. Проверь подключение к интернету.'
+            }
+            if($process.ExitCode -ne 0){
+                throw ('Git '+$GitArgs[0]+' завершился с ошибкой ('+$process.ExitCode+'). Обновление остановлено, локальные данные сохранены.')
+            }
+            return [IO.File]::ReadAllText($stdout,[Text.Encoding]::UTF8).Trim()
+        }finally{$process.Dispose()}
+    }finally{
+        $env:GIT_TERMINAL_PROMPT=$oldPrompt
+        $env:GCM_INTERACTIVE=$oldInteractive
+        Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction SilentlyContinue
+    }
+}
+function Test-PersonaPort([int]$Port) {
+    $socket=New-Object Net.Sockets.TcpClient
+    try{$connected=$socket.ConnectAsync('127.0.0.1',$Port);return ($connected.Wait(400) -and $socket.Connected)}
+    catch{return $false}
+    finally{$socket.Dispose()}
+}
+function Update-PersonaRepo {
+    param([string]$RepoRoot,[string]$LogDirectory)
+    if(-not(Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))){
+        throw 'Эта папка Life OS не является Git-копией. Для автообновления нужна копия репозитория с папкой .git.'
+    }
+    if((Test-PersonaPort 47832) -or (Test-PersonaPort 5173)){
+        throw 'Persona уже запущена. Закрой прежнее окно Persona перед обновлением.'
+    }
+    $top=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','--show-toplevel') -LogDirectory $LogDirectory
+    if([IO.Path]::GetFullPath($top).TrimEnd('\','/') -ine [IO.Path]::GetFullPath($RepoRoot).TrimEnd('\','/')){
+        throw 'Папка Life OS не совпадает с корнем Git-репозитория.'
+    }
+    $branch=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('branch','--show-current') -LogDirectory $LogDirectory
+    if($branch -cne 'main'){throw 'Автообновление разрешено только в ветке main. Текущая ветка не меняется.'}
+    $trackedKey=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('ls-files','--','.env.local') -LogDirectory $LogDirectory
+    if($trackedKey){throw 'Файл .env.local не должен находиться под контролем Git. Обновление остановлено.'}
+    $dirty=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('status','--porcelain','--untracked-files=no') -LogDirectory $LogDirectory
+    if($dirty){throw 'В Life OS есть несохранённые изменения. Они сохранены: автоматическое обновление не выполнялось.'}
+    $before=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','HEAD') -LogDirectory $LogDirectory
+    # Fast-forward only: diverging histories never overwrite local work.
+    [void](Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('pull','--ff-only','--no-rebase','origin','main') -LogDirectory $LogDirectory)
+    $after=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','HEAD') -LogDirectory $LogDirectory
+    $line=if($before -eq $after){'UP_TO_DATE'}else{'UPDATED'}
+    $receipt=$line+'  '+[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')+'  '+$before.Substring(0,10)+' -> '+$after.Substring(0,10)
+    [IO.File]::WriteAllText((Join-Path $LogDirectory 'last-update.txt'),$receipt+[Environment]::NewLine,(New-Object Text.UTF8Encoding($false)))
+    # .env.local is ignored and never read or sent to Git by this updater.
+    return $line
+}
+
 try {
     $folder=[IO.Path]::GetDirectoryName($env:PERSONA_LAUNCHER_FILE)
     $settings=Join-Path $env:LOCALAPPDATA 'LifeOS\Persona\launcher'
@@ -54,11 +122,37 @@ try {
     }
     [void][IO.Directory]::CreateDirectory($settings)
     [IO.File]::WriteAllText($saved,$root,(New-Object Text.UTF8Encoding($false)))
-    # Standalone BAT: its own trusted embedded supervisor works from Desktop without extra files.
-    $text=[IO.File]::ReadAllText($env:PERSONA_LAUNCHER_FILE,[Text.Encoding]::UTF8)
+    # Update before starting Node; fail closed if git cannot safely reach main.
+    Add-Type -AssemblyName System.Drawing
+    $splash=New-Object Windows.Forms.Form
+    $splash.Text='Persona — обновление'
+    $splash.StartPosition='CenterScreen'
+    $splash.FormBorderStyle='FixedDialog'
+    $splash.ControlBox=$false
+    $splash.ClientSize=New-Object Drawing.Size(385,95)
+    $splash.Font=New-Object Drawing.Font('Segoe UI',10)
+    $message=New-Object Windows.Forms.Label
+    $message.Text='Проверяю обновления Life OS...'
+    $message.AutoSize=$false
+    $message.Location=New-Object Drawing.Point(18,29)
+    $message.Size=New-Object Drawing.Size(355,40)
+    $splash.Controls.Add($message)
+    try{
+        $splash.Show()
+        $splash.Refresh()
+        [Windows.Forms.Application]::DoEvents()
+        [void](Update-PersonaRepo -RepoRoot $root -LogDirectory $settings)
+    }finally{$splash.Close();$splash.Dispose()}
+
+    # Use the freshly pulled supervisor even from an older Desktop BAT.
+    $current=Join-Path $root 'START_AUTO_RENDER.bat'
+    if(-not(Test-Path -LiteralPath $current -PathType Leaf)){
+        throw 'Обновлённый START_AUTO_RENDER.bat не найден в корне Life OS.'
+    }
+    $text=[IO.File]::ReadAllText($current,[Text.Encoding]::UTF8)
     $boundary='#--PERSONA_SUPERVISOR--'
     $start=$text.LastIndexOf($boundary)
-    if($start -lt 0){throw 'Launcher supervisor is missing from the downloaded BAT'}
+    if($start -lt 0){throw 'В обновлённой версии отсутствует supervisor Persona'}
     $payload=$text.Substring($start+$boundary.Length).TrimStart([char[]]@(13,10,65279))
     $temporary=Join-Path $settings ('supervisor-'+[Guid]::NewGuid().ToString('N')+'.ps1')
     try{
