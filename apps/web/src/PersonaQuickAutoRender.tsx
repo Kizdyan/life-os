@@ -116,7 +116,7 @@ export default function PersonaQuickAutoRender(){
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
    </label>
-   <p className="personaQuickPrivacy">Исходные файлы остаются у тебя в локальном Worker. По нажатию «Сделать всё» уменьшенные кадры отправятся в OpenAI/OpenRouter для составления монтажного плана; звук и полный ролик модели не передаются. Посторонний B-roll не загружается.</p>
+   <p className="personaQuickPrivacy">Исходные файлы остаются у тебя в локальном Worker. По нажатию «Сделать всё» кадры через каждые 0,5 секунды отправляются в OpenRouter Vision для поиска выразительных моментов. Если локальный Whisper настроен и распознаёт речь, текст фраз также может отправляться в OpenRouter для оценки драматургии. Полный ролик и аудиофайл в облако не передаются. Анализ длинных видео может потребовать много запросов и оплачиваемых токенов. Посторонний B-roll не загружается.</p>
    <button type="submit" className="personaQuickGo" disabled={submitting||files.length===0||prompt.trim().length<3}>
     {submitting?'Загружаю файлы…':'Сделать всё'} <span aria-hidden="true">✦</span>
    </button>
