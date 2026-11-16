@@ -57,7 +57,7 @@ test('Node 22 Worker reads ignored .env.local and enables only OpenRouter for re
   assert.ok(created?.id);
  });
 });
-test('Without an OpenRouter key, no fake local-Vision or OpenAI-only substitute is accepted',{timeout:65000},async()=>{
+test('Without OpenRouter, the local job starts but Vision remains disabled (even with an OpenAI-only key)',{timeout:65000},async()=>{
  for(const dotenv of [null,'OPENAI_API_KEY=fixture-openai-only-not-valid\n']){
   await withWorker({dotenv},async(base)=>{
    const health=await(await fetch(base+'/health')).json();
@@ -65,9 +65,14 @@ test('Without an OpenRouter key, no fake local-Vision or OpenAI-only substitute 
    const request=await fetch(base+'/quick-render',{method:'POST',
     headers:{'X-Persona-Worker-Token':health.token,'Content-Type':'application/json'},
     body:JSON.stringify({prompt:'Сделай красиво',files:[{kind:'video',name:'original.mp4',size:4096}],consent:true})});
-   assert.equal(request.status,400);
-   const rejection=await request.json();
-   assert.ok(/OpenRouter|API key/.test(rejection.error));
+   assert.equal(request.status,201,'local offline draft intake must not require Vision');
+   const created=await request.json();
+   assert.ok(created.id);
+   assert.equal(created.state,'uploading');
+   const projects=await fetch(base+'/quick-render',{headers:{'X-Persona-Worker-Token':health.token}});
+   assert.equal(projects.status,200);
+   const listed=await projects.json();
+   assert.equal(listed.jobs[0].id,created.id);
   });
  }
 });
