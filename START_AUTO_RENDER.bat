@@ -14,6 +14,85 @@ function Is-PersonaRepo([string]$folder){
     return (Test-Path -LiteralPath (Join-Path $folder 'package.json') -PathType Leaf) -and
       (Test-Path -LiteralPath (Join-Path $folder 'tools\persona-media-worker.mjs') -PathType Leaf)
 }
+
+# Git runs hidden and with bounded time; never reset, stash, force-pull or overwrite user edits.
+function Invoke-PersonaGit {
+    param([string]$Repository,[string[]]$GitArgs,[string]$LogDirectory)
+    $git=Get-Command git.exe -ErrorAction SilentlyContinue
+    if(-not $git){throw 'Не найден Git. Для автоматического обновления Life OS установи Git for Windows.'}
+    if($Repository.Contains('"')){throw 'Недопустимый символ в пути к проекту.'}
+    $oldPrompt=$env:GIT_TERMINAL_PROMPT
+    $oldInteractive=$env:GCM_INTERACTIVE
+    $process=New-Object Diagnostics.Process
+    try {
+        $env:GIT_TERMINAL_PROMPT='0'
+        $env:GCM_INTERACTIVE='never'
+        $info=New-Object Diagnostics.ProcessStartInfo
+        $info.FileName=$git.Source
+        $info.Arguments='-C "'+$Repository+'" '+($GitArgs -join ' ')
+        $info.WorkingDirectory=$Repository
+        $info.UseShellExecute=$false
+        $info.CreateNoWindow=$true
+        $info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+        $info.RedirectStandardOutput=$true
+        $info.RedirectStandardError=$true
+        $process.StartInfo=$info
+        if(-not $process.Start()){throw 'Не удалось запустить Git.'}
+        # Concurrently drain both streams to avoid pipe-buffer deadlocks.
+        $standard=$process.StandardOutput.ReadToEndAsync()
+        $errors=$process.StandardError.ReadToEndAsync()
+        if(-not $process.WaitForExit(60000)){
+            try{$process.Kill()}catch{}
+            [void]$process.WaitForExit(2000)
+            throw 'Git не ответил за 60 секунд. Проверь интернет.'
+        }
+        $answer=$standard.GetAwaiter().GetResult()
+        [void]$errors.GetAwaiter().GetResult()
+        if($process.ExitCode -ne 0){
+            throw ('Git '+$GitArgs[0]+' завершился с ошибкой ('+$process.ExitCode+'). Обновление остановлено, локальные данные сохранены.')
+        }
+        return $answer.Trim()
+    }finally{
+        $env:GIT_TERMINAL_PROMPT=$oldPrompt
+        $env:GCM_INTERACTIVE=$oldInteractive
+        $process.Dispose()
+    }
+}
+function Test-PersonaPort([int]$Port) {
+    $socket=New-Object Net.Sockets.TcpClient
+    try{$connected=$socket.ConnectAsync('127.0.0.1',$Port);return ($connected.Wait(400) -and $socket.Connected)}
+    catch{return $false}
+    finally{$socket.Dispose()}
+}
+function Update-PersonaRepo {
+    param([string]$RepoRoot,[string]$LogDirectory)
+    if(-not(Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))){
+        throw 'Эта папка Life OS не является Git-копией. Для автообновления нужна копия репозитория с папкой .git.'
+    }
+    if((Test-PersonaPort 47832) -or (Test-PersonaPort 5173)){
+        throw 'Persona уже запущена. Закрой прежнее окно Persona перед обновлением.'
+    }
+    $top=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','--show-toplevel') -LogDirectory $LogDirectory
+    if([IO.Path]::GetFullPath($top).TrimEnd('\','/') -ine [IO.Path]::GetFullPath($RepoRoot).TrimEnd('\','/')){
+        throw 'Папка Life OS не совпадает с корнем Git-репозитория.'
+    }
+    $branch=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('branch','--show-current') -LogDirectory $LogDirectory
+    if($branch -cne 'main'){throw 'Автообновление разрешено только в ветке main. Текущая ветка не меняется.'}
+    $trackedKey=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('ls-files','--','.env.local') -LogDirectory $LogDirectory
+    if($trackedKey){throw 'Файл .env.local не должен находиться под контролем Git. Обновление остановлено.'}
+    $dirty=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('status','--porcelain','--untracked-files=no') -LogDirectory $LogDirectory
+    if($dirty){throw 'В Life OS есть несохранённые изменения. Они сохранены: автоматическое обновление не выполнялось.'}
+    $before=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','HEAD') -LogDirectory $LogDirectory
+    # Fast-forward only: diverging histories never overwrite local work.
+    [void](Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('pull','--ff-only','--no-rebase','origin','main') -LogDirectory $LogDirectory)
+    $after=Invoke-PersonaGit -Repository $RepoRoot -GitArgs @('rev-parse','HEAD') -LogDirectory $LogDirectory
+    $line=if($before -eq $after){'UP_TO_DATE'}else{'UPDATED'}
+    $receipt=$line+'  '+[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')+'  '+$before.Substring(0,10)+' -> '+$after.Substring(0,10)
+    [IO.File]::WriteAllText((Join-Path $LogDirectory 'last-update.txt'),$receipt+[Environment]::NewLine,(New-Object Text.UTF8Encoding($false)))
+    # .env.local is ignored and never read or sent to Git by this updater.
+    return $line
+}
+
 try {
     $folder=[IO.Path]::GetDirectoryName($env:PERSONA_LAUNCHER_FILE)
     $settings=Join-Path $env:LOCALAPPDATA 'LifeOS\Persona\launcher'
@@ -54,11 +133,37 @@ try {
     }
     [void][IO.Directory]::CreateDirectory($settings)
     [IO.File]::WriteAllText($saved,$root,(New-Object Text.UTF8Encoding($false)))
-    # Standalone BAT: its own trusted embedded supervisor works from Desktop without extra files.
-    $text=[IO.File]::ReadAllText($env:PERSONA_LAUNCHER_FILE,[Text.Encoding]::UTF8)
+    # Update before starting Node; fail closed if git cannot safely reach main.
+    Add-Type -AssemblyName System.Drawing
+    $splash=New-Object Windows.Forms.Form
+    $splash.Text='Persona — обновление'
+    $splash.StartPosition='CenterScreen'
+    $splash.FormBorderStyle='FixedDialog'
+    $splash.ControlBox=$false
+    $splash.ClientSize=New-Object Drawing.Size(385,95)
+    $splash.Font=New-Object Drawing.Font('Segoe UI',10)
+    $message=New-Object Windows.Forms.Label
+    $message.Text='Проверяю обновления Life OS...'
+    $message.AutoSize=$false
+    $message.Location=New-Object Drawing.Point(18,29)
+    $message.Size=New-Object Drawing.Size(355,40)
+    $splash.Controls.Add($message)
+    try{
+        $splash.Show()
+        $splash.Refresh()
+        [Windows.Forms.Application]::DoEvents()
+        [void](Update-PersonaRepo -RepoRoot $root -LogDirectory $settings)
+    }finally{$splash.Close();$splash.Dispose()}
+
+    # Use the freshly pulled supervisor even from an older Desktop BAT.
+    $current=Join-Path $root 'START_AUTO_RENDER.bat'
+    if(-not(Test-Path -LiteralPath $current -PathType Leaf)){
+        throw 'Обновлённый START_AUTO_RENDER.bat не найден в корне Life OS.'
+    }
+    $text=[IO.File]::ReadAllText($current,[Text.Encoding]::UTF8)
     $boundary='#--PERSONA_SUPERVISOR--'
     $start=$text.LastIndexOf($boundary)
-    if($start -lt 0){throw 'Launcher supervisor is missing from the downloaded BAT'}
+    if($start -lt 0){throw 'В обновлённой версии отсутствует supervisor Persona'}
     $payload=$text.Substring($start+$boundary.Length).TrimStart([char[]]@(13,10,65279))
     $temporary=Join-Path $settings ('supervisor-'+[Guid]::NewGuid().ToString('N')+'.ps1')
     try{
@@ -149,6 +254,26 @@ function Url-Ready([string]$Address,[string]$Service){
   finally{$response.Dispose()}
  }catch{return $false}
 }
+
+# Check only presence, never log or expose the key. Actual provider checks are in Worker.
+function Has-OpenRouterKey {
+ if(-not [string]::IsNullOrWhiteSpace($env:OPENROUTER_API_KEY)){return $true}
+ $dotenv=Join-Path $RepoRoot '.env.local'
+ if(-not(Test-Path -LiteralPath $dotenv -PathType Leaf)){return $false}
+ foreach($line in [IO.File]::ReadAllLines($dotenv,[Text.Encoding]::UTF8)){
+  if($line -match '^\s*OPENROUTER_API_KEY\s*=\s*(.*?)\s*$'){
+   $value=$Matches[1].Trim().Trim('"',"'")
+   return $value.Length -gt 4 -and -not $value.StartsWith('#')
+  }
+ }
+ return $false
+}
+function Lock-Hash {
+ $lock=Join-Path $RepoRoot 'package-lock.json'
+ if(-not(Test-Path -LiteralPath $lock -PathType Leaf)){throw 'Не найден package-lock.json. Невозможно безопасно установить зависимости.'}
+ return (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash
+}
+
 if($SelfTest){
  $dir=Join-Path $env:TEMP ('persona-launcher-test-'+[Guid]::NewGuid().ToString('N'));[void](New-Item -Path $dir -ItemType Directory)
  $job=$null
@@ -173,6 +298,8 @@ Add-Type -AssemblyName System.Drawing
 $session=Join-Path $env:LOCALAPPDATA ('LifeOS\Persona\launcher\session-'+[Guid]::NewGuid().ToString('N'))
 [void](New-Item -Path $session -ItemType Directory -Force)
 $workerLog=Join-Path $session 'worker.log';$webLog=Join-Path $session 'web.log';$installLog=Join-Path $session 'install.log'
+$installStamp=Join-Path (Split-Path $session -Parent) 'installed-package-lock-sha256.txt'
+$installSucceeded=Join-Path $session 'install-succeeded.txt'
 $form=New-Object Windows.Forms.Form
 $form.Text='Persona — быстрый автомонтаж';$form.StartPosition='CenterScreen';$form.ClientSize=New-Object Drawing.Size(460,200)
 $form.FormBorderStyle='FixedDialog';$form.MaximizeBox=$false;$form.BackColor=[Drawing.Color]::FromArgb(247,244,238)
@@ -188,7 +315,7 @@ $stop=New-Object Windows.Forms.Button
 $stop.Text='Завершить работу';$stop.Location=New-Object Drawing.Point(190,132);$stop.Size=New-Object Drawing.Size(150,40);$form.Controls.Add($stop)
 $logs=New-Object Windows.Forms.Button
 $logs.Text='Журнал';$logs.Location=New-Object Drawing.Point(350,132);$logs.Size=New-Object Drawing.Size(90,40);$form.Controls.Add($logs)
-$state=@{phase='init';job=$null;workerId=0;webId=0;installId=0;began=[DateTime]::MinValue;browser=$false}
+$state=@{phase='init';job=$null;workerId=0;webId=0;installId=0;began=[DateTime]::MinValue;browser=$false;lockHash=''}
 function Fail-Launch([string]$Message){
  $state.phase='failed';$status.Text=$Message+[Environment]::NewLine+'Подробности — в журнале.';$open.Enabled=$false
  if($state.job){$state.job.Dispose();$state.job=$null}
@@ -207,7 +334,11 @@ $timer.Add_Tick({
  try{
   if($state.phase -eq 'install'){
    if(Is-Alive $state.installId){return}
-   if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){throw 'Не удалось установить зависимости. Открой журнал.'}
+   if(-not(Test-Path -LiteralPath $installSucceeded -PathType Leaf) -or
+      -not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){
+    throw 'Не удалось установить зависимости. Открой журнал.'
+   }
+   [IO.File]::WriteAllText($installStamp,$state.lockHash,(New-Object Text.UTF8Encoding($false)))
    Start-Services;return
   }
   if($state.phase -ne 'waiting' -and $state.phase -ne 'running'){return}
@@ -228,10 +359,14 @@ $form.Add_Shown({
   if(-not(Get-Command node.exe -ErrorAction SilentlyContinue) -or -not(Get-Command npm.cmd -ErrorAction SilentlyContinue)){throw 'Не найден Node.js 22+ (вместе с npm).'}
   $ver=(& node -p 'process.versions.node' 2>$null);if(([Version]$ver).Major -lt 22){throw 'Для Persona нужен Node.js 22 или новее.'}
   if((Port-Busy 47832) -or (Port-Busy 5173)){throw 'Persona уже запущена или порты заняты.'}
+  if(-not(Has-OpenRouterKey)){throw 'Нужен OPENROUTER_API_KEY в файле .env.local (корень Life OS). Без него Vision не запускается.'}
+  $state.lockHash=Lock-Hash
   $state.job=New-Object PersonaLauncher.OwnedProcesses
-  if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js'))){
-   $status.Text='Первый запуск: устанавливаю зависимости автоматически...'
-   $wrapper=Join-Path $session 'install.cmd';Write-Wrapper $wrapper 'call npm ci --no-audit --no-fund' $installLog
+  $installed=if(Test-Path -LiteralPath $installStamp){[IO.File]::ReadAllText($installStamp).Trim()}else{''}
+  if(-not(Test-Path (Join-Path $RepoRoot 'node_modules\vite\bin\vite.js')) -or $installed -ne $state.lockHash){
+   $status.Text='Проверяю зависимости после обновления...'
+   $wrapper=Join-Path $session 'install.cmd'
+   Write-Wrapper $wrapper ('call npm ci --no-audit --no-fund && echo READY>"'+$installSucceeded+'"') $installLog
    $state.installId=$state.job.Start($wrapper,$RepoRoot);$state.phase='install'
   }else{Start-Services}
   $timer.Start()

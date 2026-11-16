@@ -5,6 +5,8 @@ on:
     paths:
       - "START_AUTO_RENDER.bat"
       - "tools/persona-launcher-supervisor.ps1"
+      - "tools/persona-launcher-update.test.ps1"
+      - "tools/persona-launcher-vision-env.test.mjs"
       - ".github/workflows/persona-desktop-launcher.yml"
   workflow_dispatch:
 
@@ -44,6 +46,15 @@ jobs:
           if(-not $text.Contains('WindowStyle Hidden')) {throw 'Launcher is not hidden'}
           if(-not $text.Contains('FolderBrowserDialog')) {throw 'First-run repo discovery missing'}
           Write-Host 'PASS: desktop BAT syntax and project locator'
+      - name: Verify real Git fast-forward, ignored secrets and refusal on dirty/offline feature branches
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & .\tools\persona-launcher-update.test.ps1
+      - name: Verify actual Node Worker dotenv startup and OpenRouter Vision provider
+        shell: pwsh
+        run: |
+          node --test tools/persona-launcher-vision-env.test.mjs tools/persona-smart-moments.test.mjs
       - name: Validate WinForms window types in Windows PowerShell 5.1
         shell: powershell
         run: |

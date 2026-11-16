@@ -45,7 +45,7 @@ export function parseWorkerArgs(args){
  const unknown=args.filter((item,i)=>item.startsWith('--')&&!['--port','--output-root','--ffmpeg-dir','--whisper-cli','--whisper-model','--ollama-model'].includes(item)&&!(i&&args[i-1].startsWith('--')));if(unknown.length)fail('unknown argument '+unknown[0]);
  const port=Number(value('--port',false)||process.env.PERSONA_MEDIA_WORKER_PORT||47832);
  if(!Number.isInteger(port)||(port!==0&&(port<1024||port>65535)))fail('invalid port');
- return {port,outputRoot:resolve(value('--output-root')||process.env.PERSONA_MEDIA_OUTPUT_ROOT||join(tmpdir(),'persona-ai-media-results')),
+ return {port,outputRoot:resolve(value('--output-root',false)||process.env.PERSONA_MEDIA_OUTPUT_ROOT||join(tmpdir(),'persona-ai-media-results')),
   ffmpegDir:value('--ffmpeg-dir',false)||process.env.PERSONA_MEDIA_FFMPEG_DIR,
   musicOriginPort:Number(process.env.PERSONA_MUSIC_ORIGIN_PORT),
   musicLut:personaMediaPaths().humbleLut,

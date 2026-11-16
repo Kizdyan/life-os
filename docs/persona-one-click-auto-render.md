@@ -32,6 +32,19 @@ The server automatically:
 8. Applies optional on-screen title overlays with the existing vetted `tools/persona-subtitle-burn.mjs` and licensed/configured font. These overlays are **not transcript captions**; dialogue subtitles would require actual ASR/manual review.
 9. Validates the final media stream, source hashes, MP4 hash and output manifest. Transitions the `ProductionJob` to `AWAITING_APPROVAL`, then enables the Dashboard download. Source media are never modified and no publication action happens.
 
+## Windows: double-click launch and safe auto-update
+
+Copy **`START_AUTO_RENDER.bat` from the latest `main` once to the Desktop**. This replaces any earlier Desktop BAT without auto-update support. Double-click it thereafter — no terminal commands are needed.
+
+1. The standalone BAT finds the existing Life OS repository, or asks for its location on first use.
+2. Before launching Node, it checks that no Persona services are running, that the checkout is on `main`, and that tracked files have no local edits. It runs `git pull --ff-only --no-rebase origin main` silently with a 60-second time limit. **It never uses reset, stash, force or checkout.** Offline, divergent or dirty checkouts stop with a message rather than silently launching stale code or overwriting files.
+3. After successful update, the Desktop bootstrap loads the **newest embedded supervisor from the freshly updated repository BAT**, so the Desktop copy need not be replaced every time `main` changes. The ignored `.env.local` is untouched by Git. A simple update receipt is written to `%LOCALAPPDATA%\LifeOS\Persona\launcher\last-update.txt`.
+4. The launcher checks for a local `OPENROUTER_API_KEY` from `.env.local` (or an already configured OS environment variable). It never prints or uploads that key. Node 22+ Worker then loads `.env.local` from the project root, and production Smart Moment Detection requires **real OpenRouter Vision**; no OpenCV replacement or OpenAI-only fallback. A key's mere presence doesn't prove it is valid — the OpenRouter service validates it on actual requests.
+5. If the `package-lock.json` SHA-256 differs from the most recently installed dependencies, the launcher automatically runs `npm ci` in its hidden process group, and only proceeds if it succeeds. It launches Media Worker and Vite, checks availability after at least 5 seconds, then opens the browser.
+6. Keep the small Persona window open while using the app. Close it or click **Завершить работу** to stop the owned background process tree. Closing only the browser tab does not shut down local servers.
+
+**Prerequisites:** a real Git checkout of `Kizdyan/life-os` on `main`, Git for Windows, Node.js 22+, FFmpeg/FFprobe, and `OPENROUTER_API_KEY` in an ignored root `.env.local`. Optional Whisper uses `PERSONA_MEDIA_WHISPER_CLI` and `PERSONA_MEDIA_WHISPER_MODEL`. If updates or prerequisites fail, the launcher displays the reason instead of starting the old application.
+
 ## Starting locally
 
 From the Life OS repo root on the user's Windows PC, keep `.env.local` ignored and protected:
