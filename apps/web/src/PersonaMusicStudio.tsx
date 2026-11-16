@@ -117,6 +117,7 @@ export default function PersonaMusicStudio() {
      onChange={event => {setCaptionStyle(event.currentTarget.value); setResult(null); setError('');}}>
      <option value="cinematic">Cinematic (Cormorant)</option>
      <option value="dynamic-interview">Dynamic Interview (Montserrat)</option>
+     <option value="signature-gold">Signature Gold · Quiet Luxury v1.0</option>
     </select>
    </label>
    <div className="musicActions">

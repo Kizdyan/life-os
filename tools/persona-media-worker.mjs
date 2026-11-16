@@ -118,6 +118,7 @@ function runProcess(s,config){
  const args=[join(here,'persona-ai-reel.mjs'),'--takes',s.sourceManifest??s.input,'--brief',s.briefPath,'--out',s.output,'--whisper-cli',config.whisperCli,'--whisper-model',config.whisperModel,'--ollama-model',s.model,'--variation',s.variation];
  if(config.ffmpegDir)args.push('--ffmpeg-dir',config.ffmpegDir);
  if(s.burnSubtitles)args.push('--burn-subtitles','true');
+ if(s.burnSubtitles&&s.subtitlePreset)args.push('--subtitle-preset',s.subtitlePreset);
  if(s.visualPreset)args.push('--visual-preset',s.visualPreset);
  if(s.takeBindingsPath)args.push('--take-bindings',s.takeBindingsPath);
  s.child=spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],
@@ -511,6 +512,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    }
    if(req.method==='POST'&&url.pathname==='/session'){
     const body=await json(req);if((body?.masterAsset!==undefined&&typeof body.masterAsset!=='boolean')||!validBrief(body?.brief)||!variations.has(body?.variation)||!modelName.test(body?.model||config.ollamaModel)||(body.burnSubtitles!==undefined&&typeof body.burnSubtitles!=='boolean'))fail('invalid approved Reel brief, variation, subtitle option or local model');
+    const subtitleStyle=subtitlePreset(body.subtitlePreset);
     if(body.brief.manualSource){validateManualSource(body.brief.manualSource,body.brief.script);if(createHash('sha256').update(body.brief.manualSource.sourceText).digest('hex')!==body.brief.manualSource.sourceSha256)fail('Manual source SHA mismatch');if(body.directionMode!=='manual')fail('Авторский сценарий не допускает автоматической творческой режиссуры');}
     const takeBindings=body.takeBindings===undefined?null:readTakeBindings(body.brief,body.takeBindings);
     if(takeBindings&&body.masterAsset)fail('Per-shot types require separate files');
@@ -530,7 +532,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     // directory. The approved brief is worker-owned staging input instead.
     const briefPath=join(input,'approved-production-brief.json');await writeFile(briefPath,JSON.stringify(body.brief,null,2)+'\n',{flag:'wx'});
     if(direction)await writeFile(join(input,'AI-DIRECTOR.json'),JSON.stringify(direction,null,2)+'\n',{flag:'wx'});
-    const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
+    const s={id,input,output,takeBindings,brief:body.brief,briefPath,direction,visualPreset:direction?.selected_preset??null,variation:direction?getVisualPreset(direction.selected_preset).editorialVariation:body.variation,model:body.model||config.ollamaModel,burnSubtitles:body.burnSubtitles===true,subtitlePreset:subtitleStyle,masterAsset:body.masterAsset===true,expected:Number(body.takeCount),uploaded:new Set(),total:0,state:'uploading',stage:'intake',files:new Set(),child:null,cancelled:false,error:null};
     if(!Number.isInteger(s.expected)||s.expected<(s.masterAsset?1:2)||s.expected>12||s.masterAsset&&s.expected!==1)fail('choose 2–12 explicitly named takes');sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
    const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}

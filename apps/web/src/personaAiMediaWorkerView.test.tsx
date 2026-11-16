@@ -9,7 +9,13 @@ it('offers explicit burned-in captions on new renders without claiming old video
  const html=renderToString(<PersonaAiMediaWorker projectId="test" pipeline={importPersonaProductionBrief({brief:fixture})} hasUnsavedDraft={false} record={null} onSave={()=>false}/>);
  expect(html).toContain('Вшить субтитры в MP4');
  expect(html).toMatch(/aria-label="Вшить субтитры в MP4"[^>]*checked=""/);
- expect(html).toContain('Cormorant Garamond Light');
+ expect(html).toContain('Стиль субтитров');
+ expect(html).toContain('Cinematic (Cormorant)');
+ expect(html).toContain('Dynamic Interview (Montserrat)');
+ expect(html).toContain('Signature Gold · Quiet Luxury v1.0');
+ expect(html).toContain('value="cinematic"');
+ expect(html).toContain('value="dynamic-interview"');
+ expect(html).toContain('value="signature-gold"');
  expect(html).toMatch(/aria-label="Авто-режиссура \(ИИ\)"[^>]*checked=""/);
  expect(html).not.toContain('aria-label="Ручной визуальный пресет"');
  expect(html).toContain('Повторить анализ Qwen');
