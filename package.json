@@ -19,6 +19,7 @@
     "media:worker": "node tools/persona-media-worker.mjs",
     "persona:preflight": "node tools/persona-preflight.mjs",
     "persona:batch:test": "node --test tools/persona-orchestrator.test.mjs",
+    "persona:demo:seed": "node tools/seed-persona-demo.mjs",
     "persona:check": "npm run persona:preflight && npm run media:test && npm run web:build",
     "media:verify": "node tools/persona-verify-render.mjs",
     "media:verify:test": "node --test tools/persona-verify-render.test.mjs",

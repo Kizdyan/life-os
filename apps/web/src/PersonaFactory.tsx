@@ -1,5 +1,6 @@
 import {PersonaManualScript} from './PersonaManualScript';
 import React from 'react';
+import {ensurePersonaDemoProject,PERSONA_DEMO_LINK_HASH} from './personaDemoProject';
 import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
@@ -249,6 +250,7 @@ export default function PersonaFactory(){
  const[guideGuardMessage,setGuideGuardMessage]=useState('');
  const[projects,setProjects]=useState<PersonaProject[]>(()=>projectBootstrap.current?.projects??[]);const[activeProjectId,setActiveProjectId]=useState<string|null>(()=>projectBootstrap.current?.activeProjectId??null);const[timeline,setTimeline]=useState<PersonaTimelineSettings|null>(()=>initialProject?.timeline as PersonaTimelineSettings|null??null);
  const[screen,setScreen]=useState<PersonaScreen>(screenFromHash);
+ const[demoNotice,setDemoNotice]=useState('');
  const[workspaceStep,setWorkspaceStep]=useState<WorkspaceStep>(()=>workspaceStepFrom(initialProject?.lastOpenStep,initialProject?.contentType));
  const[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
  const[scenarioWorkspace,setScenarioWorkspace]=useState<ScenarioWorkspace|undefined>(()=>initialProject?.scenarioWorkspace);
@@ -277,6 +279,26 @@ export default function PersonaFactory(){
   }
   setScreen(screenFromHash());
  };window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[activeProjectId]);
+ useEffect(()=>{
+  const importDemoFromLink=()=>{
+   if(window.location.hash!==PERSONA_DEMO_LINK_HASH)return;
+   try{
+    const result=ensurePersonaDemoProject(localStorage);
+    setProjects(result.collection.projects);
+    setDemoNotice(result.created
+     ?'Демо-проект создан на этом устройстве. 3 сцены, 3 кадра, видео не требуется.'
+     :'Демо-проект уже существует. Твои изменения сохранены.');
+    // Replace the action hash so that reloads show the project list without reseeding.
+    window.history.replaceState(null,'',window.location.pathname+window.location.search+'#persona/projects');
+    setScreen('projects');
+   }catch(error){
+    setDemoNotice('Не удалось создать демо-проект: '+String((error as Error).message||error));
+   }
+  };
+  importDemoFromLink();
+  window.addEventListener('hashchange',importDemoFromLink);
+  return()=>window.removeEventListener('hashchange',importDemoFromLink);
+ },[]);
  function saveActiveProject(nextScenarioWorkspace?:ScenarioWorkspace,ideaForSave:Idea|null=chosen,importedProduction?:PersonaProductionPipeline,milestone?:ProductionMilestone,localRenderOverride?:PersonaLocalRenderRecord,colorComparisonOverride?:PersonaColorComparisonRecord,aiMediaOverride?:PersonaAiMediaJob,commercialOverride?:PersonaCommercialDevelopment){
   if(!activeProjectId||!ideaForSave)return;
   try{
@@ -721,6 +743,7 @@ export default function PersonaFactory(){
   {projects.length?<div className="personaCreativeGrid">{projects.slice(0,4).map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
    <div className="personaCreativeBlank"><span aria-hidden="true">✦</span><h3>Первая история ждёт тебя</h3><p>Начни с идеи или подготовь сценарий без съёмок.</p><button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
   <div className="personaCreativeSectionHead personaCreativeToolsHead"><div><small>02 / ВОЗМОЖНОСТИ</small><h3>Свобода творчества</h3></div></div>
+  <div className="personaDemoEntry"><div><strong>Хочешь протестировать Persona без съёмок?</strong><span>Три готовые тестовые сцены, Shot List и аниматик — без настоящего MP4.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_DEMO_LINK_HASH}}>Открыть демо-проект ↗</button></div>
   <div className="personaCreativeTools">
    <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот · раскадровка</small></button>
    <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong><small>Портреты и визуальный образ</small></button>
@@ -730,6 +753,7 @@ export default function PersonaFactory(){
  </section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList personaCreativeStudio">
   <header className="personaCreativeListHead"><button className="backButton" onClick={()=>navigate('home')}>← Мастерская</button><small>PERSONA / АРХИВ ПРОЕКТОВ</small><h2>Мои проекты</h2><p>{projects.length?'Продолжай с того места, где остановился.':'Все твои будущие истории будут здесь.'}</p><button className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button></header>
+  {demoNotice&&<p role="status" className="personaDemoNotice">{demoNotice}</p>}
   {projects.length?<div className="personaCreativeGrid">{projects.map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
    <div className="personaCreativeBlank"><h3>Пока нет проектов</h3><p>Открой новую историю, когда будешь готов.</p></div>}
  </section>;

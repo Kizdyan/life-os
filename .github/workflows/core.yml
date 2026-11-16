@@ -59,6 +59,8 @@ jobs:
           PERSONA_PYTHON=python node --test tools/persona-intercut-planner.test.mjs tools/persona-p3-adapter.test.mjs tools/persona-p3-production.test.mjs
       - name: ProductionJob persistence and restart regression tests
         run: node --test tools/persona-production-recovery.test.mjs
+      - name: Persona demo project seeding and persistence regression
+        run: node --test tools/seed-persona-demo.test.mjs
       - name: Persona calendar and distribution regression tests
         run: |
           set -o pipefail
