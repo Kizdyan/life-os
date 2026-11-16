@@ -148,7 +148,9 @@ export function createPersonaQuickRenderService(config={}){
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   moments:job.moments??[],
-  notice:job.state==='completed'?'MP4 создан и технически проверен. Проверьте содержание перед публикацией.':null});
+  notice:job.state==='completed'?(job.result?.visionAvailable===false?
+   'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.':
+   'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
   if(!body||typeof body.prompt!=='string'||body.prompt.trim().length<3||body.prompt.length>600||
@@ -207,9 +209,6 @@ export function createPersonaQuickRenderService(config={}){
   const production=new ProductionJob(dir);
   try{
    const vids=job.files.filter(f=>f.kind==='video');
-   const first=vids[0];
-   await production.transition('ANALYZING',{reason:'Real user video staged',asset:{
-    name:first.name,sha256:first.sha256,durationSec:first.media.durationSec}});
    job.stage='Проверка идеи';await save(job);
    const payload={title:job.title,sourceIdea:job.prompt,strategy:defaultPersonaStrategy(),
     scenes:vids.map(f=>({line:'',action:'Загруженный оригинал '+f.originalName,durationSec:f.media.durationSec}))};
@@ -378,7 +377,7 @@ export function createPersonaQuickRenderService(config={}){
    await production.transition('AWAITING_APPROVAL',{reason:'Verified MP4, awaiting human review'});
    job.state='completed';job.stage='Готово';job.videoName=basename(video);job.sha256=outputHash;
    job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    strategyStatus:audit.status,stylePack:plan.stylePack};job.updatedAt=new Date().toISOString();
+    strategyStatus:audit.status,stylePack:plan.stylePack,visionAvailable:provenance.kind!=='offline-fallback'};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';
@@ -393,6 +392,10 @@ export function createPersonaQuickRenderService(config={}){
   if(!job||job.state!=='uploading'||job.uploads.length!==job.files.length)
    throw Error('All files must finish uploading before auto-render');
   if(active!==null)throw Error('The local worker is already rendering another job');
+  // Commit the authoritative state before acknowledging /run.
+  const first=job.files.find(f=>f.kind==='video');
+  await new ProductionJob(directory(id)).transition('ANALYZING',{reason:'Verified video staged for rendering',
+   asset:{name:first.name,sha256:first.sha256,durationSec:first.media.durationSec}});
   active=id;job.state='running';job.stage='Начинаю обработку';await save(job);
   void execute(job);return view(job);
  }
