@@ -57,10 +57,11 @@ jobs:
         run: |
           python -m unittest discover -s tools -p 'test_p3_modules.py' -v
           PERSONA_PYTHON=python node --test tools/persona-intercut-planner.test.mjs tools/persona-p3-adapter.test.mjs tools/persona-p3-production.test.mjs
-      - name: Seven-element strategy validation and mocked LLM contract
+      - name: Seven-element strategy, lighting planner, and writing voice contracts
         run: |
-          node --test tools/persona-strategy.test.mjs
+          node --test tools/persona-strategy.test.mjs tools/persona-lighting.test.mjs
           python -m unittest discover -s tools -p 'test_strategy_analyzer.py' -v
+          python -m unittest discover -s tools -p 'test_lighting_planner.py' -v
       - name: ProductionJob persistence and restart regression tests
         run: node --test tools/persona-production-recovery.test.mjs
       - name: Persona demo project seeding and persistence regression
