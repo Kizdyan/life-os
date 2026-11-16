@@ -29,6 +29,16 @@ test('director whitelist renders distinct pixels while preserving geometry, orig
  assert.deepEqual(await readFile(input),original);
 }));
 
+test('grading uses a short scratch path even when the production directory is deeply nested',
+ {skip:!available,timeout:120000},()=>withTemp(async root=>{
+  const input=join(root,'source.mp4'),deep=join(root,'p'.repeat(Math.max(1,244-root.length-1)));
+  const outputPath=join(deep,'grade.mp4');
+  makeSample(input);
+  const result=await renderVisualPreset({inputPath:input,outputPath,presetId:'Cinematic'});
+  assert.equal(result.output.path,outputPath);
+  assert.equal(decodedAudioHash(outputPath),decodedAudioHash(input));
+ }));
+
 async function withTemp(run){
  const root=await mkdtemp(join(tmpdir(),'persona-color-variants-'));
  try{return await run(root)}finally{await rm(root,{recursive:true,force:true})}

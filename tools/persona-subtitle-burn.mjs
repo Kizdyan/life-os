@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {createReadStream,constants} from 'node:fs';
 import {readFile,writeFile,stat,mkdtemp,mkdir,copyFile,rm,access,realpath} from 'node:fs/promises';
 import {resolve,dirname,join,isAbsolute,relative,basename} from 'node:path';
+import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {cachedFfprobe} from './persona-stage-cache.mjs';
 
@@ -189,7 +190,7 @@ export async function burnPersonaSubtitles({videoPath,reviewPath,outputPath,ffmp
  const captions=buildSubtitleAss({cues:sourceReview.cues,width:video.width,height:video.height,reference:reference.style,preset});
  if(captions.cues.at(-1).endMs>Number(info.format.duration)*1000+30)fail('Captions exceed video duration');
  const sourceSha256=await hash(input);await mkdir(dirname(output),{recursive:true});
- const temp=await mkdtemp(join(dirname(output),'.persona-subtitles-')),created=[];
+ const temp=await mkdtemp(join(tmpdir(),'persona-subtitles-')),created=[];
  try{
   await writeFile(join(temp,'captions.ass'),captions.ass,{flag:'wx'});
   await mkdir(join(temp,'fonts'));await copyFile(reference.fontPath,join(temp,'fonts',basename(reference.fontPath)));

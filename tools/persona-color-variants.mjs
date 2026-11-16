@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {createReadStream,constants as fsConstants} from 'node:fs';
 import {access,copyFile,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
+import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {getVisualPreset} from './persona-creative-director.mjs';
 import {PRODUCTION_LUT_MIX} from './persona-media-paths.mjs';
@@ -70,7 +71,7 @@ export async function renderVisualPreset({inputPath,outputPath,presetId,ffmpegDi
  if(input===output||!output.toLowerCase().endsWith('.mp4'))fail('Use a new output MP4');
  for(const path of [output,output+'.visual-preset.json'])await access(path).then(()=>fail('output already exists'),e=>{if(e.code!=='ENOENT')throw e});
  const before=await preflight(input,environment),sourceSha256=await sha(input);
- await mkdir(dirname(output),{recursive:true});const temp=await mkdtemp(join(dirname(output),'.persona-grade-'));let owned=false;
+ await mkdir(dirname(output),{recursive:true});const temp=await mkdtemp(join(tmpdir(),'persona-grade-'));let owned=false;
  try{
   const staged=join(temp,'grade.mp4');
   let lut;
