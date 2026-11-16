@@ -1,0 +1,20 @@
+{
+  "id": "signature-gold",
+  "displayName": "Quiet Luxury / Signature Subtitles v1.0",
+  "uiLabel": "Signature Gold",
+  "fontFamily": "Cormorant Garamond",
+  "fontStyle": "Light",
+  "fontSource": "existing-approved-bundled-cormorant-light",
+  "fontWeight": 500,
+  "fontSize1080": 87,
+  "letterWidthPercent": 106,
+  "color": "#8F6639",
+  "lowerThirdYRatio": 0.755,
+  "fadeInMs": 150,
+  "fadeOutMs": 330,
+  "outlinePx": 0,
+  "shadowPx": 0,
+  "backdrop": false,
+  "capitalization": "uppercase",
+  "timing": "respect-reviewed-cue-boundaries"
+}
