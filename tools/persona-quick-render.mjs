@@ -56,13 +56,13 @@ export function runBounded(command,args,{env=process.env,timeoutMs=60000,maxStdo
   child.on('close',code=>code===0?finish(null,Buffer.concat(out)):finish(Error('Media processor failed (code '+code+'): '+errorText.slice(-300))));
  });
 }
-async function probe(file,config,{audioOnly=false}={}){
+async function probe(file,config,{audioOnly=false,rendered=false}={}){
  const raw=await runBounded(mediaBin('ffprobe',config),['-v','error','-show_entries',
   'format=duration:stream=codec_type,width,height,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation',
   '-of','json',file],{env:workerEnv(config),timeoutMs:15000});
  let data;try{data=JSON.parse(raw.toString('utf8'))}catch{throw Error('FFprobe output invalid')}
  const durationSec=Number(data.format?.duration);
- if(!Number.isFinite(durationSec)||durationSec<(audioOnly?.2:8)||durationSec>1200)throw Error('Input duration must be '+(audioOnly?'0.2–1200':'8–1200')+' seconds');
+ if(!Number.isFinite(durationSec)||durationSec<(rendered?.25:audioOnly?.2:8)||durationSec>1200)throw Error('Video/audio duration outside permitted bounds');
  const video=data.streams?.find(x=>x.codec_type==='video');
  if(audioOnly){if(!data.streams?.some(x=>x.codec_type==='audio'))throw Error('Music file has no audio stream');return {durationSec}}
  if(!video||!Number.isInteger(video.width)||!Number.isInteger(video.height))throw Error('Video stream is missing');
@@ -251,7 +251,7 @@ export function createPersonaQuickRenderService(config={}){
     video=finished;
    }
    await verifyUploadedFiles(input,job.files);
-   const outputHash=await sha(video),details=await probe(video,config);
+   const outputHash=await sha(video),details=await probe(video,config,{rendered:true});
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
     publicationApproved:false,id,videoName:basename(video),sha256:outputHash,
     bytes:(await stat(video)).size,durationSec:details.durationSec,
