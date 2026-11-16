@@ -1,0 +1,68 @@
+name: Persona Desktop Launcher Windows QA
+
+on:
+  pull_request:
+    paths:
+      - "START_AUTO_RENDER.bat"
+      - "tools/persona-launcher-supervisor.ps1"
+      - ".github/workflows/persona-desktop-launcher.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-launcher:
+    name: native-process-tree-close-to-stop
+    runs-on: windows-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate BAT embedded bootstrap syntax and safe project discovery
+        shell: powershell
+        run: |
+          $text=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
+          if (-not $text.Contains('npm run media:worker') -or -not $text.Contains('npm run web:dev')) { throw 'Missing embedded worker/web launch commands' }
+          $marker='#--PERSONA_BOOTSTRAP--'
+          $embedMarker='#--PERSONA_SUPERVISOR--'
+          $index=$text.LastIndexOf($marker)
+          $end=$text.LastIndexOf($embedMarker)
+          if($index -lt 0 -or $end -le $index) {throw 'Missing BAT bootstrap or embedded supervisor'}
+          $tokens=$null; $parseErrors=$null
+          $bootstrap=$text.Substring($index+$marker.Length,$end-$index-$marker.Length)
+          [System.Management.Automation.Language.Parser]::ParseInput($bootstrap,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count) {throw "Batch bootstrap PowerShell syntax failed: $($parseErrors[0])"}
+          $embedded=$text.Substring($end+$embedMarker.Length).TrimStart([char[]]@(13,10)).Replace("&#10;",[Environment]::NewLine)
+          $tracked=[IO.File]::ReadAllText((Resolve-Path .\tools\persona-launcher-supervisor.ps1),[Text.Encoding]::UTF8)
+          $embeddedNormalized=$embedded.Replace([string][char]13+[char]10,[string][char]10).Trim()
+          $trackedNormalized=$tracked.Replace([string][char]13+[char]10,[string][char]10).Trim()
+          if($embeddedNormalized -ne $trackedNormalized) {throw 'Embedded BAT supervisor differs from tested source'}
+          [System.Management.Automation.Language.Parser]::ParseInput($tracked,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if($parseErrors.Count) {throw "Supervisor PowerShell syntax failed: $($parseErrors[0])"}
+          if(-not $text.Contains('WindowStyle Hidden')) {throw 'Launcher is not hidden'}
+          if(-not $text.Contains('FolderBrowserDialog')) {throw 'First-run repo discovery missing'}
+          Write-Host 'PASS: desktop BAT syntax and project locator'
+      - name: Validate WinForms window types in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $size=New-Object Drawing.Size(460,200)
+          if($size.Width -ne 460) {throw 'Native GUI sizing broken'}
+      - name: Launch hidden CMD/Node processes and verify closing kills both
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $bat=[IO.File]::ReadAllText((Resolve-Path .\START_AUTO_RENDER.bat),[Text.Encoding]::UTF8)
+          $marker='#--PERSONA_SUPERVISOR--'
+          $source=$bat.Substring($bat.LastIndexOf($marker)+$marker.Length).TrimStart([char[]]@(13,10,65279))
+          $tempScript=Join-Path $env:TEMP ('persona-launcher-embedded-'+[guid]::NewGuid().ToString('N')+'.ps1')
+          try {
+            [IO.File]::WriteAllText($tempScript,$source,(New-Object Text.UTF8Encoding($true)))
+            & $tempScript -RepoRoot $PWD.Path -SelfTest
+            if($LASTEXITCODE -ne 0) {throw 'Windows Job Object cleanup test failed'}
+          } finally {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+          }
