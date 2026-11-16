@@ -1,4 +1,5 @@
 import data from '../../../packages/core/src/persona-architect-ten-reels.json';
+import {strategyForArchitect} from '../../../packages/core/src/persona-strategy.mjs';
 import {parseArchitectTimedShots,validateArchitectIdeas} from '../../../packages/core/src/persona-architect-shot-parser.mjs';
 import {buildPersonaProductionBrief,type PersonaProductionBrief} from '../../../packages/core/src/persona-production-brief';
 import {importPersonaProductionBrief} from '../../../packages/core/src/persona-production-pipeline';
@@ -71,7 +72,7 @@ export function seedArchitectProjectsInBrowser(storage:PersonaProjectStorage,now
     throw Error('architect_scene_count_mismatch:'+item.id);
    const project=createPersonaProject({id:item.id,title:item.title,
     contentType:'reel',sourceIdea:item.hook,now});
-   return {...project,
+   return {...project,strategy:strategyForArchitect(item),
     // Browser-only stage mirrors the file-backed WAITING_FOR_FOOTAGE workflow;
     // it is not a live ProductionJob status read.
     stage:'needs_assets' as const,lastOpenStep:'script',
