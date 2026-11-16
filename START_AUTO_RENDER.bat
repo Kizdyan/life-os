@@ -59,10 +59,10 @@ try {
     $boundary='#--PERSONA_SUPERVISOR--'
     $start=$text.LastIndexOf($boundary)
     if($start -lt 0){throw 'Launcher supervisor is missing from the downloaded BAT'}
-    $payload=$text.Substring($start+$boundary.Length).TrimStart([char[]]@(13,10))
+    $payload=$text.Substring($start+$boundary.Length).TrimStart([char[]]@(13,10,65279))
     $temporary=Join-Path $settings ('supervisor-'+[Guid]::NewGuid().ToString('N')+'.ps1')
     try{
-        [IO.File]::WriteAllText($temporary,$payload,(New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($temporary,$payload,(New-Object Text.UTF8Encoding($true)))
         & $temporary -RepoRoot $root
     }finally{
         Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
