@@ -8,7 +8,7 @@ on:
       - ".github/workflows/persona-creative-studio-preview.yml"
 jobs:
   capture:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 22
     permissions:
       contents: read
