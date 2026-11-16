@@ -28,6 +28,8 @@ describe('Persona AI media job',()=>{
  it('restores a directed result without accepting invented presets or model identities',()=>{
   const creativeDirection={mode:'auto' as const,selected_preset:'Cinematic' as const,model:'persona-qwen-cpu:latest'};
   expect(readPersonaAiMediaJob(JSON.parse(JSON.stringify({...job,creativeDirection})))?.creativeDirection).toEqual(creativeDirection);
+   const softCinematic={mode:'manual' as const,selected_preset:'SoftCinematic' as const,model:null};
+   expect(readPersonaAiMediaJob({...job,creativeDirection:softCinematic})?.creativeDirection).toEqual(softCinematic);
   expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,selected_preset:'invented'}})).toBeNull();
   expect(readPersonaAiMediaJob({...job,creativeDirection:{...creativeDirection,model:42}})).toBeNull();
  });
