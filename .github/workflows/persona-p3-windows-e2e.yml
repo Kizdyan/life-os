@@ -13,6 +13,7 @@ on:
       - "tools/persona-smart-moments.mjs"
       - "tools/persona-smart-audio.mjs"
       - "tools/persona-smart-moments.test.mjs"
+      - "tools/persona-smart-moment-e2e.test.mjs"
       - "tools/persona-media-worker.mjs"
       - "tools/coverage_inspector.py"
       - "tools/approved_moments_library.py"
