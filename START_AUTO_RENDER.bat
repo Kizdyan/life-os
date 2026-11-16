@@ -21,30 +21,41 @@ function Invoke-PersonaGit {
     $git=Get-Command git.exe -ErrorAction SilentlyContinue
     if(-not $git){throw 'Не найден Git. Для автоматического обновления Life OS установи Git for Windows.'}
     if($Repository.Contains('"')){throw 'Недопустимый символ в пути к проекту.'}
-    $stdout=Join-Path $LogDirectory ('git-out-'+[Guid]::NewGuid().ToString('N')+'.tmp')
-    $stderr=Join-Path $LogDirectory ('git-err-'+[Guid]::NewGuid().ToString('N')+'.tmp')
     $oldPrompt=$env:GIT_TERMINAL_PROMPT
     $oldInteractive=$env:GCM_INTERACTIVE
+    $process=New-Object Diagnostics.Process
     try {
         $env:GIT_TERMINAL_PROMPT='0'
         $env:GCM_INTERACTIVE='never'
-        $arguments='-C "'+$Repository+'" '+($GitArgs -join ' ')
-        $process=Start-Process -FilePath $git.Source -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-        try{
-            if(-not $process.WaitForExit(60000)){
-                $process.Kill()
-                [void]$process.WaitForExit(2500)
-                throw 'Git не ответил за 60 секунд. Проверь подключение к интернету.'
-            }
-            if($process.ExitCode -ne 0){
-                throw ('Git '+$GitArgs[0]+' завершился с ошибкой ('+$process.ExitCode+'). Обновление остановлено, локальные данные сохранены.')
-            }
-            return [IO.File]::ReadAllText($stdout,[Text.Encoding]::UTF8).Trim()
-        }finally{$process.Dispose()}
+        $info=New-Object Diagnostics.ProcessStartInfo
+        $info.FileName=$git.Source
+        $info.Arguments='-C "'+$Repository+'" '+($GitArgs -join ' ')
+        $info.WorkingDirectory=$Repository
+        $info.UseShellExecute=$false
+        $info.CreateNoWindow=$true
+        $info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+        $info.RedirectStandardOutput=$true
+        $info.RedirectStandardError=$true
+        $process.StartInfo=$info
+        if(-not $process.Start()){throw 'Не удалось запустить Git.'}
+        # Concurrently drain both streams to avoid pipe-buffer deadlocks.
+        $standard=$process.StandardOutput.ReadToEndAsync()
+        $errors=$process.StandardError.ReadToEndAsync()
+        if(-not $process.WaitForExit(60000)){
+            try{$process.Kill()}catch{}
+            [void]$process.WaitForExit(2000)
+            throw 'Git не ответил за 60 секунд. Проверь интернет.'
+        }
+        $answer=$standard.GetAwaiter().GetResult()
+        [void]$errors.GetAwaiter().GetResult()
+        if($process.ExitCode -ne 0){
+            throw ('Git '+$GitArgs[0]+' завершился с ошибкой ('+$process.ExitCode+'). Обновление остановлено, локальные данные сохранены.')
+        }
+        return $answer.Trim()
     }finally{
         $env:GIT_TERMINAL_PROMPT=$oldPrompt
         $env:GCM_INTERACTIVE=$oldInteractive
-        Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction SilentlyContinue
+        $process.Dispose()
     }
 }
 function Test-PersonaPort([int]$Port) {
