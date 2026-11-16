@@ -89,6 +89,15 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   assert.equal(result.hasCaptions,true);
   assert.equal(result.strategy.status,'WARNING');
   assert.equal(result.technicalChecks.video,true);
+  const edit=JSON.parse(await readFile(join(rootJob,'output','edit-plan.json'),'utf8'));
+  assert.equal(edit.stylePack,'Cinematic');
+  assert.equal(edit.choices.length,2);
+  assert.equal(edit.provenance.model,'test-only');
+  assert.equal(edit.provenance.rightsConfirmed,false);
+  const timelineReport=JSON.parse(await readFile(join(rootJob,'output','edited.mp4.persona.json'),'utf8'));
+  assert.equal(timelineReport.settings.stylePack,'Cinematic');
+  assert.equal(timelineReport.settings.visualIdentity,'persona-visual-identity-v1');
+  assert.equal(timelineReport.verification.passed,true);
   const mp4=await fetch(base+'/quick-render/'+one.id+'/video?token='+token);
   assert.equal(mp4.status,200);
   assert.equal(mp4.headers.get('content-type'),'video/mp4');
