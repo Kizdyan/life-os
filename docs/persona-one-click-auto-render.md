@@ -25,11 +25,12 @@ The server automatically:
 1. Inspects each uploaded file with real FFprobe, verifies duration and restrictions (e.g. no silent HDR conversion), hashes its bytes and stores intake evidence.
 2. Launches real `tools/strategy_analyzer.py` against the seven-element strategy, saving `output/strategy-analysis.json`. A strategic WARNING/BLOCKED is *recorded*, not silently discarded; it does not approve publication.
 3. Launches real `tools/lighting_planner.py`, saving `output/lighting-plan.json`. This is pre-shoot advice; existing filmed material is not falsely called “lit by AI”.
-4. Uses real FFmpeg to extract up to 12 bounded JPEG evidence stills (up to three per video) and constructs independently timed candidate windows. **Only these stills and time metadata plus the user's text** go to the configured OpenRouter/OpenAI multimodal chat model. **The complete video, audio waveform, transcript or file path are not sent to the model.** Spoken dialogue, motion quality and music are *not* understood from these stills; the model cannot truthfully claim otherwise.
-5. Validates the model's JSON `EditPlan`: only candidate IDs matching probed source windows, 2–12 distinct windows, total <=75 seconds, StylePack from the existing allowlist `Commercial/Cinematic/Dynamic`, short on-screen text not passed off as ASR. No fabricated B-roll URLs or unverified third-party media.
-6. Builds an FFmpeg timeline using the existing `tools/persona-timeline-render.mjs` and shared visual identity JSON. Its stage cache is reused; the **chosen StylePack/identity filter is included in the cache key**. Optional personally supplied music is mixed into the result by the same renderer.
-7. Applies optional on-screen title overlays with the existing vetted `tools/persona-subtitle-burn.mjs` and licensed/configured font. These overlays are **not transcript captions**; dialogue subtitles would require actual ASR/manual review.
-8. Validates the final media stream, source hashes, MP4 hash and output manifest. Transitions the `ProductionJob` to `AWAITING_APPROVAL`, then enables the Dashboard download. Source media are never modified and no publication action happens.
+4. **Smart Moment Detection:** probes every **0.5 seconds** of each video with a real FFmpeg-extracted reduced JPEG. It sends the images to **OpenRouter Vision in batches of at most 12** with exact source frame IDs. The model reports visible face, sharpness, eye contact, observed expression and changes relative to adjacent stills. Invalid, duplicate or missing scores fail the job; blurry/averted frames are excluded. The model is not observing continuous motion; facial classifications are estimated, not objective emotion measurement. **Limit:** 600 frames / 300 seconds of combined source footage per job (each input still <=1200 seconds as before). Longer footage is rejected explicitly, never silently downsampled.
+5. **Optional local Whisper:** if `PERSONA_MEDIA_WHISPER_CLI` and `PERSONA_MEDIA_WHISPER_MODEL` are configured, FFmpeg extracts temporary mono 16 kHz WAV for whisper.cpp `-ojf` segment timestamps. Segment time safety uses the existing robust `parseWhisperJson`. Whisper output is a fallible ASR hypothesis. Up to 100 of its bounded text segments **may be sent to OpenRouter (text-only)** to rank 1–3 strong phrases. Raw audio and entire videos do **not** leave the local Worker. If Whisper is unavailable/fails, evidence says `whisper-unavailable`/`whisper-failed` (speech *unknown*, not "no speech"). Without an ASR transcript, visual ranking predominates.
+6. **Automatic EditPlan with no user timestamps:** rank visually suitable frames and favor any verified phrase highlights; select **3–5 spaced peaks** in hook (smile/strong look), emotional turn, finale order, optionally using secondary camera angles. Derive real interval boundaries (up to ~5 seconds when protecting a Whisper phrase) from independently probed source duration. Crop/frame is still a review issue. Enforce existing `validateEditPlan` model safety, source IDs and 75-second cap. Resulting `output/smart-moments.json` records *every scored frame*, evidence hash, ranked chosen peaks, source hashes and Whisper status. Choice/explanation metadata also lives in `output/edit-plan.json`. No narration is invented and no word-accurate captions are fabricated.
+7. Builds an FFmpeg timeline using the existing `tools/persona-timeline-render.mjs` and shared visual identity JSON. Its stage cache is reused; the **chosen StylePack/identity filter is included in the cache key**. Optional personally supplied music is mixed into the result by the same renderer.
+8. Applies optional on-screen title overlays with the existing vetted `tools/persona-subtitle-burn.mjs` and licensed/configured font. These overlays are **not transcript captions**; dialogue subtitles would require actual ASR/manual review.
+9. Validates the final media stream, source hashes, MP4 hash and output manifest. Transitions the `ProductionJob` to `AWAITING_APPROVAL`, then enables the Dashboard download. Source media are never modified and no publication action happens.
 
 ## Starting locally
 
@@ -58,13 +59,30 @@ On Windows, default persistent quick jobs are saved under:
 Override with `PERSONA_QUICK_RENDER_ROOT`. Other platforms default to `~/.life-os/persona/quick-renders`.
 The Worker keeps `job.json` transitions; `quick-state.json` for Dashboard status, copies of source media in `input/`, and JSON analysis/edit/lighting/QA artifacts and finished MP4 in `output/`. Restarted incomplete processes are marked interrupted, not falsely resumed.
 
+
+
+### Smart Moment Detection setup
+
+Install/use a Vision-capable OpenRouter model (default `openai/gpt-4.1-mini`) and set `OPENROUTER_API_KEY` in ignored `.env.local`. This production path **requires OpenRouter**, rather than silently pretending an unrelated offline CV probe is OpenRouter Vision. `PERSONA_AUTO_RENDER_MODEL` can override a compatible OpenRouter vision model. Each 0.5-second frame is submitted as a low-detail JPEG and counts toward provider API usage; the app's consent notice discloses this.
+
+Optional offline Russian-language ASR:
+
+```dotenv
+PERSONA_MEDIA_WHISPER_CLI=C:\\your-path\\whisper-cli.exe
+PERSONA_MEDIA_WHISPER_MODEL=C:\\your-path\\ggml-large-v3-turbo.bin
+```
+
+The user still only clicks **Сделать всё**. ASR is skipped transparently if either path is absent. No automatic model download. The Vision key/model and Whisper files are setup requirements, **not text to enter in the one-click prompt**. After the job finishes, look under `output/smart-moments.json` for actual selected peaks (or `edit-plan.json` for their final cut order).
+
+**Real-media validation status:** two-angle test uses genuine FFmpeg footage and injected Vision labels (does not imply a real paid OpenRouter call). Running a private live-provider test with the user's personal clips requires a configured API key on their own PC; tests cannot truthfully mark that PASS on CI alone.
+
 ## Quality and boundaries
 
 - This is a private **automatically rendered draft**, not a human-approved final film. The user should review acting continuity, audio, inaccurate title copy, third-party rights, and color before publication.
 - An absent real API key or failed provider is surfaced as failure; the system never invents an EditPlan or fake `PASS`.
 - If no licensed/original B-roll footage is uploaded, the Worker uses **only cuts of available user video**; it cannot add unsupported third-party clips.
 - If the prompt requests “мою музыку” but the user hasn't attached a music file, the Worker **does not invent or retrieve their track**. Current original clip audio remains.
-- The model's “best moments” are inferences from still frames, not verified evaluation of emotion/line delivery through time.
+- The model's “best moments” are inferences from 0.5-second stills, not verified evaluation of emotion/line delivery through time. Offline Whisper helps with speech; where absent, no speech claims are made.
 - Subtitle text is an AI title layer, not verbatim spoken transcription.
 - Backend job states are `PREPARING → WAITING_FOR_FOOTAGE → ANALYZING → EDITING → QUALITY_CHECK → AWAITING_APPROVAL`; errors do not become approvals. No social publishing.
 - Stage caching depends on the existing `persona-stage-cache.mjs` configuration and FFmpeg capabilities; do not claim cache HIT without its evidence logs.
@@ -72,6 +90,7 @@ The Worker keeps `job.json` transitions; `quick-state.json` for Dashboard status
 ## Acceptance
 
 - `node --test tools/persona-quick-edit-plan.test.mjs`: mocked provider contract, frame-only uploads and rejection of forged intervals/unsafe captions.
+- `node --test tools/persona-smart-moments.test.mjs tools/persona-smart-moment-e2e.test.mjs`: half-second schedule, strict real-JSON Vision contract, 3–5 auto-picked peaks, transparent Whisper fallback, real 2-angle FFmpeg MP4 integration with test-only vision labels.
 - `node --test tools/persona-quick-render.test.mjs`: real HTTP file copies, actual FFmpeg clip encode, title burn-in, optional audio, source immutability, SHA-secured MP4 and job restoration after Worker restart. Provider and strategy are **explicit test fixtures**, not real API calls.
 - `apps/web/src/PersonaQuickAutoRender.test.tsx`: Dashboard and input validation.
 - `node tools/persona-quick-browser-e2e.mjs`: actual Chromium upload, click, real FFmpeg output, MP4 download/reload, 1440px/390px screenshots. Uses test-only model injection, not a live OpenAI/OpenRouter call.

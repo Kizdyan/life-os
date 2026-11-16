@@ -10,7 +10,9 @@ import {join,resolve,basename,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {homedir,tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
-import {frameCandidates,selectEditPlan,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
+import {frameCandidates,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
+import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
+import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 
@@ -70,7 +72,7 @@ async function probe(file,config,{audioOnly=false,rendered=false}={}){
   String(video.color_primaries??'').startsWith('bt2020'))throw Error('HDR/BT.2020 source needs manual SDR conversion');
  if(Number(video.tags?.rotate??0)!==0||video.side_data_list?.some(x=>Number(x.rotation??0)!==0))
   throw Error('Rotated source requires manual normalization before automatic cropping');
- return {durationSec,width:video.width,height:video.height};
+ return {durationSec,width:video.width,height:video.height,hasAudio:data.streams.some(x=>x.codec_type==='audio')};
 }
 async function jpegFrame(path,second,config){
  const raw=await runBounded(mediaBin('ffmpeg',config),
@@ -110,6 +112,7 @@ export function createPersonaQuickRenderService(config={}){
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
+  moments:job.moments??[],
   notice:job.state==='completed'?'MP4 создан и технически проверен. Проверьте содержание перед публикацией.':null});
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
@@ -125,7 +128,10 @@ export function createPersonaQuickRenderService(config={}){
    return {index,kind:file.kind,originalName:name,name:toFileName(index,file.kind,name),size:file.size};
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
-  if(!config.quickPlanner)editPlanProvider(env); // fail before copying any private media
+  if(!config.quickPlanner&&!config.quickVisionBatch){
+   const provider=editPlanProvider(env);
+   if(provider.provider!=='openrouter')throw Error('Smart Moment Detection requires an OpenRouter Vision key in the local Worker');
+  } // reject missing Vision key before user uploads private media
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
@@ -198,23 +204,76 @@ export function createPersonaQuickRenderService(config={}){
     await runBounded(py,[join(toolsDir,'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
      {env,timeoutMs:15000,maxStdout:10000});
    }
-   job.stage='Анализ кадров';await save(job);
    const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
-   const candidates=frameCandidates(candidateInput);
-   if(candidates.length<2)throw Error('At least two distinct real video intervals are required');
-   const frames=[];
-   for(const candidate of candidates)frames.push(await jpegFrame(join(input,vids[candidate.fileIndex].name),candidate.stillSec,config));
-   job.stage='Редакторский план';await save(job);
-   const proposed=config.quickPlanner
-    ?await config.quickPlanner({prompt:job.prompt,candidates,frames})
-    :await selectEditPlan({prompt:job.prompt,candidates,frames,env});
-   const plan=validateEditPlan(proposed,candidates);
-   const provenance={
-    version:1,kind:'one-click-planning-evidence',
-    provider:config.quickPlanner?'test-injected':proposed.provider,model:config.quickPlanner?'test-only':proposed.model,
-    sampleCount:frames.length,sourceShas:vids.map(f=>f.sha256),
-    note:'Model only saw sampled stills and timing metadata; not motion, speech, or full audio.',
-    rightsConfirmed:false};
+   let plan,provenance;
+   if(config.quickPlanner){
+    // Legacy unit-test seam only: production selects via full 2fps Vision instead.
+    job.stage='Тестовый редакторский план';await save(job);
+    const candidates=frameCandidates(candidateInput),frames=[];
+    for(const candidate of candidates)frames.push(await jpegFrame(join(input,vids[candidate.fileIndex].name),candidate.stillSec,config));
+    const proposed=await config.quickPlanner({prompt:job.prompt,candidates,frames});
+    plan=validateEditPlan(proposed,candidates);
+    provenance={version:1,kind:'one-click-planning-evidence',provider:'test-injected',model:'test-only',
+     sampleCount:frames.length,sourceShas:vids.map(f=>f.sha256),
+     note:'Fixture-only candidate selection; no real Vision/Whisper inference.',rightsConfirmed:false};
+   }else{
+    job.stage='Whisper: проверка речи';await save(job);
+    const audio=[];
+    for(const f of vids){
+     const videoPath=join(input,f.name);
+     try{
+      audio.push(await analyzeWhisperAudio({videoPath,durationSec:f.media.durationSec,
+       hasAudio:f.media.hasAudio,whisperCli:config.whisperCli||env.PERSONA_MEDIA_WHISPER_CLI,
+       whisperModel:config.whisperModel||env.PERSONA_MEDIA_WHISPER_MODEL,
+       ffmpeg:mediaBin('ffmpeg',config),run:runBounded,env,
+       asrOverride:config.quickAudioOverride||null}));
+     }catch(error){
+      audio.push({status:'whisper-failed',segments:[],reason:String(error.message||error).slice(0,140),
+       meaning:'Speech presence/content unverified due to local Whisper failure'});
+     }
+    }
+    const speechRanking=config.quickVisionBatch?{highlights:[],status:'test-skipped'}:
+     await rankSpeechHighlights({audio,env});
+    job.stage='Vision: анализ каждые 0,5 с';await save(job);
+    const vision=await runSmartVision({videos:candidateInput,
+     frameAt:async(frame)=>jpegFrame(join(input,vids[frame.fileIndex].name),frame.atSec,config),
+     env,batchOverride:config.quickVisionBatch||null,
+     onProgress:async(progress)=>{
+      job.stage='Vision: '+progress.completedFrames+'/'+progress.totalFrames+' кадров';
+      await save(job);
+     }});
+    job.stage='Выбор эмоциональных пиков';await save(job);
+    const ranked=audio.map((track,fileIndex)=>({...track,
+     segments:track.segments.map(segment=>({...segment,
+      emphasis:speechRanking.highlights.some(highlight=>highlight.fileIndex===fileIndex&&
+       highlight.startSec<=segment.endSec&&highlight.endSec>=segment.startSec)?4:0}))}));
+    const chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
+     audio:ranked,visionProvider:vision.provider,visionModel:vision.model});
+    plan=chosen.plan;
+    job.moments=chosen.moments.map(m=>({
+     sourceName:vids[m.fileIndex].originalName,
+     startSec:m.startSec,peakSec:m.stillSec,role:m.arcRole,emotion:m.emotion,
+     reason:m.visualReason}));
+    await save(job);
+    const evidence={version:1,kind:'persona-smart-moment-evidence',prompt:job.prompt,
+     frameIntervalSec:0.5,manualTimecodes:false,
+     sourceVideos:vids.map(f=>({originalName:f.originalName,durationSec:f.media.durationSec,sha256:f.sha256})),
+     vision:{provider:vision.provider,model:vision.model,requests:vision.requests,
+      totalFrames:vision.frameCount,evidenceSha256:vision.evidenceSha256},
+     frameAssessments:vision.scored,audio:ranked,highlightedSpeech:speechRanking.highlights,
+     speechRankingStatus:speechRanking.status,selectedMoments:chosen.moments,
+     limitations:['Visual ratings are model estimates, not measured acting quality',
+      'Whisper transcript is fallible and not verbatim-verified',
+      'Unavailable or failed Whisper means unknown speech, not absence of speech'],
+     publicationApproved:false};
+    await writeFile(join(out,'smart-moments.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
+    provenance={version:2,kind:'smart-moment-evidence',provider:vision.provider,model:vision.model,
+     sampleCount:vision.frameCount,frameIntervalSec:.5,visionRequests:vision.requests,
+     sourceShas:vids.map(f=>f.sha256),audioStatus:ranked.map(a=>a.status),
+     speechRanking:speechRanking.status,evidenceSha256:vision.evidenceSha256,
+     note:'Half-second Vision + optional local Whisper. See smart-moments.json.',
+     rightsConfirmed:false};
+   }
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance},null,2)+'\n',{flag:'wx'});
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
@@ -257,7 +316,9 @@ export function createPersonaQuickRenderService(config={}){
     bytes:(await stat(video)).size,durationSec:details.durationSec,
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    submittedToModel:'sampled_jpeg_frames_only',broll:'only_user_uploaded_source_windows',
+    submittedToModel:config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
+    smartMomentDetection:!config.quickPlanner,audioUnderstanding:plan.audioUnderstanding,
+    broll:'only_user_uploaded_source_windows',
     technicalChecks:{video:true,sha256:true,sourceIntegrity:true}};
    await writeFile(join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
    await production.transition('AWAITING_APPROVAL',{reason:'Verified MP4, awaiting human review'});
