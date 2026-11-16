@@ -5,6 +5,7 @@ import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
+import {readPersonaAiReelArgs} from './persona-ai-reel.mjs';
 import {buildSubtitleAss,burnPersonaSubtitles,loadApprovedSubtitleReference,loadSubtitlePreset,subtitlePreset} from './persona-subtitle-burn.mjs';
 
 test('invalid timestamps and ASS control syntax cannot enter the rendering filter',async()=>{
@@ -152,4 +153,17 @@ test('Signature Gold real FFmpeg burn preserves original, audio and zero padding
   assert.deepEqual(decode(input),decode(output),'Original speech/audio must stream-copy unchanged');
   assert.ok((await readFile(output)).length>8000);
  }finally{await rm(root,{recursive:true,force:true})}
+});
+
+
+test('the real AI Reel CLI forwards all three subtitle styles without changing legacy default',()=>{
+ const base=['--takes','takes','--brief','brief.json','--out','output',
+  '--whisper-cli','whisper','--whisper-model','model.bin','--ollama-model','local-test'];
+ assert.equal(readPersonaAiReelArgs(base).subtitlePreset,'cinematic');
+ for(const value of ['cinematic','dynamic-interview','signature-gold']){
+  const parsed=readPersonaAiReelArgs([...base,'--burn-subtitles','true','--subtitle-preset',value]);
+  assert.equal(parsed.subtitlePreset,value);
+  assert.equal(parsed.burnSubtitles,true);
+ }
+ assert.throws(()=>readPersonaAiReelArgs([...base,'--subtitle-preset','invalid']),/Unsupported subtitle preset/);
 });
