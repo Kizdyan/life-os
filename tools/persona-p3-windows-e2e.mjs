@@ -26,7 +26,7 @@ function video(path,freq){
 }
 function probe(path){return JSON.parse(run('ffprobe',['-v','error','-show_streams','-show_format','-of','json',path]));}
 function decodedFrameDigest(path,seconds){
- const data=run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(seconds),'-i',path,'-frames:v','1','-f','framemd5','-']);
+ const data=run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-ss',String(seconds),'-i',path,'-map','0:v:0','-frames:v','1','-an','-f','framemd5','-']);
  const frames=data.split(/\r?\n/).filter(s=>s&&!s.startsWith('#'));
  assert.equal(frames.length,1,'expected a single decoded frame');
  return frames[0].trim().split(',').at(-1).trim();
