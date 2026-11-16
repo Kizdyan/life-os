@@ -19,8 +19,10 @@ describe('Life OS and Persona JSX runtime rendering', () => {
   it('renders Persona route without React is not defined', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(App));
-    expect(markup).toContain('Создать Reels');
-    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Новый Reels');
+    expect(markup).toContain('Все проекты');
+    expect(markup).toContain('appPersonaPage');
+    expect(markup).toContain('PERSONA / CREATIVE STUDIO');
   });
 
   it('renders Today route without React is not defined', () => {
@@ -35,7 +37,7 @@ describe('Life OS and Persona JSX runtime rendering', () => {
 
   it('mounts the individual Persona, Erika and Media Brain components', () => {
     stubBrowser('#today');
-    expect(renderToString(React.createElement(PersonaFactory))).toContain('Создать Reels');
+    expect(renderToString(React.createElement(PersonaFactory))).toContain('Новый Reels');
     expect(renderToString(React.createElement(MediaBrainCard))).toContain('Контент-контур');
     expect(renderToString(React.createElement(ErikaSheet, {
       items: [],
@@ -47,15 +49,15 @@ describe('Life OS and Persona JSX runtime rendering', () => {
   it('renders a dedicated project workspace instead of one anonymous draft', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(PersonaFactory));
-    expect(markup).toContain('Мои проекты');
-    expect(markup).toContain('Создать Reels');
+    expect(markup).toContain('Все проекты');
+    expect(markup).toContain('Новый Reels');
   });
 
   it('opens Persona on a compact mobile home screen', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(PersonaFactory));
-    expect(markup).toContain('Продолжить последний проект');
-    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Продолжить работу');
+    expect(markup).toContain('Все проекты');
     expect(markup).toContain('Резервная копия и перенос данных');
   });
 
