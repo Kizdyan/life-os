@@ -751,8 +751,9 @@ export default function PersonaFactory(){
     <button type="button" aria-pressed={workspaceStep==='export'} onClick={()=>{if(canLeaveGuide())setWorkspaceStep('export')}}>Скачать MP4</button>
    </div>}
   {!chosen&&<section className="personaQuickStart" aria-label="Быстрый старт Persona"><h3>Быстрый старт</h3><div className="personaQuickStartGrid">{(['reel','photo','carousel'] as const).map(format=><button key={format} type="button" onClick={()=>select({id:crypto.randomUUID(),title:format==='reel'?'Новый Reels':format==='photo'?'Новое фото':'Новая карусель',angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}>{format==='reel'?'Создать Reels':format==='photo'?'Обработать фото':'Создать карусель'}</button>)}</div><p>Экспорт MP4 с телефона пока не подключён.</p></section>}
-  <details className="personaDeveloperDisclosure"><summary>Advanced / Для разработчика</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}}/></details>
+  <details className="personaDeveloperDisclosure"><summary>Advanced / Для разработчика</summary><PersonaCloudPanel/><PersonaEditorialCalendar onSelectSlot={slot=>{select({id:slot.slotId,title:slot.notes||slot.purpose,angle:slot.notes||slot.purpose,format:slot.format as Idea['format'],score:0,source:'editorial-calendar'})}}/>
   {chosen&&<details className="personaCreativeAdvanced"><summary>Импорт технического JSON-брифа</summary><label className="briefImport"><span>Импортировать съёмочный бриф JSON</span><input type="file" accept=".json,application/json" aria-label="Импортировать съёмочный бриф JSON" onChange={e=>{void importProductionBrief(e.target.files?.[0]);e.target.value=''}}/><small>Файл проверяется до сохранения и не может перенести утверждение.</small></label></details>}
+  </details>
   {chosen&&status&&<p className="personaWorkspaceStatus" role="status">{status}</p>}
   {false&&<div className="pfTrialBanner">
     <b>Выбери двигатель сценария:</b>
