@@ -127,7 +127,7 @@ export class ProductionJob {
       if(data.revision!==expectedRevision)fail('Job changed before strategy migration');
       const next={...data,strategy,revision:data.revision+1,updatedAt:new Date().toISOString()};
       const temp=this.path+'.'+randomUUID()+'.tmp';
-      try{await writeFile(temp,JSON.stringify(next,null,2)+'\\n',{flag:'wx'});await rename(temp,this.path)}
+      try{await writeFile(temp,JSON.stringify(next,null,2)+'\n',{flag:'wx'});await rename(temp,this.path)}
       finally{await unlink(temp).catch(()=>{})}
       return next;
     }finally{await handle.close();await unlink(lock)}
