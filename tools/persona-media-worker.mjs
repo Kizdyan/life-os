@@ -165,6 +165,43 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
  const sessions=new Map();
  const token=randomUUID();
  const quickRender=createPersonaQuickRenderService(config);
+ // Read only operation metadata from worker-session.json; job.json is the state authority.
+ async function restoreSession(id){
+  if(!/^[a-f0-9-]{36}$/.test(id))return null;
+  const input=join(config.outputRoot,'.worker-staging-'+id);
+  const production=new ProductionJob(join(input,'production'));
+  let manifest,canonical,brief;
+  try{
+   manifest=JSON.parse(await readFile(join(input,'worker-session.json'),'utf8'));
+   canonical=await production.read();
+   brief=JSON.parse(await readFile(join(input,'approved-production-brief.json'),'utf8'));
+  }catch{return null}
+  if(manifest?.version!==1||manifest.id!==id||!validBrief(brief))return null;
+  if(!['AWAITING_APPROVAL','FAILED'].includes(canonical.status)){
+   try{canonical=await production.markFailed('Worker был перезапущен до завершения проверки MP4. Исходники сохранены; начните новый монтаж.')}
+   catch{return null}
+  }
+  const uploaded=new Set();let total=0;
+  for(let i=0;i<manifest.expected;i++){
+   try{const intake=JSON.parse(await readFile(join(input,'source-'+i+'.json'),'utf8'));
+    if(intake?.sha256&&intake?.bytes){uploaded.add(i);total+=intake.bytes}}
+   catch{}
+  }
+  const output=join(config.outputRoot,'ai-reel-'+id);
+  let resultSummary=null;
+  if(canonical.status==='AWAITING_APPROVAL'){
+   try{resultSummary=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'))}catch{}
+  }
+  const direction=JSON.parse(await readFile(join(input,'AI-DIRECTOR.json'),'utf8').catch(()=>'null'));
+  const state=canonical.status==='AWAITING_APPROVAL'?'completed':'failed';
+  const session={id,input,output,production,brief,briefPath:join(input,'approved-production-brief.json'),
+   direction,visualPreset:manifest.visualPreset,variation:manifest.variation,model:manifest.model,
+   burnSubtitles:manifest.burnSubtitles,subtitlePreset:manifest.subtitlePreset,
+   masterAsset:manifest.masterAsset,expected:manifest.expected,takeBindings:manifest.takeBindings??null,
+   uploaded,total,state,stage:state==='completed'?'awaiting_author_review':'intake',
+   files:new Set(),child:null,cancelled:false,error:canonical.failure?.message??null,resultSummary};
+  sessions.set(id,session);return session;
+ }
  const musicJobs=new Map();let musicBusy=false;
  const learnedRulesFile=()=>join(config.outputRoot,'learned_rules.json');
  let referenceBusy=false;
@@ -570,7 +607,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      masterAsset:s.masterAsset,expected:s.expected,visualPreset:s.visualPreset,takeBindings:s.takeBindings})+'\n',{flag:'wx'});
     sessions.set(id,s);respond(res,201,{id,tokenRequired:true});return;
    }
-   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&sessions.get(match[1]);if(!s){respond(res,404,{error:'unknown_session'});return}
+   const match=url.pathname.match(/^\/session\/([a-f0-9-]+)(?:\/(take\/(\d+)|run|cancel|status|video|social-copy|exports|export-video\/(shorts|reels|vk|youtube)))?$/);const s=match&&(sessions.get(match[1])||await restoreSession(match[1]));if(!s){respond(res,404,{error:'unknown_session'});return}
    if(match[2]==='social-copy'&&req.method==='POST'){
     if(s.state!=='completed')fail('Сначала соберите MP4.');
     const title=typeof s.brief.title==='string'&&s.brief.title.trim()
