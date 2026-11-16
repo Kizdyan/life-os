@@ -9,6 +9,7 @@ export function personaLightingPlan(description){
  return {version:presets.version,style:presets.style,scene:source,preset:preset.id,
   title:preset.title,key:preset.key,fill:preset.fill,back:preset.back,
   background:preset.background,note:preset.note,
+  ...(preset.rule?{rule:preset.rule}:{}),
   evidence:'Рекомендация по описанию, не анализ реального видео или помещения.',
   source:'rules-v1'};
 }
