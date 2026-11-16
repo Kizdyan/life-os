@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import {isPersonaStrategy,currentPersonaStrategyAudit,readPersonaStrategyAudit,strategyAuditInput,strategySnapshot} from '../../../packages/core/src/persona-strategy.mjs';
+import type {PersonaStrategyAudit} from '../../../packages/core/src/persona-strategy.mjs';
 import PersonaLocalScriptDoctorPanel from './PersonaLocalScriptDoctorPanel';
 import PersonaScenarioVersionHistory from './PersonaScenarioVersionHistory';
 import { assertPersonaAuthorLockedLines } from './personaBriefScenarioBridge';
@@ -35,6 +37,7 @@ type Props={
  creativeProfile:{priorities:string[];constraints:string[]};
  onChange:(workspace:Workspace)=>void;
  onCreateBrief:(brief:PersonaProductionBrief)=>void;
+ onStrategyAnalyzed?:(audit:PersonaStrategyAudit,expectedRevision:number)=>boolean;
 };
 
 const emptyWorkspace=():Workspace=>({version:1,research:[],analyses:[],ideas:[]});
@@ -59,7 +62,7 @@ function draftBeats(idea:ScenarioIdea):ScenarioScriptBeat[]{
  ];
 }
 
-export default function PersonaScenarioWorkspace({project,workspace:received,sourceBrief,creativeProfile,onChange,onCreateBrief}:Props){
+export default function PersonaScenarioWorkspace({project,workspace:received,sourceBrief,creativeProfile,onChange,onCreateBrief,onStrategyAnalyzed}:Props){
  const workspace=received??emptyWorkspace();
  const draftStorage=resolvePersonaScenarioDraftStorage();
  const draftRawRef=useRef<string|null>(readPersonaScenarioDraftRaw(draftStorage,project.id));
@@ -73,6 +76,8 @@ export default function PersonaScenarioWorkspace({project,workspace:received,sou
  const[revisionReason,setRevisionReason]=useState(()=>
   matchingPersonaScenarioDraft(draftStorage,project.id,received?.script)?.reason??'');
  const[author,setAuthor]=useState('');const[comment,setComment]=useState('');const[error,setError]=useState('');
+ const[strategyBusy,setStrategyBusy]=useState(false);
+ const[strategyMessage,setStrategyMessage]=useState('');
  const[unlockAuthor,setUnlockAuthor]=useState('');
  const script=workspace.script;
  const[beats,setBeats]=useState<ScenarioScriptBeat[]>(()=>
@@ -378,8 +383,40 @@ export default function PersonaScenarioWorkspace({project,workspace:received,sou
    setAnalysisNote('');setAnalysisDetails({situation:'',desire:'',obstacle:'',turn:'',payoff:'',editing:'',sound:''});setWatchedByAuthor(false);setError('');
   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить проверяемый разбор.')}
  };
+ const currentAudit=currentPersonaStrategyAudit(project);
+ const checkStrategy=async()=>{
+  if(strategyBusy)return;
+  if(!onStrategyAnalyzed){setStrategyMessage('Стратегический анализ недоступен в этом режиме.');return}
+  if(!isPersonaStrategy(project.strategy)){setStrategyMessage('У проекта пока нет семи заполненных полей стратегии.');return}
+  if(hasPendingChanges||personaScenarioDraftExists(draftStorage,project.id)){
+   setStrategyMessage('Перед проверкой сохраните или разрешите несохранённые правки сценария.');return
+  }
+  const snapshot=strategySnapshot(project),expectedRevision=project.revision;
+  setStrategyBusy(true);setStrategyMessage('Отправляем сохранённый сценарий на стратегическую проверку…');
+  try{
+   const response=await fetch('/api/persona-strategy',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({input:strategyAuditInput(project)})});
+   const data=await response.json().catch(()=>({})) as Record<string,unknown>;
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Модель недоступна');
+   const audit=readPersonaStrategyAudit({
+    version:1,status:data.status,recommendation:data.recommendation,
+    provider:data.provider,model:data.model,snapshot,checkedAt:new Date().toISOString(),
+   });
+   if(!audit)throw Error('Модель вернула некорректную оценку. Результат не сохранён.');
+   if(!onStrategyAnalyzed(audit,expectedRevision))throw Error('Проект изменился за время ИИ-проверки. Откройте актуальную версию и повторите запрос.');
+   setStrategyMessage('Стратегическая проверка сохранена: '+audit.status+' — '+audit.recommendation);
+  }catch(cause){setStrategyMessage('Стратегия не оценена: '+String((cause as Error).message||cause))}
+  finally{setStrategyBusy(false)}
+ };
  return <section className="personaScenario" aria-label="Сценарий и референсы">
   <header className="personaScenarioHead"><div><h3>Сценарий из референсов</h3><p>Проект «{project.title}». Сначала добавьте проверяемую ссылку, затем выберите оригинальную концепцию.</p></div><span className="personaScenarioProvider">Perplexity отключён · Ollama только через CLI на Windows</span></header>
+  <section className="personaScenarioStrategyAudit" aria-label="Стратегический аудит">
+   <button type="button" disabled={strategyBusy||hasPendingChanges||!isPersonaStrategy(project.strategy)} onClick={()=>void checkStrategy()}>{strategyBusy?'Анализ…':'Проверить стратегию'}</button>
+   <p aria-live="polite">{strategyMessage||(
+    currentAudit?currentAudit.status+': '+currentAudit.recommendation:
+    'Стратегическая оценка ИИ ещё не проводилась или устарела после правки сценария.'
+   )}</p>
+  </section>
   <section className="personaTrendLeads"><div><h4>Бесплатные сигналы формата</h4><p>Датированные публичные источники. Это не метрики Reels и не доказательство просмотра конкретного ролика.</p></div>{freeScenarioTrendLeads.map((lead,index)=><article key={lead.id}><div><b>{lead.title}</b><p>{lead.mechanism}</p><small>{lead.publishedAt} · {lead.sourceTitle} · {lead.dateKind==='observed'?'дата проверки':'дата публикации'}</small><p><a href={lead.sourceUrl} target="_blank" rel="noreferrer">Открыть источник</a></p><small>{lead.limitation}</small></div><button type="button" className="ghost" onClick={()=>addTrendLead(index)}>Добавить в проект</button></article>)}</section>
   <details className="personaScenarioCard"><summary>Творческий профиль проекта · редактировать</summary>
     <p>Сохранённые требования этого проекта, а не выдуманная биография. Настрой свои приоритеты и ограничения для следующих идей.</p>
