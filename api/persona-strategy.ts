@@ -1,5 +1,6 @@
 import {env,json} from './_media-session.js';
 import {isPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
+import {personaGeneratedCopyIssue} from '../packages/core/src/persona-writing-style.mjs';
 
 /** A real LLM-only audit. This route never grants render or publication approval. */
 const MAX_BODY=16_000;
@@ -91,6 +92,7 @@ export default{
    }catch{return json({error:'strategy_invalid_model_response'},502)}
    const result=modelResult(candidate);
    if(!result)return json({error:'strategy_invalid_model_response'},502);
+   if(personaGeneratedCopyIssue([result.recommendation]))return json({error:'strategy_model_cliche'},502);
    return json({version:1,...result,provider:config.provider,model:config.model,realAI:true,
     publicationApproved:false,editorialApproved:false});
   }catch{return json({error:'strategy_request_invalid'},400)}
