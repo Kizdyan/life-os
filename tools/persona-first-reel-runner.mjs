@@ -17,7 +17,7 @@ import {chooseAiEditorialCuts} from './persona-ai-editorial.mjs';
 import {createColorVariants,renderVisualPreset} from './persona-color-variants.mjs';
 import {getVisualPreset} from './persona-creative-director.mjs';
 import { writeSubtitleDraft } from './persona-subtitle-draft.mjs';
-import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
+import {burnPersonaSubtitles,subtitlePreset as validateSubtitlePreset} from './persona-subtitle-burn.mjs';
 import { makeManifest } from './persona-delivery-source-folder.mjs';
 import {createGenericTakeManifest,isGenericTakeFolder} from './persona-generic-takes.mjs';
 
@@ -177,8 +177,9 @@ export async function prepareAsrRecovery({root,analysisPath,briefPath,reason}={}
  ].join('\n'),{flag:'wx'});
  return recoveryResult;
 }
-export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts,burnSubtitles=false,visualPreset=null,takeBindingsPath=null}={}){
+export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperModel,ffmpegDir,mode='strict',rendererPath=join(home,'persona-timeline-render.mjs'),verifierPath=join(home,'persona-verify-render.mjs'),transcribeStep=transcribe,aiEditorModel=null,aiVariation='cinematic',aiEditorialSelector=chooseAiEditorialCuts,burnSubtitles=false,subtitlePreset='cinematic',visualPreset=null,takeBindingsPath=null}={}){
  if(typeof burnSubtitles!=='boolean')fail('burnSubtitles must be boolean');
+ validateSubtitlePreset(subtitlePreset);
  if(visualPreset!==null)getVisualPreset(visualPreset);
  if(visualPreset!==null&&!aiEditorModel)fail('Visual direction requires the AI editorial pipeline');
  if(![sources,brief,outputDir,whisperCli,whisperModel].every(x=>typeof x==='string'&&x.trim()))fail('Provide sources, brief, new output dir, local whisper-cli, and model paths');
@@ -291,7 +292,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
   const renderOutput=burnSubtitles&&subtitleDraft.cues>0&&!aiEditorial?join(root,'draft-reel-clean.mp4'):output;
   await call(process.execPath,[rendererPath,assembled.project,renderOutput]);
   if(burnSubtitles&&subtitleDraft.cues>0&&!aiEditorial){
-   subtitleBurnIn=await burnPersonaSubtitles({videoPath:renderOutput,reviewPath:subtitleDraft.reviewPath,outputPath:output,ffmpegDir});
+   subtitleBurnIn=await burnPersonaSubtitles({videoPath:renderOutput,reviewPath:subtitleDraft.reviewPath,outputPath:output,ffmpegDir,preset:subtitlePreset});
    events.push('subtitles_burned_into_draft_mp4');
   }
   events.push('real_mp4_rendered');
@@ -321,7 +322,7 @@ export async function runFirstReel({sources,brief,outputDir,whisperCli,whisperMo
    }
    const finished=join(root,'ai-edited-reel.mp4');
    if(burnSubtitles&&subtitleDraft.cues>0){
-    subtitleBurnIn=await burnPersonaSubtitles({videoPath:selected.path,reviewPath:subtitleDraft.reviewPath,outputPath:finished,ffmpegDir,presetId:visualPreset});
+    subtitleBurnIn=await burnPersonaSubtitles({videoPath:selected.path,reviewPath:subtitleDraft.reviewPath,outputPath:finished,ffmpegDir,preset:subtitlePreset});
     events.push('subtitles_burned_into_ai_finished_mp4');
    }else await copyFile(selected.path,finished,fsConstants.COPYFILE_EXCL);
    const finishedQa=join(root,'ai-edited-qa.json');
