@@ -27,7 +27,7 @@ export function frameCandidates(videos){
 export function validateEditPlan(value,candidates){
  if(!value||typeof value!=='object'||Array.isArray(value)||
   !styles.has(value.stylePack)||!validText(value.creativeIntent,550)||
-  !Array.isArray(value.choices)||value.choices.length<1||value.choices.length>caps.maxChoices)throw Error('Model returned invalid EditPlan');
+  !Array.isArray(value.choices)||value.choices.length<2||value.choices.length>caps.maxChoices)throw Error('Model returned invalid EditPlan');
  getVisualPreset(value.stylePack); // existing production style pack allowlist
  const byId=new Map(candidates.map(c=>[c.id,c])),used=new Set();let seconds=0;
  const clips=value.choices.map((choice,order)=>{
