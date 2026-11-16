@@ -53,6 +53,24 @@
         "highlight": "none",
         "highlightColor": "&H00FFFFFF"
       }
+    },
+    "SoftCinematic": {
+      "id": "SoftCinematic",
+      "name": "Soft Cinematic",
+      "description": "Мягкий кинематографичный SDR-пресет: деликатный контраст, слегка приглушённая насыщенность и едва прохладные тени. Стартовые значения без анализа конкретного исходника; проверяйте кожу и белые объекты перед утверждением.",
+      "filter": "eq=contrast=1.04:saturation=0.98:gamma=1.01,colorbalance=rs=-0.01:bs=0.015:rm=0.005:gm=-0.003:bm=-0.003:pl=1",
+      "editorialVariation": "cinematic",
+      "subtitles": {
+        "font": "Segoe UI",
+        "fontSize": 56,
+        "bold": false,
+        "outline": 1,
+        "shadow": 1,
+        "fadeMs": 180,
+        "highlight": "none",
+        "highlightColor": "&H00FFFFFF",
+        "primaryColor": "&H00E0EAF5"
+      }
     }
   }
 }
