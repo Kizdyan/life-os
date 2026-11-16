@@ -19,7 +19,7 @@ try{
  await story.waitFor();
  assert.equal(await story.locator('.personaIndustryShots article').count(),6);
  assert.match(await story.innerText(),/45 SEC/);
- assert.match(await story.innerText(),/контровой/);
+ assert.match(await story.textContent(),/контровой/);
  assert.match(await story.innerText(),/Match Cut/);
  await page.screenshot({path:join(directory,'actor-portfolio-1440.png'),fullPage:true,animations:'disabled'});
  const edit=page.getByRole('textbox',{name:'Реплика P01'});
