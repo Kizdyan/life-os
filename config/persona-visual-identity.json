@@ -42,6 +42,8 @@
     "subtitlePrimaryHex": "F7F4EE",
     "subtitleOutlineHex": "171B24",
     "subtitleFontSize1080p": 49,
-    "subtitleOutlinePx1080p": 2
+    "subtitleOutlinePx1080p": 2,
+    "videoFilter": "eq=contrast=1.03:saturation=0.99:gamma=1.0",
+    "note": "Opt-in look, requires human skin-tone and white-balance QC. Never changes original media files."
   }
 }
