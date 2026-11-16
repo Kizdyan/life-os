@@ -16,6 +16,7 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {validateArchitectIdeas} from '../packages/core/src/persona-architect-shot-parser.mjs';
+import {strategyForArchitect,isPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 
 const ideas=JSON.parse(await readFile(new URL('../packages/core/src/persona-architect-ten-reels.json',import.meta.url),'utf8'));
 const validated=validateArchitectIdeas(ideas);
@@ -31,14 +32,17 @@ async function assertExisting(directory,entry,sourceSha){
  const manifest=await readJson(join(directory,'output','architect-manifest.json'));
  const source=await readJson(join(directory,'input','architect-source.json'));
  const shots=await readJson(join(directory,'output','architect-shot-list.json'));
+ const expectedStrategy=strategyForArchitect(entry.item);
  if(state.status!=='WAITING_FOR_FOOTAGE'||state.title!==entry.item.title||
    manifest.version!==1||manifest.sourceId!==entry.item.id||
    manifest.sourceSha256!==sourceSha||manifest.productionJobId!==state.id||
    manifest.editorialApproved!==false||manifest.footageAvailable!==false||
+   (state.strategy!==undefined&&JSON.stringify(state.strategy)!==JSON.stringify(expectedStrategy))||
+   (shots.strategy!==undefined&&JSON.stringify(shots.strategy)!==JSON.stringify(expectedStrategy))||
    sha(source)!==sourceSha||
    shots.sourceId!==entry.item.id||shots.shots.length!==entry.scenes.length)
   throw Error('Existing project differs from the seed or was edited: '+entry.item.id+'; refusing to overwrite');
- return {sourceId:entry.item.id,jobId:state.id,title:state.title,status:state.status,directory,created:false,shots:shots.shots.length};
+ return {sourceId:entry.item.id,jobId:state.id,title:state.title,status:state.status,directory,created:false,shots:shots.shots.length,strategyStored:Boolean(state.strategy)};
 }
 
 async function seedOne(root,entry){
@@ -56,7 +60,8 @@ async function seedOne(root,entry){
  const staging=join(root,'.pending-'+item.id+'-'+randomUUID());
  let createdStage=false;
  try{
-  const job=await ProductionJob.create(staging,{title:item.title});createdStage=true;
+  const strategy=strategyForArchitect(item);
+  const job=await ProductionJob.create(staging,{title:item.title,strategy});createdStage=true;
   const status=await job.read();
   const shots=scenes.map(scene=>({
    order:scene.order,startSec:scene.startSec,endSec:scene.endSec,durationSec:scene.durationSec,
@@ -64,7 +69,7 @@ async function seedOne(root,entry){
   }));
   await writeFile(join(staging,'input','architect-source.json'),toJson(item),{flag:'wx'});
   await writeFile(join(staging,'output','architect-shot-list.json'),toJson({
-   version:1,sourceId:item.id,editorialApproved:false,shots,brollIdeas:item.broll,
+   version:1,sourceId:item.id,editorialApproved:false,strategy,shots,brollIdeas:item.broll,
    musicalDirection:item.music,requestedDuration:item.duration,
   }),{flag:'wx'});
   await writeFile(join(staging,'output','architect-manifest.json'),toJson({
@@ -79,7 +84,7 @@ async function seedOne(root,entry){
    reason:'Architect brief imported for planning only; footage missing; editorial approval remains pending',
   });
   await rename(staging,directory);
-  return {sourceId:item.id,jobId:waiting.id,title:waiting.title,status:waiting.status,directory,created:true,shots:shots.length};
+  return {sourceId:item.id,jobId:waiting.id,title:waiting.title,status:waiting.status,directory,created:true,shots:shots.length,strategyStored:isPersonaStrategy(waiting.strategy)};
  }catch(error){
   if(createdStage)await rm(staging,{recursive:true,force:true}).catch(()=>{});
   throw error;
