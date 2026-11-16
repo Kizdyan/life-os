@@ -56,3 +56,30 @@
  .personaMusicPrint a{color:#214c79;overflow-wrap:anywhere}
  .personaMusicPrint footer{font-size:9pt;line-height:1.4;border-top:1px solid #999;padding-top:5mm}
 }
+
+/* Isolate portfolio cards from inherited multi-column production-card CSS. */
+.personaIndustryShots article{grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;align-content:start!important}
+.personaIndustryShots article>*{grid-column:1!important;max-width:100%!important}
+.personaIndustryShots article label{grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;display:grid!important}
+.personaIndustryShots article textarea{display:block!important;width:100%!important;min-width:0!important}
+.personaIndustryShots article .personaIndustryShotTop{display:flex!important;justify-content:space-between!important}
+/* Print is a standalone, single-column dossier, not a production dashboard. */
+@media print{
+ html,body,#root{margin:0!important;padding:0!important;height:auto!important;min-height:0!important;overflow:visible!important}
+ .personaIndustry{display:block!important;position:static!important;margin:0!important;padding:0!important;
+  width:100%!important;max-width:none!important;min-height:0!important;background:#fff!important}
+ .personaIndustry>:not(.personaMusicPrint){display:none!important}
+ .personaMusicPrint{position:static!important;display:block!important;width:100%!important;max-width:none!important;
+  min-height:0!important;height:auto!important;background:#fff!important;margin:0!important;padding:0!important}
+ .personaMusicPrint article{display:block!important;float:none!important;position:static!important;min-height:0!important;
+  height:auto!important;max-width:100%!important;width:100%!important;grid-template-columns:none!important;
+  box-shadow:none!important;border:0!important;border-bottom:1px solid #bbb!important;border-radius:0!important;
+  padding:4mm 0!important;margin:0 0 6mm!important;background:#fff!important}
+ .personaMusicPrint article>*{display:block!important;float:none!important;position:static!important;
+  width:100%!important;min-width:0!important;max-width:100%!important;grid-column:auto!important;
+  margin:1mm 0!important;overflow-wrap:anywhere!important}
+ .personaMusicPrint article h2{font-size:14pt!important;line-height:1.25!important}
+ .personaMusicPrint article p{font-size:10pt!important;line-height:1.4!important}
+ .personaMusicPrint article a{word-break:break-all!important}
+ .personaMusicPrint footer{display:block!important;width:100%!important;height:auto!important}
+}
