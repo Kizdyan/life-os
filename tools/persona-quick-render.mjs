@@ -35,11 +35,13 @@ import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs'
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
 import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
+import {inspectPhoto,renderPhotoCarousel,renderPhotoSlideshow,renderPlatformPackage} from './persona-quick-platforms.mjs';
 
 const toolsDir=fileURLToPath(new URL('.',import.meta.url));
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const videoExt=new Set(['.mp4','.mov','.mkv','.webm','.m4v']);
 const audioExt=new Set(['.mp3','.wav','.m4a','.aac','.flac']);
+const photoExt=new Set(['.jpg','.jpeg','.png']);
 const BYTES_MAX=500*1024*1024;
 // Only already supported looks: Signature Gold changes subtitles, not color.
 const QUICK_STYLES=Object.freeze({
@@ -60,7 +62,7 @@ export function quickRenderAppearance({styleChoice='auto',colorPreset=null}={}){
 const resJson=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
 const safeName=(value,kind)=>{
  if(typeof value!=='string'||value.length<3||value.length>240||/[\\/\x00-\x1f:]/.test(value)||
-  !((kind==='video'?videoExt:audioExt).has(extname(value).toLowerCase())))throw Error('Unsupported or unsafe media filename');
+  !((kind==='video'?videoExt:kind==='photo'?photoExt:audioExt).has(extname(value).toLowerCase())))throw Error('Unsupported or unsafe media filename');
  return value;
 };
 const sha=async(path)=>{const hash=createHash('sha256');for await(const b of createReadStream(path))hash.update(b);return hash.digest('hex');};
@@ -175,6 +177,9 @@ export function createPersonaQuickRenderService(config={}){
   moments:job.moments??[],
   autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
+  contentType:job.contentType??'video',carouselAspect:job.carouselAspect??'4:5',
+  carouselFiles:job.carouselFiles??[],exportStatus:job.exportStatus??null,
+  exportError:job.exportError??null,exportItems:job.exportItems??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
    (job.result?.sparseUnqualified?'Редкий анализ Vision не подтвердил достаточно моментов: собран простой черновик без выдуманных оценок эмоций.':
@@ -184,11 +189,20 @@ export function createPersonaQuickRenderService(config={}){
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
   if(!body||typeof body.prompt!=='string'||body.prompt.trim().length<3||body.prompt.length>600||
-   body.consent!==true||!Array.isArray(body.files)||body.files.length<1||body.files.length>5)
+   body.consent!==true||!Array.isArray(body.files)||body.files.length<1||body.files.length>13)
    throw Error('Provide a short prompt, files and explicit vision processing consent');
-  const countVideo=body.files.filter(x=>x.kind==='video').length;
-  if(countVideo<1||countVideo>4||body.files.filter(x=>x.kind==='audio').length>1)
-   throw Error('Use 1–4 videos and at most one optional original music file');
+  const contentType=body.contentType??'video';
+  if(!['video','photo-carousel','photo-slideshow'].includes(contentType))throw Error('Unknown content type');
+  const nv=body.files.filter(x=>x.kind==='video').length,np=body.files.filter(x=>x.kind==='photo').length,
+   na=body.files.filter(x=>x.kind==='audio').length;
+  if(contentType==='video'?(nv<1||nv>4||np!==0||na>1||nv+na!==body.files.length):
+   (nv!==0||np<1||np>12||na>(contentType==='photo-slideshow'?1:0)||
+   (contentType==='photo-slideshow'&&np<2)||np+na!==body.files.length))
+   throw Error('Use 1–4 videos OR 1–12 photos; optional music only for videos and photo slideshows');
+  const carouselAspect=body.carouselAspect??'4:5';
+  if(!['4:5','1:1'].includes(carouselAspect))throw Error('Unsupported carousel aspect');
+  if(body.coverTitle!==undefined&&(typeof body.coverTitle!=='string'||body.coverTitle.length>90))
+   throw Error('Invalid cover title');
   const files=body.files.map((file,index)=>{
    const name=safeName(file.name,file.kind);
    if(!Number.isSafeInteger(file.size)||file.size<1024||file.size>BYTES_MAX)throw Error('File exceeds upload size limits');
@@ -206,6 +220,7 @@ export function createPersonaQuickRenderService(config={}){
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
+   contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',
    fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
@@ -229,7 +244,7 @@ export function createPersonaQuickRenderService(config={}){
    sink.once('open',()=>{owned=true});
    await pipeline(req,sink);
    if((await stat(path)).size!==entry.size)throw Error('Загрузка файла прервалась. Выберите исходник и повторите попытку.');
-   const media=await probe(path,config,{audioOnly:entry.kind==='audio'});
+   const media=entry.kind==='photo'?await inspectPhoto(path,{run:runBounded,ffmpegDir:config.ffmpegDir,env}):await probe(path,config,{audioOnly:entry.kind==='audio'});
    entry.sha256=await sha(path);
    entry.media=media;
    job.uploads.push(index);job.updatedAt=new Date().toISOString();await save(job);
@@ -241,6 +256,7 @@ export function createPersonaQuickRenderService(config={}){
   }finally{inFlightUploads.delete(guard)}
  }
  async function execute(job){
+  if(job.contentType!=='video')return executePhoto(job);
   const startedAt=Date.now();
   const id=job.id,dir=directory(id),out=join(dir,'output'),input=join(dir,'input');
   const production=new ProductionJob(dir);
@@ -606,9 +622,9 @@ export function createPersonaQuickRenderService(config={}){
    throw Error('All files must finish uploading before auto-render');
   if(active!==null)throw Error('The local worker is already rendering another job');
   // Commit the authoritative state before acknowledging /run.
-  const first=job.files.find(f=>f.kind==='video');
-  await new ProductionJob(directory(id)).transition('ANALYZING',{reason:'Verified video staged for rendering',
-   asset:{name:first.name,sha256:first.sha256,durationSec:first.media.durationSec}});
+  const first=job.files.find(f=>f.kind==='video')||job.files.find(f=>f.kind==='photo');
+  await new ProductionJob(directory(id)).transition('ANALYZING',{reason:'Verified source staged for rendering',
+   asset:{name:first.name,sha256:first.sha256,durationSec:first.kind==='photo'?0:first.media.durationSec}});
   active=id;job.state='running';job.stage='Начинаю обработку';await save(job);
   void execute(job);return view(job);
  }
@@ -733,7 +749,7 @@ export function createPersonaQuickRenderService(config={}){
     let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Invalid quick render JSON')}
     resJson(res,201,await create(body));return true;
    }
-   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full))?$/.exec(path);
+   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full|export-package|export\/([a-z0-9-]+)))?$/.exec(path);
    if(!matched){resJson(res,404,{error:'unknown_quick_render_route'});return true}
    const id=checkedJobId(matched[1]),action=matched[2];
    if(req.method==='GET'&&action==='status'){
@@ -744,10 +760,12 @@ export function createPersonaQuickRenderService(config={}){
    }
    if(req.method==='POST'&&action==='run'){resJson(res,202,await run(id));return true}
    if(req.method==='POST'&&action==='render-full'){resJson(res,202,await promote(id));return true}
+   if(req.method==='POST'&&action==='export-package'){resJson(res,202,await preparePackage(id));return true}
+   if(req.method==='GET'&&action?.startsWith('export/')){await exported(id,matched[4],res);return true}
    if(req.method==='GET'&&action==='video'){await video(id,res);return true}
    if(req.method==='GET'&&action==='video-full'){await video(id,res,'full');return true}
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,upload,run,promote,get,view,list,handle};
+ return {root,create,upload,run,promote,preparePackage,get,view,list,handle};
 }
