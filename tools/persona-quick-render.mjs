@@ -221,7 +221,8 @@ export function createPersonaQuickRenderService(config={}){
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
    contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',
-   fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
+   fastDraft:contentType==='video'&&body.fastDraft===true,
+   directFull:contentType!=='video'||body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
