@@ -69,7 +69,7 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   assert.equal(evidence.frameAssessments.length,8,'only 4 samples from each 9s video');
   assert.equal(evidence.vision.totalFrames,evidence.frameAssessments.length);
   assert.equal(evidence.vision.provider,'test-injected');
-  assert.equal(evidence.audio[0].status,'no-speech-detected');
+  assert.equal(evidence.audio[0].status,'skipped-fast-draft','Fast Draft must not pretend it performed Whisper');
   assert.equal(evidence.sourceVideos.length,2);
   const edit=JSON.parse(await readFile(join(output,'edit-plan.json'),'utf8'));
   assert.equal(edit.kind,'persona-smart-moment-edit-plan');
