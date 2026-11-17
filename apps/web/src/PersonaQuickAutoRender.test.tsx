@@ -14,6 +14,14 @@ describe('one-click dashboard intake',()=>{
   expect(html).toContain('при наличии Whisper');
   expect(html).toContain('платных запросов');
   expect(html).toContain('data-testid="persona-quick-auto-render"');
+  expect(html).toContain('aria-label="Стиль и цвет"');
+  expect(html).toContain('id="persona-quick-style"');
+  expect(html).toContain('id="persona-quick-color"');
+  for(const label of ['Cinematic','Dynamic','Signature Gold','Soft Cinematic','Detail Cinematic'])
+   expect(html).toContain(label);
+  expect((html.match(/<select/g)||[])).toHaveLength(2);
+  expect(html).not.toContain('PRODUCTIONJOB /');
+  expect(html).toContain('Как обрабатываются файлы и когда включается Vision');
   expect(html).toContain('disabled=""');
   expect(html).toContain('type="file"');
   expect((html.match(/<textarea/g)||[])).toHaveLength(1);
