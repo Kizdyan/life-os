@@ -112,6 +112,13 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   assert.equal(fullResult.visionRequests,0);
   assert.equal(fullResult.cloudCalls,0);
   assert.equal(fullResult.reusedEditPlanSha256,result.editPlanSha256);
+  console.log('FAST_DRAFT_BENCHMARK_JSON '+JSON.stringify({
+   draftMs:result.performance.renderElapsedMs,fullRenderMs:fullResult.renderElapsedMs,
+   baselineVisionFrames:result.performance.standardHalfSecondFrames,
+   draftVisionFrames:result.performance.visionFrames,
+   draftVisionRequests:result.performance.visionRequests,
+   fullVisionRequests:fullResult.visionRequests,
+   syntheticMedia:true,visionProvider:'test-injected'}));
   const fullProbe=spawnSync('ffprobe',['-v','error',
    '-show_entries','stream=codec_type,width,height','-of','json',
    join(output,fullResult.videoName)],{encoding:'utf8'});
