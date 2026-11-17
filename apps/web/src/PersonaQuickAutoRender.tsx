@@ -6,6 +6,7 @@ type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'complet
  uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
  moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[];
  styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null;
+ autoStyle?:boolean;styleDecision?:{mode:'ai'|'manual'|'fallback'|'test-injected';mood:string|null;reason:string;provider:string}|null;
  fastDraft?:boolean;fullRenderStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;
  fullRenderError?:string|null;fullReady?:boolean;};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
@@ -30,6 +31,7 @@ export default function PersonaQuickAutoRender(){
  const [prompt,setPrompt]=useState(DEFAULT_PROMPT);
  const [styleChoice,setStyleChoice]=useState<QuickStyle>('cinematic');
  const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
+ const [autoStyle,setAutoStyle]=useState(true);
  const [fastDraft,setFastDraft]=useState(true);
  const [promotingId,setPromotingId]=useState<string|null>(null);
  const [dragging,setDragging]=useState(false);
@@ -84,7 +86,8 @@ export default function PersonaQuickAutoRender(){
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
-    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,styleChoice,colorPreset,fastDraft})});
+    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,
+     ...(!autoStyle?{styleChoice,colorPreset}:{})})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
    const id=created.id as string;setActiveId(id);
@@ -141,7 +144,14 @@ export default function PersonaQuickAutoRender(){
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
    </label>
-   <div className="personaQuickLooks" role="group" aria-label="Стиль и цвет">
+   <label className="personaQuickFastDraft" htmlFor="persona-quick-auto-style">
+    <input id="persona-quick-auto-style" type="checkbox" checked={autoStyle}
+     onChange={event=>setAutoStyle(event.target.checked)}/>
+    <span><strong>Автовыбор стиля ИИ</strong>
+     <small>Включён по умолчанию · Director Agent изучит 3–5 кадров и подберёт цвет и оформление титров. Без OpenRouter — Soft Cinematic + Cinematic.</small>
+    </span>
+   </label>
+   {!autoStyle&&<div className="personaQuickLooks" role="group" aria-label="Стиль и цвет">
     <label htmlFor="persona-quick-style">Стиль монтажа и титров
      <select id="persona-quick-style" value={styleChoice}
       onChange={event=>setStyleChoice(event.target.value as QuickStyle)}>
@@ -158,7 +168,7 @@ export default function PersonaQuickAutoRender(){
      </select>
     </label>
     {styleChoice==='signature-gold'&&<p className="personaQuickLooksHint">Signature Gold оформляет только готовые титры. В офлайн-черновике без Vision титры не создаются.</p>}
-   </div>
+   </div>}
    <label className="personaQuickFastDraft" htmlFor="persona-quick-fast-draft">
     <input id="persona-quick-fast-draft" type="checkbox" checked={fastDraft}
      onChange={event=>setFastDraft(event.target.checked)}/>
@@ -167,7 +177,7 @@ export default function PersonaQuickAutoRender(){
     </span>
    </label>
    {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
-   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: кадры отправляются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Могут использоваться платные запросы.</p>}
+   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: для монтажа кадры передаются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {autoStyle?'Автовыбор стиля добавляет отдельный запрос с 3–5 кадрами.':'Стиль выбирается вручную без дополнительного запроса.'} {fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Возможна платная тарификация запросов.</p>}
    <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
     <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':<>При доступном OpenRouter для поиска моментов используются кадры с шагом {fastDraft?'2,5':'0,5'} секунды. {fastDraft?'В быстром черновике распознавание речи пропущено.':'При наличии Whisper текст распознанной речи тоже может отправляться в OpenRouter.'} Полный MP4 и аудиофайл в облако не передаются. Анализ длинного видео может требовать платных запросов.</>} Посторонний B-roll не загружается.</p>
    </details>
@@ -181,7 +191,8 @@ export default function PersonaQuickAutoRender(){
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
     <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
      <p>{statusLabel(job)}</p>
-     {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Стиль: {job.styleChoice==='dynamic'?'Dynamic':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
+     {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
+     {job.ready&&job.autoStyle&&<p className="personaQuickCardLooks">{job.styleDecision?.mode==='ai'?'ИИ определил настроение: '+({dramatic:'драматичное',calm:'спокойное',funny:'весёлое',dynamic:'динамичное',premium:'премиальное'}[job.styleDecision.mood??'']??'неопределённое')+'.':job.styleDecision?.mode==='fallback'?'Автовыбор недоступен — применён проверенный стиль по умолчанию.':'Стиль назначен тестовым Director Agent.'}</p>}
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
      {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">
       {job.moments?.map((moment,index)=><li key={index}>
