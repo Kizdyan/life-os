@@ -15,6 +15,7 @@ const audio=new Set(['mp3','wav','m4a','aac','flac']);
 type QuickStyle='cinematic'|'dynamic'|'signature-gold';
 type QuickColor='SoftCinematic'|'DetailCinematic';
 const DEFAULT_PROMPT='Собери короткий ролик из моих видео; если Vision доступен, выбери выразительные моменты.';
+const moodLabels:Record<string,string>={dramatic:'драматичное',calm:'спокойное',funny:'весёлое',dynamic:'динамичное',premium:'премиальное'};
 export function checkQuickRenderFiles(files:File[]){
  if(files.length<1||files.length>5)throw Error('Добавь от 1 до 4 видео и при желании один музыкальный файл.');
  const videos=files.filter(f=>video.has(ext(f.name))),music=files.filter(f=>audio.has(ext(f.name)));
@@ -192,7 +193,7 @@ export default function PersonaQuickAutoRender(){
     <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
      <p>{statusLabel(job)}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
-     {job.ready&&job.autoStyle&&<p className="personaQuickCardLooks">{job.styleDecision?.mode==='ai'?'ИИ определил настроение: '+({dramatic:'драматичное',calm:'спокойное',funny:'весёлое',dynamic:'динамичное',premium:'премиальное'}[job.styleDecision.mood??'']??'неопределённое')+'.':job.styleDecision?.mode==='fallback'?'Автовыбор недоступен — применён проверенный стиль по умолчанию.':'Стиль назначен тестовым Director Agent.'}</p>}
+     {job.ready&&job.autoStyle&&<p className="personaQuickCardLooks">{job.styleDecision?.mode==='ai'?'ИИ определил настроение: '+(moodLabels[job.styleDecision.mood??'']??'неопределённое')+'.':job.styleDecision?.mode==='fallback'?'Автовыбор недоступен — применён проверенный стиль по умолчанию.':'Стиль назначен тестовым Director Agent.'}</p>}
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
      {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">
       {job.moments?.map((moment,index)=><li key={index}>
