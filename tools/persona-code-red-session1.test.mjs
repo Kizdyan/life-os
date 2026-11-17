@@ -47,6 +47,7 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const headers={'X-Persona-Worker-Token':health.token};
   const create=await fetch(base+'/quick-render',{method:'POST',headers:{...headers,'Content-Type':'application/json'},
    body:JSON.stringify({prompt:'Собери тестовый MP4 без облачных сервисов',consent:true,
+    styleChoice:'cinematic',colorPreset:'DetailCinematic',
     files:[{kind:'video',name:'original.mp4',size:bytes.length}]})});
   assert.equal(create.status,201,await create.clone().text());
   const job=(await(await fetch(base+'/quick-render',{headers})).json()).jobs[0];
@@ -69,7 +70,13 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const plan=JSON.parse(await readFile(join(jobRoot,'output','edit-plan.json'),'utf8'));
   assert.equal(plan.provenance.provider,'none');
   assert.equal(plan.provenance.visionAvailable,false);
+  assert.equal(plan.appearance.colorPreset,'DetailCinematic');
+  assert.equal(result.visualPreset,'DetailCinematic');
+  assert.equal(result.stylePack,'Cinematic');
+  assert.equal(result.submittedToModel,'none','no key must never claim sampled Vision was used');
   assert.equal(result.distributionAllowed,false);
+  const timelineReport=JSON.parse(await readFile(join(jobRoot,'output','edited.mp4.persona.json'),'utf8'));
+  assert.equal(timelineReport.settings.visualPreset,'DetailCinematic');
   assert.ok((await stat(join(jobRoot,'output',result.videoName))).size>1000);
   const meta=JSON.parse(await readFile(join(jobRoot,'quick-state.json'),'utf8'));
   assert.equal(meta.state,undefined);
