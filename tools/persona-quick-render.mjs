@@ -349,7 +349,7 @@ export function createPersonaQuickRenderService(config={}){
    // Model chooses verified intervals; the author's style choice takes precedence.
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
-    appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset}},null,2)+'\\n');
+    appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset}},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
