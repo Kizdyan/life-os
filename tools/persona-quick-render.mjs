@@ -167,7 +167,8 @@ export function createPersonaQuickRenderService(config={}){
   moments:job.moments??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
-   'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.':
+   (job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
+    'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.'):
    'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
@@ -240,7 +241,7 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(strategyOutput,JSON.stringify({...audit,provider:'test-injected',publicationApproved:false},null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON|| (process.platform==='win32'?'python':'python3');
-    if(!env.OPENROUTER_API_KEY?.trim()&&!env.OPENAI_API_KEY?.trim()){
+    if(!env.OPENROUTER_API_KEY?.trim()){ // no OpenRouter means an entirely local one-click flow
      await writeFile(strategyOutput,JSON.stringify({status:'WARNING',recommendation:'Нет облачного ключа: стратегический анализ пропущен, доступен офлайн-монтаж.',provider:'offline',publicationApproved:false}));
     }else{
      try{await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
@@ -276,7 +277,7 @@ export function createPersonaQuickRenderService(config={}){
     job.stage='Офлайн-монтаж: Vision отключён';await save(job);
     plan=offlineEditPlan(candidateInput);
     provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
-     reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',
+     reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',visionAttempted:false,
      sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
    }else{
     job.stage='Whisper: проверка речи';await save(job);
@@ -310,8 +311,8 @@ export function createPersonaQuickRenderService(config={}){
     if(vision.unavailable){
      job.stage='Vision недоступен — собираю офлайн-черновик';await save(job);
      plan=offlineEditPlan(candidateInput);
-     provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
-      reason:vision.unavailable,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
+     provenance={version:1,kind:'offline-fallback',provider:'openrouter-attempted',visionAvailable:false,
+      visionAttempted:true,reason:vision.unavailable,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
     }else{
     job.stage='Выбор эмоциональных пиков';await save(job);
     const ranked=audio.map((track,fileIndex)=>({...track,
@@ -394,8 +395,9 @@ export function createPersonaQuickRenderService(config={}){
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
+    visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    submittedToModel:provenance.kind==='offline-fallback'?'none':
+    submittedToModel:provenance.kind==='offline-fallback'?(provenance.visionAttempted?'vision_attempted_not_verified':'none'):
      config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
     smartMomentDetection:provenance.kind==='smart-moment-evidence',audioUnderstanding:plan.audioUnderstanding,
     broll:'only_user_uploaded_source_windows',
@@ -406,7 +408,7 @@ export function createPersonaQuickRenderService(config={}){
    job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:cues.length>0,
     strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    visionAvailable:provenance.kind!=='offline-fallback'};job.updatedAt=new Date().toISOString();
+    visionAvailable:provenance.kind!=='offline-fallback',visionAttempted:Boolean(provenance.visionAttempted)};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';
