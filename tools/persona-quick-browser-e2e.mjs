@@ -54,7 +54,7 @@ try{
  await page.locator('#persona-quick-files').setInputFiles([source,second]);
  await page.locator('#persona-quick-style').selectOption('cinematic');
  await page.locator('#persona-quick-color').selectOption('DetailCinematic');
- await page.locator('#persona-quick-prompt').fill('Сделай кинематографично: выбери выразительные моменты и добавь титры');
+ assert.match(await page.locator('#persona-quick-prompt').inputValue(),/если Vision доступен/,'one click must work without typing a brief');
  await block.getByRole('button',{name:/Сделать всё/}).click();
  const job=block.locator('[data-quick-status="completed"]');
  await job.waitFor({timeout:210000});
