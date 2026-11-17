@@ -25,9 +25,16 @@ const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 const original=hash(await readFile(source));
 const second=join(temp,'IMG_8303.mp4');
 await copyFile(source,second); // a second distinct named input, synthetic bytes only
-let plannerCalls=0;
+let plannerCalls=0,styleDirectorCalls=0;
 const worker=createPersonaMediaWorker({
  port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
+ quickStyleDirector:async({frames,jpegs})=>{
+  styleDirectorCalls++;
+  assert.ok(frames.length>=3&&frames.length<=5);
+  assert.equal(frames.length,jpegs.length);
+  assert.ok(jpegs.every(frame=>frame[0]===0xff&&frame[1]===0xd8));
+  return {mood:'funny',reason:'Visible lively framing and upbeat visual rhythm'};
+ },
  quickPlanner:async({candidates,frames})=>{
   plannerCalls++;
   assert.ok(frames.length>=2&&frames[0].subarray(0,2).equals(Buffer.from([0xff,0xd8])));
@@ -51,12 +58,17 @@ try{
  await block.waitFor({timeout:20000});
  assert.equal(await block.locator('textarea').count(),1);
  assert.equal(await block.locator('input[type=file]').count(),1);
- assert.equal(await block.locator('select').count(),2,'one compact style-and-color group');
+ assert.equal(await block.locator('select').count(),0,'manual style is hidden by default');
+ assert.equal(await block.locator('#persona-quick-auto-style').isChecked(),true,'AI Auto Style defaults on');
  assert.equal(await block.locator('#persona-quick-fast-draft').isChecked(),true,'Fast Draft defaults on');
+ await block.locator('#persona-quick-auto-style').uncheck();
+ assert.equal(await block.locator('select').count(),2,'manual color and title selects appear when AI is disabled');
+ await page.locator('#persona-quick-style').selectOption('signature-gold');
+ await page.locator('#persona-quick-color').selectOption('SoftCinematic');
+ await block.locator('#persona-quick-auto-style').check();
+ assert.equal(await block.locator('select').count(),0,'manual selectors disappear when AI re-enabled');
  await page.screenshot({path:join(output,'before-1440.png'),fullPage:true,animations:'disabled'});
  await page.locator('#persona-quick-files').setInputFiles([source,second]);
- await page.locator('#persona-quick-style').selectOption('cinematic');
- await page.locator('#persona-quick-color').selectOption('DetailCinematic');
  assert.match(await page.locator('#persona-quick-prompt').inputValue(),/если Vision доступен/,'one click must work without typing a brief');
  await block.getByRole('button',{name:/Сделать всё/}).click();
  const job=block.locator('[data-quick-status="completed"]');
@@ -74,7 +86,15 @@ try{
  assert.equal(result.fastDraft,true);
  assert.equal(result.renderProfile,'fast-draft');
  assert.equal(plannerCalls,1);
- assert.equal(result.stylePack,'Cinematic','author style must override the Commercial model suggestion');
+ assert.equal(result.stylePack,'Dynamic','AI mood should override Commercial model styling');
+ assert.equal(result.styleChoice,'dynamic');
+ assert.equal(result.subtitlePreset,'dynamic-interview');
+ assert.equal(result.visualPreset,'DetailCinematic');
+ assert.equal(result.autoStyle,true);
+ assert.equal(result.styleDecision.mode,'test-injected');
+ assert.equal(result.styleDecision.mood,'funny');
+ assert.equal(styleDirectorCalls,1,'one Director call for the entire job');
+ assert.equal(plan.styleDecision.mood,'funny');
  assert.equal(timeline.settings.visualPreset,'DetailCinematic');
  assert.deepEqual(plan.choices.map(c=>c.fileIndex),[0,1]);
  const download=job.getByRole('link',{name:'Скачать черновик 720p'});
@@ -100,6 +120,7 @@ try{
  const fullLink=job.getByRole('link',{name:'Скачать MP4 в полном качестве (1080p)'});
  await fullLink.waitFor({timeout:240000});
  assert.equal(plannerCalls,1,'high-quality export does not call model or reselect moments');
+ assert.equal(styleDirectorCalls,1,'full-resolution upgrade must not repeat mood selection');
  const receipt=JSON.parse(await readFile(join(jobRoot,'output','RESULT-FULL.json'),'utf8'));
  assert.equal(receipt.visionRequests,0);assert.equal(receipt.cloudCalls,0);
  assert.equal(receipt.reusedEditPlanSha256,result.editPlanSha256);
@@ -122,7 +143,7 @@ try{
  await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
  await mobile.close();await page.close();
- console.log('PASS default-on 720p Fast Draft and 1080p promotion in real browser; one model plan, unchanged originals, real FFmpeg downloads');
+ console.log('PASS default-on AI Auto Style + manual toggle + Fast Draft and 1080p reuse; one Director decision, real FFmpeg MP4 downloads');
 }finally{
  await browser.close();await new Promise(resolve=>worker.server.close(resolve));
  await rm(temp,{recursive:true,force:true});
