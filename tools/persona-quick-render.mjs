@@ -448,14 +448,106 @@ export function createPersonaQuickRenderService(config={}){
   active=id;job.state='running';job.stage='Начинаю обработку';await save(job);
   void execute(job);return view(job);
  }
- async function video(id,res){
-  const job=await get(id);if(!job||job.state!=='completed'||!job.sha256||
-   !['edited.mp4','ready.mp4'].includes(job.videoName))throw Error('Verified MP4 not available');
-  const path=join(directory(id),'output',job.videoName);
-  if((await sha(path))!==job.sha256)throw Error('MP4 checksum does not match verified result');
+ /** Re-render a verified draft's immutable timeline at 1080x1920. No model, Vision,
+  * Whisper, or strategic calls; original EditPlan and source hashes are checked again.
+  */
+ async function executeFull(job){
+  const id=job.id,dir=directory(id),out=join(dir,'output');
+  const production=new ProductionJob(dir),started=Date.now();
+  try{
+   job.stage='1080p: проверка сохранённого плана';await save(job);
+   const result=JSON.parse(await readFile(join(out,'RESULT.json'),'utf8'));
+   if(result.id!==id||result.fastDraft!==true||!/^[a-f0-9]{64}$/.test(result.editPlanSha256)||
+      !/^[a-f0-9]{64}$/.test(result.timelineSha256))
+     throw Error('Полный экспорт требует подтверждённый Fast Draft и неизменённый план');
+   if(result.editPlanSha256!==await sha(join(out,'edit-plan.json'))||
+      result.timelineSha256!==await sha(join(out,'timeline.json')))
+     throw Error('EditPlan или таймлайн изменился после черновика: повторный анализ не допускается');
+   await verifyUploadedFiles(join(dir,'input'),job.files);
+   const plan=JSON.parse(await readFile(join(out,'edit-plan.json'),'utf8'));
+   const timeline=JSON.parse(await readFile(join(out,'timeline.json'),'utf8'));
+   if(plan.choices?.length!==timeline.clips?.length||plan.choices.length<2)
+     throw Error('EditPlan и таймлайн не совпадают');
+   const videos=job.files.filter(f=>f.kind==='video');
+   for(const [i,choice] of plan.choices.entries()){
+    const clip=timeline.clips[i],source=videos[choice.fileIndex];
+    if(!source||!clip||clip.path!==join(dir,'input',source.name)||
+      source.sha256!==choice.sourceSha256||
+      clip.startSec!==choice.startSec||clip.durationSec!==choice.durationSec)
+     throw Error('EditPlan больше не соответствует проверенным исходникам');
+   }
+   // Retry is allowed only after a recorded full-render failure; stale derivatives
+   // are removed but the original draft and the verified edit plan are untouched.
+   for(const filename of ['full-timeline.json','full-edited.mp4','full-edited.mp4.persona.json',
+     'full-ready.mp4','RESULT-FULL.json']){
+    await rm(join(out,filename),{force:true});
+   }
+   const fullTimeline={...timeline,width:1080,height:1920,fps:30,renderProfile:'full-quality'};
+   const fullTimelinePath=join(out,'full-timeline.json');
+   await writeFile(fullTimelinePath,JSON.stringify(fullTimeline,null,2)+'\n',{flag:'wx'});
+   job.stage='1080p: локальный FFmpeg (без Vision)';await save(job);
+   const fullDraft=join(out,'full-edited.mp4');
+   await runBounded(process.execPath,[join(toolsDir,'persona-timeline-render.mjs'),fullTimelinePath,fullDraft],{
+    env:{...env,PERSONA_WORKER_RENDER:'1'},timeoutMs:900000,maxStdout:30000});
+   let video=fullDraft,hasCaptions=false;
+   const reviewPath=join(out,'caption-review.json');
+   const review=await readFile(reviewPath,'utf8').then(JSON.parse).catch(error=>{
+    if(error.code==='ENOENT')return null;
+    throw error;
+   });
+   if(review?.cues?.length){
+    video=join(out,'full-ready.mp4');
+    await burnPersonaSubtitles({videoPath:fullDraft,reviewPath,outputPath:video,
+      ffmpegDir:config.ffmpegDir,preset:quickRenderAppearance(job.appearance).subtitlePreset});
+    hasCaptions=true;
+   }
+   await verifyUploadedFiles(join(dir,'input'),job.files);
+   const details=await probe(video,config,{rendered:true});
+   if(details.width!==1080||details.height!==1920)
+    throw Error('Финальный экспорт не достиг разрешения 1080×1920');
+   const hash=await sha(video),bytes=(await stat(video)).size;
+   const receipt={version:1,status:'awaiting-author-review',distributionAllowed:false,
+    id,videoName:basename(video),sha256:hash,bytes,width:1080,height:1920,
+    durationSec:details.durationSec,hasCaptions,renderProfile:'full-quality',
+    reusedEditPlanSha256:result.editPlanSha256,reusedTimelineSha256:result.timelineSha256,
+    visionRequests:0,cloudCalls:0,renderElapsedMs:Date.now()-started};
+   await atomicFile(join(out,'RESULT-FULL.json'),receipt);
+   const canonical=await production.updateFullRender('COMPLETED',{
+    reason:'Verified 1080p MP4 from unchanged author EditPlan; zero new Vision calls',
+    videoName:basename(video),sha256:hash,bytes});
+   job.fullRender=canonical.fullRender;job.stage='Полный MP4 готов';await save(job);
+  }catch(error){
+   const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
+   try{job.fullRender=(await production.updateFullRender('FAILED',{reason:message})).fullRender}
+   catch(persistError){console.error('Persona: cannot persist full render failure',persistError)}
+   job.stage='1080p: ошибка';await save(job);
+  }finally{active=null}
+ }
+ async function promote(id){
+  const job=await get(id);
+  if(!job||job.state!=='completed'||job.fastDraft!==true||!job.sha256)
+   throw Error('Сначала создайте и проверьте быстрый MP4-черновик');
+  if(job.fullRender?.status==='COMPLETED')return view(job);
+  if(job.fullRender?.status==='RENDERING'||active!==null)
+   throw Error('Локальный Worker уже выполняет рендер');
+  const receipt=await new ProductionJob(directory(id)).updateFullRender('RENDERING',{
+   reason:'1080p export reuses stored author EditPlan; cloud analysis disabled'});
+  active=id;job.fullRender=receipt.fullRender;job.stage='Начинаю 1080p';await save(job);
+  void executeFull(job);return view(job);
+ }
+ async function video(id,res,quality='draft'){
+  const job=await get(id);
+  if(!job||job.state!=='completed')throw Error('Verified MP4 not available');
+  const full=quality==='full',receipt=full?job.fullRender:job;
+  if(full&&receipt?.status!=='COMPLETED')throw Error('1080p MP4 ещё не готов');
+  if(!receipt||typeof receipt.sha256!=='string'||!(full?
+   ['full-edited.mp4','full-ready.mp4']:['edited.mp4','ready.mp4']).includes(receipt.videoName))
+   throw Error('Verified MP4 not available');
+  const path=join(directory(id),'output',receipt.videoName);
+  if((await sha(path))!==receipt.sha256)throw Error('MP4 checksum does not match verified result');
   const size=(await stat(path)).size;
   res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':size,
-   'Content-Disposition':'attachment; filename="persona-'+id+'.mp4"',
+   'Content-Disposition':'attachment; filename="persona-'+id+(full?'-1080p':'-draft')+'.mp4"',
    'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   createReadStream(path).pipe(res);
  }
@@ -477,7 +569,7 @@ export function createPersonaQuickRenderService(config={}){
     let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Invalid quick render JSON')}
     resJson(res,201,await create(body));return true;
    }
-   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video))?$/.exec(path);
+   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full))?$/.exec(path);
    if(!matched){resJson(res,404,{error:'unknown_quick_render_route'});return true}
    const id=checkedJobId(matched[1]),action=matched[2];
    if(req.method==='GET'&&action==='status'){
@@ -487,9 +579,11 @@ export function createPersonaQuickRenderService(config={}){
     resJson(res,200,await upload(id,Number(matched[3]),req));return true;
    }
    if(req.method==='POST'&&action==='run'){resJson(res,202,await run(id));return true}
+   if(req.method==='POST'&&action==='render-full'){resJson(res,202,await promote(id));return true}
    if(req.method==='GET'&&action==='video'){await video(id,res);return true}
+   if(req.method==='GET'&&action==='video-full'){await video(id,res,'full');return true}
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,upload,run,get,view,list,handle};
+ return {root,create,upload,run,promote,get,view,list,handle};
 }
