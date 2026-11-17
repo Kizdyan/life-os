@@ -12,7 +12,8 @@ describe('one-click dashboard intake',()=>{
   expect(html).toContain('с шагом');
   expect(html).toContain('2,5');
   expect(html).toContain('При доступном OpenRouter');
-  expect(html).toContain('распознавание речи пропущено');
+  expect(html).toContain('При включённых текстовых акцентах запускается локальный Whisper');
+  expect(html).toContain('генерируется отдельным платным текстовым запросом');
   expect(html).toContain('платных запросов');
   expect(html).toContain('data-testid="persona-quick-auto-render"');
   expect(html).toContain('id="persona-quick-fast-draft"');
@@ -25,7 +26,9 @@ describe('one-click dashboard intake',()=>{
   expect(html).not.toContain('id="persona-quick-style"');
   expect(html).not.toContain('id="persona-quick-color"');
   expect((html.match(/<select/g)||[])).toHaveLength(0);
-  expect((html.match(/type="checkbox" checked=""/g)||[])).toHaveLength(2);
+  expect(html).toContain('Добавлять текстовые акценты (ИИ)');
+  expect(html).toContain('id="persona-quick-text-accents"');
+  expect((html.match(/type="checkbox" checked=""/g)||[])).toHaveLength(3);
   expect(html).not.toContain('PRODUCTIONJOB /');
   expect(html).toContain('Как обрабатываются файлы и когда включается Vision');
   expect(html).toContain('disabled=""');
