@@ -51,7 +51,7 @@ export function cueFromWhisper({audio,choices}){
 export function validateQuoteText(raw){
  if(typeof raw!=='string')throw Error('AI quote must be a plain text phrase');
  if(/[\r\n{}\\<>\x00-\x1f]/u.test(raw))throw Error('AI quote contains unsafe characters');
- const quote=raw.trim().replace(/^[\"'«„]+|[\"'»“]+$/gu,'').replace(/\s+/gu,' ');
+ const quote=raw.trim().replace(/^["'«„]+|["'»“]+$/gu,'').replace(/\s+/gu,' ');
  if(quote.length<4||quote.length>94||/[\r\n{}\\<>\x00-\x1f]/u.test(quote)||
   /https?:|@|#/iu.test(quote))throw Error('AI quote is unsafe or too long');
  const count=words(quote).length;
