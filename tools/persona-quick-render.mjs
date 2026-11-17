@@ -232,6 +232,7 @@ export function createPersonaQuickRenderService(config={}){
   }finally{inFlightUploads.delete(guard)}
  }
  async function execute(job){
+  const startedAt=Date.now();
   const id=job.id,dir=directory(id),out=join(dir,'output'),input=join(dir,'input');
   const production=new ProductionJob(dir);
   try{
@@ -329,9 +330,19 @@ export function createPersonaQuickRenderService(config={}){
      segments:track.segments.map(segment=>({...segment,
       emphasis:speechRanking.highlights.some(highlight=>highlight.fileIndex===fileIndex&&
        highlight.startSec<=segment.endSec&&highlight.endSec>=segment.startSec)?4:0}))}));
-    const chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
-     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec});
-    plan=chosen.plan;
+    let chosen;
+    try{chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
+     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec});}
+    catch(error){
+     if(!job.fastDraft)throw error;
+     plan=offlineEditPlan(candidateInput);
+     provenance={version:1,kind:'sparse-vision-unqualified',provider:vision.provider,model:vision.model,
+      visionAttempted:true,visionAvailable:false,sampleCount:vision.frameCount,
+      frameIntervalSec:vision.frameIntervalSec,visionRequests:vision.requests,
+      reason:'Разреженный анализ не нашёл три независимых проверенных момента: '+String(error.message||error).slice(0,150),
+      sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
+    }
+    if(chosen){plan=chosen.plan;
     job.moments=chosen.moments.map(m=>({
      sourceName:vids[m.fileIndex].originalName,
      startSec:m.startSec,peakSec:m.stillSec,role:m.arcRole,emotion:m.emotion,
@@ -355,6 +366,7 @@ export function createPersonaQuickRenderService(config={}){
      speechRanking:speechRanking.status,evidenceSha256:vision.evidenceSha256,
      note:job.fastDraft?'Sparse 2.5s Vision; no Whisper. See smart-moments.json.':'Half-second Vision + optional local Whisper. See smart-moments.json.',
      rightsConfirmed:false};
+    }
     }
    }
    const appearance=quickRenderAppearance(job.appearance);
@@ -413,9 +425,14 @@ export function createPersonaQuickRenderService(config={}){
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
+    performance:{renderElapsedMs:Date.now()-startedAt,
+     visionFrames:provenance.sampleCount??0,visionRequests:provenance.visionRequests??0,
+     standardHalfSecondFrames:vids.reduce((n,f)=>n+Math.ceil(f.media.durationSec*2-1e-7),0),
+     caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
     hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
     captionsDeferred:job.fastDraft&&cues.length>0,
-    submittedToModel:provenance.kind==='offline-fallback'?(provenance.visionAttempted?'vision_attempted_not_verified':'none'):
+    submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
+      (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
      config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
     smartMomentDetection:provenance.kind==='smart-moment-evidence',audioUnderstanding:plan.audioUnderstanding,
     broll:'only_user_uploaded_source_windows',
@@ -426,7 +443,9 @@ export function createPersonaQuickRenderService(config={}){
    job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
     strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    visionAvailable:provenance.kind!=='offline-fallback',visionAttempted:Boolean(provenance.visionAttempted)};job.updatedAt=new Date().toISOString();
+    visionAvailable:provenance.kind==='smart-moment-evidence'||provenance.kind==='one-click-planning-evidence',
+    visionAttempted:Boolean(provenance.visionAttempted),
+    visionFrames:provenance.sampleCount??0,renderElapsedMs:Date.now()-startedAt};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';
