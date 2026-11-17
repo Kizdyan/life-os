@@ -7,6 +7,7 @@ type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'complet
  moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[];
  styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null;
  autoStyle?:boolean;styleDecision?:{mode:'ai'|'manual'|'fallback'|'test-injected';mood:string|null;reason:string;provider:string}|null;
+ textAccents?:boolean;captionDecision?:{mode:string;reason:string;generatedText?:string|null;wordCount?:number}|null;
  fastDraft?:boolean;fullRenderStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;
  fullRenderError?:string|null;fullReady?:boolean;};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
@@ -34,6 +35,7 @@ export default function PersonaQuickAutoRender(){
  const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
  const [autoStyle,setAutoStyle]=useState(true);
  const [fastDraft,setFastDraft]=useState(true);
+ const [textAccents,setTextAccents]=useState(true);
  const [promotingId,setPromotingId]=useState<string|null>(null);
  const [dragging,setDragging]=useState(false);
  const [submitting,setSubmitting]=useState(false);
@@ -87,7 +89,7 @@ export default function PersonaQuickAutoRender(){
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
-    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,
+    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,textAccents,
      ...(!autoStyle?{styleChoice,colorPreset}:{})})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
@@ -170,6 +172,13 @@ export default function PersonaQuickAutoRender(){
     </label>
     {styleChoice==='signature-gold'&&<p className="personaQuickLooksHint">Signature Gold оформляет только готовые титры. В офлайн-черновике без Vision титры не создаются.</p>}
    </div>}
+   <label className="personaQuickFastDraft" htmlFor="persona-quick-text-accents">
+    <input id="persona-quick-text-accents" type="checkbox" checked={textAccents}
+     onChange={event=>setTextAccents(event.target.checked)}/>
+    <span><strong>Добавлять текстовые акценты (ИИ)</strong>
+     <small>Включено по умолчанию · если Whisper распознает речь — титры из реальных слов; если подтверждена тишина или очень мало слов — оригинальная фраза ИИ по настроению. Распознавание и наложение титров могут увеличить время черновика.</small>
+    </span>
+   </label>
    <label className="personaQuickFastDraft" htmlFor="persona-quick-fast-draft">
     <input id="persona-quick-fast-draft" type="checkbox" checked={fastDraft}
      onChange={event=>setFastDraft(event.target.checked)}/>
@@ -177,10 +186,10 @@ export default function PersonaQuickAutoRender(){
      <small>Включён по умолчанию · до 5 раз меньше кадров Vision · лёгкий MP4 720p. Потом можно сделать 1080p без нового анализа.</small>
     </span>
    </label>
-   {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
-   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: для монтажа кадры передаются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {autoStyle?'Автовыбор стиля добавляет отдельный запрос с 3–5 кадрами.':'Стиль выбирается вручную без дополнительного запроса.'} {fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Возможна платная тарификация запросов.</p>}
+   {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик без автоматического анализа настроения и без генерации новых цитат. {textAccents?'Если работает локальный Whisper, распознанные слова могут быть наложены как титры.':''} Перед публикацией проверьте материал.</p>}
+   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: для монтажа кадры передаются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {autoStyle?'Автовыбор стиля добавляет отдельный запрос с 3–5 кадрами.':'Стиль выбирается вручную без дополнительного запроса.'} {textAccents?'Для проверки речи используется локальный Whisper; если речи нет, генерация короткой цитаты добавляет ещё один текстовый запрос OpenRouter.':fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Возможна платная тарификация запросов.</p>}
    <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
-    <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':<>При доступном OpenRouter для поиска моментов используются кадры с шагом {fastDraft?'2,5':'0,5'} секунды. {fastDraft?'В быстром черновике распознавание речи пропущено.':'При наличии Whisper текст распознанной речи тоже может отправляться в OpenRouter.'} Полный MP4 и аудиофайл в облако не передаются. Анализ длинного видео может требовать платных запросов.</>} Посторонний B-roll не загружается.</p>
+    <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':<>При доступном OpenRouter для поиска моментов используются кадры с шагом {fastDraft?'2,5':'0,5'} секунды. {textAccents?'При включённых текстовых акцентах запускается локальный Whisper. Если речи нет или её мало, короткая оригинальная фраза генерируется отдельным платным текстовым запросом. Если Whisper недоступен, отсутствие речи не предполагается.':fastDraft?'В быстром черновике распознавание речи пропущено.':'При наличии Whisper текст распознанной речи тоже может отправляться в OpenRouter.'} Полный MP4 и аудиофайл в облако не передаются. Анализ длинного видео может требовать платных запросов.</>} Посторонний B-roll не загружается.</p>
    </details>
    <button type="submit" className="personaQuickGo" disabled={submitting||files.length===0||prompt.trim().length<3}>
     {submitting?'Загружаю файлы…':'Сделать всё'} <span aria-hidden="true">✦</span>
@@ -193,6 +202,9 @@ export default function PersonaQuickAutoRender(){
     <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
      <p>{statusLabel(job)}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
+     {job.ready&&job.textAccents&&job.captionDecision?.mode==='ai-quote'&&<p className="personaQuickCardLooks">Текстовый акцент ИИ (не речь из видео): «{job.captionDecision.generatedText}»</p>}
+     {job.ready&&job.textAccents&&job.captionDecision?.mode==='speech'&&<p className="personaQuickCardLooks">Титры по распознанной речи Whisper · проверь точность слов</p>}
+     {job.ready&&job.textAccents&&['unverified','quote-unavailable','speech-not-in-cut'].includes(job.captionDecision?.mode??'')&&<p className="personaQuickCardLooks">Текстовые акценты не добавлены: {job.captionDecision?.reason}</p>}
      {job.ready&&job.autoStyle&&<p className="personaQuickCardLooks">{job.styleDecision?.mode==='ai'?'ИИ определил настроение: '+(moodLabels[job.styleDecision.mood??'']??'неопределённое')+'.':job.styleDecision?.mode==='fallback'?'Автовыбор недоступен — применён проверенный стиль по умолчанию.':'Стиль назначен тестовым Director Agent.'}</p>}
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
      {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">

@@ -48,8 +48,12 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Install FFmpeg and FFprobe for real video and audio integration tests
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "Using FFmpeg and FFprobe already installed on the GitHub runner"
+          fi
           command -v ffmpeg
           command -v ffprobe
           ffmpeg -hide_banner -version | head -n 1
