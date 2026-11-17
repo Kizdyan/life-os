@@ -165,6 +165,7 @@ export function createPersonaQuickRenderService(config={}){
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   moments:job.moments??[],
+  styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
    'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.':
    'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
