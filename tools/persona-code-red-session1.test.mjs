@@ -47,7 +47,7 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const headers={'X-Persona-Worker-Token':health.token};
   const create=await fetch(base+'/quick-render',{method:'POST',headers:{...headers,'Content-Type':'application/json'},
    body:JSON.stringify({prompt:'Собери тестовый MP4 без облачных сервисов',consent:true,
-    styleChoice:'cinematic',colorPreset:'DetailCinematic',
+    styleChoice:'cinematic',colorPreset:'DetailCinematic',fastDraft:true,
     files:[{kind:'video',name:'original.mp4',size:bytes.length}]})});
   assert.equal(create.status,201,await create.clone().text());
   const job=(await(await fetch(base+'/quick-render',{headers})).json()).jobs[0];
@@ -74,10 +74,39 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   assert.equal(result.visualPreset,'DetailCinematic');
   assert.equal(result.stylePack,'Cinematic');
   assert.equal(result.submittedToModel,'none','no key must never claim sampled Vision was used');
+  assert.equal(result.fastDraft,true);
+  assert.equal(result.renderProfile,'fast-draft');
+  assert.equal(result.performance.visionFrames,0);
   assert.equal(result.distributionAllowed,false);
   const timelineReport=JSON.parse(await readFile(join(jobRoot,'output','edited.mp4.persona.json'),'utf8'));
   assert.equal(timelineReport.settings.visualPreset,'DetailCinematic');
   assert.ok((await stat(join(jobRoot,'output',result.videoName))).size>1000);
+  const fullStart=await fetch(base+'/quick-render/'+job.id+'/render-full',{method:'POST',headers});
+  assert.equal(fullStart.status,202,await fullStart.clone().text());
+  let derivative;
+  for(let n=0;n<400;n++){
+   derivative=await(await fetch(base+'/quick-render/'+job.id+'/status',{headers})).json();
+   if(['COMPLETED','FAILED'].includes(derivative.fullRenderStatus))break;
+   await pause(350);
+  }
+  assert.equal(derivative.fullRenderStatus,'COMPLETED',derivative.fullRenderError);
+  assert.equal(derivative.state,'completed','the original draft must remain playable');
+  const fullReceipt=JSON.parse(await readFile(join(jobRoot,'output','RESULT-FULL.json'),'utf8'));
+  assert.equal(fullReceipt.width,1080);assert.equal(fullReceipt.height,1920);
+  assert.equal(fullReceipt.visionRequests,0);assert.equal(fullReceipt.cloudCalls,0);
+  assert.equal(fullReceipt.reusedEditPlanSha256,result.editPlanSha256);
+  const fullManifest=JSON.parse(await readFile(join(jobRoot,'output','full-edited.mp4.persona.json'),'utf8'));
+  assert.equal(fullManifest.settings.width,1080);
+  assert.equal(fullManifest.settings.height,1920);
+  assert.equal(fullManifest.settings.renderProfile,'full-quality');
+  const fullDownload=await fetch(base+'/quick-render/'+job.id+'/video-full?token='+health.token);
+  assert.equal(fullDownload.status,200,await fullDownload.clone().text());
+  const render1080=Buffer.from(await fullDownload.arrayBuffer());
+  assert.ok(render1080.length>1000);
+  const productionAfterFull=await new ProductionJob(jobRoot).read();
+  assert.equal(productionAfterFull.status,'AWAITING_APPROVAL');
+  assert.equal(productionAfterFull.fullRender.status,'COMPLETED');
+
   const meta=JSON.parse(await readFile(join(jobRoot,'quick-state.json'),'utf8'));
   assert.equal(meta.state,undefined);
   assert.equal(meta.error,undefined);
@@ -88,6 +117,7 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const after=await(await fetch(resumed+'/quick-render',{headers:{'X-Persona-Worker-Token':token}})).json();
   assert.equal(after.jobs[0].id,job.id);
   assert.equal(after.jobs[0].state,'completed');
+  assert.equal(after.jobs[0].fullRenderStatus,'COMPLETED');
  }finally{
   if(second)await close(second);
   else if(worker.server.listening)await close(worker);
