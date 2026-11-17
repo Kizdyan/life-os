@@ -25,9 +25,12 @@ const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 const original=hash(await readFile(source));
 const second=join(temp,'IMG_8303.mp4');
 await copyFile(source,second); // a second distinct named input, synthetic bytes only
-let plannerCalls=0,styleDirectorCalls=0;
+let plannerCalls=0,styleDirectorCalls=0,quoteCalls=0;
 const worker=createPersonaMediaWorker({
  port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
+ quickAudioOverride:async()=>({status:'no-speech-detected',segments:[]}),
+ quickQuoteGenerator:async({mood})=>{quoteCalls++;assert.equal(mood,'funny');
+  return {quote:'Улыбка меняет направление'};},
  quickStyleDirector:async({frames,jpegs})=>{
   styleDirectorCalls++;
   assert.ok(frames.length>=3&&frames.length<=5);
@@ -60,6 +63,10 @@ try{
  assert.equal(await block.locator('input[type=file]').count(),1);
  assert.equal(await block.locator('select').count(),0,'manual style is hidden by default');
  assert.equal(await block.locator('#persona-quick-auto-style').isChecked(),true,'AI Auto Style defaults on');
+ assert.equal(await block.locator('#persona-quick-text-accents').isChecked(),true,'AI Text Accents defaults on');
+ await block.locator('#persona-quick-text-accents').uncheck();
+ assert.equal(await block.locator('#persona-quick-text-accents').isChecked(),false);
+ await block.locator('#persona-quick-text-accents').check();
  assert.equal(await block.locator('#persona-quick-fast-draft').isChecked(),true,'Fast Draft defaults on');
  await block.locator('#persona-quick-auto-style').uncheck();
  assert.equal(await block.locator('select').count(),2,'manual color and title selects appear when AI is disabled');
@@ -93,6 +100,12 @@ try{
  assert.equal(result.autoStyle,true);
  assert.equal(result.styleDecision.mode,'test-injected');
  assert.equal(result.styleDecision.mood,'funny');
+ assert.equal(result.textAccents,true);
+ assert.equal(result.hasCaptions,true);
+ assert.equal(result.captionDecision.mode,'ai-quote');
+ assert.equal(result.captionDecision.generatedText,'Улыбка меняет направление');
+ assert.equal(result.videoName,'ready.mp4');
+ assert.equal(quoteCalls,1);
  assert.equal(styleDirectorCalls,1,'one Director call for the entire job');
  assert.equal(plan.styleDecision.mood,'funny');
  assert.equal(timeline.settings.visualPreset,'DetailCinematic');
@@ -121,6 +134,7 @@ try{
  await fullLink.waitFor({timeout:240000});
  assert.equal(plannerCalls,1,'high-quality export does not call model or reselect moments');
  assert.equal(styleDirectorCalls,1,'full-resolution upgrade must not repeat mood selection');
+ assert.equal(quoteCalls,1,'1080p export must not generate new quotes');
  const receipt=JSON.parse(await readFile(join(jobRoot,'output','RESULT-FULL.json'),'utf8'));
  assert.equal(receipt.visionRequests,0);assert.equal(receipt.cloudCalls,0);
  assert.equal(receipt.reusedEditPlanSha256,result.editPlanSha256);
@@ -143,7 +157,7 @@ try{
  await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
  await mobile.close();await page.close();
- console.log('PASS default-on AI Auto Style + manual toggle + Fast Draft and 1080p reuse; one Director decision, real FFmpeg MP4 downloads');
+ console.log('PASS default-on AI text accents + auto-style and manual toggles; real quote burned into 720p MP4 and reused in 1080p, no repeated LLM calls');
 }finally{
  await browser.close();await new Promise(resolve=>worker.server.close(resolve));
  await rm(temp,{recursive:true,force:true});
