@@ -255,6 +255,95 @@ export function createPersonaQuickRenderService(config={}){
    throw error;
   }finally{inFlightUploads.delete(guard)}
  }
+ async function executePhoto(job){
+  const dir=directory(job.id),out=join(dir,'output'),input=join(dir,'input');
+  const production=new ProductionJob(dir);
+  try{
+   await verifyUploadedFiles(input,job.files);
+   const photos=job.files.filter(x=>x.kind==='photo');
+   const sources=photos.map(x=>join(input,x.name));
+   const music=job.files.find(x=>x.kind==='audio');
+   const photoConfig={run:runBounded,ffmpegDir:config.ffmpegDir,env};
+   let mood=null;
+   if(job.autoStyle){
+    job.stage='Director Agent: настроение фотографий';await save(job);
+    const usable=photos.slice(0,5);
+    if(usable.length>=3&&(config.quickStyleDirector||env.OPENROUTER_API_KEY?.trim())){
+     try{
+      const frames=usable.map((item,i)=>({id:'photo-'+i,fileIndex:i,atSec:0,sourceSha256:item.sha256}));
+      const jpegs=await Promise.all(usable.map(item=>jpegFrame(join(input,item.name),0,config)));
+      const classified=quickDirectorMoodToAppearance(config.quickStyleDirector
+       ?await config.quickStyleDirector({frames,jpegs,prompt:job.prompt})
+       :await selectQuickStyleFromVision({frames,jpegs,env}));
+      job.appearance=quickRenderAppearance({styleChoice:classified.styleChoice,colorPreset:classified.colorPreset});
+      mood=classified.mood;
+      job.styleDecision={mode:config.quickStyleDirector?'test-injected':'ai',mood,
+       reason:classified.reason,provider:config.quickStyleDirector?'test-injected':'openrouter',
+       analyzedFrames:frames.length};
+     }catch(error){
+      job.appearance=quickRenderAppearance({styleChoice:'cinematic',colorPreset:'SoftCinematic'});
+      job.styleDecision={mode:'fallback',mood:null,provider:'none',
+       reason:'Photo Director unavailable: '+String(error.message||error).slice(0,120)};
+     }
+    }else{
+     job.appearance=quickRenderAppearance({styleChoice:'cinematic',colorPreset:'SoftCinematic'});
+     job.styleDecision={mode:'fallback',mood:null,provider:'none',
+      reason:'Insufficient distinct photos or OpenRouter unavailable'};
+    }
+   }else job.styleDecision={mode:'manual',mood:null,provider:'none',reason:'User-selected visual preset'};
+   job.stage='Фото: цвет и текстовые акценты';await save(job);
+   let title=job.coverTitle||null;
+   job.captionDecision={mode:'disabled',generatedText:null,reason:'Text accents disabled',requestCount:0};
+   if(job.textAccents&&!title){
+    if(config.quickQuoteGenerator||env.OPENROUTER_API_KEY?.trim()){
+     try{
+      const quoted=config.quickQuoteGenerator?await config.quickQuoteGenerator({mood,prompt:job.prompt})
+       :await generatePersonaQuote({mood,env});
+      title=validateQuoteText(typeof quoted==='string'?quoted:quoted?.quote);
+      job.captionDecision={mode:'ai-quote',generatedText:title,
+       reason:'Original image caption (not spoken)',source:config.quickQuoteGenerator?'test-injected':'openrouter',
+       requestCount:config.quickQuoteGenerator?0:1};
+     }catch(error){job.captionDecision={mode:'quote-unavailable',generatedText:null,
+      reason:String(error.message||error).slice(0,150),requestCount:0};}
+    }else job.captionDecision={mode:'quote-unavailable',generatedText:null,
+     reason:'No OpenRouter key: original text was not generated',requestCount:0};
+   }else if(job.textAccents&&title){
+    title=validateQuoteText(title);
+    job.captionDecision={mode:'author-title',generatedText:title,
+     reason:'Title explicitly provided by author',requestCount:0};
+   }
+   await production.transition('EDITING',{reason:'Photo sources verified by FFprobe and SHA-256'});
+   const colorPreset=job.appearance.colorPreset||'SoftCinematic';
+   let result;
+   if(job.contentType==='photo-carousel'){
+    result=await renderPhotoCarousel({photos:sources,outputDir:out,aspect:job.carouselAspect,
+     colorPreset,title,textAccents:job.textAccents,config:photoConfig});
+    job.carouselFiles=result.photos.map(x=>({id:x.id,width:x.width,height:x.height,textOverlay:x.textOverlay}));
+    job.exportItems=[{id:result.package.id,filename:result.package.file,sha256:result.package.sha256,
+     bytes:result.package.bytes,kind:'zip'},...result.photos.map(x=>({id:x.id,filename:x.file,sha256:x.sha256,
+     bytes:x.bytes,kind:'image',width:x.width,height:x.height}))];
+    job.exportStatus='COMPLETED';job.sha256=result.package.sha256;
+   }else{
+    result=await renderPhotoSlideshow({photos:sources,music:music?join(input,music.name):null,
+     outputDir:out,colorPreset,title,textAccents:job.textAccents,config:photoConfig});
+    job.videoName='ready.mp4';job.sha256=result.sha256;job.exportItems=[];
+   }
+   await verifyUploadedFiles(input,job.files);
+   await production.transition('QUALITY_CHECK',{reason:'Locally rendered photo outputs pass validation'});
+   const receipt={version:1,id:job.id,contentType:job.contentType,...result,
+    captionDecision:job.captionDecision,styleDecision:job.styleDecision,
+    sourceShas:job.files.map(f=>f.sha256),publicationApproved:false,distributionAllowed:false};
+   await atomicFile(join(out,'RESULT.json'),receipt);
+   await production.transition('AWAITING_APPROVAL',{reason:'Photo outputs await human review'});
+   job.state='completed';job.stage='Готово';job.result={visionAvailable:mood!==null,
+    visualPreset:colorPreset,subtitlePreset:'signature-gold',hasCaptions:!!(title&&job.textAccents)};
+   await save(job);
+  }catch(error){
+   const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
+   try{await production.markFailed(message)}catch{}
+   job.state='failed';job.stage='Ошибка фото';job.error=message;await save(job);
+  }finally{active=null}
+ }
  async function execute(job){
   if(job.contentType!=='video')return executePhoto(job);
   const startedAt=Date.now();
