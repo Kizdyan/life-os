@@ -108,4 +108,8 @@ test('Fast Draft analyzes only each fifth former 0.5s position and reduces image
  assert.equal(scan.scored.length,16);
  assert.throws(()=>smartFrameSchedule(both,{intervalSec:2.6}),/Unsupported/);
  assert.throws(()=>smartFrameSchedule([{durationSec:400,sha256:'a'.repeat(64)}],{intervalSec:2.5}),/maximum 300 seconds/);
+ assert.throws(()=>smartFrameSchedule([{durationSec:100,sha256:'a'.repeat(64)}],{intervalSec:2.5}),/maximum 36 sparse frames/);
+ await assert.rejects(runSmartVision({videos:both,intervalSec:2.5,visionBudgetMs:0,
+  frameAt:async()=>{throw Error('unexpected Vision frame extraction after deadline')},
+  batchOverride:async()=>{throw Error('unexpected cloud request')}}),/time budget exhausted/);
 });
