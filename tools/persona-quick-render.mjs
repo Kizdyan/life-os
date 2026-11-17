@@ -33,6 +33,7 @@ import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
+import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
 
 const toolsDir=fileURLToPath(new URL('.',import.meta.url));
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -171,6 +172,7 @@ export function createPersonaQuickRenderService(config={}){
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
   fullReady:job.fullRender?.status==='COMPLETED',
   moments:job.moments??[],
+  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
    (job.result?.sparseUnqualified?'Редкий анализ Vision не подтвердил достаточно моментов: собран простой черновик без выдуманных оценок эмоций.':
@@ -191,14 +193,16 @@ export function createPersonaQuickRenderService(config={}){
    return {index,kind:file.kind,originalName:name,name:toFileName(index,file.kind,name),size:file.size};
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
-  const appearance=quickRenderAppearance(body); // validate before intake
+  if(body.autoStyle!==undefined&&typeof body.autoStyle!=='boolean')throw Error('Invalid automatic style toggle');
+  const autoStyle=body.autoStyle===true; // legacy API calls preserve manual settings
+  const appearance=quickRenderAppearance(autoStyle?{}:body); // validate user override only when selected
   // Vision is an optional enhancement. The offline timeline still creates a real MP4.
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
-   uploads:[],appearance,fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
+   uploads:[],appearance,autoStyle,fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
@@ -273,6 +277,59 @@ export function createPersonaQuickRenderService(config={}){
     catch{await writeFile(lightingPath,JSON.stringify({status:'unavailable',note:'План света не обязателен для монтажа уже снятого видео.'}));}
    }
    const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
+   // One shared Fast Draft Vision deadline: 3–5 mood frames + sparse moment detection.
+   // This prevents automatic styling from silently extending the cloud time budget.
+   const visionDeadline=job.fastDraft?Date.now()+18000:null;
+   const remainingVisionMs=()=>visionDeadline===null?null:Math.max(0,visionDeadline-Date.now());
+   if(job.autoStyle){
+    const hasVisionKey=Boolean(env.OPENROUTER_API_KEY?.trim());
+    const injected=typeof config.quickStyleDirector==='function';
+    if(injected||hasVisionKey){
+     job.stage='Director Agent: настроение и стиль';await save(job);
+     let frameSchedule=[],callStarted=false;
+     try{
+      frameSchedule=quickDirectorFrameSchedule(candidateInput);
+      const frames=[];
+      for(const ref of frameSchedule){
+       if(remainingVisionMs()===0)throw Error('Fast Draft mood budget exhausted');
+       frames.push(await jpegFrame(join(input,vids[ref.fileIndex].name),ref.atSec,config));
+      }
+      if(remainingVisionMs()===0)throw Error('Fast Draft mood budget exhausted');
+      callStarted=true;
+      const classified=injected?
+       quickDirectorMoodToAppearance(await config.quickStyleDirector({
+        frames:frameSchedule,jpegs:frames,prompt:job.prompt})):
+       await selectQuickStyleFromVision({frames:frameSchedule,jpegs:frames,env,
+        timeoutMs:Math.min(6500,remainingVisionMs()??6500)});
+      job.appearance=quickRenderAppearance({
+       styleChoice:classified.styleChoice,colorPreset:classified.colorPreset});
+      job.styleDecision={version:1,mode:injected?'test-injected':'ai',
+       mood:classified.mood,reason:classified.reason,
+       provider:injected?'test-injected':'openrouter',
+       model:injected?'fixture':classified.model,
+       analyzedFrames:frameSchedule.length,requestCount:injected?0:1,
+       attempted:true,sourceShas:vids.map(f=>f.sha256),
+       ...(classified.evidenceSha256?{evidenceSha256:classified.evidenceSha256}:{})};
+     }catch(error){
+      job.appearance=quickRenderAppearance({styleChoice:'cinematic',colorPreset:'SoftCinematic'});
+      job.styleDecision={version:1,mode:'fallback',mood:null,provider:hasVisionKey?'openrouter-attempted':'none',
+       reason:'Director Agent недоступен: '+String(error.message||error).slice(0,140),
+       analyzedFrames:frameSchedule.length,requestCount:callStarted&&!injected?null:0,
+       attempted:callStarted&&hasVisionKey,sourceShas:vids.map(f=>f.sha256)};
+     }
+    }else{
+     job.appearance=quickRenderAppearance({styleChoice:'cinematic',colorPreset:'SoftCinematic'});
+     job.styleDecision={version:1,mode:'fallback',mood:null,provider:'none',
+      reason:'Нет ключа OpenRouter: применён безопасный стиль Soft Cinematic / Cinematic без оценки настроения.',
+      analyzedFrames:0,requestCount:0,attempted:false,sourceShas:vids.map(f=>f.sha256)};
+    }
+   }else{
+    job.styleDecision={version:1,mode:'manual',mood:null,provider:'none',
+     reason:'Стиль и цвет явно выбраны автором.',analyzedFrames:0,requestCount:0,
+     attempted:false,sourceShas:vids.map(f=>f.sha256)};
+   }
+   await writeFile(join(out,'style-decision.json'),JSON.stringify(job.styleDecision,null,2)+'\n',{flag:'wx'});
+   await save(job);
    let plan,provenance;
    if(config.quickPlanner){
     // Legacy unit-test seam only: production selects via full 2fps Vision instead.
@@ -311,7 +368,7 @@ export function createPersonaQuickRenderService(config={}){
      await rankSpeechHighlights({audio,env}).catch(()=>({highlights:[],status:'unavailable'}));
     job.stage=job.fastDraft?'Vision: кадры каждые 2,5 с':'Vision: анализ каждые 0,5 с';await save(job);
     const vision=await runSmartVision({videos:candidateInput,intervalSec:job.fastDraft?2.5:.5,
-     visionBudgetMs:job.fastDraft?18000:null,
+     visionBudgetMs:job.fastDraft?remainingVisionMs():null,
      frameAt:async(frame)=>jpegFrame(join(input,vids[frame.fileIndex].name),frame.atSec,config),
      env,batchOverride:config.quickVisionBatch||null,
      onProgress:async(progress)=>{
@@ -375,7 +432,8 @@ export function createPersonaQuickRenderService(config={}){
    // Model chooses verified intervals; the author's style choice takes precedence.
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
-    appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset}},null,2)+'\n');
+    appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset},
+    styleDecision:job.styleDecision},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
@@ -426,9 +484,12 @@ export function createPersonaQuickRenderService(config={}){
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
+    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
      visionFrames:provenance.sampleCount??0,visionRequests:provenance.visionRequests??0,
+     styleVisionFrames:job.styleDecision?.analyzedFrames??0,
+     styleVisionRequests:job.styleDecision?.requestCount??null,
      standardHalfSecondFrames:vids.reduce((n,f)=>n+Math.ceil(f.media.durationSec*2-1e-7),0),
      caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
     hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
@@ -446,6 +507,7 @@ export function createPersonaQuickRenderService(config={}){
    job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
     strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
+    styleDecision:job.styleDecision,
     visionAvailable:provenance.kind==='smart-moment-evidence'||provenance.kind==='one-click-planning-evidence',
     visionAttempted:Boolean(provenance.visionAttempted),
     visionFrames:provenance.sampleCount??0,renderElapsedMs:Date.now()-startedAt,
