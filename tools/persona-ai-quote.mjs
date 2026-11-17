@@ -60,6 +60,23 @@ export function validateQuoteText(raw){
   throw Error('AI quote contains cliché');
  return quote;
 }
+// Signature Gold uses a fixed large serif font and never auto-wraps. Keep
+// generated copy within conservative, centered two-line safe bounds.
+export function layoutQuoteForSignatureGold(text){
+ const parts=words(validateQuoteText(text));
+ const max=16;
+ if([...text].length<=max)return text;
+ let best=null;
+ for(let i=1;i<parts.length;i++){
+  const left=parts.slice(0,i).join(' '),right=parts.slice(i).join(' ');
+  const a=[...left].length,b=[...right].length;
+  if(a>max||b>max)continue;
+  const score=Math.max(a,b)*10+Math.abs(a-b);
+  if(!best||score<best.score)best={left,right,score};
+ }
+ if(!best)throw Error('AI quote too wide for Signature Gold; choose shorter words');
+ return best.left+'\\n'.replace('\\n','\n')+best.right;
+}
 export function quoteCue(quote,choices){
  const text=validateQuoteText(quote);
  const total=choices.reduce((n,c)=>n+c.durationSec,0);
@@ -67,7 +84,7 @@ export function quoteCue(quote,choices){
  // Single lower-third accent, introduced after the first visual beat.
  const durationMs=round(total*1000),display=limit(round(total*0.43*1000),2200,4200);
  const startMs=limit(round(total*0.22*1000),0,Math.max(0,durationMs-display-200));
- return [{startMs,endMs:Math.min(durationMs,startMs+display),text,fadeMs:200}];
+ return [{startMs,endMs:Math.min(durationMs,startMs+display),text:layoutQuoteForSignatureGold(text),fadeMs:200}];
 }
 export async function generatePersonaQuote({mood=null,env=process.env,fetchImpl=fetch,timeoutMs=6500}={}){
  if(mood!==null&&!Object.hasOwn(MOODS,mood))throw Error('Invalid mood source for quotation');
@@ -78,7 +95,7 @@ export async function generatePersonaQuote({mood=null,env=process.env,fetchImpl=
  const messages=[{role:'system',content:[
   'Ты — сценарист в стиле «Тихая роскошь». Твоя задача — придумать ОДНУ оригинальную, не заимствованную, короткую поэтичную фразу для экранного титра.',
   'Никакой пафосной мотивации, банальностей, маркетинга или цитат известных людей.',
-  'Фраза 2–7 слов, по-русски, без кавычек и переноса строки.',
+  'Фраза 2–7 слов, по-русски, не длиннее 32 символов с пробелами; без кавычек и переноса строки.','Не используй очень длинные слова: титр должен читаться в одной или двух коротких строках.',
   'Это новая авторская подпись, а НЕ произнесённые в видеоролике слова и не слова актёра.',
   'Не утверждай ничего о неизвестных визуальных деталях, звуках или личности персонажей.',
   'Верни строго JSON объект: {"quote":"..."} без других полей.'

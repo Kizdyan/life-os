@@ -27,9 +27,11 @@ test('unique quotes constrained to 2–7 words, with one timed, non-overlapping 
  assert.equal(validateQuoteText('«'+q+'»'),q);
  const cues=quoteCue(q,choices);
  assert.equal(cues.length,1);
- assert.equal(cues[0].text,q);
+ assert.equal(cues[0].text,'Тишина перед\\nпервым аккордом'.replace('\\n','\n'));
+ assert.ok(cues[0].text.split('\n').every(line=>[...line].length<=16),'keep Gold quote inside two balanced lines');
  assert.ok(cues[0].startMs>=0&&cues[0].endMs<=5500);
  assert.ok(cues[0].endMs>cues[0].startMs+2000);
+ assert.throws(()=>quoteCue('Понимаешь иногда совершенно необыкновенное значение простого ощущения',choices),/too wide/);
  for(const bad of ['Верь в себя','Это очень очень очень очень очень очень очень длинная фраза',
   'Один','текст\\Nопасность','<script>x</script>','Две строки\nопасно'])
   assert.throws(()=>validateQuoteText(bad));

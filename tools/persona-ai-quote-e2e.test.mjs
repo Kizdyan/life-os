@@ -94,7 +94,7 @@ test('real MP4: instrument-only AI quote in Signature Gold preview and cached 10
   assert.equal(music.result.captionDecision.mode,'ai-quote');
   assert.equal(music.result.captionDecision.generatedText,'Тишина перед первым аккордом');
   assert.equal(music.caption.cues.length,1,'exactly one original quote');
-  assert.match(music.ass,/ТИШИНА ПЕРЕД ПЕРВЫМ АККОРДОМ/u);
+  assert.match(music.ass,/ТИШИНА ПЕРЕД\\NПЕРВЫМ АККОРДОМ/u);
   assert.equal(music.caption.captionTiming,'ai-generated-original-not-spoken');
   assert.equal(quoteCalls,1);
   const fullReq=await fetch(base+'/quick-render/'+music.job.id+'/render-full',{method:'POST',headers});
@@ -113,7 +113,7 @@ test('real MP4: instrument-only AI quote in Signature Gold preview and cached 10
   assert.equal(fullResult.width,1080);assert.equal(fullResult.height,1920);
   assert.equal(fullResult.visionRequests,0);assert.equal(fullResult.cloudCalls,0);
   assert.equal(fullResult.hasCaptions,true);
-  assert.match(await readFile(join(music.dir,'full-ready.mp4.ass'),'utf8'),/ТИШИНА ПЕРЕД ПЕРВЫМ АККОРДОМ/u);
+  assert.match(await readFile(join(music.dir,'full-ready.mp4.ass'),'utf8'),/ТИШИНА ПЕРЕД\\NПЕРВЫМ АККОРДОМ/u);
   const fullReceipt=JSON.parse(await readFile(join(music.dir,'full-ready.mp4.persona-subtitles.json'),'utf8'));
   assert.equal(fullReceipt.output.width,1080);assert.equal(fullReceipt.output.height,1920);
   assert.match(await readFile(join(music.dir,'full-ready.mp4.ass'),'utf8'),/&H0039668F/);
