@@ -176,7 +176,14 @@ function safeGain(measurement){
   const gain=Math.max(-MAX_DIALOGUE_REDUCTION_DB,Math.min(MAX_DIALOGUE_BOOST_DB,requested,peakLimited));
   return {gainDb:rounded(gain),status:Math.abs(gain)<0.05?'already-close':'levelled',warning:null};
 }
-async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter=''}) {
+function encodePreset(profile){
+ if(!['standard','fast-draft','full-quality'].includes(profile))fail('Unsupported rendering profile');
+ return profile==='fast-draft'
+  ?{preset:'ultrafast',crf:'30',videoRate:['-maxrate','2200k','-bufsize','4400k'],audioRate:'96k'}
+  :{preset:'veryfast',crf:profile==='full-quality'?'19':'21',videoRate:[],audioRate:'160k'};
+}
+async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter='',renderProfile='standard'}) {
+ const encode=encodePreset(renderProfile);
   const segments = [];
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i], segment = join(tempDir, 'clip-' + i + '.mp4');
@@ -187,7 +194,7 @@ async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,
     if(clip.audioLeveling.gainDb!==0)audioFilters.push('volume='+clip.audioLeveling.gainDb+'dB');
     // Gain is capped from measured true-peak headroom; this limiter is only a final inter-sample safety net, not compression.
     if(!clip.preserveOriginalAudio)audioFilters.push('alimiter=limit=0.95:level=0');
-    args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a','160k');
+    args.push('-t',String(clip.durationSec),'-map','0:v:0','-vf',clipVideoFilter,'-c:v','libx264','-preset',encode.preset,'-crf',encode.crf,...encode.videoRate,'-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-b:a',encode.audioRate);
     if(clip.audioTreatment){
       const speech=clip.audioTreatment.speechDurationSec,tail=clip.durationSec-speech;
       const graph='[0:a]atrim=duration='+speech+',asetpts=PTS-STARTPTS,'+audioFilters.join(',')+'[speech];[0:a]atrim=start='+speech+':duration='+tail+',asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[tail];[speech][tail]concat=n=2:v=0:a=1[audio]';
@@ -209,7 +216,7 @@ async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,
   const inputs = segments.map((_, i) => `[v${i}][a${i}]`).join('');
   const concat = normalized.join(';') + ';' + inputs +
     'concat=n=' + segments.length + ':v=1:a=1[vraw][a];[vraw]fps=' + fps + '[v]';
-  args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',staged);
+  args.push('-filter_complex',concat,'-map','[v]','-map','[a]','-c:v','libx264','-preset',encode.preset,'-crf',encode.crf,...encode.videoRate,'-pix_fmt','yuv420p','-c:a','aac','-b:a',encode.audioRate,'-movflags','+faststart',staged);
   if (soundtrack) {
     const assembled=join(tempDir,'assembled.mp4');
     await run('ffmpeg',[...args.slice(0,-1),assembled]);
@@ -233,6 +240,8 @@ async function main() {
   // Explicit author-selected color replaces the editorial style's color filter (no double grading).
  const gradingPreset=project.visualPreset??project.stylePack;
  const identityFilter=[personaIdentityFfmpegFilter(project.visualIdentity),gradingPreset?getVisualPreset(gradingPreset).filter:''].filter(Boolean).join(',');
+  const renderProfile=project.renderProfile??'standard';
+  encodePreset(renderProfile); // validate before processing
   const width = numeric(project.width ?? 1080, 'width', 128, 3840);
   const height = numeric(project.height ?? 1920, 'height', 128, 3840);
   const fps = numeric(project.fps ?? 30, 'fps', 15, 60);
@@ -307,14 +316,14 @@ async function main() {
   };
   try {
     const recipe=stageCacheEnabled()?{
-      version:await stageFileSha(fileURLToPath(import.meta.url)),width,height,fps,identityFilter,
+      version:await stageFileSha(fileURLToPath(import.meta.url)),width,height,fps,identityFilter,renderProfile,
       clips:clips.map(({path,beat,brollAfterBeat,...settings})=>settings),
       soundtrack:soundtrack?{...soundtrack,path:null}:null,
     }:null;
     const sourceSha=createHash('sha256').update(JSON.stringify(sources.map(source=>source.sha256))).digest('hex');
     let actual;
     await cachedMp4({path:staged,sourceSha,params:recipe,operation:'ffmpeg_timeline_render',render:async()=>{
-     await encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter});
+     await encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,totalSec,identityFilter,renderProfile});
      if(recipe)await assertSources();
      actual=await verifyVideo();
     }});
@@ -342,7 +351,7 @@ async function main() {
       audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null,visualPreset:project.visualPreset??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,renderProfile,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null,visualPreset:project.visualPreset??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
