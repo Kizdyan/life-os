@@ -198,7 +198,7 @@ export function createPersonaQuickRenderService(config={}){
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
-   uploads:[],appearance,fastDraft:body.fastDraft===true,
+   uploads:[],appearance,fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
@@ -384,8 +384,8 @@ export function createPersonaQuickRenderService(config={}){
     preserveOriginalAudio:false,beat:c.order,
    }));
    const music=job.files.find(x=>x.kind==='audio');
-   const timeline={version:1,width:720,height:1280,fps:job.fastDraft?24:30,
-    ...(job.fastDraft?{renderProfile:'fast-draft'}:{}),visualIdentity:'persona-visual-identity-v1',
+   const timeline={version:1,width:job.directFull?1080:720,height:job.directFull?1920:1280,fps:job.fastDraft?24:30,
+    ...(job.fastDraft?{renderProfile:'fast-draft'}:job.directFull?{renderProfile:'full-quality'}:{}),visualIdentity:'persona-visual-identity-v1',
     stylePack:plan.stylePack,
     ...(appearance.colorPreset?{visualPreset:appearance.colorPreset}:{}),clips:sources,
     ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74}}:{})};
@@ -420,8 +420,8 @@ export function createPersonaQuickRenderService(config={}){
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
     publicationApproved:false,id,videoName:basename(video),sha256:outputHash,
     bytes:(await stat(video)).size,durationSec:details.durationSec,
-    fastDraft:job.fastDraft===true,renderProfile:job.fastDraft?'fast-draft':'standard',
-    editPlanSha256,timelineSha256,
+    fastDraft:job.fastDraft===true,renderProfile:job.fastDraft?'fast-draft':job.directFull?'full-quality':'standard',
+    width:details.width,height:details.height,editPlanSha256,timelineSha256,
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
