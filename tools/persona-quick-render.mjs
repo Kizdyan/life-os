@@ -173,7 +173,8 @@ export function createPersonaQuickRenderService(config={}){
   moments:job.moments??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
-   (job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
+   (job.result?.sparseUnqualified?'Редкий анализ Vision не подтвердил достаточно моментов: собран простой черновик без выдуманных оценок эмоций.':
+    job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
     'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.'):
    'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
  async function create(body){
@@ -433,7 +434,8 @@ export function createPersonaQuickRenderService(config={}){
     captionsDeferred:job.fastDraft&&cues.length>0,
     submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
       (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
-     config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
+     config.quickPlanner?'sampled_jpeg_frames_only':
+      job.fastDraft?'sparse_2_5_second_jpeg_frames':'half_second_jpeg_frames_and_optional_text_transcript',
     smartMomentDetection:provenance.kind==='smart-moment-evidence',audioUnderstanding:plan.audioUnderstanding,
     broll:'only_user_uploaded_source_windows',
     technicalChecks:{video:true,sha256:true,sourceIntegrity:true}};
@@ -445,7 +447,8 @@ export function createPersonaQuickRenderService(config={}){
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     visionAvailable:provenance.kind==='smart-moment-evidence'||provenance.kind==='one-click-planning-evidence',
     visionAttempted:Boolean(provenance.visionAttempted),
-    visionFrames:provenance.sampleCount??0,renderElapsedMs:Date.now()-startedAt};job.updatedAt=new Date().toISOString();
+    visionFrames:provenance.sampleCount??0,renderElapsedMs:Date.now()-startedAt,
+    sparseUnqualified:provenance.kind==='sparse-vision-unqualified'};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';
