@@ -58,3 +58,13 @@
 @media(max-width:720px){.personaQuick{padding:18px 14px;border-radius:15px}.personaQuickForm{grid-template-columns:1fr}.personaQuickDrop{grid-row:auto;min-height:195px}.personaQuickPrivacy,.personaQuickGo{grid-column:1}.personaQuickHeadingMark{width:40px;height:40px;font-size:20px}}
 @media(max-width:500px){.personaQuickLooks{grid-template-columns:1fr}.personaQuickLooksHint{grid-column:1}.personaQuickHeadingMark{display:none}}
 
+
+
+/* Platform-aware photo and video intake: responsive radio modes and cover title. */
+.personaQuickMode{border:1px solid var(--border, #bfbab0);border-radius:12px;margin:0;padding:12px;display:flex;gap:12px;flex-wrap:wrap;min-width:0}
+.personaQuickMode legend{font-size:.9rem;font-weight:650;padding:0 7px}
+.personaQuickMode label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:.9rem}
+.personaQuickMode input{accent-color:#8f6639}
+.personaQuickPrompt input{display:block;width:100%;box-sizing:border-box;padding:11px 12px;border-radius:9px;border:1px solid #b5ada3;background:transparent;color:inherit;margin-top:6px}
+.personaQuickCardActions label{display:grid;gap:6px;font-size:.88rem}
+.personaQuickCardActions select{width:100%;min-width:190px;padding:10px 12px;border-radius:9px;border:1px solid #aaa096;background:var(--background, #faf8f5);color:var(--foreground, #242020)}
