@@ -167,7 +167,7 @@ export default function PersonaQuickAutoRender(){
     </span>
    </label>
    {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
-   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: отдельные кадры и при наличии распознавания текст речи передаются в OpenRouter для поиска моментов. Для этого могут использоваться платные запросы.</p>}
+   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: кадры отправляются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Могут использоваться платные запросы.</p>}
    <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
     <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':<>При доступном OpenRouter для поиска моментов используются кадры с шагом {fastDraft?'2,5':'0,5'} секунды. {fastDraft?'В быстром черновике распознавание речи пропущено.':'При наличии Whisper текст распознанной речи тоже может отправляться в OpenRouter.'} Полный MP4 и аудиофайл в облако не передаются. Анализ длинного видео может требовать платных запросов.</>} Посторонний B-roll не загружается.</p>
    </details>
