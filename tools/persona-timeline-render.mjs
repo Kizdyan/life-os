@@ -103,7 +103,9 @@ async function renderFramingPreviews(projectArg,outputArg){
  const project=JSON.parse(await readFile(projectPath,'utf8'));
  if(!project||typeof project!=='object'||Array.isArray(project)||project.version!==1||!Array.isArray(project.clips)||project.clips.length<1||project.clips.length>30)fail('Expected 1–30 clips in version 1 project');
  const width=numeric(project.width??1080,'width',128,3840),height=numeric(project.height??1920,'height',128,3840),fps=numeric(project.fps??30,'fps',15,60);
- const identityFilter=[personaIdentityFfmpegFilter(project.visualIdentity),project.stylePack?getVisualPreset(project.stylePack).filter:''].filter(Boolean).join(',');
+ // Explicit author-selected color replaces the editorial style's color filter (no double grading).
+ const gradingPreset=project.visualPreset??project.stylePack;
+ const identityFilter=[personaIdentityFfmpegFilter(project.visualIdentity),gradingPreset?getVisualPreset(gradingPreset).filter:''].filter(Boolean).join(',');
  if(width%2||height%2||!Number.isInteger(fps))fail('Dimensions must be even; fps must be integer');
  await access(output).then(()=>fail('Preview directory already exists'),()=>{});
  await mkdir(output,{recursive:false});
@@ -228,7 +230,9 @@ async function main() {
   if (extname(output).toLowerCase() !== '.mp4') fail('Output must be .mp4');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
   if (!project || typeof project !== 'object' || Array.isArray(project) || project.version !== 1 || !Array.isArray(project.clips) || project.clips.length < 2 || project.clips.length > 30) fail('Expected 2–30 clips in version 1 project');
-  const identityFilter=[personaIdentityFfmpegFilter(project.visualIdentity),project.stylePack?getVisualPreset(project.stylePack).filter:''].filter(Boolean).join(',');
+  // Explicit author-selected color replaces the editorial style's color filter (no double grading).
+ const gradingPreset=project.visualPreset??project.stylePack;
+ const identityFilter=[personaIdentityFfmpegFilter(project.visualIdentity),gradingPreset?getVisualPreset(gradingPreset).filter:''].filter(Boolean).join(',');
   const width = numeric(project.width ?? 1080, 'width', 128, 3840);
   const height = numeric(project.height ?? 1920, 'height', 128, 3840);
   const fps = numeric(project.fps ?? 30, 'fps', 15, 60);
@@ -338,7 +342,7 @@ async function main() {
       audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null,visualPreset:project.visualPreset??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }
