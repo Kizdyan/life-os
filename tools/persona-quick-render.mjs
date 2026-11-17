@@ -146,7 +146,10 @@ export function createPersonaQuickRenderService(config={}){
   }
   const state=canonical.status==='FAILED'?'failed':canonical.status==='AWAITING_APPROVAL'?'completed':
    ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':'uploading';
-  const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null};
+  if(!cached&&!active&&canonical.fullRender?.status==='RENDERING')
+   canonical=await production.updateFullRender('FAILED',{reason:'Worker перезапущен до проверки полноразмерного MP4. Черновик сохранён.'});
+  const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null,
+   fullRender:canonical.fullRender??null};
   if(state==='completed'&&(!job.sha256||!job.videoName)){
    try{const result=JSON.parse(await readFile(join(directory(id),'output','RESULT.json'),'utf8'));
     job.sha256=result.sha256;job.videoName=result.videoName;}catch{}
@@ -157,17 +160,21 @@ export function createPersonaQuickRenderService(config={}){
   const view={...job};delete view.child;delete view.promise;
   jobs.set(job.id,view);
   // quick-state.json retains upload/UX metadata only. job.json owns lifecycle and failure.
-  const disk={...view};delete disk.state;delete disk.error;
+  const disk={...view};delete disk.state;delete disk.error;delete disk.fullRender;
   await atomicFile(metaFile(job.id),disk);return view;
  }
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
+  fastDraft:job.fastDraft===true,
+  fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
+  fullReady:job.fullRender?.status==='COMPLETED',
   moments:job.moments??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
-   (job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
+   (job.result?.sparseUnqualified?'Редкий анализ Vision не подтвердил достаточно моментов: собран простой черновик без выдуманных оценок эмоций.':
+    job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
     'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.'):
    'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
  async function create(body){
@@ -191,7 +198,8 @@ export function createPersonaQuickRenderService(config={}){
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
-   uploads:[],appearance,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
+   uploads:[],appearance,fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
+   createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
  }
@@ -225,6 +233,7 @@ export function createPersonaQuickRenderService(config={}){
   }finally{inFlightUploads.delete(guard)}
  }
  async function execute(job){
+  const startedAt=Date.now();
   const id=job.id,dir=directory(id),out=join(dir,'output'),input=join(dir,'input');
   const production=new ProductionJob(dir);
   try{
@@ -241,7 +250,7 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(strategyOutput,JSON.stringify({...audit,provider:'test-injected',publicationApproved:false},null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON|| (process.platform==='win32'?'python':'python3');
-    if(!env.OPENROUTER_API_KEY?.trim()){ // no OpenRouter means an entirely local one-click flow
+    if(job.fastDraft||!env.OPENROUTER_API_KEY?.trim()){ // Fast Draft skips optional strategic cloud requests
      await writeFile(strategyOutput,JSON.stringify({status:'WARNING',recommendation:'Нет облачного ключа: стратегический анализ пропущен, доступен офлайн-монтаж.',provider:'offline',publicationApproved:false}));
     }else{
      try{await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
@@ -255,6 +264,8 @@ export function createPersonaQuickRenderService(config={}){
    const lightingPath=join(out,'lighting-plan.json');
    if(config.quickLighting){
     await writeFile(lightingPath,JSON.stringify(await config.quickLighting(job.prompt),null,2));
+   }else if(job.fastDraft){
+    await writeFile(lightingPath,JSON.stringify({status:'skipped',note:'Fast Draft skips optional lighting plan'}));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON||(process.platform==='win32'?'python':'python3');
     try{await runBounded(py,[join(toolsDir,'lighting_planner.py'),'--scene',job.prompt,'--json','--output',lightingPath],
@@ -280,9 +291,10 @@ export function createPersonaQuickRenderService(config={}){
      reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',visionAttempted:false,
      sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
    }else{
-    job.stage='Whisper: проверка речи';await save(job);
+    job.stage=job.fastDraft?'Fast Draft: редкие кадры':'Whisper: проверка речи';await save(job);
     const audio=[];
-    for(const f of vids){
+    if(job.fastDraft){for(const f of vids)audio.push({status:'skipped-fast-draft',segments:[],reason:'Speech not examined in quick preview'})}
+    else for(const f of vids){
      const videoPath=join(input,f.name);
      try{
       audio.push(await analyzeWhisperAudio({videoPath,durationSec:f.media.durationSec,
@@ -295,10 +307,11 @@ export function createPersonaQuickRenderService(config={}){
        meaning:'Speech presence/content unverified due to local Whisper failure'});
      }
     }
-    const speechRanking=config.quickVisionBatch?{highlights:[],status:'test-skipped'}:
+    const speechRanking=(config.quickVisionBatch||job.fastDraft)?{highlights:[],status:'skipped-fast-draft'}:
      await rankSpeechHighlights({audio,env}).catch(()=>({highlights:[],status:'unavailable'}));
-    job.stage='Vision: анализ каждые 0,5 с';await save(job);
-    const vision=await runSmartVision({videos:candidateInput,
+    job.stage=job.fastDraft?'Vision: кадры каждые 2,5 с':'Vision: анализ каждые 0,5 с';await save(job);
+    const vision=await runSmartVision({videos:candidateInput,intervalSec:job.fastDraft?2.5:.5,
+     visionBudgetMs:job.fastDraft?18000:null,
      frameAt:async(frame)=>jpegFrame(join(input,vids[frame.fileIndex].name),frame.atSec,config),
      env,batchOverride:config.quickVisionBatch||null,
      onProgress:async(progress)=>{
@@ -319,16 +332,26 @@ export function createPersonaQuickRenderService(config={}){
      segments:track.segments.map(segment=>({...segment,
       emphasis:speechRanking.highlights.some(highlight=>highlight.fileIndex===fileIndex&&
        highlight.startSec<=segment.endSec&&highlight.endSec>=segment.startSec)?4:0}))}));
-    const chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
-     audio:ranked,visionProvider:vision.provider,visionModel:vision.model});
-    plan=chosen.plan;
+    let chosen;
+    try{chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
+     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec});}
+    catch(error){
+     if(!job.fastDraft)throw error;
+     plan=offlineEditPlan(candidateInput);
+     provenance={version:1,kind:'sparse-vision-unqualified',provider:vision.provider,model:vision.model,
+      visionAttempted:true,visionAvailable:false,sampleCount:vision.frameCount,
+      frameIntervalSec:vision.frameIntervalSec,visionRequests:vision.requests,
+      reason:'Разреженный анализ не нашёл три независимых проверенных момента: '+String(error.message||error).slice(0,150),
+      sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
+    }
+    if(chosen){plan=chosen.plan;
     job.moments=chosen.moments.map(m=>({
      sourceName:vids[m.fileIndex].originalName,
      startSec:m.startSec,peakSec:m.stillSec,role:m.arcRole,emotion:m.emotion,
      reason:m.visualReason}));
     await save(job);
     const evidence={version:1,kind:'persona-smart-moment-evidence',prompt:job.prompt,
-     frameIntervalSec:0.5,manualTimecodes:false,
+     frameIntervalSec:vision.frameIntervalSec,manualTimecodes:false,
      sourceVideos:vids.map(f=>({originalName:f.originalName,durationSec:f.media.durationSec,sha256:f.sha256})),
      vision:{provider:vision.provider,model:vision.model,requests:vision.requests,
       totalFrames:vision.frameCount,evidenceSha256:vision.evidenceSha256},
@@ -340,11 +363,12 @@ export function createPersonaQuickRenderService(config={}){
      publicationApproved:false};
     await writeFile(join(out,'smart-moments.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
     provenance={version:2,kind:'smart-moment-evidence',provider:vision.provider,model:vision.model,
-     sampleCount:vision.frameCount,frameIntervalSec:.5,visionRequests:vision.requests,
+     sampleCount:vision.frameCount,frameIntervalSec:vision.frameIntervalSec,visionRequests:vision.requests,
      sourceShas:vids.map(f=>f.sha256),audioStatus:ranked.map(a=>a.status),
      speechRanking:speechRanking.status,evidenceSha256:vision.evidenceSha256,
-     note:'Half-second Vision + optional local Whisper. See smart-moments.json.',
+     note:job.fastDraft?'Sparse 2.5s Vision; no Whisper. See smart-moments.json.':'Half-second Vision + optional local Whisper. See smart-moments.json.',
      rightsConfirmed:false};
+    }
     }
    }
    const appearance=quickRenderAppearance(job.appearance);
@@ -361,7 +385,8 @@ export function createPersonaQuickRenderService(config={}){
     preserveOriginalAudio:false,beat:c.order,
    }));
    const music=job.files.find(x=>x.kind==='audio');
-   const timeline={version:1,width:720,height:1280,fps:30,visualIdentity:'persona-visual-identity-v1',
+   const timeline={version:1,width:job.directFull?1080:720,height:job.directFull?1920:1280,fps:job.fastDraft?24:30,
+    ...(job.fastDraft?{renderProfile:'fast-draft'}:job.directFull?{renderProfile:'full-quality'}:{}),visualIdentity:'persona-visual-identity-v1',
     stylePack:plan.stylePack,
     ...(appearance.colorPreset?{visualPreset:appearance.colorPreset}:{}),clips:sources,
     ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74}}:{})};
@@ -382,33 +407,49 @@ export function createPersonaQuickRenderService(config={}){
    if(cues.length){
     const subtitle=join(out,'caption-review.json');
     await writeFile(subtitle,JSON.stringify({version:1,cues,captionTiming:'model_title_not_transcription',authorReviewRequired:true}));
-    const finished=join(out,'ready.mp4');
-    await burnPersonaSubtitles({videoPath:draft,reviewPath:subtitle,outputPath:finished,
-     ffmpegDir:config.ffmpegDir,preset:appearance.subtitlePreset});
-    video=finished;
+    if(!job.fastDraft){
+     const finished=join(out,'ready.mp4');
+     await burnPersonaSubtitles({videoPath:draft,reviewPath:subtitle,outputPath:finished,
+      ffmpegDir:config.ffmpegDir,preset:appearance.subtitlePreset});
+     video=finished;
+    }
    }
    await verifyUploadedFiles(input,job.files);
    const outputHash=await sha(video),details=await probe(video,config,{rendered:true});
+   const editPlanSha256=await sha(join(out,'edit-plan.json'));
+   const timelineSha256=await sha(timelinePath);
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
     publicationApproved:false,id,videoName:basename(video),sha256:outputHash,
     bytes:(await stat(video)).size,durationSec:details.durationSec,
+    fastDraft:job.fastDraft===true,renderProfile:job.fastDraft?'fast-draft':job.directFull?'full-quality':'standard',
+    width:details.width,height:details.height,editPlanSha256,timelineSha256,
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
-    hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    submittedToModel:provenance.kind==='offline-fallback'?(provenance.visionAttempted?'vision_attempted_not_verified':'none'):
-     config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
+    performance:{renderElapsedMs:Date.now()-startedAt,
+     visionFrames:provenance.sampleCount??0,visionRequests:provenance.visionRequests??0,
+     standardHalfSecondFrames:vids.reduce((n,f)=>n+Math.ceil(f.media.durationSec*2-1e-7),0),
+     caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
+    hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
+    captionsDeferred:job.fastDraft&&cues.length>0,
+    submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
+      (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
+     config.quickPlanner?'sampled_jpeg_frames_only':
+      job.fastDraft?'sparse_2_5_second_jpeg_frames':'half_second_jpeg_frames_and_optional_text_transcript',
     smartMomentDetection:provenance.kind==='smart-moment-evidence',audioUnderstanding:plan.audioUnderstanding,
     broll:'only_user_uploaded_source_windows',
     technicalChecks:{video:true,sha256:true,sourceIntegrity:true}};
    await writeFile(join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
    await production.transition('AWAITING_APPROVAL',{reason:'Verified MP4, awaiting human review'});
    job.state='completed';job.stage='Готово';job.videoName=basename(video);job.sha256=outputHash;
-   job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:cues.length>0,
+   job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
     strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    visionAvailable:provenance.kind!=='offline-fallback',visionAttempted:Boolean(provenance.visionAttempted)};job.updatedAt=new Date().toISOString();
+    visionAvailable:provenance.kind==='smart-moment-evidence'||provenance.kind==='one-click-planning-evidence',
+    visionAttempted:Boolean(provenance.visionAttempted),
+    visionFrames:provenance.sampleCount??0,renderElapsedMs:Date.now()-startedAt,
+    sparseUnqualified:provenance.kind==='sparse-vision-unqualified'};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';
@@ -430,14 +471,106 @@ export function createPersonaQuickRenderService(config={}){
   active=id;job.state='running';job.stage='Начинаю обработку';await save(job);
   void execute(job);return view(job);
  }
- async function video(id,res){
-  const job=await get(id);if(!job||job.state!=='completed'||!job.sha256||
-   !['edited.mp4','ready.mp4'].includes(job.videoName))throw Error('Verified MP4 not available');
-  const path=join(directory(id),'output',job.videoName);
-  if((await sha(path))!==job.sha256)throw Error('MP4 checksum does not match verified result');
+ /** Re-render a verified draft's immutable timeline at 1080x1920. No model, Vision,
+  * Whisper, or strategic calls; original EditPlan and source hashes are checked again.
+  */
+ async function executeFull(job){
+  const id=job.id,dir=directory(id),out=join(dir,'output');
+  const production=new ProductionJob(dir),started=Date.now();
+  try{
+   job.stage='1080p: проверка сохранённого плана';await save(job);
+   const result=JSON.parse(await readFile(join(out,'RESULT.json'),'utf8'));
+   if(result.id!==id||result.fastDraft!==true||!/^[a-f0-9]{64}$/.test(result.editPlanSha256)||
+      !/^[a-f0-9]{64}$/.test(result.timelineSha256))
+     throw Error('Полный экспорт требует подтверждённый Fast Draft и неизменённый план');
+   if(result.editPlanSha256!==await sha(join(out,'edit-plan.json'))||
+      result.timelineSha256!==await sha(join(out,'timeline.json')))
+     throw Error('EditPlan или таймлайн изменился после черновика: повторный анализ не допускается');
+   await verifyUploadedFiles(join(dir,'input'),job.files);
+   const plan=JSON.parse(await readFile(join(out,'edit-plan.json'),'utf8'));
+   const timeline=JSON.parse(await readFile(join(out,'timeline.json'),'utf8'));
+   if(plan.choices?.length!==timeline.clips?.length||plan.choices.length<2)
+     throw Error('EditPlan и таймлайн не совпадают');
+   const videos=job.files.filter(f=>f.kind==='video');
+   for(const [i,choice] of plan.choices.entries()){
+    const clip=timeline.clips[i],source=videos[choice.fileIndex];
+    if(!source||!clip||clip.path!==join(dir,'input',source.name)||
+      source.sha256!==choice.sourceSha256||
+      clip.startSec!==choice.startSec||clip.durationSec!==choice.durationSec)
+     throw Error('EditPlan больше не соответствует проверенным исходникам');
+   }
+   // Retry is allowed only after a recorded full-render failure; stale derivatives
+   // are removed but the original draft and the verified edit plan are untouched.
+   for(const filename of ['full-timeline.json','full-edited.mp4','full-edited.mp4.persona.json',
+     'full-ready.mp4','RESULT-FULL.json']){
+    await rm(join(out,filename),{force:true});
+   }
+   const fullTimeline={...timeline,width:1080,height:1920,fps:30,renderProfile:'full-quality'};
+   const fullTimelinePath=join(out,'full-timeline.json');
+   await writeFile(fullTimelinePath,JSON.stringify(fullTimeline,null,2)+'\n',{flag:'wx'});
+   job.stage='1080p: локальный FFmpeg (без Vision)';await save(job);
+   const fullDraft=join(out,'full-edited.mp4');
+   await runBounded(process.execPath,[join(toolsDir,'persona-timeline-render.mjs'),fullTimelinePath,fullDraft],{
+    env:{...env,PERSONA_WORKER_RENDER:'1'},timeoutMs:900000,maxStdout:30000});
+   let video=fullDraft,hasCaptions=false;
+   const reviewPath=join(out,'caption-review.json');
+   const review=await readFile(reviewPath,'utf8').then(JSON.parse).catch(error=>{
+    if(error.code==='ENOENT')return null;
+    throw error;
+   });
+   if(review?.cues?.length){
+    video=join(out,'full-ready.mp4');
+    await burnPersonaSubtitles({videoPath:fullDraft,reviewPath,outputPath:video,
+      ffmpegDir:config.ffmpegDir,preset:quickRenderAppearance(job.appearance).subtitlePreset});
+    hasCaptions=true;
+   }
+   await verifyUploadedFiles(join(dir,'input'),job.files);
+   const details=await probe(video,config,{rendered:true});
+   if(details.width!==1080||details.height!==1920)
+    throw Error('Финальный экспорт не достиг разрешения 1080×1920');
+   const hash=await sha(video),bytes=(await stat(video)).size;
+   const receipt={version:1,status:'awaiting-author-review',distributionAllowed:false,
+    id,videoName:basename(video),sha256:hash,bytes,width:1080,height:1920,
+    durationSec:details.durationSec,hasCaptions,renderProfile:'full-quality',
+    reusedEditPlanSha256:result.editPlanSha256,reusedTimelineSha256:result.timelineSha256,
+    visionRequests:0,cloudCalls:0,renderElapsedMs:Date.now()-started};
+   await atomicFile(join(out,'RESULT-FULL.json'),receipt);
+   const canonical=await production.updateFullRender('COMPLETED',{
+    reason:'Verified 1080p MP4 from unchanged author EditPlan; zero new Vision calls',
+    videoName:basename(video),sha256:hash,bytes});
+   job.fullRender=canonical.fullRender;job.stage='Полный MP4 готов';await save(job);
+  }catch(error){
+   const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
+   try{job.fullRender=(await production.updateFullRender('FAILED',{reason:message})).fullRender}
+   catch(persistError){console.error('Persona: cannot persist full render failure',persistError)}
+   job.stage='1080p: ошибка';await save(job);
+  }finally{active=null}
+ }
+ async function promote(id){
+  const job=await get(id);
+  if(!job||job.state!=='completed'||job.fastDraft!==true||!job.sha256)
+   throw Error('Сначала создайте и проверьте быстрый MP4-черновик');
+  if(job.fullRender?.status==='COMPLETED')return view(job);
+  if(job.fullRender?.status==='RENDERING'||active!==null)
+   throw Error('Локальный Worker уже выполняет рендер');
+  const receipt=await new ProductionJob(directory(id)).updateFullRender('RENDERING',{
+   reason:'1080p export reuses stored author EditPlan; cloud analysis disabled'});
+  active=id;job.fullRender=receipt.fullRender;job.stage='Начинаю 1080p';await save(job);
+  void executeFull(job);return view(job);
+ }
+ async function video(id,res,quality='draft'){
+  const job=await get(id);
+  if(!job||job.state!=='completed')throw Error('Verified MP4 not available');
+  const full=quality==='full',receipt=full?job.fullRender:job;
+  if(full&&receipt?.status!=='COMPLETED')throw Error('1080p MP4 ещё не готов');
+  if(!receipt||typeof receipt.sha256!=='string'||!(full?
+   ['full-edited.mp4','full-ready.mp4']:['edited.mp4','ready.mp4']).includes(receipt.videoName))
+   throw Error('Verified MP4 not available');
+  const path=join(directory(id),'output',receipt.videoName);
+  if((await sha(path))!==receipt.sha256)throw Error('MP4 checksum does not match verified result');
   const size=(await stat(path)).size;
   res.writeHead(200,{'Content-Type':'video/mp4','Content-Length':size,
-   'Content-Disposition':'attachment; filename="persona-'+id+'.mp4"',
+   'Content-Disposition':'attachment; filename="persona-'+id+(full?'-1080p':'-draft')+'.mp4"',
    'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   createReadStream(path).pipe(res);
  }
@@ -459,7 +592,7 @@ export function createPersonaQuickRenderService(config={}){
     let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Invalid quick render JSON')}
     resJson(res,201,await create(body));return true;
    }
-   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video))?$/.exec(path);
+   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full))?$/.exec(path);
    if(!matched){resJson(res,404,{error:'unknown_quick_render_route'});return true}
    const id=checkedJobId(matched[1]),action=matched[2];
    if(req.method==='GET'&&action==='status'){
@@ -469,9 +602,11 @@ export function createPersonaQuickRenderService(config={}){
     resJson(res,200,await upload(id,Number(matched[3]),req));return true;
    }
    if(req.method==='POST'&&action==='run'){resJson(res,202,await run(id));return true}
+   if(req.method==='POST'&&action==='render-full'){resJson(res,202,await promote(id));return true}
    if(req.method==='GET'&&action==='video'){await video(id,res);return true}
+   if(req.method==='GET'&&action==='video-full'){await video(id,res,'full');return true}
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,upload,run,get,view,list,handle};
+ return {root,create,upload,run,promote,get,view,list,handle};
 }

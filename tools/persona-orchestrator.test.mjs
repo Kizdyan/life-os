@@ -41,3 +41,29 @@ test('render failures persist as terminal FAILED in job.json and survive a resta
  await assert.rejects(job.transition('ANALYZING'),/Illegal transition/);
  await assert.rejects(job.markFailed('another failure'),/Illegal transition/);
 });
+
+test('1080p derivative lifecycle is recorded only in canonical job.json while the draft stays approved',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'persona-full-derivative-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const job=await ProductionJob.create(join(dir,'job'));
+ await job.markReady();
+ await job.transition('ANALYZING',{asset:{name:'original.mp4',sha256:'a'.repeat(64),durationSec:9}});
+ for(const next of ['EDITING','QUALITY_CHECK','AWAITING_APPROVAL'])await job.transition(next);
+ await assert.rejects(job.updateFullRender('COMPLETED',{reason:'no verified full render'}),/Illegal full-render/);
+ const running=await job.updateFullRender('RENDERING',{reason:'re-render from same EditPlan'});
+ assert.equal(running.status,'AWAITING_APPROVAL');
+ assert.equal(running.fullRender.status,'RENDERING');
+ await assert.rejects(job.updateFullRender('RENDERING'),/Illegal full-render/);
+ const failed=await job.updateFullRender('FAILED',{reason:'Test FFmpeg crashed'});
+ assert.equal(failed.fullRender.error,'Test FFmpeg crashed');
+ assert.equal(failed.status,'AWAITING_APPROVAL');
+ await job.updateFullRender('RENDERING',{reason:'retry verified source plan'});
+ const done=await job.updateFullRender('COMPLETED',{reason:'verified 1080p',
+  videoName:'full-edited.mp4',sha256:'b'.repeat(64),bytes:5000});
+ assert.equal(done.fullRender.status,'COMPLETED');
+ assert.equal(done.fullRender.attempt,2);
+ const restored=await new ProductionJob(job.directory).read();
+ assert.equal(restored.status,'AWAITING_APPROVAL');
+ assert.equal(restored.fullRender.sha256,'b'.repeat(64));
+ await assert.rejects(job.updateFullRender('RENDERING'),/Illegal full-render/);
+});

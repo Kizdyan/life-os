@@ -31,6 +31,15 @@
 .personaQuickMoments{margin:8px 0;font-size:12px}
 .personaQuickMoments ol{padding-left:20px}
 
+.personaQuickFastDraft{grid-column:1/-1;display:flex;align-items:center;gap:12px;background:#fffcf4;border:1px solid #d6c7ae;padding:14px 17px;border-radius:12px;cursor:pointer;color:#30343a}
+.personaQuickFastDraft input{width:21px;height:21px;flex-shrink:0;accent-color:#7b633f;cursor:pointer}
+.personaQuickFastDraft span{display:grid;gap:4px}
+.personaQuickFastDraft strong{font-size:14px}
+.personaQuickFastDraft small{font-size:11px;font-weight:400;line-height:1.45;color:#6f695f}
+.personaQuickCardActions{display:grid;gap:9px}
+.personaQuickFull{border:1px solid #897b62;background:#fffefa;color:#1c2635;font-size:13px;font-weight:750;min-height:44px;border-radius:9px;padding:10px 12px;cursor:pointer}
+.personaQuickFull:hover:not(:disabled){background:#e9e1d3}
+.personaQuickFull:disabled{opacity:.55;cursor:default}
 .personaQuickGo{grid-column:1/-1;border:0;border-radius:13px;background:#1d2533;color:#faf7f2;min-height:65px;padding:16px 24px;font:750 clamp(17px,2.5vw,22px)/1.2 Arial,sans-serif;display:flex;align-items:center;justify-content:center;gap:20px;cursor:pointer;box-shadow:0 8px 14px rgba(22,25,30,.18)}
 .personaQuickGo:hover:not(:disabled){background:#323c4e}
 .personaQuickGo:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}

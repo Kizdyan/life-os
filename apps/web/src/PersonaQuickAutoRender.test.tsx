@@ -9,11 +9,15 @@ describe('one-click dashboard intake',()=>{
   expect(html).toContain('Быстрый автомонтаж');
   expect(html).toContain('Сделать всё');
   expect(html).toContain('Перетащи сюда видео');
-  expect(html).toContain('с шагом 0,5 секунды');
+  expect(html).toContain('с шагом');
+  expect(html).toContain('2,5');
   expect(html).toContain('При доступном OpenRouter');
-  expect(html).toContain('при наличии Whisper');
+  expect(html).toContain('распознавание речи пропущено');
   expect(html).toContain('платных запросов');
   expect(html).toContain('data-testid="persona-quick-auto-render"');
+  expect(html).toContain('id="persona-quick-fast-draft"');
+  expect(html).toContain('type="checkbox" checked=""');
+  expect(html).toContain('Быстрый черновик');
   expect(html).toContain('aria-label="Стиль и цвет"');
   expect(html).toContain('id="persona-quick-style"');
   expect(html).toContain('id="persona-quick-color"');

@@ -83,7 +83,9 @@ export class ProductionJob {
   }
   async read(){
     const data=JSON.parse(await readFile(this.path,'utf8'));
-    if((data.strategy!==undefined&&!isPersonaStrategy(data.strategy))||data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
+    if((data.fullRender!==undefined&&(!['RENDERING','COMPLETED','FAILED'].includes(data.fullRender?.status)||
+       data.status!=='AWAITING_APPROVAL'))||
+       (data.strategy!==undefined&&!isPersonaStrategy(data.strategy))||data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
     return data;
   }
@@ -138,6 +140,39 @@ export class ProductionJob {
   async markFailed(message){
     if(typeof message!=='string'||!message.trim())fail('Failure explanation required');
     return this.transition('FAILED',{reason:message.trim().slice(0,1000)});
+  }
+  /** High-resolution derivative of an approved draft; job.json remains the only lifecycle authority.
+   * The verified 720p draft stays downloadable even when this optional derivative fails.
+   */
+  async updateFullRender(to,{reason='',videoName=null,sha256=null,bytes=null}={}){
+    if(!['RENDERING','COMPLETED','FAILED'].includes(to))fail('Unknown full-render phase');
+    if(typeof reason!=='string'||reason.length>1000)fail('Invalid full-render reason');
+    const lock=this.path+'.lock';let handle;
+    try{handle=await open(lock,'wx')}
+    catch(error){if(error.code==='EEXIST')fail('Job locked by another worker');throw error}
+    try{
+      const data=await this.read();
+      if(data.status!=='AWAITING_APPROVAL')fail('Full render requires verified draft');
+      const old=data.fullRender?.status??null;
+      if(to==='RENDERING'?old!==null&&old!=='FAILED':old!=='RENDERING')
+        fail('Illegal full-render transition '+old+' -> '+to);
+      if(to==='COMPLETED'&&(!['full-edited.mp4','full-ready.mp4'].includes(videoName)||
+         !/^[a-f0-9]{64}$/.test(sha256)||!Number.isSafeInteger(bytes)||bytes<1024))
+        fail('Full render requires a verified MP4 receipt');
+      const now=new Date().toISOString();
+      const event={from:old,to,at:now,reason:reason||'high-resolution render'};
+      const fullRender={status:to,attempt:(data.fullRender?.attempt??0)+(to==='RENDERING'?1:0),
+        history:[...(data.fullRender?.history??[]),event],
+        startedAt:to==='RENDERING'?now:data.fullRender?.startedAt,
+        ...(to==='COMPLETED'?{videoName,sha256,bytes,finishedAt:now}:{}),
+        ...(to==='FAILED'?{error:reason||'Полный рендер завершился ошибкой',finishedAt:now}:{}),
+      };
+      const update={...data,revision:data.revision+1,updatedAt:now,fullRender};
+      const tmp=this.path+'.'+randomUUID()+'.tmp';
+      try{await writeFile(tmp,JSON.stringify(update,null,2)+'\n',{flag:'wx'});await rename(tmp,this.path)}
+      finally{await unlink(tmp).catch(()=>{})}
+      return update;
+    }finally{await handle.close();await unlink(lock)}
   }
   /** Gate editing on verified source-bound, reviewed shot coverage. */
   async inspectCoverage({brief,bindings,approvalSha256}={}){

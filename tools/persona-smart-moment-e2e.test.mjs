@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 
 const available=['ffmpeg','ffprobe'].every(name=>spawnSync(name,['-version'],{stdio:'ignore'}).status===0);
-test('two uploaded real MP4 sources + generic prompt -> 0.5s frames -> emotion peaks -> FFmpeg output',{skip:!available,timeout:250000},async()=>{
+test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan without more Vision',{skip:!available,timeout:360000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-real-smart-click-'));let server=null;
  try{
   const files=[];
@@ -41,7 +41,7 @@ test('two uploaded real MP4 sources + generic prompt -> 0.5s frames -> emotion p
   const base='http://127.0.0.1:'+await worker.start();
   const token=(await(await fetch(base+'/health')).json()).token;
   const headers={'X-Persona-Worker-Token':token};
-  const manifest={prompt:'Сделай красиво',consent:true,
+  const manifest={prompt:'Сделай красиво',consent:true,fastDraft:true,
    files:files.map(f=>({kind:'video',name:f.name,size:f.bytes.length}))};
   const creation=await fetch(base+'/quick-render',{method:'POST',
    headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(manifest)});
@@ -61,15 +61,15 @@ test('two uploaded real MP4 sources + generic prompt -> 0.5s frames -> emotion p
    if(['completed','failed'].includes(final.state))break;
   }
   assert.equal(final.state,'completed',final.error||'Smart render timed out: '+final.stage);
-  assert.ok(visionCalls>=4);
+  assert.equal(visionCalls,2,'two videos each fit a single sparse Vision batch');
   const output=join(root,'quick','quick-'+id,'output');
   const evidence=JSON.parse(await readFile(join(output,'smart-moments.json'),'utf8'));
   assert.equal(evidence.manualTimecodes,false);
   assert.equal(evidence.prompt,'Сделай красиво');
-  assert.ok(evidence.frameAssessments.length>=36);
+  assert.equal(evidence.frameAssessments.length,8,'only 4 samples from each 9s video');
   assert.equal(evidence.vision.totalFrames,evidence.frameAssessments.length);
   assert.equal(evidence.vision.provider,'test-injected');
-  assert.equal(evidence.audio[0].status,'no-speech-detected');
+  assert.equal(evidence.audio[0].status,'skipped-fast-draft','Fast Draft must not pretend it performed Whisper');
   assert.equal(evidence.sourceVideos.length,2);
   const edit=JSON.parse(await readFile(join(output,'edit-plan.json'),'utf8'));
   assert.equal(edit.kind,'persona-smart-moment-edit-plan');
@@ -79,12 +79,16 @@ test('two uploaded real MP4 sources + generic prompt -> 0.5s frames -> emotion p
   assert.equal(edit.choices.at(-1).arcRole,'finale');
   assert.deepEqual([...new Set(edit.choices.map(x=>x.fileIndex))].sort(),[0,1]);
   assert.equal(edit.provenance.provider,'test-injected');
-  assert.equal(edit.provenance.frameIntervalSec,.5);
+  assert.equal(edit.provenance.frameIntervalSec,2.5);
   const result=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'));
   assert.equal(result.smartMomentDetection,true);
   assert.equal(result.publicationApproved,false);
-  assert.equal(result.audioUnderstanding,'no-speech-detected');
-  assert.equal(result.submittedToModel,'half_second_jpeg_frames_and_optional_text_transcript');
+  assert.equal(result.audioUnderstanding,'not-confirmed','Fast Draft intentionally skips Whisper');
+  assert.equal(result.submittedToModel,'sparse_2_5_second_jpeg_frames');
+  assert.equal(result.performance.visionFrames,8);
+  assert.equal(result.performance.visionRequests,2);
+  assert.equal(result.performance.standardHalfSecondFrames,37);
+  assert.equal(result.fastDraft,true);
   assert.ok((await stat(join(output,result.videoName))).size>20000);
   const video=await fetch(base+'/quick-render/'+id+'/video?token='+token);
   assert.equal(video.status,200);assert.equal(video.headers.get('content-type'),'video/mp4');
@@ -94,6 +98,35 @@ test('two uploaded real MP4 sources + generic prompt -> 0.5s frames -> emotion p
   const media=JSON.parse(verified.stdout);
   assert.equal(media.streams.find(x=>x.codec_type==='video').height,1280);
   assert.ok(Number(media.format.duration)>8);
+  const fullRequest=await fetch(base+'/quick-render/'+id+'/render-full',{method:'POST',headers});
+  assert.equal(fullRequest.status,202,await fullRequest.clone().text());
+  let full;
+  for(let attempt=0;attempt<420;attempt++){
+   await new Promise(r=>setTimeout(r,350));
+   full=await(await fetch(base+'/quick-render/'+id+'/status',{headers})).json();
+   if(['COMPLETED','FAILED'].includes(full.fullRenderStatus))break;
+  }
+  assert.equal(full.fullRenderStatus,'COMPLETED',full.fullRenderError);
+  assert.equal(visionCalls,2,'1080p promotion never re-runs sparse Vision');
+  const fullResult=JSON.parse(await readFile(join(output,'RESULT-FULL.json'),'utf8'));
+  assert.equal(fullResult.visionRequests,0);
+  assert.equal(fullResult.cloudCalls,0);
+  assert.equal(fullResult.reusedEditPlanSha256,result.editPlanSha256);
+  console.log('FAST_DRAFT_BENCHMARK_JSON '+JSON.stringify({
+   draftMs:result.performance.renderElapsedMs,fullRenderMs:fullResult.renderElapsedMs,
+   baselineVisionFrames:result.performance.standardHalfSecondFrames,
+   draftVisionFrames:result.performance.visionFrames,
+   draftVisionRequests:result.performance.visionRequests,
+   fullVisionRequests:fullResult.visionRequests,
+   syntheticMedia:true,visionProvider:'test-injected'}));
+  const fullProbe=spawnSync('ffprobe',['-v','error',
+   '-show_entries','stream=codec_type,width,height','-of','json',
+   join(output,fullResult.videoName)],{encoding:'utf8'});
+  assert.equal(fullProbe.status,0,fullProbe.stderr);
+  const fullVideo=JSON.parse(fullProbe.stdout).streams.find(x=>x.codec_type==='video');
+  assert.equal(fullVideo.width,1080);assert.equal(fullVideo.height,1920);
+  assert.ok((await stat(join(output,fullResult.videoName))).size>20000);
+
  }finally{
   if(server?.listening)await new Promise(resolve=>server.close(resolve));
   await rm(root,{recursive:true,force:true});

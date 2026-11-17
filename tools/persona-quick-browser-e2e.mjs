@@ -25,9 +25,11 @@ const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 const original=hash(await readFile(source));
 const second=join(temp,'IMG_8303.mp4');
 await copyFile(source,second); // a second distinct named input, synthetic bytes only
+let plannerCalls=0;
 const worker=createPersonaMediaWorker({
  port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
  quickPlanner:async({candidates,frames})=>{
+  plannerCalls++;
   assert.ok(frames.length>=2&&frames[0].subarray(0,2).equals(Buffer.from([0xff,0xd8])));
   const secondCandidate=candidates.find(candidate=>candidate.fileIndex===1);
   assert.ok(secondCandidate,'both uploaded files must supply verified candidate frames');
@@ -50,6 +52,7 @@ try{
  assert.equal(await block.locator('textarea').count(),1);
  assert.equal(await block.locator('input[type=file]').count(),1);
  assert.equal(await block.locator('select').count(),2,'one compact style-and-color group');
+ assert.equal(await block.locator('#persona-quick-fast-draft').isChecked(),true,'Fast Draft defaults on');
  await page.screenshot({path:join(output,'before-1440.png'),fullPage:true,animations:'disabled'});
  await page.locator('#persona-quick-files').setInputFiles([source,second]);
  await page.locator('#persona-quick-style').selectOption('cinematic');
@@ -68,10 +71,13 @@ try{
  const plan=JSON.parse(await readFile(join(jobRoot,'output','edit-plan.json'),'utf8'));
  const timeline=JSON.parse(await readFile(join(jobRoot,'output','edited.mp4.persona.json'),'utf8'));
  assert.equal(result.visualPreset,'DetailCinematic');
+ assert.equal(result.fastDraft,true);
+ assert.equal(result.renderProfile,'fast-draft');
+ assert.equal(plannerCalls,1);
  assert.equal(result.stylePack,'Cinematic','author style must override the Commercial model suggestion');
  assert.equal(timeline.settings.visualPreset,'DetailCinematic');
  assert.deepEqual(plan.choices.map(c=>c.fileIndex),[0,1]);
- const download=job.getByRole('link',{name:'Скачать готовый MP4'});
+ const download=job.getByRole('link',{name:'Скачать черновик 720p'});
  assert.equal(await download.count(),1);
  await page.screenshot({path:join(output,'ready-1440.png'),fullPage:true,animations:'disabled'});
  const pending=page.waitForEvent('download',{timeout:120000});
@@ -89,6 +95,25 @@ try{
  assert.ok(Number(parsed.format.duration)>7);
  assert.equal(hash(await readFile(source)),original,'original user media untouched');
  assert.equal(hash(await readFile(second)),original,'second source remains untouched');
+ const promotion=job.getByRole('button',{name:'Сделать в полном качестве (1080p)'});
+ await promotion.click();
+ const fullLink=job.getByRole('link',{name:'Скачать MP4 в полном качестве (1080p)'});
+ await fullLink.waitFor({timeout:240000});
+ assert.equal(plannerCalls,1,'high-quality export does not call model or reselect moments');
+ const receipt=JSON.parse(await readFile(join(jobRoot,'output','RESULT-FULL.json'),'utf8'));
+ assert.equal(receipt.visionRequests,0);assert.equal(receipt.cloudCalls,0);
+ assert.equal(receipt.reusedEditPlanSha256,result.editPlanSha256);
+ const fullDownload=page.waitForEvent('download',{timeout:90000});
+ await fullLink.click();
+ const fullFile=await fullDownload;
+ const fullDestination=join(output,'real-full-1080p-qa.mp4');
+ await fullFile.saveAs(fullDestination);
+ const fullProbe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type,width,height','-of','json',fullDestination],{encoding:'utf8'});
+ assert.equal(fullProbe.status,0,fullProbe.stderr);
+ const fullVideo=JSON.parse(fullProbe.stdout).streams.find(stream=>stream.codec_type==='video');
+ assert.equal(fullVideo.width,1080);assert.equal(fullVideo.height,1920);
+ assert.equal(hash(await readFile(source)),original,'full render must not mutate source');
+
  await page.reload({waitUntil:'domcontentloaded'});
  await page.getByTestId('persona-quick-auto-render').locator('[data-quick-status="completed"]').waitFor({timeout:15000});
  const mobile=await browser.newPage({viewport:{width:390,height:844}});
@@ -97,7 +122,7 @@ try{
  await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
  await mobile.close();await page.close();
- console.log('PASS two-input browser one-click + Cinematic / Detail Cinematic, real FFmpeg + subtitle render, MP4 download, reload and mobile');
+ console.log('PASS default-on 720p Fast Draft and 1080p promotion in real browser; one model plan, unchanged originals, real FFmpeg downloads');
 }finally{
  await browser.close();await new Promise(resolve=>worker.server.close(resolve));
  await rm(temp,{recursive:true,force:true});
