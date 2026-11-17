@@ -820,6 +820,62 @@ export function createPersonaQuickRenderService(config={}){
    'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   createReadStream(path).pipe(res);
  }
+ async function executePackage(job){
+  const out=join(directory(job.id),'output'),input=join(directory(job.id),'input');
+  try{
+   await verifyUploadedFiles(input,job.files);
+   const receipt=job.fullRender?.status==='COMPLETED'?job.fullRender:job;
+   const source=join(out,receipt.videoName);
+   if(await sha(source)!==receipt.sha256)throw Error('Verified master SHA-256 mismatch');
+   const media=await probe(source,config,{rendered:true});
+   if(media.width!==1080||media.height!==1920)throw Error('Platform exports require 1080×1920 master');
+   const target=join(out,'platform-package');
+   await rm(target,{recursive:true,force:true});
+   const title=job.coverTitle||job.captionDecision?.generatedText||'Новый ролик';
+   const result=await renderPlatformPackage({videoPath:source,outputDir:target,
+    title,colorPreset:job.appearance?.colorPreset||'SoftCinematic',durationSec:media.durationSec,
+    config:{run:runBounded,ffmpegDir:config.ffmpegDir,env}});
+   job.exportItems=result.entries.map(e=>({id:e.id,filename:e.file,sha256:e.sha256,
+    bytes:e.bytes,width:e.width,height:e.height,kind:e.id==='cover'?'image':'video'}));
+   await atomicFile(join(target,'EXPORTS.json'),result);
+   await verifyUploadedFiles(input,job.files);
+   job.exportStatus='COMPLETED';job.exportError=null;job.stage='Пакет для соцсетей готов';
+  }catch(error){
+   job.exportStatus='FAILED';job.exportError=String(error.message||error).slice(0,250);
+   job.stage='Ошибка экспорта для соцсетей';
+  }finally{active=null;await save(job)}
+ }
+ async function preparePackage(id){
+  const job=await get(id);
+  if(!job||job.state!=='completed'||job.contentType==='photo-carousel')
+   throw Error('Platform video export requires a finished video or photo slideshow');
+  if(job.fastDraft&&job.contentType==='video'&&job.fullRender?.status!=='COMPLETED')
+   throw Error('Сначала получите проверенную версию 1080p');
+  if(job.exportStatus==='COMPLETED')return view(job);
+  if(job.exportStatus==='RENDERING'||active!==null)throw Error('Worker already exporting');
+  active=id;job.exportStatus='RENDERING';job.exportError=null;
+  job.stage='Готовлю платформенные файлы';await save(job);
+  void executePackage(job);return view(job);
+ }
+ async function exported(id,slug,res){
+  const job=await get(id);
+  if(!job||job.state!=='completed'||job.exportStatus!=='COMPLETED')
+   throw Error('Exports not ready');
+  const chosen=job.exportItems?.find(e=>e.id===slug);
+  if(!chosen||!/^([a-z0-9-]+)\.(mp4|png|zip)$/.test(chosen.filename))
+   throw Error('Unknown export artifact');
+  const dir=job.contentType==='photo-carousel'?join(directory(id),'output'):
+   join(directory(id),'output','platform-package');
+  const path=join(dir,chosen.filename);
+  if(await sha(path)!==chosen.sha256||(await stat(path)).size!==chosen.bytes)
+   throw Error('Export checksum mismatch');
+  const ext=chosen.kind==='zip'?'.zip':chosen.kind==='image'?'.png':'.mp4';
+  res.writeHead(200,{'Content-Type':chosen.kind==='zip'?'application/zip':
+   chosen.kind==='image'?'image/png':'video/mp4','Content-Length':chosen.bytes,
+   'Content-Disposition':'attachment; filename="persona-'+slug+'-'+id+ext+'"',
+   'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+  createReadStream(path).pipe(res);
+ }
  async function list(){
   await mkdir(root,{recursive:true});
   const entries=(await readdir(root,{withFileTypes:true})).filter(x=>x.isDirectory()&&/^quick-[0-9a-f-]{36}$/.test(x.name)).slice(-100);
