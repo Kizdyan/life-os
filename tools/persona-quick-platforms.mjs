@@ -115,7 +115,7 @@ export async function renderPhotoSlideshow({photos,music=null,outputDir,colorPre
  if(music)args.push('-stream_loop','-1','-i',music);
  const parts=[];
  for(let i=0;i<photos.length;i++){
-  parts.push('['+i+':v]fps='+fps+','+filter(1080,1920,colorPreset)+',settb=AVTB,setpts=PTS-STARTPTS[p'+i+']');
+  parts.push('['+i+':v]'+filter(1080,1920,colorPreset)+',settb=AVTB,setpts=PTS-STARTPTS,fps='+fps+'[p'+i+']');
  }
  let last='p0';
  for(let i=1;i<photos.length;i++){
