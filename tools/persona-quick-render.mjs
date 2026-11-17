@@ -98,14 +98,14 @@ async function probe(file,config,{audioOnly=false,rendered=false}={}){
   '-of','json',file],{env:workerEnv(config),timeoutMs:15000});
  let data;try{data=JSON.parse(raw.toString('utf8'))}catch{throw Error('FFprobe output invalid')}
  const durationSec=Number(data.format?.duration);
- if(!Number.isFinite(durationSec)||durationSec<(rendered?.25:audioOnly?.2:8)||durationSec>1200)throw Error('Video/audio duration outside permitted bounds');
+ if(!Number.isFinite(durationSec)||durationSec<(rendered?.25:audioOnly?.2:8)||durationSec>1200)throw Error('Длительность видео должна быть от 8 секунд до 20 минут. Для музыки достаточно 0,2 секунды. Проверьте выбранный файл.');
  const video=data.streams?.find(x=>x.codec_type==='video');
  if(audioOnly){if(!data.streams?.some(x=>x.codec_type==='audio'))throw Error('Music file has no audio stream');return {durationSec}}
  if(!video||!Number.isInteger(video.width)||!Number.isInteger(video.height))throw Error('Video stream is missing');
  if(['smpte2084','arib-std-b67'].includes(video.color_transfer)||
-  String(video.color_primaries??'').startsWith('bt2020'))throw Error('HDR/BT.2020 source needs manual SDR conversion');
+  String(video.color_primaries??'').startsWith('bt2020'))throw Error('Это видео в HDR/Dolby Vision. Для безопасной цветокоррекции сначала экспортируйте его копию в SDR (Rec.709), оригинал сохраните.');
  if(Number(video.tags?.rotate??0)!==0||video.side_data_list?.some(x=>Number(x.rotation??0)!==0))
-  throw Error('Rotated source requires manual normalization before automatic cropping');
+  throw Error('У видео есть метаданные поворота. Сначала экспортируйте копию с правильной ориентацией кадра, чтобы автоматический монтаж не обрезал лицо.');
  return {durationSec,width:video.width,height:video.height,hasAudio:data.streams.some(x=>x.codec_type==='audio')};
 }
 async function jpegFrame(path,second,config){
@@ -211,7 +211,7 @@ export function createPersonaQuickRenderService(config={}){
    const sink=createWriteStream(path,{flags:'wx'});
    sink.once('open',()=>{owned=true});
    await pipeline(req,sink);
-   if((await stat(path)).size!==entry.size)throw Error('Upload was incomplete');
+   if((await stat(path)).size!==entry.size)throw Error('Загрузка файла прервалась. Выберите исходник и повторите попытку.');
    const media=await probe(path,config,{audioOnly:entry.kind==='audio'});
    entry.sha256=await sha(path);
    entry.media=media;
