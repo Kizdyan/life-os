@@ -8,6 +8,8 @@ type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'complet
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
 const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
+type QuickStyle='cinematic'|'dynamic'|'signature-gold';
+type QuickColor='SoftCinematic'|'DetailCinematic';
 export function checkQuickRenderFiles(files:File[]){
  if(files.length<1||files.length>5)throw Error('Добавь от 1 до 4 видео и при желании один музыкальный файл.');
  const videos=files.filter(f=>video.has(ext(f.name))),music=files.filter(f=>audio.has(ext(f.name)));
@@ -22,6 +24,8 @@ const statusLabel=(job:QuickRenderJob)=>job.state==='completed'?'Готов к �
 export default function PersonaQuickAutoRender(){
  const [files,setFiles]=useState<File[]>([]);
  const [prompt,setPrompt]=useState('');
+ const [styleChoice,setStyleChoice]=useState<QuickStyle>('cinematic');
+ const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
  const [dragging,setDragging]=useState(false);
  const [submitting,setSubmitting]=useState(false);
  const [serviceError,setServiceError]=useState('');
@@ -74,7 +78,7 @@ export default function PersonaQuickAutoRender(){
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
-    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true})});
+    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,styleChoice,colorPreset})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
    const id=created.id as string;setActiveId(id);
@@ -118,8 +122,28 @@ export default function PersonaQuickAutoRender(){
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
    </label>
+   <div className="personaQuickLooks" role="group" aria-label="Стиль и цвет">
+    <label htmlFor="persona-quick-style">Стиль монтажа и титров
+     <select id="persona-quick-style" value={styleChoice}
+      onChange={event=>setStyleChoice(event.target.value as QuickStyle)}>
+      <option value="cinematic">Cinematic</option>
+      <option value="dynamic">Dynamic</option>
+      <option value="signature-gold">Signature Gold · титры</option>
+     </select>
+    </label>
+    <label htmlFor="persona-quick-color">Цвет видео
+     <select id="persona-quick-color" value={colorPreset}
+      onChange={event=>setColorPreset(event.target.value as QuickColor)}>
+      <option value="SoftCinematic">Soft Cinematic</option>
+      <option value="DetailCinematic">Detail Cinematic</option>
+     </select>
+    </label>
+    {styleChoice==='signature-gold'&&<p className="personaQuickLooksHint">Signature Gold оформляет титры, только если в ролике есть титры. Без распознавания речи система не придумывает их.</p>}
+   </div>
    {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
-   <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':'При доступном OpenRouter для поиска моментов используются кадры с шагом 0,5 секунды; при наличии Whisper текст распознанной речи тоже может передаваться в OpenRouter. Полный MP4 и музыкальный файл в облако не передаются. Анализ длинного видео может требовать платных запросов.'} Посторонний B-roll не загружается.</p>
+   <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
+    <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':'При доступном OpenRouter для поиска моментов используются кадры с шагом 0,5 секунды; при наличии Whisper текст распознанной речи тоже может передаваться в OpenRouter. Полный MP4 и музыкальный файл в облако не передаются. Анализ длинного видео может требовать платных запросов.'} Посторонний B-roll не загружается.</p>
+   </details>
    <button type="submit" className="personaQuickGo" disabled={submitting||files.length===0||prompt.trim().length<3}>
     {submitting?'Загружаю файлы…':'Сделать всё'} <span aria-hidden="true">✦</span>
    </button>
@@ -128,16 +152,16 @@ export default function PersonaQuickAutoRender(){
   {visibleJobs.length>0&&<div className="personaQuickResults" aria-label="Мои быстрые проекты">
    <h3>Мои быстрые проекты</h3>
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
-    <div><small>{job.ready?'MP4 / РЕЗУЛЬТАТ':'PRODUCTIONJOB / '+job.state.toUpperCase()}</small><h4>{job.title}</h4>
-     <p>{statusLabel(job)}{job.strategyStatus&&' · Стратегия: '+job.strategyStatus}</p>
+    <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
+     <p>{statusLabel(job)}</p>
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
-     {job.ready&&Boolean(job.moments?.length)&&<ol aria-label="Автоматически найденные моменты">
+     {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">
       {job.moments?.map((moment,index)=><li key={index}>
        <strong>{moment.role==='hook'?'Хук':moment.role==='turn'?'Поворот':moment.role==='finale'?'Финал':'Акцент'}</strong>
        {' · '+moment.sourceName+' · '+moment.peakSec.toFixed(1)+' с'}
        {moment.reason&&<span>{' — '+moment.reason}</span>}
       </li>)}
-     </ol>}
+     </ol></details>}
      {job.notice&&<p>{job.notice}</p>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
