@@ -56,8 +56,10 @@ describe('Life OS and Persona JSX runtime rendering', () => {
   it('opens Persona on a compact mobile home screen', () => {
     stubBrowser('#persona');
     const markup = renderToString(React.createElement(PersonaFactory));
-    expect(markup).toContain('Продолжить работу');
+    expect(markup).toContain('Мои проекты');
+    expect(markup).toContain('Быстрый автомонтаж');
     expect(markup).toContain('Все проекты');
+    expect(markup).toContain('Advanced (Для разработчика)');
     expect(markup).toContain('Резервная копия и перенос данных');
   });
 
