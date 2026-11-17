@@ -34,6 +34,7 @@ import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mj
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
+import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
 
 const toolsDir=fileURLToPath(new URL('.',import.meta.url));
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -173,6 +174,7 @@ export function createPersonaQuickRenderService(config={}){
   fullReady:job.fullRender?.status==='COMPLETED',
   moments:job.moments??[],
   autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
+  textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
    (job.result?.sparseUnqualified?'Редкий анализ Vision не подтвердил достаточно моментов: собран простой черновик без выдуманных оценок эмоций.':
@@ -194,6 +196,7 @@ export function createPersonaQuickRenderService(config={}){
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
   if(body.autoStyle!==undefined&&typeof body.autoStyle!=='boolean')throw Error('Invalid automatic style toggle');
+  if(body.textAccents!==undefined&&typeof body.textAccents!=='boolean')throw Error('Invalid AI text accents toggle');
   const autoStyle=body.autoStyle===true; // legacy API calls preserve manual settings
   const appearance=quickRenderAppearance(autoStyle?{}:body); // validate user override only when selected
   // Vision is an optional enhancement. The offline timeline still creates a real MP4.
@@ -202,7 +205,8 @@ export function createPersonaQuickRenderService(config={}){
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
-   uploads:[],appearance,autoStyle,fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
+   uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
+   fastDraft:body.fastDraft===true,directFull:body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
@@ -277,6 +281,26 @@ export function createPersonaQuickRenderService(config={}){
     catch{await writeFile(lightingPath,JSON.stringify({status:'unavailable',note:'План света не обязателен для монтажа уже снятого видео.'}));}
    }
    const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
+   // In Fast Draft, optional text accents explicitly opt in to a real local
+   // Whisper attempt. Previously Fast Draft skipped ASR entirely. Unavailable
+   // ASR is never silently interpreted as silence or a license to invent words.
+   let accentAudio=null;
+   if(job.textAccents){
+    job.stage='Текстовые акценты: проверка речи Whisper';await save(job);
+    accentAudio=[];
+    for(const f of vids){
+     const videoPath=join(input,f.name);
+     try{
+      accentAudio.push(await analyzeWhisperAudio({videoPath,durationSec:f.media.durationSec,
+       hasAudio:f.media.hasAudio,whisperCli:config.whisperCli||env.PERSONA_MEDIA_WHISPER_CLI,
+       whisperModel:config.whisperModel||env.PERSONA_MEDIA_WHISPER_MODEL,
+       ffmpeg:mediaBin('ffmpeg',config),run:runBounded,env,
+       asrOverride:config.quickAudioOverride||null}));
+     }catch(error){
+      accentAudio.push({status:'whisper-failed',segments:[],reason:String(error.message||error).slice(0,140)});
+     }
+    }
+   }
    // One shared Fast Draft Vision deadline: 3–5 mood frames + sparse moment detection.
    // This prevents automatic styling from silently extending the cloud time budget.
    const visionDeadline=job.fastDraft?Date.now()+18000:null;
@@ -350,7 +374,8 @@ export function createPersonaQuickRenderService(config={}){
    }else{
     job.stage=job.fastDraft?'Fast Draft: редкие кадры':'Whisper: проверка речи';await save(job);
     const audio=[];
-    if(job.fastDraft){for(const f of vids)audio.push({status:'skipped-fast-draft',segments:[],reason:'Speech not examined in quick preview'})}
+    if(accentAudio)audio.push(...accentAudio);
+    else if(job.fastDraft){for(const f of vids)audio.push({status:'skipped-fast-draft',segments:[],reason:'Speech not examined in quick preview'})}
     else for(const f of vids){
      const videoPath=join(input,f.name);
      try{
@@ -429,11 +454,56 @@ export function createPersonaQuickRenderService(config={}){
     }
    }
    const appearance=quickRenderAppearance(job.appearance);
+   let accentCues=null;
+   if(job.textAccents){
+    const assessment=classifyQuoteSpeech(accentAudio);
+    job.captionDecision={version:1,mode:assessment.mode,wordCount:assessment.wordCount,
+     reason:assessment.reason,source:'local-whisper',generatedText:null,
+     requestCount:0,authorReviewRequired:true};
+    if(assessment.mode==='speech'){
+     accentCues=cueFromWhisper({audio:accentAudio,choices:plan.choices});
+     if(!accentCues.length){
+      job.captionDecision.mode='speech-not-in-cut';
+      job.captionDecision.reason='Whisper detected words, but no recognized phrase overlaps chosen edit windows';
+     }
+    }else if(assessment.mode==='quote'){
+     job.stage='AI Quote Generator: короткая оригинальная фраза';await save(job);
+     if(config.quickQuoteGenerator||env.OPENROUTER_API_KEY?.trim()){
+      try{
+       const generated=config.quickQuoteGenerator
+        ?await config.quickQuoteGenerator({mood:job.styleDecision?.mood??null,
+         prompt:job.prompt,assessment})
+        :await generatePersonaQuote({mood:job.styleDecision?.mood??null,env});
+       const phrase=validateQuoteText(typeof generated==='string'?generated:generated?.quote);
+       accentCues=quoteCue(phrase,plan.choices);
+       job.captionDecision={...job.captionDecision,mode:'ai-quote',source:
+        config.quickQuoteGenerator?'test-injected':'openrouter',generatedText:phrase,
+        requestCount:config.quickQuoteGenerator?0:1,
+        reason:'Original creative accent (not spoken text) based on mood '+(job.styleDecision?.mood??'unverified')};
+      }catch(error){
+       job.captionDecision={...job.captionDecision,mode:'quote-unavailable',
+        source:config.quickQuoteGenerator?'test-injected':'openrouter-attempted',
+        requestCount:env.OPENROUTER_API_KEY?.trim()&&!config.quickQuoteGenerator?null:0,
+        reason:'Quote unavailable: '+String(error.message||error).slice(0,160)};
+      }
+     }else{
+      job.captionDecision={...job.captionDecision,mode:'quote-unavailable',source:'none',
+       reason:'OpenRouter key unavailable; no generated phrase was invented'};
+     }
+    }
+    // Do not retain unverified editorial captions when there is a speech/quote
+    // decision; they could be misread as dialogue from the source material.
+    plan={...plan,choices:plan.choices.map(c=>({...c,caption:''})),
+     audioUnderstanding:assessment.mode==='speech'?'whisper-transcribed':
+      assessment.mode==='quote'?'no-substantial-speech-confirmed':'speech-unverified'};
+    await writeFile(join(out,'caption-decision.json'),JSON.stringify(job.captionDecision,null,2)+'\n',{flag:'wx'});
+    await save(job);
+   }
    // Model chooses verified intervals; the author's style choice takes precedence.
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
     appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset},
-    styleDecision:job.styleDecision},null,2)+'\n');
+    styleDecision:job.styleDecision,captionDecision:job.captionDecision??null},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
@@ -454,18 +524,24 @@ export function createPersonaQuickRenderService(config={}){
    await runBounded(process.execPath,[join(toolsDir,'persona-timeline-render.mjs'),timelinePath,draft],
     {env:{...env,PERSONA_WORKER_RENDER:'1'},timeoutMs:720000,maxStdout:30000});
    let video=draft;
-   const cues=[];let offset=0;
-   for(const clip of plan.choices){
-    if(clip.caption){
-     cues.push({startMs:Math.round(offset*1000),endMs:Math.round((offset+Math.min(clip.durationSec,3))*1000),
-      text:clip.caption});
+   const cues=accentCues??[];
+   if(!job.textAccents){
+    let offset=0;
+    for(const clip of plan.choices){
+     if(clip.caption){
+      cues.push({startMs:Math.round(offset*1000),endMs:Math.round((offset+Math.min(clip.durationSec,3))*1000),
+       text:clip.caption});
+     }
+     offset+=clip.durationSec;
     }
-    offset+=clip.durationSec;
    }
    if(cues.length){
     const subtitle=join(out,'caption-review.json');
-    await writeFile(subtitle,JSON.stringify({version:1,cues,captionTiming:'model_title_not_transcription',authorReviewRequired:true}));
-    if(!job.fastDraft){
+    await writeFile(subtitle,JSON.stringify({version:1,cues,
+     captionTiming:job.textAccents?(job.captionDecision?.mode==='ai-quote'
+      ?'ai-generated-original-not-spoken':'local-whisper-timed-not-verified')
+      :'model_title_not_transcription',authorReviewRequired:true}));
+    if(!job.fastDraft||job.textAccents){
      const finished=join(out,'ready.mp4');
      await burnPersonaSubtitles({videoPath:draft,reviewPath:subtitle,outputPath:finished,
       ffmpegDir:config.ffmpegDir,preset:appearance.subtitlePreset});
@@ -485,15 +561,17 @@ export function createPersonaQuickRenderService(config={}){
     stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,
+    textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
      visionFrames:provenance.sampleCount??0,visionRequests:provenance.visionRequests??0,
      styleVisionFrames:job.styleDecision?.analyzedFrames??0,
      styleVisionRequests:job.styleDecision?.requestCount??null,
+     quoteRequests:job.captionDecision?.requestCount??0,
      standardHalfSecondFrames:vids.reduce((n,f)=>n+Math.ceil(f.media.durationSec*2-1e-7),0),
      caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
-    hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
-    captionsDeferred:job.fastDraft&&cues.length>0,
+    hasMusic:Boolean(music),hasCaptions:(!job.fastDraft||job.textAccents)&&cues.length>0,
+    captionsDeferred:job.fastDraft&&!job.textAccents&&cues.length>0,
     submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
       (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
      config.quickPlanner?'sampled_jpeg_frames_only':
@@ -504,7 +582,8 @@ export function createPersonaQuickRenderService(config={}){
    await writeFile(join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
    await production.transition('AWAITING_APPROVAL',{reason:'Verified MP4, awaiting human review'});
    job.state='completed';job.stage='Готово';job.videoName=basename(video);job.sha256=outputHash;
-   job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:!job.fastDraft&&cues.length>0,
+   job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:(!job.fastDraft||job.textAccents)&&cues.length>0,
+    captionDecision:job.captionDecision??null,
     strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     styleDecision:job.styleDecision,
