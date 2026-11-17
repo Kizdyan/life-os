@@ -5,7 +5,9 @@ import './persona-quick-auto-render.css';
 type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
  uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
  moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[];
- styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null};
+ styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null;
+ fastDraft?:boolean;fullRenderStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;
+ fullRenderError?:string|null;fullReady?:boolean;};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
 const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
@@ -28,6 +30,8 @@ export default function PersonaQuickAutoRender(){
  const [prompt,setPrompt]=useState(DEFAULT_PROMPT);
  const [styleChoice,setStyleChoice]=useState<QuickStyle>('cinematic');
  const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
+ const [fastDraft,setFastDraft]=useState(true);
+ const [promotingId,setPromotingId]=useState<string|null>(null);
  const [dragging,setDragging]=useState(false);
  const [submitting,setSubmitting]=useState(false);
  const [serviceError,setServiceError]=useState('');
@@ -80,7 +84,7 @@ export default function PersonaQuickAutoRender(){
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
-    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,styleChoice,colorPreset})});
+    body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,styleChoice,colorPreset,fastDraft})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
    const id=created.id as string;setActiveId(id);
@@ -97,6 +101,19 @@ export default function PersonaQuickAutoRender(){
    await refresh();
   }catch(e){setError((e as Error).message)}
   finally{busy.current=false;setSubmitting(false)}
+ }
+ async function renderFull(id:string){
+  if(promotingId||busy.current)return;
+  setPromotingId(id);setError('');
+  try{
+   const key=await token();
+   const response=await fetch(personaWorkerUrl+'/quick-render/'+id+'/render-full',{
+    method:'POST',headers:{'X-Persona-Worker-Token':key}});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(data.error||'Полный рендер не запустился');
+   await refresh();
+  }catch(error){setError((error as Error).message)}
+  finally{setPromotingId(null)}
  }
  const visibleJobs=jobs.slice(0,8);
  return <section className="personaQuick" aria-label="Быстрый автомонтаж" data-testid="persona-quick-auto-render">
@@ -142,6 +159,13 @@ export default function PersonaQuickAutoRender(){
     </label>
     {styleChoice==='signature-gold'&&<p className="personaQuickLooksHint">Signature Gold оформляет только готовые титры. В офлайн-черновике без Vision титры не создаются.</p>}
    </div>
+   <label className="personaQuickFastDraft" htmlFor="persona-quick-fast-draft">
+    <input id="persona-quick-fast-draft" type="checkbox" checked={fastDraft}
+     onChange={event=>setFastDraft(event.target.checked)}/>
+    <span><strong>Быстрый черновик</strong>
+     <small>Включён по умолчанию · до 5 раз меньше кадров Vision · лёгкий MP4 720p. Потом можно сделать 1080p без нового анализа.</small>
+    </span>
+   </label>
    {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик из проверенных фрагментов без автоматического анализа эмоций. Перед публикацией проверьте материал.</p>}
    {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: отдельные кадры и при наличии распознавания текст речи передаются в OpenRouter для поиска моментов. Для этого могут использоваться платные запросы.</p>}
    <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
@@ -167,11 +191,24 @@ export default function PersonaQuickAutoRender(){
       </li>)}
      </ol></details>}
      {job.notice&&<p>{job.notice}</p>}
+     {job.ready&&job.fastDraft&&<p>Черновик 720×1280 готов. Для публикации рекомендуем проверить полноразмерную версию.</p>}
+     {job.fullRenderStatus==='RENDERING'&&<p role="status">Создаю 1080×1920 из сохранённого EditPlan; Vision повторно не запускается…</p>}
+     {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
-    {job.ready&&workerToken.current&&<a className="personaQuickDownload"
-     href={personaWorkerUrl+'/quick-render/'+job.id+'/video?token='+encodeURIComponent(workerToken.current)}
-     download={'persona-'+job.id+'.mp4'}>Скачать готовый MP4</a>}
+    <div className="personaQuickCardActions">
+     {job.ready&&workerToken.current&&<a className="personaQuickDownload"
+      href={personaWorkerUrl+'/quick-render/'+job.id+'/video?token='+encodeURIComponent(workerToken.current)}
+      download={'persona-'+job.id+'-draft.mp4'}>{job.fastDraft?'Скачать черновик 720p':'Скачать готовый MP4'}</a>}
+     {job.ready&&job.fastDraft&&!job.fullReady&&<button type="button" className="personaQuickFull"
+      disabled={job.fullRenderStatus==='RENDERING'||promotingId===job.id}
+      onClick={()=>void renderFull(job.id)}>
+      {job.fullRenderStatus==='RENDERING'?'Рендер 1080p…':'Сделать в полном качестве (1080p)'}
+     </button>}
+     {job.fullReady&&workerToken.current&&<a className="personaQuickDownload"
+      href={personaWorkerUrl+'/quick-render/'+job.id+'/video-full?token='+encodeURIComponent(workerToken.current)}
+      download={'persona-'+job.id+'-1080p.mp4'}>Скачать MP4 в полном качестве (1080p)</a>}
+    </div>}
    </article>)}</div>
   </div>}
  </section>;
