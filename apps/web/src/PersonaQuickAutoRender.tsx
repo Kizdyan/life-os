@@ -11,6 +11,7 @@ const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
 type QuickStyle='cinematic'|'dynamic'|'signature-gold';
 type QuickColor='SoftCinematic'|'DetailCinematic';
+const DEFAULT_PROMPT='Собери короткий ролик из моих видео; если Vision доступен, выбери выразительные моменты.';
 export function checkQuickRenderFiles(files:File[]){
  if(files.length<1||files.length>5)throw Error('Добавь от 1 до 4 видео и при желании один музыкальный файл.');
  const videos=files.filter(f=>video.has(ext(f.name))),music=files.filter(f=>audio.has(ext(f.name)));
@@ -24,7 +25,7 @@ const statusLabel=(job:QuickRenderJob)=>job.state==='completed'?'Готов к �
  job.state==='uploading'?'Загружаю видео…':'Не удалось собрать ролик';
 export default function PersonaQuickAutoRender(){
  const [files,setFiles]=useState<File[]>([]);
- const [prompt,setPrompt]=useState('');
+ const [prompt,setPrompt]=useState(DEFAULT_PROMPT);
  const [styleChoice,setStyleChoice]=useState<QuickStyle>('cinematic');
  const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
  const [dragging,setDragging]=useState(false);
@@ -92,7 +93,7 @@ export default function PersonaQuickAutoRender(){
    const launched=await fetch(personaWorkerUrl+'/quick-render/'+id+'/run',{method:'POST',
     headers:{'X-Persona-Worker-Token':key}});
    if(!launched.ok)throw Error((await launched.json().catch(()=>({}))).error||'Не удалось запустить монтаж.');
-   setFiles([]);setPrompt('');if(fileRef.current)fileRef.current.value='';
+   setFiles([]);setPrompt(DEFAULT_PROMPT);if(fileRef.current)fileRef.current.value='';
    await refresh();
   }catch(e){setError((e as Error).message)}
   finally{busy.current=false;setSubmitting(false)}
@@ -118,7 +119,7 @@ export default function PersonaQuickAutoRender(){
      accept=".mp4,.mov,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac"
      onChange={event=>accept(Array.from(event.target.files??[]))}/>
    </div>
-   <label className="personaQuickPrompt" htmlFor="persona-quick-prompt">Одна фраза о желаемом результате
+   <label className="personaQuickPrompt" htmlFor="persona-quick-prompt">Пожелание к монтажу (можно не менять)
     <textarea id="persona-quick-prompt" value={prompt} maxLength={600} rows={3}
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
