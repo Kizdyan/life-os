@@ -27,6 +27,8 @@ export function smartFrameSchedule(videos,{intervalSec=.5}={}){
   totalSeconds+=video.durationSec;
   const count=Math.ceil(video.durationSec/intervalSec-1e-7);
   if(totalSeconds>300.0001||frames.length+count>maxFrames)throw Error('Smart Moment Detection: maximum 300 seconds of input per job; split longer takes.');
+  if(intervalSec===2.5&&frames.length+count>36)
+   throw Error('Fast Draft Vision budget: maximum 36 sparse frames. A local draft can still be generated.');
   for(let i=0;i<count;i++)frames.push({id:'f'+fileIndex+'_'+i,fileIndex,atSec:round(i*intervalSec),sourceSha256:video.sha256});
  }
  return frames;
@@ -47,7 +49,7 @@ export function validateVisionBatch(value,frames){
    intensity:x.intensity,clarity:x.clarity,reason:safeReason(x.reason)};
  });
 }
-export async function detectVisionBatch({frames,jpegs,intervalSec=.5,env=process.env,fetchImpl=fetch}){
+export async function detectVisionBatch({frames,jpegs,intervalSec=.5,timeoutMs=105000,env=process.env,fetchImpl=fetch}){
  if(!Array.isArray(frames)||frames.length<1||frames.length>batchSize||
   !Array.isArray(jpegs)||jpegs.length!==frames.length||
   jpegs.some(x=>!Buffer.isBuffer(x)||x.length<256||x.length>160000))
@@ -76,7 +78,7 @@ export async function detectVisionBatch({frames,jpegs,intervalSec=.5,env=process
  const req={model:provider.model,temperature:0,max_tokens:2600,response_format:{type:'json_object'},messages};
  let response;
  try{response=await fetchImpl(provider.url,{method:'POST',headers:{Authorization:'Bearer '+provider.key,'Content-Type':'application/json'},
-  body:JSON.stringify(req),signal:AbortSignal.timeout(105000)})}
+  body:JSON.stringify(req),signal:AbortSignal.timeout(Math.max(1,Math.min(105000,Math.trunc(timeoutMs))))})}
  catch{throw Error('OpenRouter Vision failed: no verified emotion labels returned')}
  if(!response?.ok)throw Error('OpenRouter Vision rejected smart frames (HTTP '+response?.status+')');
  const raw=await response.text();if(raw.length>100000)throw Error('Vision batch JSON exceeded limit');
@@ -166,17 +168,23 @@ export function makeSmartEditPlan({prompt,videos,scored,audio=[],visionProvider=
    disclaimer:'Frame-level visual estimates, not measured inner emotional state; ASR is fallible.'}};
  return {plan,moments,candidates};
 }
-export async function runSmartVision({videos,frameAt,intervalSec=.5,env=process.env,fetchImpl=fetch,batchOverride=null,onProgress=async()=>{}}){
- const schedule=smartFrameSchedule(videos,{intervalSec}),scored=[];let provider='test-only',model='test-only',requests=0;
+export async function runSmartVision({videos,frameAt,intervalSec=.5,visionBudgetMs=null,env=process.env,fetchImpl=fetch,batchOverride=null,onProgress=async()=>{}}){
+ const schedule=smartFrameSchedule(videos,{intervalSec}),scored=[];
+ const deadline=visionBudgetMs===null?null:Date.now()+visionBudgetMs;
+ const remaining=()=>deadline===null?105000:Math.max(0,deadline-Date.now());let provider='test-only',model='test-only',requests=0;
  for(let i=0;i<schedule.length;){
   const fileIndex=schedule[i].fileIndex;
   const current=[];
   while(i<schedule.length&&schedule[i].fileIndex===fileIndex&&current.length<batchSize)current.push(schedule[i++]);
   const jpeg=[];
-  for(const f of current)jpeg.push(await frameAt(f));
+  for(const f of current){
+   if(remaining()===0)throw Error('Fast Draft Vision time budget exhausted');
+   jpeg.push(await frameAt(f));
+  }
+  if(remaining()===0)throw Error('Fast Draft Vision time budget exhausted');
   const output=batchOverride
    ?{frames:validateVisionBatch(await batchOverride({frames:current,jpegs:jpeg}),current),provider:'test-injected',model:'fixture'}
-   :await detectVisionBatch({frames:current,jpegs:jpeg,intervalSec,env,fetchImpl});
+   :await detectVisionBatch({frames:current,jpegs:jpeg,intervalSec,timeoutMs:remaining(),env,fetchImpl});
   scored.push(...output.frames);provider=output.provider;model=output.model;requests++;
   await onProgress({completedFrames:scored.length,totalFrames:schedule.length,requestCount:requests});
  }
