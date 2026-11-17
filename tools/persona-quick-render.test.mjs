@@ -29,6 +29,7 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   quickRenderRoot:join(root,'quick'),
   quickStrategy:async input=>{audited++;assert.ok(input.strategy.worldview);return {status:'WARNING',recommendation:'Оставить крупную актёрскую реакцию, а не только красивый монтаж'}},
   quickLighting:async prompt=>{lit++;return {style:'Quiet Luxury',scene:prompt,key:'45°',fill:'optional',back:'separate silhouette'}},
+  quickStyleDirector:async()=>{throw Error('Manual style must not call Director Agent')},
   quickPlanner:async({candidates,frames,prompt})=>{
    planned++;
    assert.ok(candidates.length>=2);

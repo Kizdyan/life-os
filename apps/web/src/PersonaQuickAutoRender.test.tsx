@@ -18,12 +18,14 @@ describe('one-click dashboard intake',()=>{
   expect(html).toContain('id="persona-quick-fast-draft"');
   expect(html).toContain('type="checkbox" checked=""');
   expect(html).toContain('Быстрый черновик');
-  expect(html).toContain('aria-label="Стиль и цвет"');
-  expect(html).toContain('id="persona-quick-style"');
-  expect(html).toContain('id="persona-quick-color"');
-  for(const label of ['Cinematic','Dynamic','Signature Gold','Soft Cinematic','Detail Cinematic'])
-   expect(html).toContain(label);
-  expect((html.match(/<select/g)||[])).toHaveLength(2);
+  expect(html).toContain('Автовыбор стиля ИИ');
+  expect(html).toContain('id="persona-quick-auto-style"');
+  expect(html).toContain('Director Agent изучит 3–5 кадров');
+  expect(html).not.toContain('aria-label="Стиль и цвет"');
+  expect(html).not.toContain('id="persona-quick-style"');
+  expect(html).not.toContain('id="persona-quick-color"');
+  expect((html.match(/<select/g)||[])).toHaveLength(0);
+  expect((html.match(/type="checkbox" checked=""/g)||[])).toHaveLength(2);
   expect(html).not.toContain('PRODUCTIONJOB /');
   expect(html).toContain('Как обрабатываются файлы и когда включается Vision');
   expect(html).toContain('disabled=""');

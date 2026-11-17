@@ -21,12 +21,19 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
    assert.equal(ff.status,0,ff.stderr);
    files.push({name,path,bytes:await readFile(path)});
   }
-  let visionCalls=0;
+  let visionCalls=0,styleCalls=0;
   const worker=createPersonaMediaWorker({port:0,outputRoot:join(root,'other'),
    quickRenderRoot:join(root,'quick'),
    quickStrategy:async()=>({status:'WARNING',recommendation:'Preserve expressive acting, confirm performance manually'}),
    quickLighting:async()=>({style:'Quiet Luxury'}),
    quickAudioOverride:async()=>({status:'no-speech-detected',segments:[],provenance:'synthetic-test-fixture'}),
+   quickStyleDirector:async({frames,jpegs})=>{
+    styleCalls++;
+    assert.ok(frames.length>=3&&frames.length<=5);
+    assert.equal(frames.length,jpegs.length);
+    assert.ok(jpegs.every(frame=>frame[0]===0xff&&frame[1]===0xd8));
+    return {mood:'premium',reason:'Elegant composition and restrained framing'};
+   },
    quickVisionBatch:async({frames,jpegs})=>{
     visionCalls++;
     assert.ok(frames.length<=12);assert.equal(jpegs.length,frames.length);
@@ -41,7 +48,7 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   const base='http://127.0.0.1:'+await worker.start();
   const token=(await(await fetch(base+'/health')).json()).token;
   const headers={'X-Persona-Worker-Token':token};
-  const manifest={prompt:'Сделай красиво',consent:true,fastDraft:true,
+  const manifest={prompt:'Сделай красиво',consent:true,fastDraft:true,autoStyle:true,
    files:files.map(f=>({kind:'video',name:f.name,size:f.bytes.length}))};
   const creation=await fetch(base+'/quick-render',{method:'POST',
    headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(manifest)});
@@ -62,6 +69,7 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   }
   assert.equal(final.state,'completed',final.error||'Smart render timed out: '+final.stage);
   assert.equal(visionCalls,2,'two videos each fit a single sparse Vision batch');
+  assert.equal(styleCalls,1,'separate mood Director runs exactly once');
   const output=join(root,'quick','quick-'+id,'output');
   const evidence=JSON.parse(await readFile(join(output,'smart-moments.json'),'utf8'));
   assert.equal(evidence.manualTimecodes,false);
@@ -80,6 +88,10 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   assert.deepEqual([...new Set(edit.choices.map(x=>x.fileIndex))].sort(),[0,1]);
   assert.equal(edit.provenance.provider,'test-injected');
   assert.equal(edit.provenance.frameIntervalSec,2.5);
+  assert.equal(edit.styleDecision.mood,'premium');
+  assert.equal(edit.styleDecision.mode,'test-injected');
+  assert.equal(edit.appearance.styleChoice,'signature-gold');
+  assert.equal(edit.appearance.colorPreset,'DetailCinematic');
   const result=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'));
   assert.equal(result.smartMomentDetection,true);
   assert.equal(result.publicationApproved,false);
@@ -89,6 +101,11 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   assert.equal(result.performance.visionRequests,2);
   assert.equal(result.performance.standardHalfSecondFrames,37);
   assert.equal(result.fastDraft,true);
+  assert.equal(result.autoStyle,true);
+  assert.equal(result.visualPreset,'DetailCinematic');
+  assert.equal(result.subtitlePreset,'signature-gold');
+  assert.equal(result.styleDecision.mood,'premium');
+  assert.equal(result.performance.styleVisionFrames,4);
   assert.ok((await stat(join(output,result.videoName))).size>20000);
   const video=await fetch(base+'/quick-render/'+id+'/video?token='+token);
   assert.equal(video.status,200);assert.equal(video.headers.get('content-type'),'video/mp4');
@@ -108,6 +125,7 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   }
   assert.equal(full.fullRenderStatus,'COMPLETED',full.fullRenderError);
   assert.equal(visionCalls,2,'1080p promotion never re-runs sparse Vision');
+  assert.equal(styleCalls,1,'1080p promotion must reuse mood and color without repeating Director');
   const fullResult=JSON.parse(await readFile(join(output,'RESULT-FULL.json'),'utf8'));
   assert.equal(fullResult.visionRequests,0);
   assert.equal(fullResult.cloudCalls,0);

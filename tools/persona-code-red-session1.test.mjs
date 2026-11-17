@@ -73,6 +73,8 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   assert.equal(plan.appearance.colorPreset,'DetailCinematic');
   assert.equal(result.visualPreset,'DetailCinematic');
   assert.equal(result.stylePack,'Cinematic');
+  assert.equal(result.autoStyle,false);
+  assert.equal(result.styleDecision.mode,'manual');
   assert.equal(result.submittedToModel,'none','no key must never claim sampled Vision was used');
   assert.equal(result.fastDraft,true);
   assert.equal(result.renderProfile,'fast-draft');
@@ -107,6 +109,40 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   assert.equal(productionAfterFull.status,'AWAITING_APPROVAL');
   assert.equal(productionAfterFull.fullRender.status,'COMPLETED');
 
+  // Same no-key Worker: new default-on AI mode must choose an honest deterministic
+  // fallback, not silently invent a Vision mood or charge a network request.
+  const autoCreated=await fetch(base+'/quick-render',{method:'POST',
+   headers:{...headers,'Content-Type':'application/json'},
+   body:JSON.stringify({prompt:'Автоматический цвет без OpenRouter',consent:true,autoStyle:true,fastDraft:true,
+    files:[{kind:'video',name:'original.mp4',size:bytes.length}]})});
+  assert.equal(autoCreated.status,201,await autoCreated.clone().text());
+  const autoJob=await autoCreated.json();
+  const autoUpload=await fetch(base+'/quick-render/'+autoJob.id+'/upload/0',{
+   method:'PUT',headers:{...headers,'X-Persona-Original-Name':'original.mp4'},body:bytes});
+  assert.equal(autoUpload.status,200,await autoUpload.text());
+  const autoStart=await fetch(base+'/quick-render/'+autoJob.id+'/run',{method:'POST',headers});
+  assert.equal(autoStart.status,202,await autoStart.text());
+  let autoStatus;
+  for(let n=0;n<300;n++){
+   autoStatus=await(await fetch(base+'/quick-render/'+autoJob.id+'/status',{headers})).json();
+   if(['completed','failed'].includes(autoStatus.state))break;
+   await pause(300);
+  }
+  assert.equal(autoStatus.state,'completed',autoStatus.error||autoStatus.stage);
+  assert.equal(autoStatus.autoStyle,true);
+  assert.equal(autoStatus.styleDecision.mode,'fallback');
+  assert.equal(autoStatus.styleDecision.mood,null);
+  assert.equal(autoStatus.styleDecision.provider,'none');
+  assert.equal(autoStatus.styleChoice,'cinematic');
+  assert.equal(autoStatus.colorPreset,'SoftCinematic');
+  const autoResult=JSON.parse(await readFile(join(root,'quick','quick-'+autoJob.id,'output','RESULT.json'),'utf8'));
+  assert.equal(autoResult.submittedToModel,'none');
+  assert.equal(autoResult.performance.styleVisionFrames,0);
+  assert.equal(autoResult.performance.styleVisionRequests,0);
+  assert.equal(autoResult.visualPreset,'SoftCinematic');
+  assert.equal(autoResult.subtitlePreset,'cinematic');
+  assert.equal(autoResult.styleDecision.mode,'fallback');
+
   const meta=JSON.parse(await readFile(join(jobRoot,'quick-state.json'),'utf8'));
   assert.equal(meta.state,undefined);
   assert.equal(meta.error,undefined);
@@ -115,9 +151,12 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
   const resumed='http://127.0.0.1:'+await second.start();
   const token=(await(await fetch(resumed+'/health')).json()).token;
   const after=await(await fetch(resumed+'/quick-render',{headers:{'X-Persona-Worker-Token':token}})).json();
-  assert.equal(after.jobs[0].id,job.id);
-  assert.equal(after.jobs[0].state,'completed');
-  assert.equal(after.jobs[0].fullRenderStatus,'COMPLETED');
+  const originalRestored=after.jobs.find(item=>item.id===job.id);
+  const automaticRestored=after.jobs.find(item=>item.id===autoJob.id);
+  assert.equal(originalRestored?.state,'completed');
+  assert.equal(originalRestored?.fullRenderStatus,'COMPLETED');
+  assert.equal(automaticRestored?.state,'completed');
+  assert.equal(automaticRestored?.styleDecision?.mode,'fallback');
  }finally{
   if(second)await close(second);
   else if(worker.server.listening)await close(worker);
