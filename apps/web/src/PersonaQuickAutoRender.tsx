@@ -4,7 +4,8 @@ import './persona-quick-auto-render.css';
 
 type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
  uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
- moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[]};
+ moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[];
+ styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
 const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
@@ -154,6 +155,7 @@ export default function PersonaQuickAutoRender(){
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
     <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
      <p>{statusLabel(job)}</p>
+     {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Стиль: {job.styleChoice==='dynamic'?'Dynamic':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
      {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">
       {job.moments?.map((moment,index)=><li key={index}>
