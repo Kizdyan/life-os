@@ -9,15 +9,32 @@ type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'complet
  autoStyle?:boolean;styleDecision?:{mode:'ai'|'manual'|'fallback'|'test-injected';mood:string|null;reason:string;provider:string}|null;
  textAccents?:boolean;captionDecision?:{mode:string;reason:string;generatedText?:string|null;wordCount?:number}|null;
  fastDraft?:boolean;fullRenderStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;
- fullRenderError?:string|null;fullReady?:boolean;};
+ fullRenderError?:string|null;fullReady?:boolean;
+ contentType?:'video'|'photo-carousel'|'photo-slideshow';carouselAspect?:'4:5'|'1:1';
+ carouselFiles?:{id:string;width:number;height:number;textOverlay:boolean}[];
+ exportStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;exportError?:string|null;
+ exportItems?:{id:string;filename:string;kind:string;width?:number;height?:number}[];};
 const ext=(name:string)=>name.split('.').pop()?.toLowerCase()??'';
 const video=new Set(['mp4','mov','mkv','webm','m4v']);
 const audio=new Set(['mp3','wav','m4a','aac','flac']);
+const photo=new Set(['jpg','jpeg','png']);
+type ContentType='video'|'photo-carousel'|'photo-slideshow';
 type QuickStyle='cinematic'|'dynamic'|'signature-gold';
 type QuickColor='SoftCinematic'|'DetailCinematic';
 const DEFAULT_PROMPT='Собери короткий ролик из моих видео; если Vision доступен, выбери выразительные моменты.';
 const moodLabels:Record<string,string>={dramatic:'драматичное',calm:'спокойное',funny:'весёлое',dynamic:'динамичное',premium:'премиальное'};
-export function checkQuickRenderFiles(files:File[]){
+export function checkQuickRenderFiles(files:File[],contentType:ContentType='video'){
+ if(contentType!=='video'){
+  if(files.length<1||files.length>13)throw Error('Выберите 1–12 фотографий и, если нужно, музыку для слайд-шоу.');
+  const photos=files.filter(f=>photo.has(ext(f.name))),music=files.filter(f=>audio.has(ext(f.name)));
+  if(photos.length<1||photos.length>12||(contentType==='photo-slideshow'&&photos.length<2)||
+   music.length>(contentType==='photo-slideshow'?1:0)||photos.length+music.length!==files.length)
+   throw Error('Нужны JPEG/PNG (1–12 для карусели, 2–12 для слайд-шоу); музыка — только для слайд-шоу.');
+  if(files.some(f=>f.size<1024)||files.reduce((n,f)=>n+f.size,0)>500*1024*1024)
+   throw Error('Файлы должны быть от 1 КБ, суммарно до 500 МБ.');
+  return files.map(file=>({kind:photo.has(ext(file.name))?'photo' as const:'audio' as const,
+   name:file.name,size:file.size}));
+ }
  if(files.length<1||files.length>5)throw Error('Добавь от 1 до 4 видео и при желании один музыкальный файл.');
  const videos=files.filter(f=>video.has(ext(f.name))),music=files.filter(f=>audio.has(ext(f.name)));
  if(videos.length<1||videos.length>4||music.length>1||videos.length+music.length!==files.length)
@@ -30,6 +47,11 @@ const statusLabel=(job:QuickRenderJob)=>job.state==='completed'?'Готов к �
  job.state==='uploading'?'Загружаю видео…':'Не удалось собрать ролик';
 export default function PersonaQuickAutoRender(){
  const [files,setFiles]=useState<File[]>([]);
+ const [contentType,setContentType]=useState<ContentType>('video');
+ const [carouselAspect,setCarouselAspect]=useState<'4:5'|'1:1'>('4:5');
+ const [coverTitle,setCoverTitle]=useState('');
+ const [exportingId,setExportingId]=useState<string|null>(null);
+ const [exportChoices,setExportChoices]=useState<Record<string,string>>({});
  const [prompt,setPrompt]=useState(DEFAULT_PROMPT);
  const [styleChoice,setStyleChoice]=useState<QuickStyle>('cinematic');
  const [colorPreset,setColorPreset]=useState<QuickColor>('SoftCinematic');
@@ -77,19 +99,20 @@ export default function PersonaQuickAutoRender(){
   return()=>{mounted.current=false;window.clearInterval(interval)};
  },[]);
  function accept(selected:File[]){
-  try{checkQuickRenderFiles(selected);setFiles(selected);setError('')}
+  try{checkQuickRenderFiles(selected,contentType);setFiles(selected);setError('')}
   catch(e){setError((e as Error).message)}
  }
  async function submit(event:React.FormEvent){
   event.preventDefault();if(busy.current)return;
   busy.current=true;setSubmitting(true);setError('');setServiceError('');
   try{
-   const selected=checkQuickRenderFiles(files);
+   const selected=checkQuickRenderFiles(files,contentType);
    if(prompt.trim().length<3||prompt.length>600)throw Error('Напиши короткую задачу для монтажа (от 3 до 600 символов).');
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
     body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,textAccents,
+     contentType,carouselAspect,coverTitle,
      ...(!autoStyle?{styleChoice,colorPreset}:{})})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
@@ -121,31 +144,60 @@ export default function PersonaQuickAutoRender(){
   }catch(error){setError((error as Error).message)}
   finally{setPromotingId(null)}
  }
+ async function preparePackage(id:string){
+  if(exportingId||busy.current)return;
+  setExportingId(id);setError('');
+  try{
+   const key=await token();
+   const response=await fetch(personaWorkerUrl+'/quick-render/'+id+'/export-package',{
+    method:'POST',headers:{'X-Persona-Worker-Token':key}});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(data.error||'Не удалось подготовить платформенный пакет');
+   await refresh();
+  }catch(error){setError((error as Error).message)}
+  finally{setExportingId(null)}
+ }
  const visibleJobs=jobs.slice(0,8);
  return <section className="personaQuick" aria-label="Быстрый автомонтаж" data-testid="persona-quick-auto-render">
   <div className="personaQuickHeading">
    <div><small>PERSONA / ONE-CLICK STUDIO</small><h2>Быстрый автомонтаж</h2>
-    <p>Загрузи видео, скажи, что хочешь получить, и нажми одну кнопку.</p></div>
+    <p>Загрузи видео или фотографии, выбери формат, и Persona подготовит контент для соцсетей.</p></div>
    <span className="personaQuickHeadingMark" aria-hidden="true">✦</span>
   </div>
   <form onSubmit={event=>void submit(event)} className="personaQuickForm">
+   <fieldset className="personaQuickMode" aria-label="Тип проекта"><legend>Тип проекта</legend>
+    {([['video','Видео'],['photo-carousel','Фото-карусель'],['photo-slideshow','Фото-слайдшоу']] as const)
+     .map(([value,label])=><label key={value}><input type="radio" name="persona-content-mode"
+      value={value} checked={contentType===value}
+      onChange={()=>{setContentType(value);setFiles([]);setError('');if(fileRef.current)fileRef.current.value=''}}/>{label}</label>)}
+   </fieldset>
+   {contentType==='photo-carousel'&&<fieldset className="personaQuickMode" aria-label="Формат фотографий">
+    <legend>Соотношение сторон</legend>
+    {(['4:5','1:1'] as const).map(ratio=><label key={ratio}><input type="radio"
+     name="persona-carousel-aspect" value={ratio} checked={carouselAspect===ratio}
+     onChange={()=>setCarouselAspect(ratio)}/>{ratio}</label>)}
+   </fieldset>}
    <div className={'personaQuickDrop'+(dragging?' personaQuickDrop--active':'')}
-    role="group" aria-label="Зона загрузки видео и музыки"
+    role="group" aria-label="Зона загрузки видео, фото и музыки"
     onDragOver={event=>{event.preventDefault();setDragging(true)}}
     onDragLeave={event=>{event.preventDefault();setDragging(false)}}
     onDrop={event=>{event.preventDefault();setDragging(false);accept(Array.from(event.dataTransfer.files))}}>
     <span aria-hidden="true" className="personaQuickDropIcon">↥</span>
-    <strong>{files.length?files.length+' файл(ов) для ролика':'Перетащи сюда видео'}</strong>
-    <p>{files.length?files.map(file=>file.name).join(' · '):'1–4 видео и, если нужно, один музыкальный файл. До 500 МБ суммарно.'}</p>
+    <strong>{files.length?files.length+' файл(ов) для проекта':contentType==='video'?'Перетащи сюда видео':'Перетащи сюда фото'}</strong>
+    <p>{files.length?files.map(file=>file.name).join(' · '):contentType==='video'?'1–4 видео и при необходимости музыка. До 500 МБ.':contentType==='photo-carousel'?'1–12 JPEG или PNG. Карусель 4:5 или 1:1.':'2–12 JPEG/PNG и при необходимости музыка. Слайд-шоу 9:16.'}</p>
     <label htmlFor="persona-quick-files">Выбрать файлы</label>
     <input ref={fileRef} id="persona-quick-files" type="file" multiple
-     accept=".mp4,.mov,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac"
+     accept={contentType==='video'?".mp4,.mov,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac":contentType==='photo-carousel'?".jpg,.jpeg,.png":".jpg,.jpeg,.png,.mp3,.wav,.m4a,.aac,.flac"}
      onChange={event=>accept(Array.from(event.target.files??[]))}/>
    </div>
    <label className="personaQuickPrompt" htmlFor="persona-quick-prompt">Пожелание к монтажу (можно не менять)
     <textarea id="persona-quick-prompt" value={prompt} maxLength={600} rows={3}
      onChange={event=>setPrompt(event.target.value)}
      placeholder="Сделай кинематографично: выбери выразительные моменты, добавь предметные перебивки из моих видео и мою музыку."/>
+   </label>
+   <label className="personaQuickPrompt" htmlFor="persona-quick-cover-title">Заголовок обложки или первой фотографии (необязательно)
+    <input id="persona-quick-cover-title" value={coverTitle} maxLength={90}
+     placeholder="Например: Тишина перед первым аккордом" onChange={event=>setCoverTitle(event.target.value)}/>
    </label>
    <label className="personaQuickFastDraft" htmlFor="persona-quick-auto-style">
     <input id="persona-quick-auto-style" type="checkbox" checked={autoStyle}
@@ -179,15 +231,15 @@ export default function PersonaQuickAutoRender(){
      <small>Включено по умолчанию · если Whisper распознает речь — титры из реальных слов; если подтверждена тишина или очень мало слов — оригинальная фраза ИИ по настроению. Распознавание и наложение титров могут увеличить время черновика.</small>
     </span>
    </label>
-   <label className="personaQuickFastDraft" htmlFor="persona-quick-fast-draft">
+   {contentType==='video'&&<label className="personaQuickFastDraft" htmlFor="persona-quick-fast-draft">
     <input id="persona-quick-fast-draft" type="checkbox" checked={fastDraft}
      onChange={event=>setFastDraft(event.target.checked)}/>
     <span><strong>Быстрый черновик</strong>
      <small>Включён по умолчанию · до 5 раз меньше кадров Vision · лёгкий MP4 720p. Потом можно сделать 1080p без нового анализа.</small>
     </span>
-   </label>
-   {visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик без автоматического анализа настроения и без генерации новых цитат. {textAccents?'Если работает локальный Whisper, распознанные слова могут быть наложены как титры.':''} Перед публикацией проверьте материал.</p>}
-   {visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: для монтажа кадры передаются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {autoStyle?'Автовыбор стиля добавляет отдельный запрос с 3–5 кадрами.':'Стиль выбирается вручную без дополнительного запроса.'} {textAccents?'Для проверки речи используется локальный Whisper; если речи нет, генерация короткой цитаты добавляет ещё один текстовый запрос OpenRouter.':fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Возможна платная тарификация запросов.</p>}
+   </label>}
+   {contentType==='video'&&visionAvailable===false&&<p role="status" className="personaQuickPrivacy">Vision отключён: ключ OpenRouter не указан. «Сделать всё» создаст локальный MP4-черновик без автоматического анализа настроения и без генерации новых цитат. {textAccents?'Если работает локальный Whisper, распознанные слова могут быть наложены как титры.':''} Перед публикацией проверьте материал.</p>}
+   {contentType==='video'&&visionAvailable===true&&<p className="personaQuickPrivacy" role="status">Vision включён: для монтажа кадры передаются в OpenRouter с интервалом {fastDraft?'2,5':'0,5'} секунды. {autoStyle?'Автовыбор стиля добавляет отдельный запрос с 3–5 кадрами.':'Стиль выбирается вручную без дополнительного запроса.'} {textAccents?'Для проверки речи используется локальный Whisper; если речи нет, генерация короткой цитаты добавляет ещё один текстовый запрос OpenRouter.':fastDraft?'Распознавание речи в Fast Draft отключено.':'При работающем Whisper распознанная речь может передаваться для анализа.'} Возможна платная тарификация запросов.</p>}
    <details className="personaQuickProcessing"><summary>Как обрабатываются файлы и когда включается Vision</summary>
     <p className="personaQuickPrivacy">Исходные файлы остаются в локальном Worker. {visionAvailable===false?'Без ключа OpenRouter кадры и текст речи не отправляются в облако: выполняется локальный офлайн-монтаж без Vision.':<>При доступном OpenRouter для поиска моментов используются кадры с шагом {fastDraft?'2,5':'0,5'} секунды. {textAccents?'При включённых текстовых акцентах запускается локальный Whisper. Если речи нет или её мало, короткая оригинальная фраза генерируется отдельным платным текстовым запросом. Если Whisper недоступен, отсутствие речи не предполагается.':fastDraft?'В быстром черновике распознавание речи пропущено.':'При наличии Whisper текст распознанной речи тоже может отправляться в OpenRouter.'} Полный MP4 и аудиофайл в облако не передаются. Анализ длинного видео может требовать платных запросов.</>} Посторонний B-roll не загружается.</p>
    </details>
@@ -199,8 +251,9 @@ export default function PersonaQuickAutoRender(){
   {visibleJobs.length>0&&<div className="personaQuickResults" aria-label="Мои быстрые проекты">
    <h3>Мои быстрые проекты</h3>
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
-    <div><small>{job.ready?'ГОТОВЫЙ MP4':job.state==='failed'?'НУЖНО ВНИМАНИЕ':'ВИДЕОПРОЕКТ'}</small><h4>{job.title}</h4>
-     <p>{statusLabel(job)}</p>
+    <div><small>{job.ready?(job.contentType==='photo-carousel'?'ГОТОВАЯ КАРУСЕЛЬ':'ГОТОВЫЙ МЕДИАПРОЕКТ'):job.state==='failed'?'НУЖНО ВНИМАНИЕ':'МЕДИАПРОЕКТ'}</small><h4>{job.title}</h4>
+     <p>{statusLabel(job)} · {job.contentType==='photo-carousel'?'Фото-карусель '+(job.carouselAspect??'4:5'):
+      job.contentType==='photo-slideshow'?'Фото-слайдшоу':'Видео'}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
      {job.ready&&job.textAccents&&job.captionDecision?.mode==='ai-quote'&&<p className="personaQuickCardLooks">Текстовый акцент ИИ (не речь из видео): «{job.captionDecision.generatedText}»</p>}
      {job.ready&&job.textAccents&&job.captionDecision?.mode==='speech'&&<p className="personaQuickCardLooks">Титры по распознанной речи Whisper · проверь точность слов</p>}
@@ -215,16 +268,16 @@ export default function PersonaQuickAutoRender(){
       </li>)}
      </ol></details>}
      {job.notice&&<p>{job.notice}</p>}
-     {job.ready&&job.fastDraft&&<p>Черновик 720×1280 готов. Для публикации рекомендуем проверить полноразмерную версию.</p>}
+     {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&<p>Черновик 720×1280 готов. Для публикации рекомендуем проверить полноразмерную версию.</p>}
      {job.fullRenderStatus==='RENDERING'&&<p role="status">Создаю 1080×1920 из сохранённого EditPlan; Vision повторно не запускается…</p>}
      {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
     <div className="personaQuickCardActions">
-     {job.ready&&workerToken.current&&<a className="personaQuickDownload"
+     {job.ready&&job.contentType!=='photo-carousel'&&workerToken.current&&<a className="personaQuickDownload"
       href={personaWorkerUrl+'/quick-render/'+job.id+'/video?token='+encodeURIComponent(workerToken.current)}
       download={'persona-'+job.id+'-draft.mp4'}>{job.fastDraft?'Скачать черновик 720p':'Скачать готовый MP4'}</a>}
-     {job.ready&&job.fastDraft&&!job.fullReady&&<button type="button" className="personaQuickFull"
+     {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&!job.fullReady&&<button type="button" className="personaQuickFull"
       disabled={job.fullRenderStatus==='RENDERING'||promotingId===job.id}
       onClick={()=>void renderFull(job.id)}>
       {job.fullRenderStatus==='RENDERING'?'Рендер 1080p…':'Сделать в полном качестве (1080p)'}
@@ -232,6 +285,34 @@ export default function PersonaQuickAutoRender(){
      {job.fullReady&&workerToken.current&&<a className="personaQuickDownload"
       href={personaWorkerUrl+'/quick-render/'+job.id+'/video-full?token='+encodeURIComponent(workerToken.current)}
       download={'persona-'+job.id+'-1080p.mp4'}>Скачать MP4 в полном качестве (1080p)</a>}
+     {job.ready&&job.exportStatus!=='COMPLETED'&&job.contentType!=='photo-carousel'&&
+      ((job.contentType==='photo-slideshow')||!job.fastDraft||job.fullReady)&&
+      <button type="button" className="personaQuickFull" onClick={()=>void preparePackage(job.id)}
+       disabled={job.exportStatus==='RENDERING'||exportingId===job.id}>
+       {job.exportStatus==='RENDERING'?'Готовлю платформенные версии…':'Подготовить пакет для соцсетей'}
+      </button>}
+     {job.exportStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">{job.exportError}</p>}
+     {job.exportStatus==='COMPLETED'&&job.exportItems?.length&&workerToken.current&&<>
+      <label>Платформа
+       <select aria-label="Скачать для платформы" value={exportChoices[job.id]||
+        (job.contentType==='photo-carousel'?'carousel':'instagram')}
+        onChange={event=>setExportChoices(prev=>({...prev,[job.id]:event.target.value}))}>
+        {job.exportItems.map(entry=><option key={entry.id} value={entry.id}>
+         {entry.id==='carousel'?'Скачать фото-карусель ZIP':
+          entry.id==='instagram'?'Скачать для Instagram':
+          entry.id==='tiktok'?'Скачать для TikTok':
+          entry.id==='youtube'?'Скачать для YouTube Shorts':
+          entry.id==='vk'?'Скачать для VK Видео (9:16)':
+          entry.id==='vk-4x5'?'Скачать для VK Видео (4:5)':
+          entry.id==='cover'?'Скачать обложку':
+          'Скачать '+entry.id}</option>)}
+       </select>
+      </label>
+      <a className="personaQuickDownload"
+       href={personaWorkerUrl+'/quick-render/'+job.id+'/export/'+
+        encodeURIComponent(exportChoices[job.id]||(job.contentType==='photo-carousel'?'carousel':'instagram'))+
+        '?token='+encodeURIComponent(workerToken.current)}>Скачать выбранное</a>
+     </>}
     </div>
    </article>)}</div>
   </div>}

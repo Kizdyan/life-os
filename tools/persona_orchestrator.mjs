@@ -15,6 +15,8 @@ export const STATES = Object.freeze([
 ]);
 const NEXT = new Map(STATES.slice(0,-2).map((s,i)=>[s,STATES[i+1]]));
 const VIDEO_EXT = new Set(['.mp4','.mov','.m4v','.mkv','.webm']);
+const PHOTO_EXT = new Set(['.jpg','.jpeg','.png']);
+const validPhotoSourceName=n=>typeof n==='string'&&n===basename(n)&&n.length<=240&&!n.startsWith('.')&&!/[/\\\x00-\x1f:]/.test(n)&&PHOTO_EXT.has(extname(n).toLowerCase());
 const PROBE_TIMEOUT_MS = 15_000;
 const MAX_SECONDS = 900;
 const MIN_SECONDS = .25;
@@ -102,7 +104,7 @@ export class ProductionJob {
       const data=await this.read();
       if(to==='FAILED'?['AWAITING_APPROVAL','FAILED'].includes(data.status):NEXT.get(data.status)!==to)fail('Illegal transition '+data.status+' -> '+to);
       if(typeof reason!=='string'||reason.length>1000)fail('Invalid transition reason');
-      if(to==='ANALYZING' && (!asset || !validFileName(asset.name)||!Number.isFinite(asset.durationSec)||
+      if(to==='ANALYZING' && (!asset || !(validFileName(asset.name)||validPhotoSourceName(asset.name))||!Number.isFinite(asset.durationSec)||
           !/^[a-f0-9]{64}$/.test(asset.sha256)))fail('Analysis requires verified input file evidence');
       const now=new Date().toISOString();
       const update={...data,status:to,revision:data.revision+1,updatedAt:now,
