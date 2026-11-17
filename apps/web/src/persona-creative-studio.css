@@ -255,3 +255,16 @@ main.appPersonaPage>.personaCreativeStudio{order:2;width:100%;min-width:0}
  min-height:42px;padding:8px 14px;font-size:12px;font-weight:650}
 .personaScenarioStrategyAudit button:disabled{opacity:.55;cursor:not-allowed}
 .personaScenarioStrategyAudit p{font-size:12px;margin:0;line-height:1.4;flex:1;min-width:200px}
+
+
+/* CODE RED: quiet home, with actual projects and the one-click MP4 route prominent. */
+.personaCreativeCompactHeader{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 0 6px}
+.personaCreativeCompactHeader small{display:block;color:#847559;letter-spacing:.17em;font-size:10px;font-weight:700}
+.personaCreativeCompactHeader h2{font:500 clamp(30px,4vw,47px)/1.16 'Cormorant Garamond',Georgia,serif;color:#252c35;margin:5px 0 0}
+.personaCreativeCompactHeader .personaCreativeNew{min-height:45px;border-radius:9px;padding:10px 18px}
+.personaCreativeProjectsHome{margin:10px 0 28px}
+.personaCreativeProjectsHome .personaCreativeSectionHead{margin-bottom:18px}
+.personaCreativeProjectsHome .personaCreativeGrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.personaCreativeAdvanced .personaCreativeTools{margin:18px 0}
+@media(max-width:850px){.personaCreativeProjectsHome .personaCreativeGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:570px){.personaCreativeCompactHeader{align-items:flex-start}.personaCreativeCompactHeader h2{font-size:34px}.personaCreativeCompactHeader .personaCreativeNew{font-size:12px;padding:8px 11px}.personaCreativeProjectsHome .personaCreativeGrid{grid-template-columns:1fr}}

@@ -105,6 +105,7 @@ try{
   const shootPage=await shootContext.newPage();
   shootPage.on('pageerror',error=>summary.errors.push('shoot-first: '+error.message));
   await shootPage.goto(baseUrl+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
+  await shootPage.locator('details.personaCreativeAdvanced > summary').first().click();
   await shootPage.getByRole('button',{name:/Актёр \+ композитор/}).click();
   const board=shootPage.getByRole('region',{name:'Снять ролик сейчас'});
   await board.waitFor({state:'visible',timeout:15000});

@@ -5,7 +5,7 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,mkdir,readFile,rm,stat} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rm,stat,copyFile,readdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
@@ -23,13 +23,17 @@ const generated=spawnSync('ffmpeg',['-v','error','-f','lavfi','-i',
 assert.equal(generated.status,0,generated.stderr);
 const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 const original=hash(await readFile(source));
+const second=join(temp,'IMG_8303.mp4');
+await copyFile(source,second); // a second distinct named input, synthetic bytes only
 const worker=createPersonaMediaWorker({
  port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
  quickPlanner:async({candidates,frames})=>{
   assert.ok(frames.length>=2&&frames[0].subarray(0,2).equals(Buffer.from([0xff,0xd8])));
+  const secondCandidate=candidates.find(candidate=>candidate.fileIndex===1);
+  assert.ok(secondCandidate,'both uploaded files must supply verified candidate frames');
   return {stylePack:'Commercial',creativeIntent:'Actor reaction to object detail',
    choices:[{candidateId:candidates[0].id,role:'actor',caption:'КОГДА ВСЁ МЕНЯЕТСЯ'},
-            {candidateId:candidates[1].id,role:'broll',caption:'ОДНА ПАУЗА'}]};
+            {candidateId:secondCandidate.id,role:'broll',caption:'ОДНА ПАУЗА'}]};
  },
  quickStrategy:async()=>({status:'WARNING',recommendation:'Усилить актёрскую реакцию на последнем крупном плане'}),
  quickLighting:async()=>({style:'Quiet Luxury',key:'45°',fill:'по необходимости',back:'контровой при драме'}),
@@ -45,14 +49,28 @@ try{
  await block.waitFor({timeout:20000});
  assert.equal(await block.locator('textarea').count(),1);
  assert.equal(await block.locator('input[type=file]').count(),1);
+ assert.equal(await block.locator('select').count(),2,'one compact style-and-color group');
  await page.screenshot({path:join(output,'before-1440.png'),fullPage:true,animations:'disabled'});
- await page.locator('#persona-quick-files').setInputFiles(source);
- await page.locator('#persona-quick-prompt').fill('Сделай кинематографично: выбери выразительные моменты и добавь титры');
+ await page.locator('#persona-quick-files').setInputFiles([source,second]);
+ await page.locator('#persona-quick-style').selectOption('cinematic');
+ await page.locator('#persona-quick-color').selectOption('DetailCinematic');
+ assert.match(await page.locator('#persona-quick-prompt').inputValue(),/если Vision доступен/,'one click must work without typing a brief');
  await block.getByRole('button',{name:/Сделать всё/}).click();
  const job=block.locator('[data-quick-status="completed"]');
  await job.waitFor({timeout:210000});
  await job.getByText('Готов к скачиванию').waitFor();
- assert.match(await job.textContent(),/WARNING/);
+ assert.match(await job.textContent(),/Detail Cinematic/);
+ assert.doesNotMatch(await job.textContent(),/PRODUCTIONJOB/);
+ const dirs=(await readdir(join(temp,'jobs'))).filter(name=>name.startsWith('quick-'));
+ assert.equal(dirs.length,1);
+ const jobRoot=join(temp,'jobs',dirs[0]);
+ const result=JSON.parse(await readFile(join(jobRoot,'output','RESULT.json'),'utf8'));
+ const plan=JSON.parse(await readFile(join(jobRoot,'output','edit-plan.json'),'utf8'));
+ const timeline=JSON.parse(await readFile(join(jobRoot,'output','edited.mp4.persona.json'),'utf8'));
+ assert.equal(result.visualPreset,'DetailCinematic');
+ assert.equal(result.stylePack,'Cinematic','author style must override the Commercial model suggestion');
+ assert.equal(timeline.settings.visualPreset,'DetailCinematic');
+ assert.deepEqual(plan.choices.map(c=>c.fileIndex),[0,1]);
  const download=job.getByRole('link',{name:'Скачать готовый MP4'});
  assert.equal(await download.count(),1);
  await page.screenshot({path:join(output,'ready-1440.png'),fullPage:true,animations:'disabled'});
@@ -70,6 +88,7 @@ try{
  assert.equal(parsed.streams.find(s=>s.codec_type==='video').height,1280);
  assert.ok(Number(parsed.format.duration)>7);
  assert.equal(hash(await readFile(source)),original,'original user media untouched');
+ assert.equal(hash(await readFile(second)),original,'second source remains untouched');
  await page.reload({waitUntil:'domcontentloaded'});
  await page.getByTestId('persona-quick-auto-render').locator('[data-quick-status="completed"]').waitFor({timeout:15000});
  const mobile=await browser.newPage({viewport:{width:390,height:844}});
@@ -78,7 +97,7 @@ try{
  await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
  await mobile.close();await page.close();
- console.log('PASS actual browser one-click upload, mocked LLM, real FFmpeg/ASS render, clickable MP4 download, reload and mobile');
+ console.log('PASS two-input browser one-click + Cinematic / Detail Cinematic, real FFmpeg + subtitle render, MP4 download, reload and mobile');
 }finally{
  await browser.close();await new Promise(resolve=>worker.server.close(resolve));
  await rm(temp,{recursive:true,force:true});

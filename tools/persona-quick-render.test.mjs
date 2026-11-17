@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
+import {quickRenderAppearance} from './persona-quick-render.mjs';
 
 const available=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore'}).status===0);
 const sha=data=>createHash('sha256').update(data).digest('hex');
@@ -46,7 +47,8 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   assert.equal(publicResponse.status,401);
   const token=(await(await fetch(base+'/health')).json()).token;
   const headers={'X-Persona-Worker-Token':token};
-  const manifest={prompt:'Сделай кинематографично и добавь мою музыку',consent:true,files:[
+  const manifest={prompt:'Сделай кинематографично и добавь мою музыку',consent:true,
+  styleChoice:'dynamic',colorPreset:'DetailCinematic',files:[
    {kind:'video',name:'user-original.mp4',size:sourceBytes.length},
    {kind:'audio',name:'user-music.wav',size:musicBytes.length},
   ]};
@@ -87,15 +89,21 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   assert.equal(result.submittedToModel,'sampled_jpeg_frames_only');
   assert.equal(result.hasMusic,true);
   assert.equal(result.hasCaptions,true);
+  assert.equal(result.styleChoice,'dynamic');
+  assert.equal(result.subtitlePreset,'dynamic-interview');
+  assert.equal(result.visualPreset,'DetailCinematic');
   assert.equal(result.strategy.status,'WARNING');
   assert.equal(result.technicalChecks.video,true);
   const edit=JSON.parse(await readFile(join(rootJob,'output','edit-plan.json'),'utf8'));
-  assert.equal(edit.stylePack,'Cinematic');
+  assert.equal(edit.stylePack,'Dynamic','explicit author choice overrides model style');
+  assert.equal(edit.appearance.styleChoice,'dynamic');
+  assert.equal(edit.appearance.colorPreset,'DetailCinematic');
   assert.equal(edit.choices.length,2);
   assert.equal(edit.provenance.model,'test-only');
   assert.equal(edit.provenance.rightsConfirmed,false);
   const timelineReport=JSON.parse(await readFile(join(rootJob,'output','edited.mp4.persona.json'),'utf8'));
-  assert.equal(timelineReport.settings.stylePack,'Cinematic');
+  assert.equal(timelineReport.settings.stylePack,'Dynamic');
+  assert.equal(timelineReport.settings.visualPreset,'DetailCinematic');
   assert.equal(timelineReport.settings.visualIdentity,'persona-visual-identity-v1');
   assert.equal(timelineReport.verification.passed,true);
   const mp4=await fetch(base+'/quick-render/'+one.id+'/video?token='+token);
@@ -125,4 +133,16 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
   else if(worker.server.listening)await new Promise(resolve=>worker.server.close(resolve));
   await rm(root,{recursive:true,force:true});
  }
+});
+
+test('Session 2 appearance mapping is explicit, backwards-compatible and rejects invented FFmpeg options',()=>{
+ assert.deepEqual(quickRenderAppearance(),{styleChoice:'auto',colorPreset:null,stylePack:null,subtitlePreset:'cinematic'});
+ assert.deepEqual(quickRenderAppearance({styleChoice:'cinematic',colorPreset:'DetailCinematic'}),
+  {styleChoice:'cinematic',colorPreset:'DetailCinematic',stylePack:'Cinematic',subtitlePreset:'cinematic'});
+ assert.deepEqual(quickRenderAppearance({styleChoice:'dynamic',colorPreset:'SoftCinematic'}),
+  {styleChoice:'dynamic',colorPreset:'SoftCinematic',stylePack:'Dynamic',subtitlePreset:'dynamic-interview'});
+ assert.deepEqual(quickRenderAppearance({styleChoice:'signature-gold',colorPreset:'DetailCinematic'}),
+  {styleChoice:'signature-gold',colorPreset:'DetailCinematic',stylePack:'Cinematic',subtitlePreset:'signature-gold'});
+ for(const appearance of [{styleChoice:'invented'},{colorPreset:'rm -rf /'}, {styleChoice:'signature-gold',colorPreset:'colorbalance=pl=1'}])
+  assert.throws(()=>quickRenderAppearance(appearance),/Неизвестный/);
 });

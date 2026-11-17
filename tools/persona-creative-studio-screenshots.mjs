@@ -15,9 +15,11 @@ try{
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
   page.on('pageerror',error=>console.error('UI page error:',error.message));
   await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
-  await page.locator('.personaCreativeHero').waitFor({timeout:20000});
-  const hero=page.locator('.personaCreativeHero');
-  const heroBounds=await hero.boundingBox();
+  await page.locator('.personaCreativeCompactHeader').waitFor({timeout:20000});
+  const homeHeader=page.locator('.personaCreativeCompactHeader');
+  const heroBounds=await homeHeader.boundingBox();
+  assert.equal(await page.getByTestId('persona-quick-auto-render').isVisible(),true,'quick MP4 intake must be prominent');
+  assert.equal(await page.locator('.personaCreativeTools').isVisible(),false,'legacy tools must stay hidden until Advanced opens');
   const rootNavPosition=await page.locator('.appNavigation').evaluate(element=>getComputedStyle(element).position);
   assert.equal(rootNavPosition,'static','global navigation must not obscure Persona content');
   assert.ok((heroBounds?.width??0)>width*(width===1440?.65:.65),'creative dashboard must use available width');

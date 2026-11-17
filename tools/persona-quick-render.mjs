@@ -10,6 +10,7 @@ import {join,resolve,basename,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {homedir,tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
+import {getVisualPreset} from './persona-creative-director.mjs';
 import {frameCandidates,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
 
 /** No inference or fabricated emotion labels when Vision is unavailable. */
@@ -38,6 +39,22 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const videoExt=new Set(['.mp4','.mov','.mkv','.webm','.m4v']);
 const audioExt=new Set(['.mp3','.wav','.m4a','.aac','.flac']);
 const BYTES_MAX=500*1024*1024;
+// Only already supported looks: Signature Gold changes subtitles, not color.
+const QUICK_STYLES=Object.freeze({
+ auto:{stylePack:null,subtitlePreset:'cinematic'},
+ cinematic:{stylePack:'Cinematic',subtitlePreset:'cinematic'},
+ dynamic:{stylePack:'Dynamic',subtitlePreset:'dynamic-interview'},
+ 'signature-gold':{stylePack:'Cinematic',subtitlePreset:'signature-gold'},
+});
+const QUICK_COLORS=new Set(['SoftCinematic','DetailCinematic']);
+export function quickRenderAppearance({styleChoice='auto',colorPreset=null}={}){
+ if(typeof styleChoice!=='string'||!Object.hasOwn(QUICK_STYLES,styleChoice))
+  throw Error('Неизвестный стиль монтажа. Выберите Cinematic, Dynamic или Signature Gold.');
+ if(colorPreset!==null&&(typeof colorPreset!=='string'||!QUICK_COLORS.has(colorPreset)))
+  throw Error('Неизвестный цветовой пресет. Выберите Soft Cinematic или Detail Cinematic.');
+ if(colorPreset)getVisualPreset(colorPreset); // exact authoritative FFmpeg preset
+ return {styleChoice,colorPreset,...QUICK_STYLES[styleChoice]};
+}
 const resJson=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
 const safeName=(value,kind)=>{
  if(typeof value!=='string'||value.length<3||value.length>240||/[\\/\x00-\x1f:]/.test(value)||
@@ -81,14 +98,14 @@ async function probe(file,config,{audioOnly=false,rendered=false}={}){
   '-of','json',file],{env:workerEnv(config),timeoutMs:15000});
  let data;try{data=JSON.parse(raw.toString('utf8'))}catch{throw Error('FFprobe output invalid')}
  const durationSec=Number(data.format?.duration);
- if(!Number.isFinite(durationSec)||durationSec<(rendered?.25:audioOnly?.2:8)||durationSec>1200)throw Error('Video/audio duration outside permitted bounds');
+ if(!Number.isFinite(durationSec)||durationSec<(rendered?.25:audioOnly?.2:8)||durationSec>1200)throw Error('Длительность видео должна быть от 8 секунд до 20 минут. Для музыки достаточно 0,2 секунды. Проверьте выбранный файл.');
  const video=data.streams?.find(x=>x.codec_type==='video');
  if(audioOnly){if(!data.streams?.some(x=>x.codec_type==='audio'))throw Error('Music file has no audio stream');return {durationSec}}
  if(!video||!Number.isInteger(video.width)||!Number.isInteger(video.height))throw Error('Video stream is missing');
  if(['smpte2084','arib-std-b67'].includes(video.color_transfer)||
-  String(video.color_primaries??'').startsWith('bt2020'))throw Error('HDR/BT.2020 source needs manual SDR conversion');
+  String(video.color_primaries??'').startsWith('bt2020'))throw Error('Это видео в HDR/Dolby Vision. Для безопасной цветокоррекции сначала экспортируйте его копию в SDR (Rec.709), оригинал сохраните.');
  if(Number(video.tags?.rotate??0)!==0||video.side_data_list?.some(x=>Number(x.rotation??0)!==0))
-  throw Error('Rotated source requires manual normalization before automatic cropping');
+  throw Error('У видео есть метаданные поворота. Сначала экспортируйте копию с правильной ориентацией кадра, чтобы автоматический монтаж не обрезал лицо.');
  return {durationSec,width:video.width,height:video.height,hasAudio:data.streams.some(x=>x.codec_type==='audio')};
 }
 async function jpegFrame(path,second,config){
@@ -148,8 +165,10 @@ export function createPersonaQuickRenderService(config={}){
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   moments:job.moments??[],
+  styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
   notice:job.state==='completed'?(job.result?.visionAvailable===false?
-   'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.':
+   (job.result?.visionAttempted?'Vision завершился ошибкой, кадры могли быть отправлены в OpenRouter до сбоя. Собран резервный монтаж без оценки эмоций.':
+    'Офлайн-черновик: Vision не выполнялся, эмоциональные моменты не оценивались. Проверьте монтаж перед публикацией.'):
    'MP4 создан и технически проверен. Проверьте содержание перед публикацией.'):null});
  async function create(body){
   if(active!==null)throw Error('Another one-click render is currently running');
@@ -165,13 +184,14 @@ export function createPersonaQuickRenderService(config={}){
    return {index,kind:file.kind,originalName:name,name:toFileName(index,file.kind,name),size:file.size};
   });
   if(files.reduce((n,f)=>n+f.size,0)>BYTES_MAX)throw Error('Total upload exceeds 500 MB');
+  const appearance=quickRenderAppearance(body); // validate before intake
   // Vision is an optional enhancement. The offline timeline still creates a real MP4.
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
   const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
-   uploads:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
+   uploads:[],appearance,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
   return view(job);
  }
@@ -192,7 +212,7 @@ export function createPersonaQuickRenderService(config={}){
    const sink=createWriteStream(path,{flags:'wx'});
    sink.once('open',()=>{owned=true});
    await pipeline(req,sink);
-   if((await stat(path)).size!==entry.size)throw Error('Upload was incomplete');
+   if((await stat(path)).size!==entry.size)throw Error('Загрузка файла прервалась. Выберите исходник и повторите попытку.');
    const media=await probe(path,config,{audioOnly:entry.kind==='audio'});
    entry.sha256=await sha(path);
    entry.media=media;
@@ -221,7 +241,7 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(strategyOutput,JSON.stringify({...audit,provider:'test-injected',publicationApproved:false},null,2));
    }else{
     const py=config.pythonBin||env.PERSONA_PYTHON|| (process.platform==='win32'?'python':'python3');
-    if(!env.OPENROUTER_API_KEY?.trim()&&!env.OPENAI_API_KEY?.trim()){
+    if(!env.OPENROUTER_API_KEY?.trim()){ // no OpenRouter means an entirely local one-click flow
      await writeFile(strategyOutput,JSON.stringify({status:'WARNING',recommendation:'Нет облачного ключа: стратегический анализ пропущен, доступен офлайн-монтаж.',provider:'offline',publicationApproved:false}));
     }else{
      try{await runBounded(py,[join(toolsDir,'strategy_analyzer.py'),'--input',strategyInput,'--output',strategyOutput],
@@ -257,7 +277,7 @@ export function createPersonaQuickRenderService(config={}){
     job.stage='Офлайн-монтаж: Vision отключён';await save(job);
     plan=offlineEditPlan(candidateInput);
     provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
-     reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',
+     reason:'OPENROUTER_API_KEY отсутствует; кадры не отправлялись в облако',visionAttempted:false,
      sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
    }else{
     job.stage='Whisper: проверка речи';await save(job);
@@ -291,8 +311,8 @@ export function createPersonaQuickRenderService(config={}){
     if(vision.unavailable){
      job.stage='Vision недоступен — собираю офлайн-черновик';await save(job);
      plan=offlineEditPlan(candidateInput);
-     provenance={version:1,kind:'offline-fallback',provider:'none',visionAvailable:false,
-      reason:vision.unavailable,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
+     provenance={version:1,kind:'offline-fallback',provider:'openrouter-attempted',visionAvailable:false,
+      visionAttempted:true,reason:vision.unavailable,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false};
     }else{
     job.stage='Выбор эмоциональных пиков';await save(job);
     const ranked=audio.map((track,fileIndex)=>({...track,
@@ -327,7 +347,11 @@ export function createPersonaQuickRenderService(config={}){
      rightsConfirmed:false};
     }
    }
-   await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance},null,2)+'\n',{flag:'wx'});
+   const appearance=quickRenderAppearance(job.appearance);
+   // Model chooses verified intervals; the author's style choice takes precedence.
+   if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
+   await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
+    appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset}},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
@@ -338,7 +362,8 @@ export function createPersonaQuickRenderService(config={}){
    }));
    const music=job.files.find(x=>x.kind==='audio');
    const timeline={version:1,width:720,height:1280,fps:30,visualIdentity:'persona-visual-identity-v1',
-    stylePack:plan.stylePack,clips:sources,
+    stylePack:plan.stylePack,
+    ...(appearance.colorPreset?{visualPreset:appearance.colorPreset}:{}),clips:sources,
     ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74}}:{})};
    const timelinePath=join(out,'timeline.json'),draft=join(out,'edited.mp4');
    await writeFile(timelinePath,JSON.stringify(timeline,null,2)+'\n',{flag:'wx'});
@@ -359,7 +384,7 @@ export function createPersonaQuickRenderService(config={}){
     await writeFile(subtitle,JSON.stringify({version:1,cues,captionTiming:'model_title_not_transcription',authorReviewRequired:true}));
     const finished=join(out,'ready.mp4');
     await burnPersonaSubtitles({videoPath:draft,reviewPath:subtitle,outputPath:finished,
-     ffmpegDir:config.ffmpegDir,preset:'cinematic'});
+     ffmpegDir:config.ffmpegDir,preset:appearance.subtitlePreset});
     video=finished;
    }
    await verifyUploadedFiles(input,job.files);
@@ -368,16 +393,22 @@ export function createPersonaQuickRenderService(config={}){
     publicationApproved:false,id,videoName:basename(video),sha256:outputHash,
     bytes:(await stat(video)).size,durationSec:details.durationSec,
     strategy:{status:audit.status,recommendation:audit.recommendation},
-    stylePack:plan.stylePack,hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    submittedToModel:config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
-    smartMomentDetection:!config.quickPlanner,audioUnderstanding:plan.audioUnderstanding,
+    stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
+    subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
+    visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
+    hasMusic:Boolean(music),hasCaptions:cues.length>0,
+    submittedToModel:provenance.kind==='offline-fallback'?(provenance.visionAttempted?'vision_attempted_not_verified':'none'):
+     config.quickPlanner?'sampled_jpeg_frames_only':'half_second_jpeg_frames_and_optional_text_transcript',
+    smartMomentDetection:provenance.kind==='smart-moment-evidence',audioUnderstanding:plan.audioUnderstanding,
     broll:'only_user_uploaded_source_windows',
     technicalChecks:{video:true,sha256:true,sourceIntegrity:true}};
    await writeFile(join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
    await production.transition('AWAITING_APPROVAL',{reason:'Verified MP4, awaiting human review'});
    job.state='completed';job.stage='Готово';job.videoName=basename(video);job.sha256=outputHash;
    job.result={durationSec:details.durationSec,hasMusic:Boolean(music),hasCaptions:cues.length>0,
-    strategyStatus:audit.status,stylePack:plan.stylePack,visionAvailable:provenance.kind!=='offline-fallback'};job.updatedAt=new Date().toISOString();
+    strategyStatus:audit.status,stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
+    subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
+    visionAvailable:provenance.kind!=='offline-fallback',visionAttempted:Boolean(provenance.visionAttempted)};job.updatedAt=new Date().toISOString();
    await save(job);
   }catch(error){
    job.stage='Ошибка';

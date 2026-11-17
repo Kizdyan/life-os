@@ -764,32 +764,34 @@ export default function PersonaFactory(){
  if(screen==='actor_portfolio')return <PersonaActorPortfolio onBack={()=>navigate('home')}/>;
  if(screen==='music_sync')return <PersonaMusicSyncPortfolio onBack={()=>navigate('home')}/>;
  if(screen==='home')return <section className="personaFactoryV2 personaMobileHome personaCreativeStudio">
-  <header className="personaCreativeHero">
-   <div className="personaCreativeHeroTop"><span>PERSONA / CREATIVE STUDIO</span><span>ТВОЯ ТВОРЧЕСКАЯ МАСТЕРСКАЯ</span></div>
-   <div className="personaCreativeHeroMain">
-    <div><p className="personaCreativeEyebrow">ТВОИ ИСТОРИИ ЗАСЛУЖИВАЮТ КРАСИВОГО НАЧАЛА</p>
-     <h2>Истории начинаются <em>здесь.</em></h2>
-     <p className="personaCreativeHeroDescription">От первой идеи до последнего кадра. Создавай сценарии, собирай раскадровки и возвращайся к работе в собственном ритме.</p>
-     <button className="personaCreativeHeroButton" type="button" onClick={()=>createQuickProject('reel')}>Новый Reels <span aria-hidden="true">↗</span></button>
-    </div>
-    <div className="personaCreativeHeroArt" aria-hidden="true"><span className="personaCreativeHeroArtOutline">P</span><span>EST. 2026 · YOUR STORY</span></div>
-   </div>
+  <header className="personaCreativeCompactHeader">
+   <div><small>PERSONA / CREATIVE STUDIO</small><h2>Твоя мастерская</h2></div>
+   <button type="button" className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button>
   </header>
   <PersonaQuickAutoRender/>
-  <div className="personaCreativeSectionHead"><div><small>01 / ПРОЕКТЫ</small><h3>Продолжить работу</h3><p>Все материалы сохраняются в твоей мастерской.</p></div><button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
-  {projects.length?<div className="personaCreativeGrid">{projects.slice(0,4).map(project=><PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
-   <div className="personaCreativeBlank"><span aria-hidden="true">✦</span><h3>Первая история ждёт тебя</h3><p>Начни с идеи или подготовь сценарий без съёмок.</p><button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
-  <div className="personaCreativeSectionHead personaCreativeToolsHead"><div><small>02 / ВОЗМОЖНОСТИ</small><h3>Свобода творчества</h3></div></div>
-  <div className="personaDemoEntry"><div><strong>10 сценариев от Архитектора</strong><span>Оригинальные хуки, таймкоды, B-roll и музыка. Все 10 проектов без отснятых исходников.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}>Загрузить 10 сценариев ↗</button></div>
-  <div className="personaDemoEntry"><div><strong>Хочешь протестировать Persona без съёмок?</strong><span>Три готовые тестовые сцены, Shot List и аниматик — без настоящего MP4.</span></div><button type="button" onClick={()=>{window.location.hash=PERSONA_DEMO_LINK_HASH}}>Открыть демо-проект ↗</button></div>
-  <div className="personaCreativeTools">
-   <button type="button" onClick={()=>navigate('actor_portfolio')}><span aria-hidden="true">◈</span><strong>Создать визитку</strong><small>Актёрский мини-фильм · 30–60 секунд</small></button>
-   <button type="button" onClick={()=>navigate('music_sync')}><span aria-hidden="true">♫</span><strong>Музыка для лицензирования</strong><small>Треки, стемы, права, PDF-пакет</small></button>
-   <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот · раскадровка</small></button>
-   <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong><small>Портреты и визуальный образ</small></button>
-   <button type="button" onClick={()=>createQuickProject('carousel')}><span aria-hidden="true">▤</span><strong>Карусель</strong><small>История в нескольких кадрах</small></button>
-  </div>
-  <details className="personaCreativeAdvanced"><summary>Advanced / Для разработчика</summary><DataPortability/></details>
+  <section className="personaCreativeProjectsHome" aria-label="Мои проекты">
+   <div className="personaCreativeSectionHead"><div><h3>Мои проекты</h3></div>
+    <button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
+   {projects.length?<div className="personaCreativeGrid">{projects.slice(0,6).map(project=>
+    <PersonaCreativeProjectCard key={project.id} project={project} onContinue={continueProject}/>)}</div>:
+    <div className="personaCreativeBlank"><h3>Пока нет проектов</h3>
+     <p>Создай первый сценарий или добавь два видео в быстрый автомонтаж.</p>
+     <button type="button" onClick={()=>createQuickProject('reel')}>Создать первый проект</button></div>}
+  </section>
+  <details className="personaCreativeAdvanced"><summary>Advanced (Для разработчика) · другие инструменты и архив</summary>
+   <div className="personaDemoEntry"><div><strong>10 сценариев от Архитектора</strong><span>Архивный импорт сценариев без видео.</span></div>
+    <button type="button" onClick={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}>Загрузить 10 сценариев ↗</button></div>
+   <div className="personaDemoEntry"><div><strong>Демо-проект</strong><span>Тестовые сцены и аниматик.</span></div>
+    <button type="button" onClick={()=>{window.location.hash=PERSONA_DEMO_LINK_HASH}}>Открыть демо-проект ↗</button></div>
+   <div className="personaCreativeTools">
+    <button type="button" onClick={()=>navigate('actor_portfolio')}><span aria-hidden="true">◈</span><strong>Создать визитку</strong><small>Актёрский мини-фильм</small></button>
+    <button type="button" onClick={()=>navigate('music_sync')}><span aria-hidden="true">♫</span><strong>Музыка для лицензирования</strong><small>Треки, стемы, права</small></button>
+    <button type="button" onClick={startPilotShoot}><span aria-hidden="true">◇</span><strong>Актёр + композитор</strong><small>Семисценный пилот</small></button>
+    <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong></button>
+    <button type="button" onClick={()=>createQuickProject('carousel')}><span aria-hidden="true">▤</span><strong>Карусель</strong></button>
+   </div>
+   <details className="personaCreativeAdvanced"><summary>Настройки разработчика · экспорт и резервная копия</summary><DataPortability/></details>
+  </details>
  </section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList personaCreativeStudio">
   <header className="personaCreativeListHead"><button className="backButton" onClick={()=>navigate('home')}>← Мастерская</button><small>PERSONA / АРХИВ ПРОЕКТОВ</small><h2>Мои проекты</h2><p>{projects.length?'Продолжай с того места, где остановился.':'Все твои будущие истории будут здесь.'}</p><button className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button><div className="personaIndustryPills"><button type="button" onClick={()=>navigate('actor_portfolio')}>Создать визитку</button><button type="button" onClick={()=>navigate('music_sync')}>Музыка для лицензирования</button></div></header>
