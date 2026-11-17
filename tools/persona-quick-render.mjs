@@ -34,7 +34,7 @@ import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mj
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
-import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
+import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,layoutQuoteForSignatureGold,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
 import {inspectPhoto,renderPhotoCarousel,renderPhotoSlideshow,renderPlatformPackage} from './persona-quick-platforms.mjs';
 
 const toolsDir=fileURLToPath(new URL('.',import.meta.url));
@@ -203,6 +203,7 @@ export function createPersonaQuickRenderService(config={}){
   if(!['4:5','1:1'].includes(carouselAspect))throw Error('Unsupported carousel aspect');
   if(body.coverTitle!==undefined&&(typeof body.coverTitle!=='string'||body.coverTitle.length>90))
    throw Error('Invalid cover title');
+  if(body.coverTitle?.trim())layoutQuoteForSignatureGold(body.coverTitle.trim());
   const files=body.files.map((file,index)=>{
    const name=safeName(file.name,file.kind);
    if(!Number.isSafeInteger(file.size)||file.size<1024||file.size>BYTES_MAX)throw Error('File exceeds upload size limits');
@@ -301,6 +302,7 @@ export function createPersonaQuickRenderService(config={}){
       const quoted=config.quickQuoteGenerator?await config.quickQuoteGenerator({mood,prompt:job.prompt})
        :await generatePersonaQuote({mood,env});
       title=validateQuoteText(typeof quoted==='string'?quoted:quoted?.quote);
+      layoutQuoteForSignatureGold(title);
       job.captionDecision={mode:'ai-quote',generatedText:title,
        reason:'Original image caption (not spoken)',source:config.quickQuoteGenerator?'test-injected':'openrouter',
        requestCount:config.quickQuoteGenerator?0:1};
