@@ -18,10 +18,10 @@ export function classifyQuoteSpeech(audio){
  // Unknown transcription MUST NOT be interpreted as silence. No quote is sent.
  if(audio.some(t=>!CONFIRMED_EMPTY.has(t.status)&&t.status!=='whisper-transcribed'))
   return {mode:'unverified',wordCount:count,reason:'Whisper unavailable or failed; speech presence unknown'};
- if(count>=3)return {mode:'speech',wordCount:count,reason:'Sufficient timed Whisper words'};
  if(audio.some(t=>t.status==='whisper-transcribed'&&t.segments.some(s=>
   !Number.isFinite(s.startSec)||!Number.isFinite(s.endSec)||s.endSec<=s.startSec)))
   return {mode:'unverified',wordCount:count,reason:'Whisper timestamps unreliable'};
+ if(count>=3)return {mode:'speech',wordCount:count,reason:'Sufficient timed Whisper words'};
  return {mode:'quote',wordCount:count,reason:'No meaningful speech or fewer than three Whisper words'};
 }
 function cleanTranscript(text){
