@@ -448,7 +448,7 @@ export function createPersonaQuickRenderService(config={}){
      sampleCount:vision.frameCount,frameIntervalSec:vision.frameIntervalSec,visionRequests:vision.requests,
      sourceShas:vids.map(f=>f.sha256),audioStatus:ranked.map(a=>a.status),
      speechRanking:speechRanking.status,evidenceSha256:vision.evidenceSha256,
-     note:job.fastDraft?'Sparse 2.5s Vision; no Whisper. See smart-moments.json.':'Half-second Vision + optional local Whisper. See smart-moments.json.',
+     note:job.fastDraft?(job.textAccents?'Sparse 2.5s Vision; local Whisper attempted for optional text accents. See smart-moments.json.':'Sparse 2.5s Vision; no Whisper. See smart-moments.json.'):'Half-second Vision + optional local Whisper. See smart-moments.json.',
      rightsConfirmed:false};
     }
     }
