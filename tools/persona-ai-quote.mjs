@@ -75,7 +75,7 @@ export function layoutQuoteForSignatureGold(text){
   if(!best||score<best.score)best={left,right,score};
  }
  if(!best)throw Error('AI quote too wide for Signature Gold; choose shorter words');
- return best.left+'\\n'.replace('\\n','\n')+best.right;
+ return best.left+'\n'+best.right;
 }
 export function quoteCue(quote,choices){
  const text=validateQuoteText(quote);
