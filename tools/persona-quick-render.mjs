@@ -311,6 +311,7 @@ export function createPersonaQuickRenderService(config={}){
      await rankSpeechHighlights({audio,env}).catch(()=>({highlights:[],status:'unavailable'}));
     job.stage=job.fastDraft?'Vision: кадры каждые 2,5 с':'Vision: анализ каждые 0,5 с';await save(job);
     const vision=await runSmartVision({videos:candidateInput,intervalSec:job.fastDraft?2.5:.5,
+     visionBudgetMs:job.fastDraft?18000:null,
      frameAt:async(frame)=>jpegFrame(join(input,vids[frame.fileIndex].name),frame.atSec,config),
      env,batchOverride:config.quickVisionBatch||null,
      onProgress:async(progress)=>{
