@@ -19,7 +19,18 @@
 .personaQuickPrompt textarea{width:100%;min-height:114px;padding:15px;background:#fffdfa;border:1px solid #ccc1b0;border-radius:12px;resize:vertical;font:400 14px/1.5 Arial,sans-serif;color:#23252a}
 .personaQuickPrompt textarea::placeholder{color:#8c8882}
 .personaQuickPrompt textarea:focus-visible{outline:2px solid #9b7d52;outline-offset:2px}
+.personaQuickLooks{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px;border:1px solid #ded4c7;border-radius:13px;background:#fffdfa}
+.personaQuickLooks label{display:grid;gap:7px;font-size:12px;font-weight:700;color:#363c43;min-width:0}
+.personaQuickLooks select{width:100%;min-height:43px;padding:9px 12px;background:#fff;border:1px solid #bdb2a0;border-radius:9px;color:#23252a;font:600 14px/1.4 Arial,sans-serif;cursor:pointer}
+.personaQuickLooks select:focus-visible{outline:2px solid #9b7d52;outline-offset:2px}
+.personaQuickLooksHint{grid-column:1/-1;margin:0;color:#6b6050;font-size:11px;line-height:1.45}
+.personaQuickProcessing{grid-column:1/-1;font-size:11px;color:#666057}
+.personaQuickProcessing summary,.personaQuickMoments summary{cursor:pointer;font-weight:650;color:#6a5d47}
+.personaQuickProcessing p{margin:8px 0 0}
 .personaQuickPrivacy{grid-column:1/-1;font-size:11px;line-height:1.55;color:#69665e;margin:0}
+.personaQuickMoments{margin:8px 0;font-size:12px}
+.personaQuickMoments ol{padding-left:20px}
+
 .personaQuickGo{grid-column:1/-1;border:0;border-radius:13px;background:#1d2533;color:#faf7f2;min-height:65px;padding:16px 24px;font:750 clamp(17px,2.5vw,22px)/1.2 Arial,sans-serif;display:flex;align-items:center;justify-content:center;gap:20px;cursor:pointer;box-shadow:0 8px 14px rgba(22,25,30,.18)}
 .personaQuickGo:hover:not(:disabled){background:#323c4e}
 .personaQuickGo:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
@@ -36,3 +47,5 @@
 .personaQuickDownload{display:block;text-align:center;padding:12px;background:#192433;color:#fff!important;border-radius:9px;font-size:13px;text-decoration:none!important;font-weight:750}
 .personaQuickDownload:hover{background:#39495e}
 @media(max-width:720px){.personaQuick{padding:18px 14px;border-radius:15px}.personaQuickForm{grid-template-columns:1fr}.personaQuickDrop{grid-row:auto;min-height:195px}.personaQuickPrivacy,.personaQuickGo{grid-column:1}.personaQuickHeadingMark{width:40px;height:40px;font-size:20px}}
+@media(max-width:500px){.personaQuickLooks{grid-template-columns:1fr}.personaQuickLooksHint{grid-column:1}.personaQuickHeadingMark{display:none}}
+
