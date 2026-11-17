@@ -208,7 +208,7 @@ export default function PersonaQuickAutoRender(){
      {job.fullReady&&workerToken.current&&<a className="personaQuickDownload"
       href={personaWorkerUrl+'/quick-render/'+job.id+'/video-full?token='+encodeURIComponent(workerToken.current)}
       download={'persona-'+job.id+'-1080p.mp4'}>Скачать MP4 в полном качестве (1080p)</a>}
-    </div>}
+    </div>
    </article>)}</div>
   </div>}
  </section>;
