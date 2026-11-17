@@ -88,3 +88,24 @@ test('Whisper is optional but never silently reclassified as no speech',async()=
  assert.equal(segments.length,2);assert.match(segments[0].text,/мир!/);
  const noRank=await rankSpeechHighlights({audio:[unavailable]});assert.equal(noRank.status,'not-applicable');
 });
+
+test('Fast Draft analyzes only each fifth former 0.5s position and reduces image/request budget',async()=>{
+ const both=[{durationSec:20,sha256:'a'.repeat(64)},{durationSec:20,sha256:'b'.repeat(64)}];
+ const standard=smartFrameSchedule(both),fast=smartFrameSchedule(both,{intervalSec:2.5});
+ assert.equal(standard.length,80);assert.equal(fast.length,16);
+ assert.deepEqual(fast.filter(f=>f.fileIndex===0).map(f=>f.atSec),[0,2.5,5,7.5,10,12.5,15,17.5]);
+ assert.ok(fast.every(f=>standard.some(ref=>ref.fileIndex===f.fileIndex&&ref.atSec===f.atSec)));
+ let requests=0,extracted=0;
+ const scan=await runSmartVision({videos:both,intervalSec:2.5,
+  frameAt:async f=>{extracted++;return Buffer.concat([Buffer.from([0xff,0xd8]),Buffer.alloc(360)])},
+  batchOverride:async({frames,jpegs})=>{
+   requests++;assert.equal(frames.length,jpegs.length);
+   return {frames:frames.map(classify)};
+  }});
+ assert.equal(extracted,16);assert.equal(requests,2);
+ assert.equal(scan.requests,2);assert.equal(scan.frameCount,16);
+ assert.equal(scan.frameIntervalSec,2.5);
+ assert.equal(scan.scored.length,16);
+ assert.throws(()=>smartFrameSchedule(both,{intervalSec:2.6}),/Unsupported/);
+ assert.throws(()=>smartFrameSchedule([{durationSec:400,sha256:'a'.repeat(64)}],{intervalSec:2.5}),/maximum 300 seconds/);
+});
