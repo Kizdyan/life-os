@@ -1,7 +1,9 @@
 import React,{useEffect,useState} from 'react';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
- proposeTopics,reviseEditorialPost,SEED_CAROUSELS,
+ proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
+ CAROUSEL_BASELINE_ID,editorialChecklistState,editorialChecklistReady,
+ setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
 import {buildEditorialExport,readEditorialImage,saveEditorialImage,triggerEditorialDownload} from './personaEditorialMedia';
@@ -13,9 +15,19 @@ const visualLabels:{id:EditorialPreset;name:string}[]=[
  {id:'ink',name:'Ночной графит + золото'},
  {id:'cream',name:'Слоновая кость'},
  {id:'chocolate',name:'Тёмный шоколад'},
- {id:'filmic',name:'Плёночный серый'}
+ {id:'filmic',name:'Плёночный серый'},
+ {id:'chocolate-graphite',name:'Шоколад / графит'}
 ];
 const status=(post:EditorialPost)=>editorialStageLabel(post);
+const CHECKLIST_TEXT=[
+ 'Каждый слайд читается за ≤4 секунды на телефоне при 1080×1350.',
+ 'Первый слайд создаёт вопрос или напряжение, а не резюмирует тему.',
+ 'Каждый следующий слайд добавляет одну новую мысль; нет двух слайдов с одинаковым смыслом.',
+ 'Последний слайд завершается мыслью, а не клише «а вы как думаете?».',
+ 'В подписи есть минимум одна мысль, которой нет ни на одном слайде.',
+ 'Каждое изображение прослеживается до архива (или карусель text-only и это явно указано).',
+ 'Контраст текста к фону ≥ 4.5:1 для основного текста и ≥ 3:1 для крупных заголовков. Проверяется автоматически.'
+];
 const copy=(text:string)=>{void navigator.clipboard?.writeText(text)};
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
@@ -26,6 +38,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
+ const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
+ const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post):true;
  useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
  useEffect(()=>{
