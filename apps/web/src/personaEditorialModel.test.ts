@@ -201,7 +201,7 @@ describe('Persona Editorial Content Planner',()=>{
  it('preserves Carousel 002 approval hash and invalidates its approval after a slide edit',()=>{
   const start=createDirectorQuestionCarousel('2026-11-19T01:00:00Z');
   const content=approveEditorialStep(approveEditorialStep(start,'topic'),'content');
-  expect(()=>approveEditorialStep(content,'design')).toThrow(/чек-лист/i);
+  expect(()=>approveEditorialStep(content,'design')).toThrow(/пункты 1–6/i);
   const sixChecked=[0,1,2,3,4,5].reduce((p,index)=>setEditorialChecklistItem(p,index,true),content);
   expect(editorialChecklistReady(sixChecked)).toBe(true);
   expect(editorialChecklistState(sixChecked)).toEqual([true,true,true,true,true,true,true]);
