@@ -10,6 +10,7 @@ import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
 import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
 import PersonaEditorialStudio from './PersonaEditorialStudio';
+import {generatePersonaDraftWithRealAi} from './personaScriptGeneration';
 import {
  EDITORIAL_KEY,createSeedEditorialCarousel,loadEditorialStore,saveEditorialPost,
  type EditorialPost
@@ -778,14 +779,32 @@ export default function PersonaFactory(){
    setStatus('Идея изменена и сохранена. Обновите бриф, прежде чем утверждать съёмку.');
   }catch(error){setStatus('Изменение идеи не сохранено: '+String((error as Error).message||error))}
  }
- async function generate(idea=chosen){if(!idea||working)return;setChosen(idea);setWorking(true);setStatus('Стратег → редактор → маркетолог → медиа QA → финальная самопроверка…');setStage('production');try{const data=await api({action:'generate',engine:useFreeAI?'free-ai':'template',idea,history:h,assetName});setDraft(data.draft);setQa(data.qa||null);setEngineMode(data.mode==='ai'?'ai':'template');setStage('final_qa');setStatus(data.mode==='ai'?`Настоящий ИИ (${data.model||'free'}) подготовил сценарий. Проверь факты, текст и съёмочный план.`:'Подготовлен демонстрационный шаблон без вызова ИИ. Видеомонтаж и обработка фото не выполнялись.')}catch(e){const code=String((e as Error)?.message||'недоступен');
-    setStatus(code==='free_ai_gateway_access_denied'
-      ? 'AI Gateway отказал в доступе этому проекту (403 access_denied). Это ограничение Vercel: новый ввод идеи не поможет. Проверь права AI Gateway у команды Vercel; платная модель не подключалась.'
-      : code==='free_ai_account_verification_required'
-        ? 'AI Gateway требует подтверждения аккаунта Vercel. Не покупай кредиты вслепую; прежде проверь требование в панели AI Gateway. Сценарий не создан.'
-        : code==='free_ai_provider_403'
-          ? 'AI Gateway вернул отказ 403 без уточнения причины. Сценарий не создан; проверь раздел AI Gateway в Vercel.'
-          : 'Реальный ИИ не ответил: '+code+'. Шаблон не подставлен.');setStage('production')}finally{setWorking(false)}}
+ async function generate(idea=chosen){
+  if(!idea||working)return;
+  setChosen(idea);setWorking(true);setStatus('Проверяю локальную Ollama. При недоступности проверю настроенный OpenRouter. Никаких скрытых платных вызовов.');
+  setStage('production');
+  try{
+   const real=await generatePersonaDraftWithRealAi({
+    idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format},history:h
+   });
+   if(real){
+    setDraft(real.draft);setQa({pass:true,score:100,issues:[]});
+    setEngineMode('ai');setStage('final_qa');
+    setStatus('Реальная нейросеть ('+real.provider+' / '+real.model+
+     ') подготовила сценарий. Формальная структура проверена; факты, драматургию и художественное качество утверждает автор.');
+    return;
+   }
+   // Explicit fallback is allowed, but NEVER labeled as a real AI result.
+   const data=await api({action:'generate',engine:'template',idea,history:h,assetName});
+   if(data?.mode!=='template'||!data.draft)throw Error('Невозможно получить явно помеченный шаблон');
+   setDraft(data.draft);setQa(data.qa??null);setEngineMode('template');
+   setStage('final_qa');
+   setStatus('Локальная модель недоступна, сгенерирован шаблонный черновик. OpenRouter не настроен или не ответил. Это НЕ сценарий нейросети — проверь и переработай перед съёмкой.');
+  }catch(e){
+   setStatus('Не удалось сгенерировать даже шаблонный черновик: '+String((e as Error)?.message||e));
+   setStage('production');
+  }finally{setWorking(false)}
+ }
  async function revise(){if(!draft||!feedback.trim()||working)return;setWorking(true);setStatus('Понимаю всю команду целиком → редакция → маркетолог → QA…');try{const data=await api({action:'revise',engine:useFreeAI?'free-ai':'template',draft,feedback,history:h});setDraft(data.draft);setQa(data.qa||null);setEngineMode(data.mode==='ai'?'ai':'template');setStage('final_qa');setFeedback('');setStatus(data.mode==='ai'?'ИИ обновил текстовый черновик. Проверь изменения.':'Шаблонный редактор применил только поддерживаемые типовые правки; прочие пожелания могли не отразиться.')}catch(e){setStatus(String((e as Error)?.message||'Правку не удалось применить.'))}finally{setWorking(false)}}
  async function startRecording(){if(recording||transcribing)return;if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){setStatus('Запись недоступна в этом браузере. Напиши правку текстом.');return}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});stream.current=s;chunks.current=[];const r=new MediaRecorder(s);rec.current=r;r.ondataavailable=e=>{if(e.data.size)chunks.current.push(e.data)};r.onstop=async()=>{s.getTracks().forEach(t=>t.stop());setRecording(false);const blob=new Blob(chunks.current,{type:r.mimeType||'audio/webm'});if(!blob.size)return;setTranscribing(true);setStatus('Запись закончена. Отправляю весь файл целиком на распознавание…');try{const form=new FormData();form.append('audio',blob,`voice-${Date.now()}.webm`);const response=await fetch('/api/persona',{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data?.error||'voice_unavailable');const text=String(data.transcript||'').trim();if(!text)throw new Error('empty_transcript');setFeedback(x=>[x.trim(),text].filter(Boolean).join(' '));setStatus('Полная запись распознана. Теперь нажми «Исправить» — команда ещё не применена.')}catch(e){setStatus(String((e as Error)?.message||'Голос не удалось распознать.'))}finally{setTranscribing(false)}};r.start();setRecording(true);setStatus('Запись идёт. Паузы её не остановят. Останови запись кнопкой ■.')}catch{setStatus('Нет доступа к микрофону. Разреши микрофон для сайта.')}}
  function stopRecording(){if(rec.current?.state==='recording')rec.current.stop()}
