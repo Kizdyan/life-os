@@ -90,7 +90,51 @@ async function freeAiGenerate(system:string,payload:any,request:Request):Promise
   }
   return {...parsed,executionMode:'ai',model:PERSONA_FREE_MODEL};
 }
+/** Explicit, owner-configured OpenRouter generation. Never use it as a
+ * silent paid fallback; require an opt-in request AND a server-side budget flag.
+ */
+async function openRouterScript(payload:any,request:Request){
+ const key=env('OPENROUTER_API_KEY');
+ if(!key||env('PERSONA_ALLOW_PAID_REQUESTS')!=='true'||payload?.consent!==true)
+  throw Error('openrouter_not_configured_or_not_approved');
+ if(!allowFreeAiRequest(request))throw Error('openrouter_rate_limit');
+ const modelName=env('PERSONA_OPENROUTER_MODEL')||'openai/gpt-4.1-mini';
+ if(!/^[a-zA-Z0-9][a-zA-Z0-9/._:-]{1,120}$/.test(modelName))
+  throw Error('openrouter_invalid_model');
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),90000);
+ let response:Response;
+ try{
+  response=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+   method:'POST',
+   headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+   body:JSON.stringify({model:modelName,max_tokens:2300,temperature:0.7,
+    response_format:{type:'json_object'},messages:[
+     {role:'system',content:personaAgentSystemPrompt('creative',genSystem)},
+     {role:'user',content:JSON.stringify({
+      idea:payload.idea,history:payload.history??[],assetName:payload.assetName??''
+     })}
+    ]}),signal:controller.signal
+  });
+ }catch{throw Error('openrouter_unavailable')}
+ finally{clearTimeout(timeout)}
+ if(!response.ok)throw Error('openrouter_http_'+response.status);
+ const data:any=await response.json().catch(()=>null);
+ const content=data?.choices?.[0]?.message?.content;
+ if(typeof content!=='string'||content.length>18000)throw Error('openrouter_invalid_response');
+ let value:any;
+ try{value=extract(content)}catch{throw Error('openrouter_invalid_json')}
+ if(!value||typeof value.title!=='string'||typeof value.caption!=='string'||
+  !Array.isArray(value.slides)||value.slides.length<4||value.slides.length>9||
+  value.slides.some((slide:any)=>typeof slide.title!=='string'||typeof slide.body!=='string'))
+  throw Error('openrouter_invalid_draft');
+ return {...value,executionMode:'ai',model:modelName,provider:'openrouter'};
+}
 async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:Request,engine?:string){
+  if(engine==='openrouter'){
+    if(kind!=='generate')throw Error('openrouter_generate_only');
+    return openRouterScript(payload,request);
+  }
   if(engine==='free-ai'){
     if(kind==='plan')throw new Error('free_ai_generate_or_revise_only');
     return freeAiGenerate(personaAgentSystemPrompt('creative',kind==='generate'?freeScriptSystem:freeReviseSystem),payload,request);
@@ -140,4 +184,13 @@ export default{async fetch(request:Request){
       authReady:Boolean(env('AI_GATEWAY_API_KEY')||request.headers.get('x-vercel-oidc-token')||env('VERCEL_OIDC_TOKEN')),
       tokenIncluded:false});
   }
-  if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'POST'});const contentType=request.headers.get('content-type')||'';if(contentType.includes('multipart/form-data'))return transcribe(request);try{const body:any=await request.json();const action=String(body?.action||'plan');if(action==='plan'){const result:any=await aiOrFallback('plan',{history:body.history||[],seed:body.seed||[]},request,body.engine);const ideas=Array.isArray(result?.ideas)?result.ideas:localIdeas(body.history||[]);return json({ideas:ideas.slice(0,24).map((x:any,i:number)=>({...x,id:String(x.id||`idea-${i+1}`),score:Number(x.score||80),status:'candidate'})),mode:result.executionMode||'template'})}if(action==='generate'){const result:any=await aiOrFallback('generate',{idea:body.idea,history:body.history||[],assetName:body.assetName||''},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),summary:result.changeSummary||'Текстовый черновик создан; проведена формальная проверка структуры.',mode:result.executionMode||'template',model:result.model||null})}if(action==='revise'){const result:any=await aiOrFallback('revise',{draft:body.draft,feedback:body.feedback,history:body.history||[]},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),learnedRules:result.learnedRules||[],summary:result.changeSummary||'Текстовый черновик обновлён.',mode:result.executionMode||'template',model:result.model||null})}return json({error:'unknown_action'},400)}catch(e){const code=String((e as Error)?.message||'pipeline_unavailable');console.error('persona_route_error_code',code.startsWith('free_ai_')?code:'pipeline_unavailable');return json({error:code.startsWith('free_ai_')?code:'pipeline_unavailable'},code==='free_ai_limit_6_per_hour'?429:503)}}};
+  if(request.method!=='POST')return json({error:'method_not_allowed'},405,{Allow:'POST'});const contentType=request.headers.get('content-type')||'';if(contentType.includes('multipart/form-data'))return transcribe(request);try{const body:any=await request.json();const action=String(body?.action||'plan');if(action==='plan'){const result:any=await aiOrFallback('plan',{history:body.history||[],seed:body.seed||[]},request,body.engine);const ideas=Array.isArray(result?.ideas)?result.ideas:localIdeas(body.history||[]);return json({ideas:ideas.slice(0,24).map((x:any,i:number)=>({...x,id:String(x.id||`idea-${i+1}`),score:Number(x.score||80),status:'candidate'})),mode:result.executionMode||'template'})}if(action==='review'){
+   const proposed=body?.draft;
+   if(!proposed||typeof proposed.title!=='string'||typeof proposed.caption!=='string'||
+    !Array.isArray(proposed.slides)||proposed.slides.length>9||
+    proposed.slides.some((slide:any)=>typeof slide.title!=='string'||typeof slide.body!=='string'||
+     typeof slide.eyebrow!=='string'))return json({error:'invalid_script_review'},400);
+   return json({qa:localQA(proposed),mode:'structural-check-only'});
+  }
+  if(action==='generate'){const result:any=await aiOrFallback('generate',{idea:body.idea,history:body.history||[],assetName:body.assetName||'',consent:body.consent===true},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),summary:result.changeSummary||'Текстовый черновик создан; проведена формальная проверка структуры.',mode:result.executionMode||'template',model:result.model||null})}if(action==='revise'){const result:any=await aiOrFallback('revise',{draft:body.draft,feedback:body.feedback,history:body.history||[]},request,body.engine);const draft:Draft=result.draft?result.draft:result;const safe={...draft,title:clean(draft.title),caption:clean(draft.caption),slides:(draft.slides||[]).map((s:any)=>({eyebrow:clean(s.eyebrow),title:clean(s.title),body:clean(s.body)}))};const qa=localQA(safe);if(!qa.pass&&result.executionMode!=='ai'){const repaired=localRevise(safe,'Сделай материал читабельным, убери повторы и внутреннее название системы.');Object.assign(safe,repaired.draft)}return json({draft:safe,qa:localQA(safe),learnedRules:result.learnedRules||[],summary:result.changeSummary||'Текстовый черновик обновлён.',mode:result.executionMode||'template',model:result.model||null})}return json({error:'unknown_action'},400)}catch(e){const code=String((e as Error)?.message||'pipeline_unavailable');console.error('persona_route_error_code',code.startsWith('free_ai_')?code:'pipeline_unavailable');return json({error:code.startsWith('free_ai_')||code.startsWith('openrouter_')?code:'pipeline_unavailable'},
+ (code==='free_ai_limit_6_per_hour'||code==='openrouter_rate_limit')?429:503)}}};
