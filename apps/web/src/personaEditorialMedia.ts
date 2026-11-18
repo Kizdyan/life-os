@@ -46,6 +46,14 @@ export async function saveEditorialImage(postId:string,slideId:string,file:File)
  });
  return {name:stored.name,bytes:stored.bytes};
 }
+/** Read all local editorial asset records for complete, portable backups. */
+export async function listEditorialImages():Promise<StoredImage[]>{
+ return dbAction<StoredImage[]>('readonly',(store,ok,bad)=>{
+  const req=store.getAll();
+  req.onsuccess=()=>ok(req.result??[]);
+  req.onerror=()=>bad(Error('Не удалось прочитать полный архив фотографий'));
+ });
+}
 export async function readEditorialImage(postId:string,slideId:string):Promise<StoredImage|null>{
  return dbAction<StoredImage|null>('readonly',(store,ok,bad)=>{
   const req=store.get(key(postId,slideId));
