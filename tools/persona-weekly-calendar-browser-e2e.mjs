@@ -111,7 +111,10 @@ try{
  assert.equal(files[4].bytes.toString('utf8'),expectedCarouselCaption);
  assert.doesNotMatch(files[4].bytes.toString('utf8'),/ТЕМА:|Проверено автором|Публикация не выполнялась|PERSONA/i);
  const drawn=await page.evaluate(()=>window.__personaPublicCanvasText);
- assert.deepEqual(drawn,['Он ещё верит','Теперь он сомневается','Улыбка ничего не объясняет','Решение уже принято']);
+ // Canvas wraps an authored sentence over multiple lines; compare full
+ // visible text in reading order rather than the number of draw calls.
+ assert.equal(drawn.join(' '),
+  ['Он ещё верит','Теперь он сомневается','Улыбка ничего не объясняет','Решение уже принято'].join(' '));
  assert.ok(drawn.every(x=>!/(PERSONA|EDITORIAL|АВТОРСКИЙ МАТЕРИАЛ)/i.test(x)));
  // After reload the companion approval and photo stored in IndexedDB survive.
  await page.reload({waitUntil:'domcontentloaded'});
