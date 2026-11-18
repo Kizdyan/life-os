@@ -46,6 +46,12 @@ describe('Persona Editorial Content Planner',()=>{
   expect(ready.approvals).toEqual({topic:true,content:true,design:true});
   const designEdit=reviseEditorialPost(ready,{preset:'chocolate'});
   expect(designEdit.approvals).toEqual({topic:true,content:true,design:false});
+  const photoVisual=reviseEditorialPost(ready,{slides:ready.slides.map((slide,i)=>
+   i===1?{...slide,visual:'archive-photo' as const}:slide)});
+  expect(photoVisual.approvals).toEqual({topic:true,content:true,design:false});
+  const editedSlide=reviseEditorialPost(ready,{slides:ready.slides.map((slide,i)=>
+   i===1?{...slide,text:'Обновлённая мысль'}:slide)});
+  expect(editedSlide.approvals).toEqual({topic:true,content:false,design:false});
   const captionEdit=reviseEditorialPost(ready,{caption:'Новый текст поста'});
   expect(captionEdit.approvals).toEqual({topic:true,content:false,design:false});
   const topicEdit=reviseEditorialPost(ready,{topic:'Другое наблюдение'});
