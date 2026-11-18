@@ -76,7 +76,8 @@ const THEMES={
  ink:{bg:'#172132',fg:'#f3ead9',accent:'#cdb489',line:'#637182'},
  cream:{bg:'#eee8dc',fg:'#242c33',accent:'#8a6b43',line:'#b8ab9b'},
  chocolate:{bg:'#302720',fg:'#f7eade',accent:'#d3b18a',line:'#77675b'},
- filmic:{bg:'#292e30',fg:'#f3e9d6',accent:'#c5af8a',line:'#788080'}
+ filmic:{bg:'#292e30',fg:'#f3e9d6',accent:'#c5af8a',line:'#788080'},
+ 'chocolate-graphite':{bg:'#2B1D14',fg:'#F2E9DC',accent:'#C9A882',line:'#C9A882'}
 } as const;
 function wrapText(ctx:CanvasRenderingContext2D,text:string,width:number,maxLines:number):string[]{
  const lines:string[]=[];
@@ -96,7 +97,10 @@ function wrapText(ctx:CanvasRenderingContext2D,text:string,width:number,maxLines
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
  const c=document.createElement('canvas');c.width=1080;c.height=1350;
  const ctx=c.getContext('2d');if(!ctx)throw Error('Canvas 2D недоступен');
- const theme=THEMES[post.preset];ctx.fillStyle=theme.bg;ctx.fillRect(0,0,1080,1350);
+ const theme=THEMES[post.preset];
+ // Only the requested baseline preset alternates backgrounds; all other outputs stay unchanged.
+ ctx.fillStyle=post.preset==='chocolate-graphite'&&index%2===1?'#1C1C1E':theme.bg;
+ ctx.fillRect(0,0,1080,1350);
  const usePhoto=slide.visual==='archive-photo';
  if(usePhoto){
   const stored=await readEditorialImage(post.id,slide.id);
@@ -119,7 +123,7 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   ctx.font='500 80px "Cormorant Garamond", Georgia, serif';
   const lines=wrapText(ctx,slide.text,870,4);
   let y=Math.max(660,1010-lines.length*95);
-  ctx.fillStyle=theme.accent; // Signature Gold title on background or archive photo.
+  ctx.fillStyle=post.preset==='chocolate-graphite'?theme.fg:theme.accent; // Existing public Canvas typography.
   for(const line of lines){ctx.fillText(line,94,y);y+=100}
  }
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));

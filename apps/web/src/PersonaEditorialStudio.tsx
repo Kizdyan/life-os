@@ -1,7 +1,9 @@
 import React,{useEffect,useState} from 'react';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
- proposeTopics,reviseEditorialPost,SEED_CAROUSELS,
+ proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
+ CAROUSEL_BASELINE_ID,editorialChecklistState,editorialChecklistReady,
+ setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
 import {buildEditorialExport,readEditorialImage,saveEditorialImage,triggerEditorialDownload} from './personaEditorialMedia';
@@ -13,9 +15,19 @@ const visualLabels:{id:EditorialPreset;name:string}[]=[
  {id:'ink',name:'Ночной графит + золото'},
  {id:'cream',name:'Слоновая кость'},
  {id:'chocolate',name:'Тёмный шоколад'},
- {id:'filmic',name:'Плёночный серый'}
+ {id:'filmic',name:'Плёночный серый'},
+ {id:'chocolate-graphite',name:'Шоколад / графит'}
 ];
 const status=(post:EditorialPost)=>editorialStageLabel(post);
+const CHECKLIST_TEXT=[
+ 'Каждый слайд читается за ≤4 секунды на телефоне при 1080×1350.',
+ 'Первый слайд создаёт вопрос или напряжение, а не резюмирует тему.',
+ 'Каждый следующий слайд добавляет одну новую мысль; нет двух слайдов с одинаковым смыслом.',
+ 'Последний слайд завершается мыслью, а не клише «а вы как думаете?».',
+ 'В подписи есть минимум одна мысль, которой нет ни на одном слайде.',
+ 'Каждое изображение прослеживается до архива (или карусель text-only и это явно указано).',
+ 'Контраст текста к фону ≥ 4.5:1 для основного текста и ≥ 3:1 для крупных заголовков. Проверяется автоматически.'
+];
 const copy=(text:string)=>{void navigator.clipboard?.writeText(text)};
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
@@ -26,6 +38,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
+ const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
+ const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post):true;
  useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
  useEffect(()=>{
@@ -51,6 +65,17 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   if(!post)return;
   try{onChange(approveEditorialStep(post,step));setError('')}
   catch(e){setError((e as Error).message)}
+ }
+ function setChecklist(index:number,checked:boolean){
+  if(!post)return;
+  try{onChange(setEditorialChecklistItem(post,index,checked));setError('')}
+  catch(e){setError((e as Error).message)}
+ }
+ function openBaseline(){
+  try{
+   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(createBaselinePauseCarousel());
+   onSelect(CAROUSEL_BASELINE_ID);setError('');
+  }catch(e){setError((e as Error).message)}
  }
  function choose(choice:TopicChoice){
   try{
@@ -106,6 +131,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
    </p>}
+   <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
+    <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
+     {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
+    </button>
+   </p>
    <div className="personaEditorialSuggestions">
     {allTopics.slice(0,8).map(choice=><article key={choice.id}>
      <span>{choice.kind==='photo'?'ФОТО':'КАРУСЕЛЬ'}</span><h4>{choice.title}</h4>
@@ -201,6 +231,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset}
+     data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
      {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
      <div className="personaEditorialPreviewOverlay">
@@ -210,8 +241,20 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>
     </div>
     <p>Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.</p>
+    {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
+     data-testid="carousel-acceptance-checklist">
+     <legend>Чек-лист приёмки · 7 проверок</legend>
+     {CHECKLIST_TEXT.map((description,index)=><label key={index}>
+      <input type="checkbox" checked={Boolean(checklist[index])}
+       disabled={index===6} aria-label={'Пункт '+(index+1)}
+       onChange={e=>setChecklist(index,e.target.checked)}/>
+      <span><strong>{index+1}.</strong> {description}</span>
+     </label>)}
+     <p>Пункт 7: {editorialContrastPass(post)?'PASS — цвета пресета удовлетворяют WCAG':'FAIL — контраст пресета ниже порога'}.
+      Для фото поверх фона нужна дополнительная визуальная проверка.</p>
+    </fieldset>}
     {!post.approvals.design?<button className="personaEditorialApprove" type="button"
-     onClick={()=>approve('design')}>Утвердить оформление</button>:
+     disabled={!checklistReady} onClick={()=>approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
    </section>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
