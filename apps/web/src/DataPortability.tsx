@@ -43,7 +43,7 @@ export default function DataPortability(){
     setError('');setMessage('');
     try{
       saveFile(exportEmergencyRawData(localStorage),'life-os-raw-recovery');
-      setMessage('Экстренная копия исходных данных сохранена как отдельный файл. Она не импортируется автоматически: требуется восстановление структуры. Ничего не удалено.');
+      setMessage('Экстренная копия JSON-данных сохранена. Она НЕ содержит фотографии IndexedDB и не импортируется автоматически. Не очищай данные браузера до полного восстановления; ничего не удалено.');
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить исходные данные.')}
   }
   async function choose(file?:File){
