@@ -118,6 +118,17 @@ try{
  assert.ok(drawn.every(x=>!/(PERSONA|EDITORIAL|АВТОРСКИЙ МАТЕРИАЛ)/i.test(x)));
  // After reload the companion approval and photo stored in IndexedDB survive.
  await page.reload({waitUntil:'domcontentloaded'});
+ // A hard reload creates a NEW JS document. Reattach the Canvas observer
+ // before testing the independent portrait export in that document.
+ await page.evaluate(()=>{
+  window.__personaPublicCanvasText=[];
+  const proto=CanvasRenderingContext2D.prototype;
+  const original=proto.fillText;
+  proto.fillText=function(value,...args){
+   window.__personaPublicCanvasText.push(String(value));
+   return original.call(this,value,...args);
+  };
+ });
  await page.getByTestId('persona-weekly-calendar')
   .locator('[data-calendar-item-id="PHOTO-001"]').waitFor({timeout:18000});
  assert.match(await page.getByTestId('persona-weekly-calendar')
