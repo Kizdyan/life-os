@@ -53,6 +53,26 @@ test('seed 10 genuine ProductionJobs: deterministic, idempotent, persistent, all
   assert.deepEqual(jobs.map(x=>x.seedKey),carouselPlan.projects.map(p=>p.id));
   assert.ok(jobs.every(x=>x.state==='waiting_for_footage'&&x.productionStatus==='WAITING_FOR_FOOTAGE'));
   assert.ok(jobs.every(x=>x.slides?.length===4&&x.contentType==='photo-carousel'));
+  const base='http://127.0.0.1:'+port+'/quick-render/'+jobs[0].id;
+  const files=[1,2,3,4].map(i=>({kind:'photo',name:'my-photo-'+i+'.png',size:2048}));
+  const attached=await fetch(base+'/attach-photos',{method:'POST',
+   headers:{'X-Persona-Worker-Token':key,'Content-Type':'application/json'},
+   body:JSON.stringify({files})});
+  assert.equal(attached.status,200,await attached.clone().text());
+  const active=await attached.json();
+  assert.equal(active.state,'uploading');
+  assert.equal(active.expected,4);
+  assert.deepEqual(active.slides,jobs[0].slides,'attach must never rewrite author text');
+  const again=await fetch(base+'/attach-photos',{method:'POST',
+   headers:{'X-Persona-Worker-Token':key,'Content-Type':'application/json'},
+   body:JSON.stringify({files})});
+  assert.equal(again.status,200,'retry same photo manifest is idempotent');
+  const mismatch=await fetch(base+'/attach-photos',{method:'POST',
+   headers:{'X-Persona-Worker-Token':key,'Content-Type':'application/json'},
+   body:JSON.stringify({files:files.map(x=>({...x,name:'different.png'}))})});
+  assert.equal(mismatch.status,400,'author must not replace uploaded media identity');
+  const seededAgain=await seedCarousels(root);
+  assert.equal(seededAgain.created,0,'seeding again must not duplicate an active project');
  }finally{await new Promise(ok=>worker.server.close(ok))}
 });
 test('3 real identical photos + 3 DISTINCT titles: every PNG contains own Gold lettering; ZIP member integrity',
