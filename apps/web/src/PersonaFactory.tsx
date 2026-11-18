@@ -838,7 +838,9 @@ export default function PersonaFactory(){
    onCreateCarouselDraft={(title,angle,aiDraft)=>{
     try{
      const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
-     const post=createResearchedEditorialPost(id,title,angle,aiDraft);
+     // The full research notes remain in the backed-up Reference Lab;
+     // Editorial Desk stores a concise (500-char) production goal.
+     const post=createResearchedEditorialPost(id,title,angle.slice(0,500),aiDraft);
      saveEditorial(post);openEditorial(id);
     }catch(error){setEditorialError('Новый редакционный черновик не создан: '+String((error as Error).message||error))}
    }}
