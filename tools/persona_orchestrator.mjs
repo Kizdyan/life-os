@@ -74,19 +74,22 @@ function runBatchPhase(phase, source, output, options, timeout) {
 }
 export class ProductionJob {
   constructor(directory){this.directory=safeDir(directory);this.path=join(this.directory,'job.json');}
-  static async create(directory,{title='Persona production',strategy}={}){
+  static async create(directory,{title='Persona production',strategy,contentType=null}={}){
+    if(contentType!==null&&!['video','photo-carousel','photo-slideshow'].includes(contentType))fail('Invalid production content type');
     if(strategy!==undefined&&!isPersonaStrategy(strategy))fail('Invalid project strategy');
     const dir=safeDir(directory);await mkdir(dir,{recursive:false});
     await mkdir(join(dir,'input'));await mkdir(join(dir,'output'));
     const job=new ProductionJob(dir),now=new Date().toISOString();
     await writeFile(job.path,JSON.stringify({version:1,id:randomUUID(),title,status:'PREPARING',revision:0,
-      createdAt:now,updatedAt:now,assets:[],history:[],...(strategy?{strategy}:{})},null,2)+'\n',{flag:'wx'});
+      createdAt:now,updatedAt:now,assets:[],history:[],...(strategy?{strategy}:{}),
+      ...(contentType?{contentType}:{})},null,2)+'\n',{flag:'wx'});
     return job;
   }
   async read(){
     const data=JSON.parse(await readFile(this.path,'utf8'));
     if((data.fullRender!==undefined&&(!['RENDERING','COMPLETED','FAILED'].includes(data.fullRender?.status)||
        data.status!=='AWAITING_APPROVAL'))||
+       (data.contentType!==undefined&&!['video','photo-carousel','photo-slideshow'].includes(data.contentType))||
        (data.strategy!==undefined&&!isPersonaStrategy(data.strategy))||data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
     return data;

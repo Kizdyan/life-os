@@ -55,10 +55,31 @@ async function captionOnStill(config,still,destination,title,style='signature-go
   await run(config,'ffmpeg',['-nostdin','-v','error','-y','-ss','1','-i',final,'-frames:v','1','-update','1',destination]);
  }finally{await rm(dir,{recursive:true,force:true})}
 }
+/** Strict one-to-one author slide ↔ uploaded photo mapping. No auto-fill, repeat, or reordering.
+ * null preserves the legacy first-slide title for existing clients.
+ */
+export function normalizeCarouselSlides(slides,photoCount){
+ if(slides==null)return null;
+ if(!Number.isSafeInteger(photoCount)||photoCount<1||photoCount>12||
+  !Array.isArray(slides)||slides.length!==photoCount)
+  throw Error('Each uploaded photo needs exactly one authored slide text');
+ return slides.map((slide,i)=>{
+  if(!slide||typeof slide!=='object'||Array.isArray(slide)||
+   typeof slide.text!=='string'||slide.text!==slide.text.trim())
+   throw Error('Slide '+(i+1)+' requires explicit, trimmed text');
+  // Validation uses the actual typography layout: two safe lines, not only word count.
+  layoutQuoteForSignatureGold(slide.text);
+  if(slide.photo!==undefined&&(typeof slide.photo!=='string'||
+   slide.photo.length>240||!slide.photo.trim()))
+   throw Error('Slide '+(i+1)+' photo direction invalid');
+  return {text:slide.text,...(slide.photo!==undefined?{photo:slide.photo}:{})};
+ });
+}
 export async function renderPhotoCarousel({photos,outputDir,aspect='4:5',colorPreset='SoftCinematic',
- title=null,textAccents=true,config}){
+ title=null,slides=null,textAccents=true,config}){
  const [w,h]=photoOutputSize(aspect);
  if(photos.length<1||photos.length>12)throw Error('Photo carousel needs 1–12 verified photos');
+ const authored=normalizeCarouselSlides(slides,photos.length);
  await mkdir(outputDir,{recursive:true});
  const cfg={...config,outputDir};
  const entries=[];
@@ -66,18 +87,21 @@ export async function renderPhotoCarousel({photos,outputDir,aspect='4:5',colorPr
   const name='photo-'+String(i+1).padStart(2,'0')+'.png';
   const destination=join(outputDir,name),plain=join(outputDir,'plain-'+name);
   await singleFrame(cfg,photos[i],plain,w,h,colorPreset);
-  if(i===0&&textAccents&&title){
-   await captionOnStill(cfg,plain,destination,title,'signature-gold');
+  const caption=authored?authored[i].text:(i===0?title:null);
+  if(textAccents&&caption){
+   await captionOnStill(cfg,plain,destination,caption,'signature-gold');
    await rm(plain,{force:true});
   }else await rename(plain,destination);
   entries.push({id:'photo-'+(i+1),file:name,sha256:await hash(destination),
    bytes:(await stat(destination)).size,width:w,height:h,
-   textOverlay:i===0&&Boolean(textAccents&&title)});
+   textOverlay:Boolean(textAccents&&caption),captionText:textAccents?caption:null,
+   captionSource:authored?'author-slide':i===0&&caption?'legacy-cover-title':'none',
+   photoDirection:authored?.[i]?.photo??null});
  }
  const zip=join(outputDir,'carousel.zip');
  await zipImages(entries.map(e=>({path:join(outputDir,e.file),name:e.file})),zip);
  return {kind:'photo-carousel',aspect,width:w,height:h,colorPreset,
-  subtitlePreset:'signature-gold',photos:entries,package:{id:'carousel',file:'carousel.zip',
+  subtitlePreset:'signature-gold',slides:authored,photos:entries,package:{id:'carousel',file:'carousel.zip',
    sha256:await hash(zip),bytes:(await stat(zip)).size},authorReviewRequired:true,
   distributionAllowed:false};
 }
