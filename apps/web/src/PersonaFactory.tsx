@@ -9,6 +9,11 @@ import PersonaActorPortfolio from './PersonaActorPortfolio';
 import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
 import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
+import PersonaEditorialStudio from './PersonaEditorialStudio';
+import {
+ EDITORIAL_KEY,createSeedEditorialCarousel,loadEditorialStore,saveEditorialPost,
+ type EditorialPost
+} from './personaEditorialModel';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
 
@@ -257,7 +262,9 @@ export default function PersonaFactory(){
  const[guideGuardMessage,setGuideGuardMessage]=useState('');
  const[projects,setProjects]=useState<PersonaProject[]>(()=>projectBootstrap.current?.projects??[]);const[activeProjectId,setActiveProjectId]=useState<string|null>(()=>projectBootstrap.current?.activeProjectId??null);const[timeline,setTimeline]=useState<PersonaTimelineSettings|null>(()=>initialProject?.timeline as PersonaTimelineSettings|null??null);
  const[screen,setScreen]=useState<PersonaScreen>(screenFromHash);
- const[calendarPhotoFocus,setCalendarPhotoFocus]=useState<{id:string;request:number}|null>(null);
+ const[editorialPosts,setEditorialPosts]=useState<EditorialPost[]>(()=>loadEditorialStore(localStorage).posts);
+ const[editorialTargetId,setEditorialTargetId]=useState<string|null>(null);
+ const[editorialError,setEditorialError]=useState('');
  const[demoNotice,setDemoNotice]=useState('');
  const[workspaceStep,setWorkspaceStep]=useState<WorkspaceStep>(()=>workspaceStepFrom(initialProject?.lastOpenStep,initialProject?.contentType));
  const[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
@@ -273,6 +280,11 @@ export default function PersonaFactory(){
   }
   return read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy';
  });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[directorWorking,setDirectorWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
+ useEffect(()=>{
+  const sync=(event:StorageEvent)=>{if(event.key===EDITORIAL_KEY)setEditorialPosts(loadEditorialStore(localStorage).posts)};
+  window.addEventListener('storage',sync);
+  return()=>window.removeEventListener('storage',sync);
+ },[]);
  useEffect(()=>{save('persona:active-idea:v1',chosen)},[chosen]);
  useEffect(()=>{save('persona:active-draft:v1',draft)},[draft]);
  useEffect(()=>{save('persona:active-qa:v1',qa)},[qa]);
@@ -518,6 +530,26 @@ export default function PersonaFactory(){
  function navigate(next:PersonaScreen){if(next!==screen&&!canLeaveGuide())return;const hash=next==='home'?'#persona':next==='projects'?'#persona/projects':next==='actor_portfolio'?'#persona/actor-portfolio':next==='music_sync'?'#persona/music-sync':`#persona/project/${activeProjectId??''}`;if(location.hash!==hash)location.hash=hash;else setScreen(next)}
  function createQuickProject(format:PersonaContentType){const labels:Record<PersonaContentType,string>={reel:'Новый Reels',short:'Новый Shorts',story:'Новая история',photo:'Новое фото',carousel:'Новая карусель'};select({id:newProjectId(),title:labels[format],angle:'Создать материал из собственных исходников',format,score:0,source:'quick-start'})}
  function continueProject(project:PersonaProject){if(openProject(project))window.setTimeout(()=>{window.location.hash='#persona/project/'+project.id},0)}
+ function saveEditorial(item:EditorialPost){
+  try{
+   const saved=saveEditorialPost(localStorage,item);
+   setEditorialPosts(saved.posts);setEditorialError('');
+  }catch(error){setEditorialError('Не удалось сохранить редакционный проект: '+String((error as Error).message||error))}
+ }
+ function openEditorial(id:string){
+  try{
+   const current=loadEditorialStore(localStorage);
+   if(/^PHOTO-0(?:0[1-9]|10)$/.test(id)&&!current.posts.some(p=>p.id===id)){
+    const created=createSeedEditorialCarousel(id);
+    const result=saveEditorialPost(localStorage,created);
+    setEditorialPosts(result.posts);
+   }
+   setEditorialTargetId(id);setEditorialError('');
+   window.setTimeout(()=>document.getElementById('persona-editorial-studio')?.scrollIntoView({
+    behavior:'smooth',block:'start'
+   }),60);
+  }catch(error){setEditorialError(String((error as Error).message||error))}
+ }
  function startPilotShoot(){
   const saved=projects.find(project=>project.contentType==='reel'&&
    isActorComposerPilot({title:project.title,angle:project.sourceIdea}));
@@ -770,13 +802,18 @@ export default function PersonaFactory(){
    <div><small>PERSONA / CREATIVE STUDIO</small><h2>Твоя мастерская</h2></div>
    <button type="button" className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button>
   </header>
-  <PersonaWeeklyContentCalendar videos={projects} onStartVideo={projectId=>{
+  <PersonaWeeklyContentCalendar videos={projects} editorialPosts={editorialPosts} onStartVideo={projectId=>{
    const target=projects.find(project=>project.id===projectId&&project.contentType==='reel');
    if(target)continueProject(target);
-  }} onStartPhoto={id=>setCalendarPhotoFocus(previous=>({id,request:(previous?.request??0)+1}))}
+  }} onStartCarousel={openEditorial} onStartPhoto={openEditorial}
    onImportReels={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
-  <PersonaQuickAutoRender focusJobId={calendarPhotoFocus?.id??null}
-   focusRequest={calendarPhotoFocus?.request??0}/>
+  <div id="persona-editorial-studio">
+   {editorialError&&<p role="alert" className="personaEditorialError">{editorialError}</p>}
+   <PersonaEditorialStudio posts={editorialPosts} targetId={editorialTargetId}
+    onCreate={saveEditorial} onChange={saveEditorial} onSelect={openEditorial}
+    onClose={()=>setEditorialTargetId(null)}/>
+  </div>
+  <PersonaQuickAutoRender/>
   <section className="personaCreativeProjectsHome" aria-label="Мои проекты">
    <div className="personaCreativeSectionHead"><div><h3>Мои проекты</h3></div>
     <button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
