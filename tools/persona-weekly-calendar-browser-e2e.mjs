@@ -115,9 +115,22 @@ try{
  await editorAfter.locator('.personaEditorialSuggestions article').first()
   .getByRole('button',{name:/Выбрать тему/}).click();
  await editorAfter.getByRole('button',{name:'Утвердить тему'}).click();
+ await editorAfter.getByRole('textbox',{name:/Короткий титр на фото/}).fill('');
  await editorAfter.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
  assert.match(await page.getByTestId('persona-weekly-calendar')
   .locator('[data-calendar-item-id="photo-week-01"]').textContent(),/Оформление на утверждении/);
+ const photoDesign=editorAfter.locator('[aria-label="Шаг 3. Оформление"]');
+ await photoDesign.locator('input[type=file]').setInputFiles(image);
+ await photoDesign.getByText('Локально сохранено:').waitFor({timeout:15000});
+ await photoDesign.getByRole('button',{name:'Утвердить оформление'}).click();
+ const photoDownload=page.waitForEvent('download',{timeout:45000});
+ await editorAfter.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
+ const oneImageDownload=await photoDownload;
+ await oneImageDownload.saveAs(join(artifacts,'approved-single-photo.zip'));
+ const photoZip=contents(await readFile(join(artifacts,'approved-single-photo.zip')));
+ assert.deepEqual(photoZip.map(x=>x.name),['slide-01.png','caption.txt']);
+ assert.ok(photoZip[0].bytes.subarray(0,4).equals(Buffer.from([137,80,78,71])));
+ assert.match(photoZip[1].bytes.toString('utf8'),/Портрет до реплики/);
  await page.screenshot({path:join(artifacts,'editorial-photo-and-carousel-approval.png'),
   fullPage:true,animations:'disabled'});
  // Correct existing video route still works.
@@ -146,7 +159,7 @@ try{
  console.log('PERSONA_EDITORIAL_BROWSER_PASS '+JSON.stringify({
   videosImported:10,photosFromWorker:10,weeklySlots:['reel','carousel','photo'],
   stages:['topic','content','design','production'],openedVideo:'reel-01',
-  approvedCarousel:'PHOTO-001',mixedSlideZipFiles:5,photoTopicChosen:true,
+  approvedCarousel:'PHOTO-001',mixedSlideZipFiles:5,singlePhotoZipFiles:2,photoTopicChosen:true,
   storiesPersisted:true,weekNavigation:true,mobile:true
  }));
 }finally{
