@@ -82,8 +82,8 @@
 .personaCreativeBlank h3{font-size:32px;margin:8px 0}
 .personaCreativeBlank p{font-size:13px;color:#737067}
 .personaCreativeBlank button,.personaCreativeNew{border:0;border-radius:5px;background:#121829;color:#e7dfd2;min-height:46px;padding:11px 17px;font-size:12px;font-weight:600}
-.personaCreativeAdvanced{margin-top:28px;background:#f6f4ef;padding:13px 18px;border-radius:12px;border:1px solid #e5e1d9;color:#524d44}
-.personaCreativeAdvanced summary{font-size:12px;font-weight:650;cursor:pointer}
+.personaCreativeAdvanced,.personaBackupDisclosure{margin-top:28px;background:#f6f4ef;padding:13px 18px;border-radius:12px;border:1px solid #e5e1d9;color:#524d44}
+.personaCreativeAdvanced summary,.personaBackupDisclosure summary{font-size:12px;font-weight:650;cursor:pointer}
 .personaCreativeListHead{position:relative;padding:25px 0 28px;margin-bottom:8px}
 .personaCreativeListHead h2{font-size:55px;margin:10px 0 4px}
 .personaCreativeListHead p{font-size:13px;color:#777}

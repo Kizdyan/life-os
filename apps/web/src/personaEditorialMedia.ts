@@ -53,6 +53,19 @@ export async function readEditorialImage(postId:string,slideId:string):Promise<S
   req.onerror=()=>bad(Error('Не удалось получить фотографию из архива'));
  });
 }
+/** Include all editorial archive assets, including photos temporarily not used in a slide. */
+export async function listEditorialImages():Promise<StoredImage[]>{
+ return dbAction<StoredImage[]>('readonly',(store,ok,bad)=>{
+  const req=store.getAll();
+  req.onsuccess=()=>{
+   if(!Array.isArray(req.result)||req.result.length>260){
+    bad(Error('Слишком много изображений в локальной медиатеке'));return;
+   }
+   ok(req.result as StoredImage[]);
+  };
+  req.onerror=()=>bad(Error('Не удалось прочитать локальные фотографии для архива'));
+ });
+}
 export async function forgetEditorialImage(postId:string,slideId:string):Promise<void>{
  await dbAction<void>('readwrite',(store,ok,bad)=>{
   const req=store.delete(key(postId,slideId));
@@ -99,31 +112,24 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   gradient.addColorStop(1,'rgba(5,8,12,.85)');
   ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
  }
- const foreground=usePhoto?'#fff7ec':theme.fg,accent=usePhoto?'#ead5ac':theme.accent;
- ctx.strokeStyle=accent;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(94,126);ctx.lineTo(170,126);ctx.stroke();
- ctx.fillStyle=accent;ctx.font='600 27px Inter, Arial, sans-serif';
- ctx.fillText('P / EDITORIAL',94,104);
- ctx.fillStyle=foreground;ctx.font='600 30px Inter, Arial, sans-serif';
- const section=(post.kind==='carousel'?'КАРУСЕЛЬ':'ФОТО')+'  /  '+String(index+1).padStart(2,'0');
- ctx.fillText(section,94,205);
+ // The final public image contains ONLY authored slide text and the chosen
+ // photo/background. Internal Persona labels, section numbers and metadata
+ // are never burned into publication pixels.
  if(slide.text.trim()){
   ctx.font='500 80px "Cormorant Garamond", Georgia, serif';
   const lines=wrapText(ctx,slide.text,870,4);
   let y=Math.max(660,1010-lines.length*95);
-  ctx.fillStyle=foreground;
+  ctx.fillStyle=theme.accent; // Signature Gold title on background or archive photo.
   for(const line of lines){ctx.fillText(line,94,y);y+=100}
  }
- ctx.strokeStyle=accent;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(94,1235);ctx.lineTo(986,1235);ctx.stroke();
- ctx.font='500 25px Inter, Arial, sans-serif';ctx.fillStyle=accent;ctx.fillText('PERSONA  ·  АВТОРСКИЙ МАТЕРИАЛ',94,1290);
- ctx.textAlign='right';ctx.fillText((index+1)+' / '+post.slides.length,986,1290);ctx.textAlign='left';
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let j=0;j<8;j++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0});
-function crc32(bytes:Uint8Array){
+export function crc32(bytes:Uint8Array){
  let c=0xffffffff;for(const n of bytes)c=crcTable[(c^n)&255]^(c>>>8);return (c^0xffffffff)>>>0;
 }
-function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
- if(files.length>50)throw Error('Слишком много файлов для экспорта');
+export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
+ if(files.length>300)throw Error('Слишком много файлов для экспорта');
  const encoder=new TextEncoder();
  const parts:Uint8Array[]=[],central:Uint8Array[]=[];
  let offset=0,size=0;
@@ -132,7 +138,7 @@ function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  for(const f of files){
   const name=encoder.encode(f.name);
   const hash=crc32(f.data);size+=f.data.length;
-  if(size>170*1024*1024||name.length>255)throw Error('Размер ZIP слишком большой');
+  if(size>512*1024*1024||name.length>255)throw Error('Размер ZIP слишком большой (предел 512 МиБ)');
   const local=new Uint8Array(30+name.length),lv=new DataView(local.buffer);
   w32(lv,0,0x04034b50);w16(lv,4,20);w16(lv,6,0x0800);
   w16(lv,8,0);w32(lv,14,hash);w32(lv,18,f.data.length);w32(lv,22,f.data.length);
@@ -162,8 +168,8 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
   files.push({name:'slide-'+String(i+1).padStart(2,'0')+'.png',
    data:new Uint8Array(await blob.arrayBuffer())});
  }
- const caption='ТЕМА: '+post.topic+'\n\n'+post.caption+
-  '\n\nПроверено автором: тема, содержание и оформление. Публикация не выполнялась.\n';
+ // The downloadable caption is paste-ready: no theme/status/approval metadata.
+ const caption=post.caption.trim();
  files.push({name:'caption.txt',data:new TextEncoder().encode(caption)});
  return zipFileBytes(files);
 }

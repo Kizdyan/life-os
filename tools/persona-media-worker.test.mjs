@@ -208,3 +208,34 @@ test('reference analysis persists complete rules and keeps the previous rules wh
  assert.deepEqual(await (await fetch(route,{headers})).json(),{rules});
  assert.deepEqual(await readdir(root),['learned_rules.json']);
 });
+
+
+test('script draft bridge requires local token, rejects foreign origins, never fabricates a model result',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-script-draft-'));
+ let invoked=0;
+ const worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'qwen3:4b-instruct',
+  scriptDraft:async({idea,model})=>{
+   invoked++;assert.equal(model,'qwen3:4b-instruct');
+   assert.equal(idea.title,'Репетиция');
+   return {mode:'ai',provider:'ollama-local',model,
+    draft:{title:'Сцена',slides:Array.from({length:5},(_,i)=>({eyebrow:'A',title:'Сцена '+i,body:'Текст'})),
+     caption:'Настоящий сценарий',platformNotes:{instagram:'Reels',vk:'Клипы',youtube:'Shorts'}}};
+  }});
+ const base='http://127.0.0.1:'+await worker.start();
+ const body=JSON.stringify({idea:{id:'test',title:'Репетиция',angle:'Конфликт актёра',format:'reel'},history:[]});
+ const post=(token,origin='http://127.0.0.1:5173')=>fetch(base+'/script-draft',{
+  method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-Persona-Worker-Token':token},
+  body
+ });
+ try{
+  assert.equal((await post('invalid')).status,401);
+  assert.equal((await post(worker.token,'https://foreign.example')).status,403);
+  assert.equal(invoked,0);
+  const generated=await post(worker.token);
+  assert.equal(generated.status,200);
+  const payload=await generated.json();
+  assert.equal(payload.mode,'ai');
+  assert.equal(payload.model,'qwen3:4b-instruct');
+  assert.equal(invoked,1);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});

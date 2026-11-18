@@ -90,7 +90,37 @@ async function freeAiGenerate(system:string,payload:any,request:Request):Promise
   }
   return {...parsed,executionMode:'ai',model:PERSONA_FREE_MODEL};
 }
+/** An explicit click may use a configured external script model, never a
+ * guessed/paid provider. The key and model remain server-side. */
+async function openRouterScript(payload:unknown,request:Request){
+ const key=env('OPENROUTER_API_KEY'),modelId=env('PERSONA_SCRIPT_OPENROUTER_MODEL');
+ if(env('PERSONA_SCRIPT_OPENROUTER_ENABLED')!=='true'||!key||!modelId)
+  throw Error('script_openrouter_not_configured');
+ if(!/^[a-zA-Z0-9/._:+-]{3,120}$/.test(modelId))
+  throw Error('script_openrouter_model_invalid');
+ if(!allowFreeAiRequest(request))throw Error('script_openrouter_rate_limit');
+ const response=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+  method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+  body:JSON.stringify({model:modelId,
+   messages:[{role:'system',content:personaAgentSystemPrompt('creative',genSystem)},
+    {role:'user',content:JSON.stringify(payload)}],
+   temperature:.65,max_tokens:2800,response_format:{type:'json_object'}}),
+  signal:AbortSignal.timeout(75000),
+ });
+ if(!response.ok)throw Error('script_openrouter_http_'+response.status);
+ const data:any=await response.json(),content=data?.choices?.[0]?.message?.content;
+ if(typeof content!=='string'||!content.trim())throw Error('script_openrouter_empty');
+ let parsed:any;
+ try{parsed=extract(content)}catch{throw Error('script_openrouter_invalid_json')}
+ if(!parsed||typeof parsed.title!=='string'||typeof parsed.caption!=='string'||
+  !Array.isArray(parsed.slides)||parsed.slides.length<5||parsed.slides.length>7||
+  parsed.slides.some((x:any)=>typeof x?.eyebrow!=='string'||typeof x?.title!=='string'||typeof x?.body!=='string')||
+  !parsed.platformNotes)throw Error('script_openrouter_invalid_structure');
+ return {...parsed,executionMode:'ai',model:modelId};
+}
+
 async function aiOrFallback(kind:'plan'|'generate'|'revise',payload:any,request:Request,engine?:string){
+  if(engine==='openrouter'&&kind==='generate')return openRouterScript(payload,request);
   if(engine==='free-ai'){
     if(kind==='plan')throw new Error('free_ai_generate_or_revise_only');
     return freeAiGenerate(personaAgentSystemPrompt('creative',kind==='generate'?freeScriptSystem:freeReviseSystem),payload,request);
