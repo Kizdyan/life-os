@@ -86,6 +86,16 @@ describe('Persona Editorial Content Planner',()=>{
   expect(again.posts[0].caption).toBe('Проверенный авторский текст');
   expect(memory.getItem(EDITORIAL_KEY)).toContain('PHOTO-001');
  });
+ it('refuses to destroy a corrupted or forward-version local editorial store',()=>{
+  const broken=storage();
+  broken.setItem(EDITORIAL_KEY,'{"version":88,"posts":[{"id":"author-work"}]}');
+  expect(()=>saveEditorialPost(broken,createSeedEditorialCarousel('PHOTO-001'))).toThrow(/refusing to overwrite/);
+  expect(broken.getItem(EDITORIAL_KEY)).toBe('{"version":88,"posts":[{"id":"author-work"}]}');
+  const raw=storage();raw.setItem(EDITORIAL_KEY,'{truncated');
+  expect(()=>saveEditorialPost(raw,createSeedEditorialCarousel('PHOTO-001'))).toThrow(/refusing to overwrite/);
+  const scheduled=createSeedEditorialCarousel('PHOTO-001');
+  expect(()=>reviseEditorialPost(scheduled,{scheduledDate:'2026-02-30'})).toThrow();
+ });
  it('saves independently scheduled posts and opt-in Stories without false publication states',()=>{
   const memory=storage(),choice=TOPIC_CHOICES.find(x=>x.kind==='photo')!;
   const post=createEditorialFromTopic('editorial-photo-example',choice);
