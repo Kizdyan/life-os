@@ -86,6 +86,7 @@ export default function DataPortability(){
   finally{setBusy(false)}
  }
  return <section className="dataPortability" aria-label="Резервная копия Persona">
+  <h3>Резервная копия и перенос данных</h3>
   <p>Сохраняй <strong>полный ZIP</strong> перед очисткой Safari, переносом на другое устройство или сменой домена. Архив включает редакционные тексты, Stories и оригинальные фотографии IndexedDB. Никакие API-ключи и пароли в него не входят.</p>
   <div className="dataPortabilityActions">
    <button type="button" disabled={busy} onClick={()=>void download()}>
