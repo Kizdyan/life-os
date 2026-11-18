@@ -1,0 +1,47 @@
+name: Persona P0 Fast Safety Gate
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "api/**"
+      - "tools/persona-local-script-generator*"
+      - ".github/workflows/persona-p0-fast-gates.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-safe-export-and-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --no-audit --no-fund
+      - name: P0 backup, editorial persistence and legacy portability tests
+        run: npx vitest run apps/web/src/data-portability.test.ts apps/web/src/persona-complete-backup.test.ts apps/web/src/personaEditorialModel.test.ts
+      - name: Real local Ollama scenario provider contract tests
+        run: node --test tools/persona-local-script-generator.test.mjs
+      - name: Typecheck changed web modules and dependencies
+        run: |
+          cat > tsconfig.persona-p0.fast.json <<'JSON'
+          {
+            "extends": "./tsconfig.json",
+            "compilerOptions": { "jsx": "react-jsx" },
+            "include": [
+              "apps/web/src/persona-complete-backup.ts",
+              "apps/web/src/PersonaCarouselEditor.tsx",
+              "apps/web/src/DataPortability.tsx",
+              "apps/web/src/PersonaEditorialStudio.tsx"
+            ]
+          }
+          JSON
+          npx tsc --noEmit -p tsconfig.persona-p0.fast.json
+      - name: API typecheck and production web build
+        run: |
+          npm run api:typecheck
+          npm run web:build
