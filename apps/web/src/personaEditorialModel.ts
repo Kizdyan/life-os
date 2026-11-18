@@ -5,6 +5,7 @@
 export const EDITORIAL_KEY='lifeos:persona:editorial-posts:v1';
 export const STORY_KEY='lifeos:persona:weekly-stories:v1';
 export const CAROUSEL_BASELINE_ID='carousel-baseline-pause';
+export const CAROUSEL_002_ID='carousel-why-director-leaves-question';
 const emptyChecklist=()=>[false,false,false,false,false,false,false];
 const freshApproval=()=>({topic:false,content:false,design:false,
  checklist:emptyChecklist(),checkedAt:'',checkedBy:'',contentHashAtApproval:''});
@@ -58,7 +59,7 @@ export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
- origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string};
+ origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string};
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
@@ -206,6 +207,31 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
+/** Opt-in research-backed fixture; same Editorial Desk, statuses and color preset. */
+export function createDirectorQuestionCarousel(now=new Date().toISOString()):EditorialPost{
+ const texts=[
+  'Открытый финал — не отсутствие ответа, а другой его адрес.',
+  'Зритель достраивает смысл, которого режиссёр не сказал.',
+  'Но пустота работает, только если она изнутри логична.',
+  'Хороший финал отвечает почти на всё — оставляет один вопрос.',
+  'Вопрос держит зрителя после экрана. Это и есть работа.',
+  'Режиссёр оставляет вопрос, когда ответ был бы ложью.'
+ ];
+ const caption=[
+  'Открытый финал — не то же самое, что отсутствие финала. Зритель прощает недосказанность, если чувствует, что режиссёр знал ответ и сознательно его не произнёс. И не прощает, когда чувствует, что ответа не было. Разница не в количестве информации, а в её наличии за кадром.',
+  'Брук называет пустое пространство приглашением к воображению. Нолан уточняет: неоднозначность должна вырастать из неспособности персонажа знать, а не из небрежности автора. Макки разделяет открытый финал и размытость: открытый финал оставляет один вопрос, размытость — снимает правила мира. Мамет напоминает, что задача драматурга — держать зрителя в вопросе "что будет дальше", а не объяснять, что было.',
+  'Практический вывод простой: оставляйте открытым вопрос, но не мотивацию, не ставки и не логику мира. Тогда молчание финала продолжает работать после экрана — это и есть его задача.'
+ ].join('\n\n');
+ const post:EditorialPost={version:1,id:CAROUSEL_002_ID,kind:'carousel',
+  title:'Зачем режиссёру оставлять зрителя без ответа',
+  topic:'Зачем режиссёру оставлять зрителя без ответа',
+  goal:'Авторская мысль · text-only, 6 слайдов · исследование в docs',
+  slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  caption,preset:'chocolate-graphite',approvals:freshApproval(),
+  origin:'researched-topic',researchSourceDoc:'docs/carousel-002-research-sources.md',
+  revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
+}
 export function editorialStage(post:EditorialPost):'topic'|'content'|'design'|'production'{
  if(!post.approvals.topic)return 'topic';
  if(!post.approvals.content)return 'content';
@@ -227,6 +253,9 @@ export function validatePost(post:EditorialPost):void{
   !['photo','carousel'].includes(post.kind)||!post.topic.trim()||post.topic.length>160||
   (post.approvals.topic&&(!post.title.trim()||!post.topic.trim()||!post.goal.trim()))||post.title.length>160||post.goal.length>500||
   typeof post.caption!=='string'||post.caption.length>4500||
+  (post.researchSourceDoc!==undefined&&
+   (typeof post.researchSourceDoc!=='string'||post.researchSourceDoc.length>160||
+    !/^docs\/[a-z0-9][a-z0-9-]*\.md$/.test(post.researchSourceDoc)))||
   (post.scheduledDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate)||
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
