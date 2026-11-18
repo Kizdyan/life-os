@@ -4,7 +4,7 @@
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-import {mkdir,readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
@@ -44,6 +44,15 @@ async function downloadZip(page,button,path){
  const dl=await pending;await dl.saveAs(path);
  return contents(await readFile(path));
 }
+async function completeCarouselChecklist(editor){
+ const checks=editor.getByTestId('carousel-acceptance-checklist');
+ const approve=editor.getByRole('button',{name:'Утвердить оформление'});
+ assert.equal(await approve.isDisabled(),true,'Final approval initially disabled');
+ for(let i=1;i<=6;i++)await checks.getByRole('checkbox',{name:'Пункт '+i}).check();
+ assert.equal(await checks.getByRole('checkbox',{name:'Пункт 7'}).isChecked(),true,'Automatic contrast passes');
+ assert.equal(await checks.getByRole('checkbox',{name:'Пункт 7'}).isDisabled(),true,'Contrast must not be manually editable');
+ assert.equal(await approve.isEnabled(),true);
+}
 const browser=await chromium.launch({headless:true});
 try{
  const first=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
@@ -79,7 +88,8 @@ try{
  await style.getByLabel('Фото из архива + текст').check();
  await style.locator('input[type=file]').setInputFiles(selected);
  await style.getByText('Локально сохранено:').waitFor({timeout:15000});
- await style.getByRole('button',{name:'Утвердить оформление'}).click();
+ await completeCarouselChecklist(editor);
+  await style.getByRole('button',{name:'Утвердить оформление'}).click();
  await observeCanvas(page);
  const carousel=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
   join(artifacts,'approved-carousel.zip'));
