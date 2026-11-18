@@ -54,3 +54,7 @@
 .personaReferenceNotice{font-size:12px;color:#517254;font-weight:650}
 @media(max-width:1150px){.personaReferenceVariant{grid-template-columns:35px minmax(170px,1fr) minmax(125px,1fr) repeat(2,minmax(70px,.6fr))}.personaReferenceVariant label:nth-last-child(-n+2){grid-row:2}}
 @media(max-width:720px){.personaReferenceLab{padding:12px}.personaReferenceForm{grid-template-columns:1fr}.personaReferenceVariant{grid-template-columns:1fr 1fr}.personaReferenceVariant>strong{grid-column:1/-1}.personaReferenceVariant>input{grid-column:1/-1}.personaReferenceVariant>select{grid-column:1/-1}.personaReferenceVariant label:nth-last-child(-n+2){grid-row:auto}.personaReferenceSources>div{grid-template-columns:1fr}}
+
+.personaReferenceVariantExtra{grid-column:1/-1;display:grid;grid-template-columns:minmax(125px,.7fr) repeat(2,minmax(150px,1.4fr));gap:7px;padding:7px 0;border-top:1px solid #e9e2d9}
+.personaReferenceVariantExtra label{font-size:10px;color:#6c6b65}
+@media(max-width:720px){.personaReferenceVariantExtra{grid-template-columns:1fr}}
