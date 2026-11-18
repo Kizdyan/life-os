@@ -24,10 +24,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
- const [advanced,setAdvanced]=useState(false);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
- useEffect(()=>{setSelectedSlide(0);setError('')},[targetId]);
+ useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
  useEffect(()=>{
   let alive=true,url:string|null=null;
@@ -39,7 +38,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }).catch(e=>{if(alive)setError((e as Error).message)});
   return()=>{alive=false;if(url)URL.revokeObjectURL(url)};
  },[post?.id,slide?.id,slide?.visual,post?.revision]);
- function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'>>){
+ function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>){
   if(!post)return;
   try{onChange(reviseEditorialPost(post,changes));setError('')}
   catch(e){setError((e as Error).message)}
@@ -66,7 +65,6 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   if(!post||!slide||!file)return;
   setBusy(true);setError('');
   try{
-   const previous=await readEditorialImage(post.id,slide.id);
    await saveEditorialImage(post.id,slide.id,file);
    // Changing an asset invalidates visual approval. No external uploads.
    onChange(reviseEditorialPost(post,{preset:post.preset}));
@@ -130,6 +128,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <h3>{post.title}</h3><p>{post.goal}</p></div>
     <span className="personaEditorialState">{status(post)}</span>
    </div>
+   {!post.id.startsWith('PHOTO-')&&!post.id.startsWith('photo-week-')&&
+    <label className="personaEditorialSchedule">Планируемая дата выпуска (не означает публикацию)
+     <input type="date" value={post.scheduledDate??''} onChange={e=>
+      persist({scheduledDate:e.target.value||undefined})}/>
+    </label>}
    <nav className="personaEditorialSteps" aria-label="Согласование редакционного плана">
     {([['topic','1. Тема'],['content','2. Текст'],['design','3. Оформление'],['production','4. Экспорт']] as const)
       .map(([stage,label])=><span key={stage} data-current={editorialStage(post)===stage?'true':'false'}>
