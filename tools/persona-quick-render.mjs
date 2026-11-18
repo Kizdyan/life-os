@@ -35,7 +35,7 @@ import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs'
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
 import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
 import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,layoutQuoteForSignatureGold,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
-import {inspectPhoto,renderPhotoCarousel,renderPhotoSlideshow,renderPlatformPackage} from './persona-quick-platforms.mjs';
+import {inspectPhoto,normalizeCarouselSlides,renderPhotoCarousel,renderPhotoSlideshow,renderPlatformPackage} from './persona-quick-platforms.mjs';
 
 const toolsDir=fileURLToPath(new URL('.',import.meta.url));
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -149,7 +149,8 @@ export function createPersonaQuickRenderService(config={}){
    canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
   }
   const state=canonical.status==='FAILED'?'failed':canonical.status==='AWAITING_APPROVAL'?'completed':
-   ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':'uploading';
+   ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':
+   meta.seedKey&&meta.files.length===0?'waiting_for_footage':'uploading';
   if(!cached&&!active&&canonical.fullRender?.status==='RENDERING')
    canonical=await production.updateFullRender('FAILED',{reason:'Worker перезапущен до проверки полноразмерного MP4. Черновик сохранён.'});
   const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null,
@@ -169,6 +170,9 @@ export function createPersonaQuickRenderService(config={}){
  }
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
+  uploadedIndices:job.uploads??[],seedKey:job.seedKey??null,
+  goal:job.goal??null,slides:job.slides??null,createdAt:job.createdAt??null,
+  productionStatus:job.state==='waiting_for_footage'?'WAITING_FOR_FOOTAGE':null,
   strategyStatus:job.strategyStatus??null,
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   fastDraft:job.fastDraft===true,
@@ -204,6 +208,10 @@ export function createPersonaQuickRenderService(config={}){
   if(body.coverTitle!==undefined&&(typeof body.coverTitle!=='string'||body.coverTitle.length>90))
    throw Error('Invalid cover title');
   if(body.coverTitle?.trim())layoutQuoteForSignatureGold(body.coverTitle.trim());
+  if(body.slides!==undefined&&contentType!=='photo-carousel')
+   throw Error('Per-slide captions only supported for photo carousels');
+  const slides=contentType==='photo-carousel'?
+   normalizeCarouselSlides(body.slides??null,np):null;
   const files=body.files.map((file,index)=>{
    const name=safeName(file.name,file.kind);
    if(!Number.isSafeInteger(file.size)||file.size<1024||file.size>BYTES_MAX)throw Error('File exceeds upload size limits');
@@ -221,11 +229,43 @@ export function createPersonaQuickRenderService(config={}){
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
-   contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',
+   contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',slides,
    fastDraft:contentType==='video'&&body.fastDraft===true,
    directFull:contentType!=='video'||body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
   await save(job);
+  return view(job);
+ }
+ /** Attach N actual photo files to an existing editorial-only seeded project.
+  * This does not create another ProductionJob and does not change author copy.
+  */
+ async function attachSeedPhotos(id,body){
+  const job=await get(id);
+  if(!job||!job.seedKey||job.contentType!=='photo-carousel'||
+   !['waiting_for_footage','uploading'].includes(job.state)||
+   !Array.isArray(job.slides)||job.slides.length<3||job.slides.length>5)
+   throw Error('Only an unrendered seeded carousel can receive photos');
+  if(!body||!Array.isArray(body.files)||body.files.length!==job.slides.length)
+   throw Error('Upload exactly one photo per planned slide, preserving order');
+  const files=body.files.map((file,i)=>{
+   if(file.kind!=='photo')throw Error('Only JPEG/PNG photographs allowed');
+   const name=safeName(file.name,'photo');
+   if(!Number.isSafeInteger(file.size)||file.size<1024||file.size>BYTES_MAX)
+    throw Error('Photo size is invalid');
+   return {index:i,kind:'photo',originalName:name,
+    name:toFileName(i,'photo',name),size:file.size};
+  });
+  if(files.reduce((n,item)=>n+item.size,0)>BYTES_MAX)
+   throw Error('Total photo size exceeds 500MB');
+  if(job.files.length){
+   if(JSON.stringify(job.files.map(x=>[x.index,x.kind,x.originalName,x.size]))!==
+    JSON.stringify(files.map(x=>[x.index,x.kind,x.originalName,x.size])))
+    throw Error('Photo manifest already attached; refusing to replace originals');
+   return view(job); // resume partial upload using uploadedIndices
+  }
+  normalizeCarouselSlides(job.slides,files.length);
+  job.files=files;job.sourceConsent=true;job.stage='Загрузка фотографий по слайдам';
+  job.updatedAt=new Date().toISOString();await save(job);
   return view(job);
  }
  async function upload(id,index,req){
@@ -296,7 +336,7 @@ export function createPersonaQuickRenderService(config={}){
    job.stage='Фото: цвет и текстовые акценты';await save(job);
    let title=job.coverTitle||null;
    job.captionDecision={mode:'disabled',generatedText:null,reason:'Text accents disabled',requestCount:0};
-   if(job.textAccents&&!title){
+   if(job.textAccents&&!title&&!job.slides){
     if(config.quickQuoteGenerator||env.OPENROUTER_API_KEY?.trim()){
      try{
       const quoted=config.quickQuoteGenerator?await config.quickQuoteGenerator({mood,prompt:job.prompt})
@@ -310,6 +350,10 @@ export function createPersonaQuickRenderService(config={}){
       reason:String(error.message||error).slice(0,150),requestCount:0};}
     }else job.captionDecision={mode:'quote-unavailable',generatedText:null,
      reason:'No OpenRouter key: original text was not generated',requestCount:0};
+   }else if(job.textAccents&&job.slides){
+    job.captionDecision={mode:'per-slide-author',generatedText:null,
+     reason:'One-to-one author text for each uploaded photo; no AI quote requested',
+     slideCount:job.slides.length,requestCount:0};
    }else if(job.textAccents&&title){
     title=validateQuoteText(title);
     job.captionDecision={mode:'author-title',generatedText:title,
@@ -320,8 +364,8 @@ export function createPersonaQuickRenderService(config={}){
    let result;
    if(job.contentType==='photo-carousel'){
     result=await renderPhotoCarousel({photos:sources,outputDir:out,aspect:job.carouselAspect,
-     colorPreset,title,textAccents:job.textAccents,config:photoConfig});
-    job.carouselFiles=result.photos.map(x=>({id:x.id,width:x.width,height:x.height,textOverlay:x.textOverlay}));
+     colorPreset,title,slides:job.slides??null,textAccents:job.textAccents,config:photoConfig});
+    job.carouselFiles=result.photos.map(x=>({id:x.id,width:x.width,height:x.height,textOverlay:x.textOverlay,captionText:x.captionText}));
     job.exportItems=[{id:result.package.id,filename:result.package.file,sha256:result.package.sha256,
      bytes:result.package.bytes,kind:'zip'},...result.photos.map(x=>({id:x.id,filename:x.file,sha256:x.sha256,
      bytes:x.bytes,kind:'image',width:x.width,height:x.height}))];
@@ -339,7 +383,7 @@ export function createPersonaQuickRenderService(config={}){
    await atomicFile(join(out,'RESULT.json'),receipt);
    await production.transition('AWAITING_APPROVAL',{reason:'Photo outputs await human review'});
    job.state='completed';job.stage='Готово';job.result={visionAvailable:mood!==null,
-    visualPreset:colorPreset,subtitlePreset:'signature-gold',hasCaptions:!!(title&&job.textAccents)};
+    visualPreset:colorPreset,subtitlePreset:'signature-gold',hasCaptions:Boolean(job.textAccents&&(title||job.slides?.length))};
    await save(job);
   }catch(error){
    const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
@@ -884,7 +928,9 @@ export function createPersonaQuickRenderService(config={}){
   const entries=(await readdir(root,{withFileTypes:true})).filter(x=>x.isDirectory()&&/^quick-[0-9a-f-]{36}$/.test(x.name)).slice(-100);
   const result=[];
   for(const x of entries){const id=x.name.slice(6),job=await get(id);if(job)result.push(view(job))}
-  return result.reverse().slice(0,40);
+  result.sort((a,b)=>a.seedKey&&b.seedKey?a.seedKey.localeCompare(b.seedKey):
+   a.seedKey?-1:b.seedKey?1:String(b.createdAt??'').localeCompare(String(a.createdAt??'')));
+  return result.slice(0,40);
  }
  async function handle(req,res,url){
   if(!url.pathname.startsWith('/quick-render'))return false;
@@ -897,11 +943,17 @@ export function createPersonaQuickRenderService(config={}){
     let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Invalid quick render JSON')}
     resJson(res,201,await create(body));return true;
    }
-   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full|export-package|export\/([a-z0-9-]+)))?$/.exec(path);
+   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full|attach-photos|export-package|export\/([a-z0-9-]+)))?$/.exec(path);
    if(!matched){resJson(res,404,{error:'unknown_quick_render_route'});return true}
    const id=checkedJobId(matched[1]),action=matched[2];
    if(req.method==='GET'&&action==='status'){
     const job=await get(id);resJson(res,job?200:404,job?view(job):{error:'not_found'});return true;
+   }
+   if(req.method==='POST'&&action==='attach-photos'){
+    const parts=[];let size=0;
+    for await(const data of req){size+=data.length;if(size>12000)throw Error('Photo manifest too large');parts.push(data)}
+    let body;try{body=JSON.parse(Buffer.concat(parts).toString('utf8'))}catch{throw Error('Invalid photo manifest')}
+    resJson(res,200,await attachSeedPhotos(id,body));return true;
    }
    if(req.method==='PUT'&&action?.startsWith('upload/')){
     resJson(res,200,await upload(id,Number(matched[3]),req));return true;
@@ -915,5 +967,5 @@ export function createPersonaQuickRenderService(config={}){
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,upload,run,promote,preparePackage,get,view,list,handle};
+ return {root,create,attachSeedPhotos,upload,run,promote,preparePackage,get,view,list,handle};
 }
