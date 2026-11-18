@@ -140,7 +140,7 @@ async function seedOne(root,p){
   const meta=JSON.parse(await readFile(join(folder,'quick-state.json'),'utf8'));
   const stored=JSON.parse(await readFile(join(folder,'output','carousel-seed.json'),'utf8'));
   const state=await new ProductionJob(folder).read();
-  if(meta.id!==id||meta.seedKey!==p.id||stored.seedSha256!==expected||
+  if(state.contentType!=='photo-carousel'||meta.id!==id||meta.seedKey!==p.id||stored.seedSha256!==expected||
     seedSha(stored.project)!==expected||!Array.isArray(meta.slides)||
     JSON.stringify(meta.slides)!==JSON.stringify(p.slides))
    throw Error('Existing seeded project has changed: '+p.id+'; not overwriting');
@@ -150,7 +150,7 @@ async function seedOne(root,p){
  const temp=join(root,'.pending-'+p.id+'-'+randomUUID());
  let own=false;
  try{
-  const job=await ProductionJob.create(temp,{title:p.title,strategy:defaultPersonaStrategy()});
+  const job=await ProductionJob.create(temp,{title:p.title,strategy:defaultPersonaStrategy(),contentType:'photo-carousel'});
   own=true;
   const meta={version:1,id,title:p.title,prompt:p.goal,seedKey:p.id,
    contentType:'photo-carousel',carouselAspect:'4:5',coverTitle:'',

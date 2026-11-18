@@ -225,7 +225,7 @@ export function createPersonaQuickRenderService(config={}){
   // Vision is an optional enhancement. The offline timeline still creates a real MP4.
   await mkdir(root,{recursive:true});
   const id=randomUUID(),title=body.prompt.trim().slice(0,90);
-  const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy()});
+  const production=await ProductionJob.create(directory(id),{title,strategy:defaultPersonaStrategy(),contentType});
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,

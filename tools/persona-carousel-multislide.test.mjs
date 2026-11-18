@@ -36,6 +36,7 @@ test('seed 10 genuine ProductionJobs: deterministic, idempotent, persistent, all
   assert.equal(entry.id,seededQuickId(entry.seedKey));
   const state=await new ProductionJob(entry.directory).read();
   assert.equal(state.status,'WAITING_FOR_FOOTAGE');
+  assert.equal(state.contentType,'photo-carousel');
   assert.equal(state.assets.length,0);
   const saved=JSON.parse(await readFile(join(entry.directory,'quick-state.json'),'utf8'));
   assert.equal(saved.slides.length,4);
