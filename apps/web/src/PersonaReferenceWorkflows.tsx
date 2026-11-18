@@ -204,6 +204,17 @@ export default function PersonaReferenceWorkflows({videos,onCreateCarouselDraft,
         <option value="metrics_entered">Метрики записаны вручную</option>
         <option value="released_manually">Выпущено для всех вручную</option>
        </select>
+       <div className="personaReferenceVariantExtra">
+        <label>Плановая дата Trial (не публикация)<input type="date" aria-label={'Дата V'+(i+1)}
+         value={v.plannedDate??''} onChange={e=>changeTrial(t.id,old=>({...old,
+          variants:old.variants.map(x=>x.id===v.id?{...x,plannedDate:e.target.value||undefined}:x)}))}/></label>
+        <label>Отличие музыки/звука<input aria-label={'Звук V'+(i+1)} maxLength={180} value={v.audioNote??''}
+         placeholder="Безопасный оригинальный звук или библиотека" onChange={e=>changeTrial(t.id,old=>({...old,
+          variants:old.variants.map(x=>x.id===v.id?{...x,audioNote:e.target.value}:x)}))}/></label>
+        <label>Отличие монтажа/обложки<input aria-label={'Визуал V'+(i+1)} maxLength={180} value={v.visualNote??''}
+         placeholder="Первый кадр, надпись, монтаж" onChange={e=>changeTrial(t.id,old=>({...old,
+          variants:old.variants.map(x=>x.id===v.id?{...x,visualNote:e.target.value}:x)}))}/></label>
+       </div>
        {(['views','shares','likes','comments'] as const).map(key=>
         <label key={key}>{({views:'Просмотры',shares:'Пересылки',likes:'Лайки',comments:'Комментарии'} as const)[key]}
          <input type="number" min={0} max={1000000000} value={v[key]??''} aria-label={key+' V'+(i+1)} onChange={e=>{
