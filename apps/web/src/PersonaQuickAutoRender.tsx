@@ -46,7 +46,7 @@ export function checkQuickRenderFiles(files:File[],contentType:ContentType='vide
 }
 const statusLabel=(job:QuickRenderJob)=>job.state==='waiting_for_footage'?'Проект ожидает фотографии':job.state==='completed'?'Готов к скачиванию':job.state==='running'?'Создаю ролик…':
  job.state==='uploading'?'Загружаю видео…':'Не удалось собрать ролик';
-export default function PersonaQuickAutoRender(){
+export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:{focusJobId?:string|null;focusRequest?:number}={}){
  const [files,setFiles]=useState<File[]>([]);
  const [contentType,setContentType]=useState<ContentType>('video');
  const [carouselAspect,setCarouselAspect]=useState<'4:5'|'1:1'>('4:5');
@@ -73,6 +73,7 @@ export default function PersonaQuickAutoRender(){
  const busy=useRef(false);
  const mounted=useRef(true);
  const fileRef=useRef<HTMLInputElement>(null);
+ const lastFocusedRequest=useRef<string|null>(null);
 
  async function token(){
   if(workerToken.current)return workerToken.current;
@@ -194,6 +195,20 @@ export default function PersonaQuickAutoRender(){
   finally{setExportingId(null)}
  }
  const visibleJobs=jobs.slice(0,10);
+ if(focusJobId&&!visibleJobs.some(job=>job.id===focusJobId)){
+  const requested=jobs.find(job=>job.id===focusJobId);
+  if(requested)visibleJobs.unshift(requested); // Never hide selected project when many jobs exist
+ }
+ useEffect(()=>{
+  if(!focusJobId)return;
+  const requestKey=focusJobId+':'+focusRequest;
+  if(lastFocusedRequest.current===requestKey)return;
+  const card=document.getElementById('persona-quick-project-'+focusJobId);
+  if(!card)return; // Retry when the Worker API populates the card
+  lastFocusedRequest.current=requestKey;
+  card.scrollIntoView({behavior:'smooth',block:'center'});
+  card.focus({preventScroll:true});
+ },[focusJobId,focusRequest,jobs]);
  return <section className="personaQuick" aria-label="Быстрый автомонтаж" data-testid="persona-quick-auto-render">
   <div className="personaQuickHeading">
    <div><small>PERSONA / ONE-CLICK STUDIO</small><h2>Быстрый автомонтаж</h2>
@@ -296,7 +311,7 @@ export default function PersonaQuickAutoRender(){
   {(error||serviceError)&&<p role="alert" className="personaQuickError">{error||serviceError}</p>}
   {visibleJobs.length>0&&<div className="personaQuickResults" aria-label="Мои быстрые проекты">
    <h3>Мои быстрые проекты</h3>
-   <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
+   <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')+(focusJobId===job.id?' personaQuickCard--calendarFocused':'')} id={'persona-quick-project-'+job.id} tabIndex={-1} data-quick-status={job.state} data-focused-project={focusJobId===job.id?'true':'false'}>
     <div><small>{job.state==='waiting_for_footage'?'ОЖИДАЕТ ФОТО':job.ready?(job.contentType==='photo-carousel'?'ГОТОВАЯ КАРУСЕЛЬ':'ГОТОВЫЙ МЕДИАПРОЕКТ'):job.state==='failed'?'НУЖНО ВНИМАНИЕ':'МЕДИАПРОЕКТ'}</small><h4>{job.title}</h4>
      {job.seedKey&&<p className="personaQuickCardLooks">{job.seedKey} · {job.slides?.length??0} слайда · {job.goal}</p>}
      <p>{statusLabel(job)} · {job.contentType==='photo-carousel'?'Фото-карусель '+(job.carouselAspect??'4:5'):

@@ -52,8 +52,18 @@ jobs:
         run: node tools/persona-industry-browser-e2e.mjs
       - name: Verify all 10 seeded waiting carousels in real Chromium (desktop and mobile)
         run: node tools/persona-carousel-browser-e2e.mjs
+      - name: Verify unified content calendar opens real Reels and photo jobs in Chromium
+        run: node tools/persona-weekly-calendar-browser-e2e.mjs
       - name: Verify real one-click browser-to-MP4 workflow
         run: node tools/persona-quick-browser-e2e.mjs
+      - name: Upload weekly calendar screenshots and navigation proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-weekly-calendar-browser
+          path: artifacts/persona-weekly-calendar/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload carousel 10-card screenshot evidence
         if: always()
         uses: actions/upload-artifact@v4

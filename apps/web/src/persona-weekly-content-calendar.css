@@ -1,0 +1,36 @@
+/* Persona production-week command center: restrained navy, warm gold, no global styling. */
+.personaWeekCalendar{margin:20px 0 28px;padding:25px;border:1px solid #dfd7c8;border-radius:20px;background:#f8f6f1;color:#182032;box-shadow:0 12px 35px rgba(18,24,41,.045)}
+.personaWeekCalendarHead{display:flex;align-items:end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.personaWeekCalendarHead small{font-size:10px;letter-spacing:.18em;color:#90734c;font-weight:700}
+.personaWeekCalendarHead h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(32px,4vw,45px);line-height:1;margin:8px 0 7px;font-weight:600}
+.personaWeekCalendarHead p{margin:0;color:#686a6d;font-size:12px;line-height:1.55}
+.personaWeekCalendarControls{display:flex;gap:7px;align-items:center}
+.personaWeekCalendarControls button{min-width:42px;min-height:39px;padding:8px 12px;border:1px solid #dad0c1;border-radius:9px;background:#fff;color:#182032;font-weight:650;font-size:12px}
+.personaWeekCalendarControls button:hover:not(:disabled){background:#ece6dc}
+.personaWeekCalendarControls button:disabled{opacity:.35;cursor:default}
+.personaWeekCalendarSummary{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin:18px 0 11px;font-size:12px;color:#606166}
+.personaWeekCalendarSummary strong{color:#202737;font-size:13px}
+.personaWeekCalendarToday{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px;margin:0 0 15px;background:#ede7db;border-radius:10px;font-size:12px;line-height:1.55}
+.personaWeekCalendarToday strong{color:#2b3240}
+.personaWeekCalendarPulse{width:8px;height:8px;background:#92704b;border-radius:50%;flex:none}
+.personaWeekCalendarDays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:stretch}
+.personaWeekCalendarDay{min-width:0;display:flex;flex-direction:column;gap:11px;min-height:190px;border-radius:11px;padding:12px 9px;background:white;border:1px solid #e7e0d4}
+.personaWeekCalendarDay--today{background:#fffaf0;border-color:#aa8a5f;box-shadow:0 0 0 1px #aa8a5f}
+.personaWeekCalendarDayHeader{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid #eee7de}
+.personaWeekCalendarDayName{font-size:10px;font-weight:750;line-height:1.3;overflow-wrap:anywhere;color:#313744}
+.personaWeekCalendarDayHeader time{font-size:11px;color:#947958}
+.personaWeekCalendarEmpty{font-size:10px;line-height:1.5;color:#92918d;margin:2px 0;flex:1}
+.personaWeekCalendarItem{display:flex;flex-direction:column;gap:9px;min-height:130px;flex:1}
+.personaWeekCalendarKind{font-size:10px;font-weight:700;color:#8a693e}
+.personaWeekCalendarItem h3{font-family:'Cormorant Garamond',Georgia,serif;font-size:18px;line-height:1.05;margin:0;overflow-wrap:anywhere;color:#212839}
+.personaWeekCalendarState{font-size:10px;color:#686a6d}
+.personaWeekCalendarStart{display:flex;justify-content:space-between;align-items:center;gap:3px;width:100%;border:0;border-radius:7px;padding:11px 8px;background:#1a2537;color:#f8f1e4;font-weight:700;font-size:10px;line-height:1.3;min-height:42px;margin-top:auto;transition:background .18s}
+.personaWeekCalendarStart:hover{background:#394763}
+.personaWeekCalendarStart span{font-size:14px}
+.personaWeekCalendarSources{font-size:12px;line-height:1.6;margin-top:15px;color:#585b61}
+.personaWeekCalendarSources p{margin:4px 0}
+.personaWeekCalendarSources button{display:inline-block;margin:0 0 0 7px;padding:5px 8px;border:1px solid #b5a48e;background:white;color:#2b3240;border-radius:6px;font-size:12px}
+@media(max-width:1150px){.personaWeekCalendarDays{grid-template-columns:repeat(4,minmax(0,1fr))}.personaWeekCalendarDay{min-height:155px}.personaWeekCalendarItem h3{font-size:21px}.personaWeekCalendarStart{font-size:12px}}
+@media(max-width:640px){.personaWeekCalendar{padding:15px 11px;margin:12px 0 22px;border-radius:15px}.personaWeekCalendarHead{gap:14px}.personaWeekCalendarControls{width:100%;justify-content:space-between}.personaWeekCalendarDays{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.personaWeekCalendarDay{min-height:130px;padding:11px}.personaWeekCalendarDay:last-child{grid-column:1 / -1;min-height:105px}.personaWeekCalendarDayName{font-size:11px}.personaWeekCalendarItem h3{font-size:22px}.personaWeekCalendarStart{font-size:12px;min-height:45px}.personaWeekCalendarToday{font-size:12px}}
+@media(max-width:360px){.personaWeekCalendarDays{grid-template-columns:1fr}.personaWeekCalendarDay:last-child{grid-column:auto}.personaWeekCalendarDay{min-height:100px}.personaWeekCalendarItem{min-height:90px}}
+@media(prefers-reduced-motion:reduce){.personaWeekCalendarStart{transition:none}}
