@@ -66,6 +66,17 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   try{onChange(approveEditorialStep(post,step));setError('')}
   catch(e){setError((e as Error).message)}
  }
+ function setChecklist(index:number,checked:boolean){
+  if(!post)return;
+  try{onChange(setEditorialChecklistItem(post,index,checked));setError('')}
+  catch(e){setError((e as Error).message)}
+ }
+ function openBaseline(){
+  try{
+   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(createBaselinePauseCarousel());
+   onSelect(CAROUSEL_BASELINE_ID);setError('');
+  }catch(e){setError((e as Error).message)}
+ }
  function choose(choice:TopicChoice){
   try{
    const id=targetId?.startsWith('photo-week-')&&choice.kind==='photo'
@@ -120,6 +131,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
    </p>}
+   <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
+    <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
+     {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
+    </button>
+   </p>
    <div className="personaEditorialSuggestions">
     {allTopics.slice(0,8).map(choice=><article key={choice.id}>
      <span>{choice.kind==='photo'?'ФОТО':'КАРУСЕЛЬ'}</span><h4>{choice.title}</h4>
@@ -215,6 +231,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset}
+     data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
      {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
      <div className="personaEditorialPreviewOverlay">
@@ -224,8 +241,20 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>
     </div>
     <p>Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.</p>
+    {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
+     data-testid="carousel-acceptance-checklist">
+     <legend>Чек-лист приёмки · 7 проверок</legend>
+     {CHECKLIST_TEXT.map((description,index)=><label key={index}>
+      <input type="checkbox" checked={Boolean(checklist[index])}
+       disabled={index===6} aria-label={'Пункт '+(index+1)}
+       onChange={e=>setChecklist(index,e.target.checked)}/>
+      <span><strong>{index+1}.</strong> {description}</span>
+     </label>)}
+     <p>Пункт 7: {editorialContrastPass(post)?'PASS — цвета пресета удовлетворяют WCAG':'FAIL — контраст пресета ниже порога'}.
+      Для фото поверх фона нужна дополнительная визуальная проверка.</p>
+    </fieldset>}
     {!post.approvals.design?<button className="personaEditorialApprove" type="button"
-     onClick={()=>approve('design')}>Утвердить оформление</button>:
+     disabled={!checklistReady} onClick={()=>approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
    </section>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
