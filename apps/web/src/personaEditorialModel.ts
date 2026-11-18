@@ -140,6 +140,7 @@ export function validatePost(post:EditorialPost):void{
   !['photo','carousel'].includes(post.kind)||!post.topic.trim()||post.topic.length>160||
   (post.approvals.topic&&(!post.title.trim()||!post.topic.trim()||!post.goal.trim()))||post.title.length>160||post.goal.length>500||
   typeof post.caption!=='string'||post.caption.length>4500||
+  (post.scheduledDate!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate))||
   !['ink','cream','chocolate','filmic'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -154,7 +155,7 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
-export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'>>,now=new Date().toISOString()):EditorialPost{
+export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
  const result={...post,...changes,updatedAt:now,revision:post.revision+1,
   approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
