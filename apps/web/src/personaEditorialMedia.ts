@@ -92,30 +92,26 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   try{image=await createImageBitmap(stored.blob)}catch{throw Error('Повреждено архивное изображение для слайда №'+(index+1))}
   const scale=Math.max(1080/image.width,1350/image.height),w=image.width*scale,h=image.height*scale;
   ctx.drawImage(image,(1080-w)/2,(1350-h)/2,w,h);image.close();
-  // Text remains legible in variable photographs without altering the originals.
-  const gradient=ctx.createLinearGradient(0,400,0,1350);
-  gradient.addColorStop(0,'rgba(5,8,12,.14)');
-  gradient.addColorStop(.44,'rgba(5,8,12,.54)');
-  gradient.addColorStop(1,'rgba(5,8,12,.85)');
-  ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+  // No overlay on a plain archive photo. For an authored title, protect
+  // legibility with a bounded gradient on the generated copy only.
+  if(slide.text.trim()){
+   const gradient=ctx.createLinearGradient(0,400,0,1350);
+   gradient.addColorStop(0,'rgba(5,8,12,.14)');
+   gradient.addColorStop(.44,'rgba(5,8,12,.54)');
+   gradient.addColorStop(1,'rgba(5,8,12,.85)');
+   ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+  }
  }
- const foreground=usePhoto?'#fff7ec':theme.fg,accent=usePhoto?'#ead5ac':theme.accent;
- ctx.strokeStyle=accent;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(94,126);ctx.lineTo(170,126);ctx.stroke();
- ctx.fillStyle=accent;ctx.font='600 27px Inter, Arial, sans-serif';
- ctx.fillText('P / EDITORIAL',94,104);
- ctx.fillStyle=foreground;ctx.font='600 30px Inter, Arial, sans-serif';
- const section=(post.kind==='carousel'?'КАРУСЕЛЬ':'ФОТО')+'  /  '+String(index+1).padStart(2,'0');
- ctx.fillText(section,94,205);
+ // Public pixels contain ONLY the approved slide title (Signature Gold).
+ // Internal project names, branding, format numbers, approval state and
+ // pagination must NEVER be burned into a publishable PNG.
  if(slide.text.trim()){
   ctx.font='500 80px "Cormorant Garamond", Georgia, serif';
   const lines=wrapText(ctx,slide.text,870,4);
   let y=Math.max(660,1010-lines.length*95);
-  ctx.fillStyle=foreground;
+  ctx.fillStyle=usePhoto?'#ead5ac':theme.accent;
   for(const line of lines){ctx.fillText(line,94,y);y+=100}
  }
- ctx.strokeStyle=accent;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(94,1235);ctx.lineTo(986,1235);ctx.stroke();
- ctx.font='500 25px Inter, Arial, sans-serif';ctx.fillStyle=accent;ctx.fillText('PERSONA  ·  АВТОРСКИЙ МАТЕРИАЛ',94,1290);
- ctx.textAlign='right';ctx.fillText((index+1)+' / '+post.slides.length,986,1290);ctx.textAlign='left';
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let j=0;j<8;j++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0});
@@ -152,6 +148,10 @@ function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  const items:BlobPart[]=[...parts,...central,end].map(x=>new Uint8Array(x));
  return new Blob(items,{type:'application/zip'});
 }
+/** Exactly the author's post copy (including any authored hashtags), no metadata. */
+export function publicEditorialCaption(post:Pick<EditorialPost,'caption'>):string{
+ return post.caption.replace(/\r\n/g,'\n').trim();
+}
 export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
@@ -162,8 +162,7 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
   files.push({name:'slide-'+String(i+1).padStart(2,'0')+'.png',
    data:new Uint8Array(await blob.arrayBuffer())});
  }
- const caption='ТЕМА: '+post.topic+'\n\n'+post.caption+
-  '\n\nПроверено автором: тема, содержание и оформление. Публикация не выполнялась.\n';
+ const caption=publicEditorialCaption(post);
  files.push({name:'caption.txt',data:new TextEncoder().encode(caption)});
  return zipFileBytes(files);
 }
