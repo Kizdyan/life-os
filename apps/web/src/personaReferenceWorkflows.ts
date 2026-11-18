@@ -7,6 +7,7 @@ export type Audience='industry'|'viewers'|'clients';
 export type ReferenceSource={id:string;url:string;finding:string;status:'unverified'|'reviewed'};
 export type FactoryItem={id:string;title:string;format:'reel'|'carousel';state:'idea'|'selected';sourceId?:string};
 export type TrialVariant={id:string;hook:string;state:'draft'|'shared_manually'|'metrics_entered'|'released_manually';
+ audioNote?:string;visualNote?:string;plannedDate?:string;
  views?:number;likes?:number;comments?:number;shares?:number;checkedAt?:string};
 export type TrialCampaign={id:string;title:string;sourceProjectId?:string;createdAt:string;variants:TrialVariant[]};
 export type CapturePreset={device:'iphone'|'android'|'camera';codec:'hevc'|'h264'|'prores';resolution:'1080p'|'4k';
@@ -71,6 +72,11 @@ export function validateReferenceLab(state:ReferenceLabState):void{
   !Number.isFinite(Date.parse(t.createdAt))||t.variants.length!==5||
   new Set(t.variants.map(v=>v.id)).size!==5||t.variants.some(v=>!v.id||!v.hook||
    v.hook.length>180||!['draft','shared_manually','metrics_entered','released_manually'].includes(v.state)||
+   (v.audioNote!==undefined&&(typeof v.audioNote!=='string'||v.audioNote.length>180))||
+   (v.visualNote!==undefined&&(typeof v.visualNote!=='string'||v.visualNote.length>180))||
+   (v.plannedDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(v.plannedDate)||
+    !Number.isFinite(Date.parse(v.plannedDate+'T12:00:00Z'))||
+    new Date(v.plannedDate+'T12:00:00Z').toISOString().slice(0,10)!==v.plannedDate))||
    ['views','likes','comments','shares'].some(k=>v[k as keyof TrialVariant]!==undefined&&
     (!Number.isSafeInteger(v[k as keyof TrialVariant])||(v[k as keyof TrialVariant] as number)<0)))))
   throw Error('Недопустимый Trial Reels эксперимент');
@@ -130,9 +136,12 @@ const HOOK_TYPES=[
 ] as const;
 export function makeTrialCampaign(title:string,now='2026-11-19T00:00:00Z',id='trial-'+Date.now()):TrialCampaign{
  if(!title.trim()||title.length>160)throw Error('Сначала укажи конкретную тему Reel');
- return {id,title:title.trim(),createdAt:now,variants:HOOK_TYPES.map((hook,i)=>({
-  id:id+'-v'+(i+1),hook,state:'draft'
- }))};
+ const t=new Date(now);if(!Number.isFinite(t.getTime()))throw Error('Некорректная дата эксперимента');
+ return {id,title:title.trim(),createdAt:now,variants:HOOK_TYPES.map((hook,i)=>{
+  const date=new Date(t);date.setUTCDate(date.getUTCDate()+i*7);
+  return {id:id+'-v'+(i+1),hook,state:'draft',plannedDate:date.toISOString().slice(0,10),
+   audioNote:'',visualNote:''};
+ })};
 }
 export function trialObservations(trial:TrialCampaign):{id:string;shareRate:number;views:number}[]{
  // Exploratory share-per-view ONLY; not randomized A/B test or guaranteed winner.
