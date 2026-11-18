@@ -76,3 +76,14 @@
 .personaEditorialPreviewOverlay{display:flex;flex:1;flex-direction:column;gap:14px;justify-content:space-between;padding:29px 23px 20px}
 .personaEditorialPreviewOverlay span,.personaEditorialPreviewOverlay small{font-size:10px;letter-spacing:.14em;font-weight:750}
 .personaEditorialPreviewOverlay strong{font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(25px,3vw,34px);font-weight:550;line-height:1.08;overflow-wrap:anywhere;max-height:220px;overflow:hidden;margin-top:auto;margin-bottom:auto}
+
+/* Carousel Baseline v0: existing Editorial Desk, no separate editor. */
+.personaEditorialPreset--chocolate-graphite{background:linear-gradient(90deg,#2B1D14 50%,#1C1C1E 50%);color:#F2E9DC}
+.personaEditorialPreview--chocolate-graphite{background:#2B1D14;color:#F2E9DC}
+.personaEditorialPreview--chocolate-graphite[data-alternate=graphite]{background:#1C1C1E}
+.personaCarouselChecklist{display:grid;gap:10px;border:1px solid #c9bba9;border-radius:10px;padding:14px;margin:2px 0;color:#292927}
+.personaCarouselChecklist legend{font-size:14px;font-weight:750;padding:0 5px}
+.personaCarouselChecklist label{display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-size:12px;font-weight:500;line-height:1.5}
+.personaEditorialWorkflow .personaCarouselChecklist input[type=checkbox]{display:inline-block;width:19px;height:19px;flex:0 0 19px;margin:1px 0 0;padding:0;accent-color:#403027}
+.personaCarouselChecklist input:disabled{opacity:.85}
+.personaCarouselChecklist p{font-size:11px!important}
