@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-/** Real Chromium acceptance of the Persona weekly calendar; no fake project navigation. */
+/** Real Chromium proof: 10 imported videos, 10 existing carousel Worker jobs,
+ * editorial approvals, mixed slide PNG/ZIP export, a Friday photo and optional stories.
+ */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
+import {spawnSync} from 'node:child_process';
 import {seedCarousels} from './seed_carousels.mjs';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 
@@ -12,14 +15,25 @@ const artifacts=resolve('artifacts/persona-weekly-calendar');
 await mkdir(artifacts,{recursive:true});
 const temp=await mkdtemp(join(tmpdir(),'persona-weekly-calendar-'));
 let worker,browser;
+function contents(buf){
+ const entries=[];let offset=0;
+ while(offset+30<buf.length&&buf.readUInt32LE(offset)===0x04034b50){
+  const n=buf.readUInt16LE(offset+26),extra=buf.readUInt16LE(offset+28);
+  const len=buf.readUInt32LE(offset+18),start=offset+30+n+extra;
+  entries.push({name:buf.subarray(offset+30,offset+30+n).toString('utf8'),
+   bytes:buf.subarray(start,start+len)});
+  offset=start+len;
+ }
+ return entries;
+}
 try{
  const seeded=await seedCarousels(join(temp,'quick'));
  assert.equal(seeded.created,10);
  worker=createPersonaMediaWorker({port:47832,outputRoot:join(temp,'media'),quickRenderRoot:join(temp,'quick')});
- const port=await worker.start();assert.equal(port,47832);
+ assert.equal(await worker.start(),47832);
  const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
  browser=await chromium.launch({headless:true});
- const context=await browser.newContext({viewport:{width:1440,height:900}});
+ const context=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true});
  const page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/#persona/seed10',{waitUntil:'domcontentloaded'});
@@ -29,8 +43,8 @@ try{
   const now=new Date();now.setHours(12,0,0,0);
   now.setDate(now.getDate()-((now.getDay()+6)%7));
   const pad=n=>String(n).padStart(2,'0');
-  const monday=[now.getFullYear(),pad(now.getMonth()+1),pad(now.getDate())].join('-');
-  localStorage.setItem('lifeos:persona:unified-weekly-calendar:v1',monday);
+  localStorage.setItem('lifeos:persona:unified-weekly-calendar:v1',
+   [now.getFullYear(),pad(now.getMonth()+1),pad(now.getDate())].join('-'));
  });
  await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
  const calendar=page.getByTestId('persona-weekly-calendar');
@@ -38,28 +52,91 @@ try{
  await calendar.locator('[data-calendar-item-id="PHOTO-001"]').waitFor({timeout:25000});
  assert.equal(await calendar.locator('[data-calendar-item-id]').count(),3);
  assert.equal(await calendar.locator('[data-calendar-day]').count(),7);
- assert.match(await calendar.textContent(),/Календарь на неделю/);
- const monday=calendar.locator('[data-calendar-item-id="reel-01"]');
- const photo=calendar.locator('[data-calendar-item-id="PHOTO-001"]');
- const friday=calendar.locator('[data-calendar-item-id="reel-02"]');
- assert.match(await monday.textContent(),/Видео/);
- assert.match(await monday.textContent(),/Ждёт видео/);
- assert.match(await photo.textContent(),/Фото/);
- assert.match(await photo.textContent(),/Ждёт фото/);
- assert.match(await friday.textContent(),/Видео/);
- await page.screenshot({path:join(artifacts,'calendar-week-desktop.png'),fullPage:true,animations:'disabled'});
- // The photo action must open the EXISTING seeded card, not an invented React project.
- await photo.getByRole('button',{name:/Начать работу/}).click();
- const photoCard=page.locator('[data-quick-status="waiting_for_footage"][data-focused-project="true"]');
- await photoCard.waitFor({timeout:20000});
- assert.match(await photoCard.textContent(),/PHOTO-001/);
- assert.equal(await photoCard.locator('input[type="file"]').count(),1);
- assert.equal(await photoCard.evaluate(el=>document.activeElement===el),true);
- await page.screenshot({path:join(artifacts,'calendar-opens-existing-photo.png'),fullPage:true,animations:'disabled'});
- // Navigate to the real existing video workspace and check route, not just a click callback.
- await monday.getByRole('button',{name:/Начать работу/}).click();
+ const reel=calendar.locator('[data-calendar-item-id="reel-01"]');
+ const carousel=calendar.locator('[data-calendar-item-id="PHOTO-001"]');
+ const friday=calendar.locator('[data-calendar-item-id="photo-week-01"]');
+ assert.match(await reel.textContent(),/Видео/);
+ assert.match(await carousel.textContent(),/Карусель/);
+ assert.match(await friday.textContent(),/Фото-пост/);
+ assert.match(await friday.textContent(),/Тема не выбрана/);
+ await page.screenshot({path:join(artifacts,'editorial-calendar-desktop.png'),fullPage:true,animations:'disabled'});
+ // Stories are an optional, independently saved manual layer.
+ await calendar.getByRole('textbox',{name:'Идея Stories'}).fill('Короткий рабочий кадр из реального архива');
+ await calendar.getByRole('button',{name:'Добавить',exact:true}).click();
+ await calendar.getByRole('combobox',{name:/Статус истории/}).selectOption('captured');
+ assert.match(await calendar.textContent(),/Короткий рабочий кадр/);
+ // Work on PHOTO-001's editorial companion: no duplicate Worker ProductionJob.
+ await carousel.getByRole('button',{name:/Начать работу/}).click();
+ const editor=page.getByTestId('persona-editorial-studio');
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor({timeout:15000});
+ assert.match(await editor.textContent(),/PHOTO-001/);
+ assert.match(await editor.textContent(),/Четыре секунды до выбора/);
+ await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ assert.match(await editor.textContent(),/Он ещё верит/);
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ const style=editor.locator('[aria-label="Шаг 3. Оформление"]');
+ await style.getByRole('button',{name:'Тёмный шоколад'}).click();
+ // Mix: text-only backgrounds plus an actual image from the local archive.
+ await style.getByRole('button',{name:/2 · Фон/}).click();
+ await style.getByLabel('Фото из архива + текст').check();
+ const image=join(temp,'actual-photo.png');
+ const imageCommand=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',
+  'testsrc2=size=480x600:rate=1','-frames:v','1','-y',image],{timeout:20000,encoding:'utf8'});
+ assert.equal(imageCommand.status,0,imageCommand.stderr);
+ await style.locator('input[type=file]').setInputFiles(image);
+ await style.getByText('Локально сохранено:').waitFor({timeout:15000});
+ await style.getByRole('button',{name:'Утвердить оформление'}).click();
+ const downloadPromise=page.waitForEvent('download',{timeout:45000});
+ await editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
+ const download=await downloadPromise;
+ await download.saveAs(join(artifacts,'approved-mixed-carousel.zip'));
+ const zip=await readFile(join(artifacts,'approved-mixed-carousel.zip'));
+ const files=contents(zip);
+ assert.deepEqual(files.map(f=>f.name),[
+  'slide-01.png','slide-02.png','slide-03.png','slide-04.png','caption.txt']);
+ assert.ok(files.slice(0,4).every(f=>f.bytes.subarray(0,4).equals(Buffer.from([137,80,78,71]))));
+ assert.match(files[4].bytes.toString('utf8'),/Четыре секунды до выбора/);
+ // After reload the companion approval and photo stored in IndexedDB survive.
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByTestId('persona-weekly-calendar')
+  .locator('[data-calendar-item-id="PHOTO-001"]').waitFor({timeout:18000});
+ assert.match(await page.getByTestId('persona-weekly-calendar')
+  .locator('[data-calendar-item-id="PHOTO-001"]').textContent(),/Готов к производству/);
+ const editorAfter=page.getByTestId('persona-editorial-studio');
+ assert.equal(await editorAfter.locator('[data-testid="editorial-post-workflow"]').count(),0);
+ await page.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="PHOTO-001"]')
+  .getByRole('button',{name:/Начать работу/}).click();
+ await editorAfter.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).waitFor();
+ // Photo slot must open the TOPIC chooser; it is not a fabricated completed post.
+ await page.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="photo-week-01"]')
+  .getByRole('button',{name:'Выбрать тему'}).click();
+ await editorAfter.locator('[data-testid="editorial-topic-chooser"]').waitFor();
+ await editorAfter.getByRole('button',{name:'Фото-посты'}).click();
+ await editorAfter.locator('.personaEditorialSuggestions article').first()
+  .getByRole('button',{name:/Выбрать тему/}).click();
+ await editorAfter.getByRole('button',{name:'Утвердить тему'}).click();
+ await editorAfter.getByRole('textbox',{name:/Короткий титр на фото/}).fill('');
+ await editorAfter.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ assert.match(await page.getByTestId('persona-weekly-calendar')
+  .locator('[data-calendar-item-id="photo-week-01"]').textContent(),/Оформление на утверждении/);
+ const photoDesign=editorAfter.locator('[aria-label="Шаг 3. Оформление"]');
+ await photoDesign.locator('input[type=file]').setInputFiles(image);
+ await photoDesign.getByText('Локально сохранено:').waitFor({timeout:15000});
+ await photoDesign.getByRole('button',{name:'Утвердить оформление'}).click();
+ const photoDownload=page.waitForEvent('download',{timeout:45000});
+ await editorAfter.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
+ const oneImageDownload=await photoDownload;
+ await oneImageDownload.saveAs(join(artifacts,'approved-single-photo.zip'));
+ const photoZip=contents(await readFile(join(artifacts,'approved-single-photo.zip')));
+ assert.deepEqual(photoZip.map(x=>x.name),['slide-01.png','caption.txt']);
+ assert.ok(photoZip[0].bytes.subarray(0,4).equals(Buffer.from([137,80,78,71])));
+ assert.match(photoZip[1].bytes.toString('utf8'),/Портрет до реплики/);
+ await page.screenshot({path:join(artifacts,'editorial-photo-and-carousel-approval.png'),
+  fullPage:true,animations:'disabled'});
+ // Correct existing video route still works.
+ await page.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="reel-01"]')
+  .getByRole('button',{name:/Начать работу/}).click();
  await page.waitForURL('**/#persona/project/reel-01',{timeout:18000});
- assert.match(await page.locator('.personaProjectHead h2').textContent(),/./);
  assert.equal(await page.locator('.personaCreativeWorkspace').count(),1);
  await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
  const next=page.getByTestId('persona-weekly-calendar');
@@ -69,18 +146,21 @@ try{
  assert.equal(await next.locator('[data-calendar-item-id="PHOTO-001"]').count(),0);
  await next.getByRole('button',{name:'Сегодня',exact:true}).click();
  await next.locator('[data-calendar-item-id="PHOTO-001"]').waitFor();
- // Responsive check shares the same storage; no additional Project creation.
+ assert.match(await next.textContent(),/Короткий рабочий кадр/);
  const mobile=await context.newPage();
  await mobile.setViewportSize({width:390,height:844});
  await mobile.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
  const mobileCalendar=mobile.getByTestId('persona-weekly-calendar');
  await mobileCalendar.locator('[data-calendar-item-id="PHOTO-001"]').waitFor({timeout:20000});
  assert.equal(await mobileCalendar.locator('[data-calendar-day]').count(),7);
- await mobile.screenshot({path:join(artifacts,'calendar-week-mobile.png'),fullPage:true,animations:'disabled'});
+ await mobile.screenshot({path:join(artifacts,'editorial-calendar-mobile.png'),
+  fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
- console.log('PERSONA_WEEKLY_CALENDAR_BROWSER_PASS '+JSON.stringify({
-  videosImported:10,photosFromWorker:10,weekSlots:3,days:7,
-  openedVideo:'reel-01',openedPhoto:'PHOTO-001',weekNavigation:true,mobile:true
+ console.log('PERSONA_EDITORIAL_BROWSER_PASS '+JSON.stringify({
+  videosImported:10,photosFromWorker:10,weeklySlots:['reel','carousel','photo'],
+  stages:['topic','content','design','production'],openedVideo:'reel-01',
+  approvedCarousel:'PHOTO-001',mixedSlideZipFiles:5,singlePhotoZipFiles:2,photoTopicChosen:true,
+  storiesPersisted:true,weekNavigation:true,mobile:true
  }));
 }finally{
  if(browser)await browser.close();

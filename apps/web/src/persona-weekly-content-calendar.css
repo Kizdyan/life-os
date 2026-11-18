@@ -34,3 +34,20 @@
 @media(max-width:640px){.personaWeekCalendar{padding:15px 11px;margin:12px 0 22px;border-radius:15px}.personaWeekCalendarHead{gap:14px}.personaWeekCalendarControls{width:100%;justify-content:space-between}.personaWeekCalendarDays{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.personaWeekCalendarDay{min-height:130px;padding:11px}.personaWeekCalendarDay:last-child{grid-column:1 / -1;min-height:105px}.personaWeekCalendarDayName{font-size:11px}.personaWeekCalendarItem h3{font-size:22px}.personaWeekCalendarStart{font-size:12px;min-height:45px}.personaWeekCalendarToday{font-size:12px}}
 @media(max-width:360px){.personaWeekCalendarDays{grid-template-columns:1fr}.personaWeekCalendarDay:last-child{grid-column:auto}.personaWeekCalendarDay{min-height:100px}.personaWeekCalendarItem{min-height:90px}}
 @media(prefers-reduced-motion:reduce){.personaWeekCalendarStart{transition:none}}
+
+
+/* Editorial publication mix and an optional, separately tracked Stories layer. */
+.personaWeekStories{margin:17px 0 0;border-top:1px solid #ded3c2;padding-top:15px;display:grid;gap:12px}
+.personaWeekStories h3{font-family:'Cormorant Garamond',Georgia,serif;font-size:25px;margin:0}
+.personaWeekStories p{margin:4px 0 0;color:#716e68;font-size:12px;line-height:1.5}
+.personaWeekStoryInput{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(180px,2fr) auto;gap:9px;align-items:end}
+.personaWeekStoryInput label{display:grid;gap:5px;font-size:11px;font-weight:700}
+.personaWeekStoryInput input{border:1px solid #c8baa8;border-radius:8px;min-height:39px;padding:8px;width:100%;background:white;color:#232a33;font:400 12px Inter,Arial,sans-serif}
+.personaWeekStoryInput button{background:#243246;color:white;border:0;border-radius:8px;min-height:39px;padding:8px 15px;font-weight:700;font-size:12px}
+.personaWeekStoryList{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.personaWeekStoryList li{display:grid;grid-template-columns:65px 1fr auto auto;align-items:center;gap:10px;background:#fffcf8;border:1px solid #dfd7cc;border-radius:9px;padding:9px 11px;font-size:12px}
+.personaWeekStoryList strong{color:#92734f;font-size:11px}.personaWeekStoryList span{overflow-wrap:anywhere}
+.personaWeekStoryList select{border:1px solid #c5b8a5;border-radius:6px;background:white;min-height:32px;padding:5px;font-size:11px;color:#202735}
+.personaWeekStoryList button{border:0;background:transparent;font-size:22px;color:#845c52}
+.personaWeekStoryError{color:#a33d2e!important}
+@media(max-width:640px){.personaWeekStoryInput{grid-template-columns:1fr 1fr}.personaWeekStoryInput label:nth-child(2){grid-column:1/-1;grid-row:2}.personaWeekStoryInput button{grid-column:1/-1}.personaWeekStoryList li{grid-template-columns:60px 1fr auto}.personaWeekStoryList select{grid-column:2}.personaWeekStoryList button{grid-column:3;grid-row:1/3}}
