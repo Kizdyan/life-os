@@ -36,6 +36,15 @@ try{
  const context=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true});
  const page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{
+  window.__personaPaintLabels=[];
+  const original=CanvasRenderingContext2D.prototype.fillText;
+  CanvasRenderingContext2D.prototype.fillText=function(label,...args){
+   if(this.canvas.width===1080&&this.canvas.height===1350)
+    window.__personaPaintLabels.push(String(label));
+   return original.call(this,label,...args);
+  };
+ });
  await page.goto(origin+'/#persona/seed10',{waitUntil:'domcontentloaded'});
  await page.locator('.personaProjectList').waitFor({timeout:28000});
  assert.equal(await page.locator('[data-testid="persona-creative-card"]').count(),10);
@@ -73,6 +82,9 @@ try{
  assert.match(await editor.textContent(),/Четыре секунды до выбора/);
  await editor.getByRole('button',{name:'Утвердить тему'}).click();
  assert.match(await editor.textContent(),/Он ещё верит/);
+ const caption=(await editor.locator('.personaEditorialCaption').inputValue()).trim()+
+  '\n\n#актёр #сценарий';
+ await editor.locator('.personaEditorialCaption').fill(caption);
  await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
  const style=editor.locator('[aria-label="Шаг 3. Оформление"]');
  await style.getByRole('button',{name:'Тёмный шоколад'}).click();
@@ -95,7 +107,13 @@ try{
  assert.deepEqual(files.map(f=>f.name),[
   'slide-01.png','slide-02.png','slide-03.png','slide-04.png','caption.txt']);
  assert.ok(files.slice(0,4).every(f=>f.bytes.subarray(0,4).equals(Buffer.from([137,80,78,71]))));
- assert.match(files[4].bytes.toString('utf8'),/Четыре секунды до выбора/);
+ assert.equal(files[4].bytes.toString('utf8'),caption);
+ assert.doesNotMatch(files[4].bytes.toString('utf8'),/Проверено автором|ТЕМА:|Публикация не выполнялась/);
+ const painted=await page.evaluate(()=>window.__personaPaintLabels);
+ assert.equal(painted.length,4,'Only four authored slide titles should be painted');
+ assert.equal(painted[0],'Он ещё верит');
+ assert.ok(painted.every(s=>!/PERSONA|EDITORIAL|АВТОРСКИЙ МАТЕРИАЛ|КАРУСЕЛЬ|ФОТО/i.test(s)),
+  'No service brand, format or status burned into PNG');
  // After reload the companion approval and photo stored in IndexedDB survive.
  await page.reload({waitUntil:'domcontentloaded'});
  await page.getByTestId('persona-weekly-calendar')
@@ -123,6 +141,7 @@ try{
  await photoDesign.locator('input[type=file]').setInputFiles(image);
  await photoDesign.getByText('Локально сохранено:').waitFor({timeout:15000});
  await photoDesign.getByRole('button',{name:'Утвердить оформление'}).click();
+ await page.evaluate(()=>{window.__personaPaintLabels=[]});
  const photoDownload=page.waitForEvent('download',{timeout:45000});
  await editorAfter.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
  const oneImageDownload=await photoDownload;
@@ -130,9 +149,57 @@ try{
  const photoZip=contents(await readFile(join(artifacts,'approved-single-photo.zip')));
  assert.deepEqual(photoZip.map(x=>x.name),['slide-01.png','caption.txt']);
  assert.ok(photoZip[0].bytes.subarray(0,4).equals(Buffer.from([137,80,78,71])));
- assert.match(photoZip[1].bytes.toString('utf8'),/Портрет до реплики/);
+ assert.ok(photoZip[1].bytes.toString('utf8').trim().length>20);
+ assert.doesNotMatch(photoZip[1].bytes.toString('utf8'),/Проверено автором|ТЕМА:|Публикация не выполнялась/);
+ assert.deepEqual(await page.evaluate(()=>window.__personaPaintLabels),[],
+  'Photo with no authored title must contain no rendered text at all');
  await page.screenshot({path:join(artifacts,'editorial-photo-and-carousel-approval.png'),
   fullPage:true,animations:'disabled'});
+
+ // P0: one complete archive must include ALL editorial drafts, Stories and
+ // actual IndexedDB photo bytes, and restore in a truly fresh browser profile.
+ await page.locator('summary').filter({hasText:'Advanced (Для разработчика) · другие инструменты и архив'}).click();
+ await page.locator('summary').filter({hasText:'Настройки разработчика · экспорт и резервная копия'}).click();
+ await page.locator('summary').filter({hasText:'Резервная копия и перенос данных'}).click();
+ const backupDownload=page.waitForEvent('download',{timeout:45000});
+ await page.getByRole('button',{name:'Сохранить ПОЛНЫЙ архив'}).click();
+ const backup=await backupDownload;
+ const backupPath=join(artifacts,'p0-complete-persona-backup.json');
+ await backup.saveAs(backupPath);
+ const backupJson=JSON.parse(await readFile(backupPath,'utf8'));
+ assert.equal(backupJson.version,2);
+ assert.equal(backupJson.kind,'life-os-persona-complete-backup');
+ assert.ok(backupJson.editorialPosts.some(p=>p.id==='PHOTO-001'&&p.caption===caption));
+ assert.ok(backupJson.editorialPosts.some(p=>p.id==='photo-week-01'));
+ assert.ok(backupJson.stories.some(s=>s.text==='Короткий рабочий кадр из реального архива'));
+ assert.ok(backupJson.images.some(i=>i.key==='PHOTO-001/slide-2'&&i.sha256.length===64));
+ assert.ok(backupJson.images.some(i=>i.key==='photo-week-01/slide-1'&&i.sha256.length===64));
+ const clean=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true});
+ const fresh=await clean.newPage();
+ await fresh.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
+ await fresh.getByTestId('persona-weekly-calendar').waitFor({timeout:20000});
+ assert.equal(await fresh.locator('.personaEditorialSaved').getByText('Четыре секунды до выбора').count(),0);
+ await fresh.locator('summary').filter({hasText:'Advanced (Для разработчика) · другие инструменты и архив'}).click();
+ await fresh.locator('summary').filter({hasText:'Настройки разработчика · экспорт и резервная копия'}).click();
+ await fresh.locator('summary').filter({hasText:'Резервная копия и перенос данных'}).click();
+ await fresh.getByLabel('Выбрать JSON-архив Life OS').setInputFiles(backupPath);
+ await fresh.getByRole('button',{name:'Восстановить без перезаписи'}).click();
+ await fresh.getByText(/Восстановлено:.*2 оригинальных фотографий/).waitFor({timeout:45000});
+ await fresh.reload({waitUntil:'domcontentloaded'});
+ const restoredCalendar=fresh.getByTestId('persona-weekly-calendar');
+ await restoredCalendar.locator('[data-calendar-item-id="PHOTO-001"]').waitFor({timeout:18000});
+ assert.match(await restoredCalendar.textContent(),/Короткий рабочий кадр из реального архива/);
+ await restoredCalendar.locator('[data-calendar-item-id="PHOTO-001"]')
+  .getByRole('button',{name:/Начать работу/}).click();
+ const restoredEditor=fresh.getByTestId('persona-editorial-studio');
+ assert.match(await restoredEditor.textContent(),/Четыре секунды до выбора/);
+ assert.equal(await restoredEditor.locator('.personaEditorialCaption').inputValue(),caption);
+ const styleRestored=restoredEditor.locator('[aria-label="Шаг 3. Оформление"]');
+ await styleRestored.getByRole('button',{name:/2 · Фото/}).click();
+ await styleRestored.getByText('Локально сохранено:').waitFor();
+ assert.ok((await styleRestored.getByText('Локально сохранено:').textContent()).includes('actual-photo.png'));
+ await clean.close();
+
  // Correct existing video route still works.
  await page.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="reel-01"]')
   .getByRole('button',{name:/Начать работу/}).click();
@@ -160,7 +227,8 @@ try{
   videosImported:10,photosFromWorker:10,weeklySlots:['reel','carousel','photo'],
   stages:['topic','content','design','production'],openedVideo:'reel-01',
   approvedCarousel:'PHOTO-001',mixedSlideZipFiles:5,singlePhotoZipFiles:2,photoTopicChosen:true,
-  storiesPersisted:true,weekNavigation:true,mobile:true
+  storiesPersisted:true,backupRestoredFreshBrowser:true,publicCanvasLabelsOnly:true,
+  weekNavigation:true,mobile:true
  }));
 }finally{
  if(browser)await browser.close();
