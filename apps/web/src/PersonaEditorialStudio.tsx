@@ -203,11 +203,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
      {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
-     <div className="personaEditorialPreviewOverlay">
-      <span>СЛАЙД {selectedSlide+1} / {post.slides.length}</span>
-      <strong>{slide?.text||'Фото без надписи'}</strong>
-      <small>PERSONA · EDITORIAL</small>
-     </div>
+     {slide?.text?.trim()&&<div className="personaEditorialPreviewOverlay">
+      <strong>{slide.text}</strong>
+     </div>}
     </div>
     <p>Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.</p>
     {!post.approvals.design?<button className="personaEditorialApprove" type="button"
