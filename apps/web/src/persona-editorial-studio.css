@@ -62,3 +62,17 @@
 .personaEditorialError{color:#a53f32!important;background:#f9efed;border:1px solid #e8b0a8;padding:12px;border-radius:9px}
 @media(max-width:950px){.personaEditorialSuggestions{grid-template-columns:repeat(2,minmax(0,1fr))}.personaEditorialSaved>div{grid-template-columns:repeat(2,minmax(0,1fr))}.personaEditorialPresets{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.personaEditorialStudio{padding:13px;margin:12px 0;border-radius:14px}.personaEditorialHead,.personaEditorialSplit,.personaEditorialProjectHead{flex-direction:column;align-items:stretch}.personaEditorialHead h2{font-size:35px}.personaEditorialSuggestions,.personaEditorialSaved>div{grid-template-columns:1fr}.personaEditorialSteps{grid-template-columns:repeat(2,minmax(0,1fr))}.personaEditorialState{align-self:flex-start}.personaEditorialWorkflow>section{padding:12px}.personaEditorialPresets{grid-template-columns:repeat(2,minmax(0,1fr))}.personaEditorialMiniStats{display:none}}
+
+
+/* Deliberately labelled compositional mockup; final pixels are exported by Canvas. */
+.personaEditorialPreview{width:min(100%,310px);aspect-ratio:4/5;position:relative;isolation:isolate;overflow:hidden;border-radius:10px;display:flex;flex-direction:column;box-shadow:0 9px 22px rgba(20,25,32,.16)}
+.personaEditorialPreview--ink{background:#172132;color:#f3ead9}
+.personaEditorialPreview--cream{background:#eee8dc;color:#242c33}
+.personaEditorialPreview--chocolate{background:#302720;color:#f7eade}
+.personaEditorialPreview--filmic{background:#292e30;color:#f3e9d6}
+.personaEditorialPreview>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1}
+.personaEditorialPreview:has(>img){color:#fff7ec}
+.personaEditorialPreview:has(>img):after{content:"";position:absolute;inset:25% 0 0;background:linear-gradient(transparent,rgba(6,8,11,.82));z-index:-1}
+.personaEditorialPreviewOverlay{display:flex;flex:1;flex-direction:column;gap:14px;justify-content:space-between;padding:29px 23px 20px}
+.personaEditorialPreviewOverlay span,.personaEditorialPreviewOverlay small{font-size:10px;letter-spacing:.14em;font-weight:750}
+.personaEditorialPreviewOverlay strong{font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(25px,3vw,34px);font-weight:550;line-height:1.08;overflow-wrap:anywhere;max-height:220px;overflow:hidden;margin-top:auto;margin-bottom:auto}
