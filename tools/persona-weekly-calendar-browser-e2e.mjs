@@ -71,8 +71,8 @@ try{
  await editor.locator('[data-testid="editorial-post-workflow"]').waitFor({timeout:15000});
  assert.match(await editor.textContent(),/PHOTO-001/);
  assert.match(await editor.textContent(),/Четыре секунды до выбора/);
- assert.match(await editor.textContent(),/Он ещё верит/);
  await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ assert.match(await editor.textContent(),/Он ещё верит/);
  await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
  const style=editor.locator('[aria-label="Шаг 3. Оформление"]');
  await style.getByRole('button',{name:'Тёмный шоколад'}).click();
