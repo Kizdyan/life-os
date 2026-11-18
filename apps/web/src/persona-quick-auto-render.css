@@ -68,3 +68,12 @@
 .personaQuickPrompt input{display:block;width:100%;box-sizing:border-box;padding:11px 12px;border-radius:9px;border:1px solid #b5ada3;background:transparent;color:inherit;margin-top:6px}
 .personaQuickCardActions label{display:grid;gap:6px;font-size:.88rem}
 .personaQuickCardActions select{width:100%;min-width:190px;padding:10px 12px;border-radius:9px;border:1px solid #aaa096;background:var(--background, #faf8f5);color:var(--foreground, #242020)}
+
+
+.personaQuickSlideTexts{display:grid;gap:10px;min-width:0;margin:0;padding:14px;border:1px solid #b7ab9a;border-radius:12px}
+.personaQuickSlideTexts legend{font-weight:600}
+.personaQuickSlideTexts p{margin:0;font-size:.84rem}
+.personaQuickSlideTexts label{display:grid;gap:5px;font-size:.88rem}
+.personaQuickSlideTexts input{width:100%;padding:10px;border:1px solid #a99a87;border-radius:8px;background:transparent;color:inherit;box-sizing:border-box}
+.personaQuickSeedUpload{display:grid;gap:8px;padding:12px;border-radius:12px;border:1px solid #8f6639;color:inherit;font-weight:600}
+.personaQuickSeedUpload input[type=file]{display:block;max-width:100%;font-weight:400}
