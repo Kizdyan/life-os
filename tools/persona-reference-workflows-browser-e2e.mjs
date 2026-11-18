@@ -26,7 +26,7 @@ try{
  await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
  const lab=page.getByTestId('persona-reference-lab');
  await lab.waitFor({timeout:25000});
- assert.equal(await lab.locator('.personaReferenceSources article').count(),0);
+ assert.equal(await lab.locator('.personaReferenceSources').evaluate(x=>x.open),false);
  await lab.getByText('Что перенесено из 5 видео').click();
  assert.equal(await lab.locator('.personaReferenceSources article').count(),5);
  await lab.getByLabel('Тема', {exact:true}).fill('Почему актёрская пауза меняет смысл');
