@@ -8,6 +8,7 @@ import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaActorPortfolio from './PersonaActorPortfolio';
 import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
+import {personaWorkerUrl} from './personaWorkerUrl';
 import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
 import PersonaEditorialStudio from './PersonaEditorialStudio';
 import {
@@ -279,7 +280,7 @@ export default function PersonaFactory(){
     ?'final_qa':projectStage(initialProject.stage);
   }
   return read<Idea|null>('persona:active-idea:v1',null)?read<Stage>('persona:active-stage:v1','strategy'):'strategy';
- });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[directorWorking,setDirectorWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
+ });const[feedback,setFeedback]=useState('');const[recording,setRecording]=useState(false);const[transcribing,setTranscribing]=useState(false);const[working,setWorking]=useState(false);const[directorWorking,setDirectorWorking]=useState(false);const[status,setStatus]=useState('');const[showBank,setShowBank]=useState(false);const[asset,setAsset]=useState<string|null>(null);const[assetName,setAssetName]=useState('');const[mediaProbe,setMediaProbe]=useState<MediaProbe|null>(()=>initialProject?.mediaAssets[0] as MediaProbe|null??null);const[autoPlan,setAutoPlan]=useState(false);const[customIdea,setCustomIdea]=useState('');const[customFormat,setCustomFormat]=useState<'reel'|'carousel'>('reel');const[engineMode,setEngineMode]=useState<'ai'|'template'|'unknown'>('unknown');const[useFreeAI,setUseFreeAI]=useState(false);const[allowOpenRouter,setAllowOpenRouter]=useState(false);const[assetIsVideo,setAssetIsVideo]=useState(false);const[production,setProduction]=useState<PersonaProductionPipeline|null>(()=>reconcilePersonaProductionWithScenario(initialProject?.shootingPlan as PersonaProductionPipeline|null??read(PRODUCTION_DRAFT,null),initialProject?.scenarioWorkspace));const[productionEditor,setProductionEditor]=useState('');const[productionComment,setProductionComment]=useState('');const[productionFactsChecked,setProductionFactsChecked]=useState(false);const mediaProbeSequence=useRef(0);const assetUrlRef=useRef<string|null>(null);const rec=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);const chunks=useRef<Blob[]>([]);
  useEffect(()=>{
   const sync=(event:StorageEvent)=>{if(event.key===EDITORIAL_KEY)setEditorialPosts(loadEditorialStore(localStorage).posts)};
   window.addEventListener('storage',sync);
@@ -778,14 +779,60 @@ export default function PersonaFactory(){
    setStatus('Идея изменена и сохранена. Обновите бриф, прежде чем утверждать съёмку.');
   }catch(error){setStatus('Изменение идеи не сохранено: '+String((error as Error).message||error))}
  }
- async function generate(idea=chosen){if(!idea||working)return;setChosen(idea);setWorking(true);setStatus('Стратег → редактор → маркетолог → медиа QA → финальная самопроверка…');setStage('production');try{const data=await api({action:'generate',engine:useFreeAI?'free-ai':'template',idea,history:h,assetName});setDraft(data.draft);setQa(data.qa||null);setEngineMode(data.mode==='ai'?'ai':'template');setStage('final_qa');setStatus(data.mode==='ai'?`Настоящий ИИ (${data.model||'free'}) подготовил сценарий. Проверь факты, текст и съёмочный план.`:'Подготовлен демонстрационный шаблон без вызова ИИ. Видеомонтаж и обработка фото не выполнялись.')}catch(e){const code=String((e as Error)?.message||'недоступен');
-    setStatus(code==='free_ai_gateway_access_denied'
-      ? 'AI Gateway отказал в доступе этому проекту (403 access_denied). Это ограничение Vercel: новый ввод идеи не поможет. Проверь права AI Gateway у команды Vercel; платная модель не подключалась.'
-      : code==='free_ai_account_verification_required'
-        ? 'AI Gateway требует подтверждения аккаунта Vercel. Не покупай кредиты вслепую; прежде проверь требование в панели AI Gateway. Сценарий не создан.'
-        : code==='free_ai_provider_403'
-          ? 'AI Gateway вернул отказ 403 без уточнения причины. Сценарий не создан; проверь раздел AI Gateway в Vercel.'
-          : 'Реальный ИИ не ответил: '+code+'. Шаблон не подставлен.');setStage('production')}finally{setWorking(false)}}
+ async function generate(idea=chosen){
+  if(!idea||working)return;
+  setChosen(idea);setWorking(true);setStatus('Пробую подключить реальную локальную Ollama…');
+  setStage('production');
+  let providerNote='',generated:{draft:Draft;qa:QA;mode:'ai'|'template';model?:string|null;provider?:string}|null=null;
+  const request={idea:{id:idea.id,title:idea.title,angle:idea.angle,format:idea.format},
+   history:h.map(x=>x.title).slice(-20),assetName};
+  try{
+   const health=await fetch(personaWorkerUrl+'/health',{
+    cache:'no-store',signal:AbortSignal.timeout(3500)
+   });
+   const status=await health.json();
+   if(!health.ok||!status?.token||status?.components?.ollama!==true)
+    throw Error('Оllama или обновлённый Media Worker не обнаружены');
+   const response=await fetch(personaWorkerUrl+'/draft/generate',{
+    method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':status.token},
+    body:JSON.stringify(request),signal:AbortSignal.timeout(150000)
+   });
+   const result=await response.json().catch(()=>null);
+   if(!response.ok||result?.mode!=='ai'||result?.provider!=='ollama-local'||
+    !result?.draft||!Array.isArray(result.draft.slides))
+    throw Error('Локальная модель не вернула проверенный сценарий');
+   const reviewed=await api({action:'review',draft:result.draft});
+   if(!reviewed?.qa||typeof reviewed.qa.pass!=='boolean')
+    throw Error('Не удалось выполнить структурную проверку ИИ-сценария');
+   generated={draft:result.draft,qa:reviewed.qa,mode:'ai',model:result.model,provider:'Ollama'};
+  }catch(e){providerNote=String((e as Error)?.message||'Ollama недоступна').slice(0,180)}
+  if(!generated&&allowOpenRouter){
+   setStatus('Локальная модель недоступна. Выполняю разрешённый текстовый запрос в OpenRouter…');
+   try{
+    const result=await api({action:'generate',engine:'openrouter',consent:true,...request});
+    if(result?.mode!=='ai'||!result.draft||!result.qa)
+     throw Error('OpenRouter не подтвердил реальную ИИ-генерацию');
+    generated={draft:result.draft,qa:result.qa,mode:'ai',model:result.model,provider:'OpenRouter'};
+   }catch(e){
+    providerNote+='; OpenRouter: '+String((e as Error)?.message||'недоступен').slice(0,140);
+   }
+  }
+  try{
+   if(!generated){
+    const result=await api({action:'generate',engine:'template',...request});
+    if(!result?.draft||!result?.qa)throw Error('Резервный шаблон недоступен');
+    generated={draft:result.draft,qa:result.qa,mode:'template',model:null};
+   }
+   setDraft(generated.draft);setQa(generated.qa);setEngineMode(generated.mode);
+   setStage('final_qa');
+   setStatus(generated.mode==='ai'
+    ?'Сценарий создан реальной моделью '+generated.provider+' ('+generated.model+'). Проверь факты, реплики и художественное качество.'
+    :'Локальная модель недоступна, сгенерирован шаблонный черновик. Это НЕ результат ИИ. '+providerNote);
+  }catch(e){
+   setStatus('Не удалось подготовить даже шаблонный черновик: '+String((e as Error)?.message||e));
+   setStage('production');
+  }finally{setWorking(false)}
+ }
  async function revise(){if(!draft||!feedback.trim()||working)return;setWorking(true);setStatus('Понимаю всю команду целиком → редакция → маркетолог → QA…');try{const data=await api({action:'revise',engine:useFreeAI?'free-ai':'template',draft,feedback,history:h});setDraft(data.draft);setQa(data.qa||null);setEngineMode(data.mode==='ai'?'ai':'template');setStage('final_qa');setFeedback('');setStatus(data.mode==='ai'?'ИИ обновил текстовый черновик. Проверь изменения.':'Шаблонный редактор применил только поддерживаемые типовые правки; прочие пожелания могли не отразиться.')}catch(e){setStatus(String((e as Error)?.message||'Правку не удалось применить.'))}finally{setWorking(false)}}
  async function startRecording(){if(recording||transcribing)return;if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){setStatus('Запись недоступна в этом браузере. Напиши правку текстом.');return}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});stream.current=s;chunks.current=[];const r=new MediaRecorder(s);rec.current=r;r.ondataavailable=e=>{if(e.data.size)chunks.current.push(e.data)};r.onstop=async()=>{s.getTracks().forEach(t=>t.stop());setRecording(false);const blob=new Blob(chunks.current,{type:r.mimeType||'audio/webm'});if(!blob.size)return;setTranscribing(true);setStatus('Запись закончена. Отправляю весь файл целиком на распознавание…');try{const form=new FormData();form.append('audio',blob,`voice-${Date.now()}.webm`);const response=await fetch('/api/persona',{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data?.error||'voice_unavailable');const text=String(data.transcript||'').trim();if(!text)throw new Error('empty_transcript');setFeedback(x=>[x.trim(),text].filter(Boolean).join(' '));setStatus('Полная запись распознана. Теперь нажми «Исправить» — команда ещё не применена.')}catch(e){setStatus(String((e as Error)?.message||'Голос не удалось распознать.'))}finally{setTranscribing(false)}};r.start();setRecording(true);setStatus('Запись идёт. Паузы её не остановят. Останови запись кнопкой ■.')}catch{setStatus('Нет доступа к микрофону. Разреши микрофон для сайта.')}}
  function stopRecording(){if(rec.current?.state==='recording')rec.current.stop()}
@@ -900,7 +947,11 @@ export default function PersonaFactory(){
   {activeProjectId&&workspaceStep==='idea'&&projects.some(p=>p.id===activeProjectId&&p.commercialDevelopment!==undefined&&!readCommercialDevelopment(p.commercialDevelopment))&&<p role="alert">Запись коммерческих идей повреждена и сохранена без изменений. Перед восстановлением экспортируйте резервную копию проекта; остальные сценарии доступны.</p>}
   {chosen?.format==='reel'&&activeProjectId&&workspaceStep==='idea'&&<PersonaManualScript key={'manual:'+activeProjectId} projectId={activeProjectId} snapshot={commercialCreativeSnapshot(projects.find(p=>p.id===activeProjectId)!)} onApply={(brief,base)=>void importProductionBrief(new File([JSON.stringify(brief)],'author-approved-brief.json',{type:'application/json'}),true,base,true)}/>}
   {chosen?.format==='reel'&&activeProjectId&&workspaceStep==='idea'&&projects.some(p=>p.id===activeProjectId&&(p.commercialDevelopment===undefined||readCommercialDevelopment(p.commercialDevelopment)!==null))&&<details><summary>Архив Qwen · прежние идеи и оценки</summary><PersonaCommercialIdeas readOnly key={'commercial:'+activeProjectId} projectId={activeProjectId} record={readCommercialDevelopment(projects.find(p=>p.id===activeProjectId)!.commercialDevelopment)} creativeSnapshot={commercialCreativeSnapshot(projects.find(p=>p.id===activeProjectId)!)} onSave={record=>Boolean(readCommercialDevelopment(record)&&saveActiveProject(undefined,chosen,undefined,undefined,undefined,undefined,undefined,record))} onApplyBrief={(brief,base)=>void importProductionBrief(new File([JSON.stringify(brief)],'local-qwen-brief.json',{type:'application/json'}),true,base)}/></details>}
-  {chosen&&!production?.materials.productionBrief?.manualSource&&(workspaceStep==='assets'||(!draft&&workspaceStep==='idea'))&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
+  {chosen&&!production?.materials.productionBrief?.manualSource&&(workspaceStep==='assets'||(!draft&&workspaceStep==='idea'))&&<div className="captureCard"><small>{chosen.source==='user'?'СОБСТВЕННАЯ ИДЕЯ':chosen.source==='project'?'СОХРАНЁННЫЙ ПРОЕКТ':contentTypeLabel(chosen.format)}</small><h3>{chosen.title}</h3><p>{chosen.angle}</p>{workspaceStep==='assets'&&chosen.format!=='carousel'&&<label className="assetDrop">{asset?(assetIsVideo?<video src={asset} controls preload="metadata" style={{width:'100%',maxHeight:280}}/>:<img src={asset} alt="Исходник"/>):<><b>Добавь исходник</b><span>Файл остаётся в браузере и не отправляется на сервер.</span></>}<input type="file" accept={chosen.format==='photo'?'image/*':'video/*,image/*'} onChange={onAsset}/></label>}<label className="personaRemoteAiConsent" style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',margin:'12px 0'}}>
+   <input type="checkbox" checked={allowOpenRouter} onChange={e=>setAllowOpenRouter(e.target.checked)}/>
+   При недоступности Ollama разрешить отправку темы, истории тем и названия файла в OpenRouter (возможна оплата API)
+  </label>
+  <div className="actions"><button className="ghost" onClick={()=>{setChosen(null);setStage('strategy')}}>Другая идея</button><button className="ghost" onClick={()=>createProductionBrief()}>Создать съёмочный бриф</button><button className="primary" disabled={working} onClick={()=>void generate()}>{working?'Собираю…':chosen.format==='carousel'?'Подготовить карусель':'Подготовить сценарий'}</button></div>{mediaProbe&&<div className="status" aria-label="Параметры исходника"><b>Файл:</b> {mediaProbe.name} · {(mediaProbe.bytes/1024/1024).toFixed(2)} МБ · {mediaProbe.mime||'тип неизвестен'}{mediaProbe.width&&mediaProbe.height?` · ${mediaProbe.width}×${mediaProbe.height}`:''}{mediaProbe.durationSec!==undefined?` · ${mediaProbe.durationSec.toFixed(1)} сек.`:''}{mediaProbe.error?` · ${mediaProbe.error}`:''}<p>FPS, качество звука, цвет и содержание пока не измерены. Исходник не загружен на сервер.</p></div>}{status&&<div className="status">{status}</div>}</div>}
   {chosen&&activeProjectId&&workspaceStep==='script'&&<PersonaScenarioWorkspace key={`scenario-workspace:${personaScenarioWorkspaceMountKey(activeProjectId,scenarioWorkspace)}`} project={projects.find(project=>project.id===activeProjectId)??createPersonaProject({id:activeProjectId,title:chosen.title,contentType:chosen.format as PersonaContentType,sourceIdea:chosen.angle,now:new Date().toISOString()})} workspace={scenarioWorkspace} sourceBrief={production?.materials.productionBrief} creativeProfile={{priorities:['смысловые склейки','естественный голос','актёрские паузы'],constraints:['не менять внешность','не выдавать метаданные за просмотр','не копировать чужой сценарий']}} onChange={persistScenarioWorkspace} onCreateBrief={input=>createScenarioProductionBrief(input)} onStrategyAnalyzed={persistStrategyAudit}/>}
   {chosen&&(['reel','short','story'] as const).includes(chosen.format as 'reel'|'short'|'story')&&workspaceStep==='edit'&&<PersonaQuickAutoRender/>}
   {chosen?.format==='photo'&&workspaceStep==='edit'&&<PersonaPhotoEditor/>}

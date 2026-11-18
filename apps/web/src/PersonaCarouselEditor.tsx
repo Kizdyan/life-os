@@ -25,15 +25,13 @@ function paint(slide: CarouselSlide, index: number, count: number): HTMLCanvasEl
  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas недоступен');
  ctx.fillStyle='#eae5dc';ctx.fillRect(0,0,1080,1350);
  ctx.fillStyle='#26332c';ctx.fillRect(0,0,1080,16);
- ctx.font='500 31px sans-serif';ctx.fillText(slide.eyebrow.toUpperCase().slice(0,80),84,150);
- ctx.fillStyle='#1e2924';ctx.font='bold 76px sans-serif';
+ // Public export: only author-entered slide copy, never internal rubrics.
+ ctx.fillStyle='#c49b66';ctx.font='bold 76px Georgia, serif';
  let y=310;
  for(const line of wrap(ctx,slide.title,912,5)){ctx.fillText(line,84,y);y+=92}
  ctx.font='42px sans-serif';ctx.fillStyle='#444f49';y=Math.max(y+68,650);
  for(const line of wrap(ctx,slide.body,900,11)){if(y>1190)break;ctx.fillText(line,84,y);y+=62}
- ctx.strokeStyle='#a6aba3';ctx.beginPath();ctx.moveTo(84,1240);ctx.lineTo(996,1240);ctx.stroke();
- ctx.font='30px sans-serif';ctx.fillText('PERSONA',84,1300);
- ctx.textAlign='right';ctx.fillText((index+1)+' / '+count,996,1300);ctx.textAlign='left';
+ // No Persona watermark, slide number, internal metadata or pagination.
  return canvas;
 }
 export default function PersonaCarouselEditor({initialSlides,title}:Props) {

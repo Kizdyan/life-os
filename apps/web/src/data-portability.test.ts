@@ -83,10 +83,14 @@ describe('portable local Life OS + Persona backup',()=>{
     const s=new Memory();
     s.setItem('lifeos:persona:projects:v1','{damaged-projects');
     s.setItem('supabase_access_token','must-not-export');
+    s.setItem('lifeos:persona:editorial-posts:v1','{damaged-editorial');
+    s.setItem('lifeos:persona:weekly-stories:v1','[{"id":"story-1"}]');
 
     const emergency=JSON.parse(exportEmergencyRawData(s));
 
     expect(emergency.rawPersonaProjects).toBe('{damaged-projects');
+    expect(emergency.rawPersonaEditorial).toBe('{damaged-editorial');
+    expect(emergency.rawPersonaStories).toContain('story-1');
     expect(JSON.stringify(emergency)).not.toContain('must-not-export');
   });
 

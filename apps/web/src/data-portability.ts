@@ -1,5 +1,6 @@
 import type { Item, Status } from './types';
 import {PERSONA_PROJECTS_KEY,validatePersonaProjectCollection,type PersonaProjectCollection} from './personaProjectStore';
+import {EDITORIAL_KEY,STORY_KEY} from './personaEditorialModel';
 
 const RUNTIME='life-os:local-runtime:v1';
 const HISTORY='lifeos:persona:idea-history:v2';
@@ -101,6 +102,8 @@ export function exportEmergencyRawData(storage:StorageAccess):string {
     rawLocalTasks:storage.getItem(RUNTIME),
     rawPersonaHistory:storage.getItem(HISTORY),
     rawPersonaProjects:storage.getItem(PERSONA_PROJECTS_KEY),
+    rawPersonaEditorial:storage.getItem(EDITORIAL_KEY),
+    rawPersonaStories:storage.getItem(STORY_KEY),
   };
   const result=JSON.stringify(snapshot,null,2);
   if(new TextEncoder().encode(result).length>MAX_BYTES)

@@ -18,6 +18,7 @@ import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
+import {generatePersonaLocalScript} from './persona-local-script-generator.mjs';
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
@@ -527,6 +528,23 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      if(body.consent!==true)fail('Подтвердите платный текстовый запрос');externalCalls.push(now);
      respond(res,200,await generateExternalIdeas({provider:body.provider,theme:body.theme,consent:body.consent,env:config.apiEnv??process.env}));
     }finally{externalBusy=false}return;
+   }
+   if(req.method==='POST'&&url.pathname==='/draft/generate'){
+    const body=await json(req,14000);
+    if(ideationBusy||directorPending||activeExport||
+     [...sessions.values()].some(job=>job.state==='running'))
+     fail('Локальная модель занята другим заданием');
+    ideationBusy=true;
+    try{
+     const draft=await (config.scriptGenerator??generatePersonaLocalScript)({
+      idea:body.idea,history:body.history??[],assetName:body.assetName??'',
+      model:config.ollamaModel
+     });
+     if(draft?.mode!=='ai'||draft?.provider!=='ollama-local'||!draft?.draft)
+      fail('Локальный генератор не подтвердил реальный ИИ-результат');
+     respond(res,200,draft);
+    }finally{ideationBusy=false}
+    return;
    }
    if(req.method==='POST'&&url.pathname==='/manual-script'){
     const body=await json(req,96000);if(ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('Worker занят; повторите после текущей задачи');
