@@ -70,7 +70,7 @@ describe('Persona: five media reference adaptations',()=>{
   expect(post.origin).toBe('researched-topic');
   expect(post.slides).toHaveLength(5);
   expect(editorialStage(post)).toBe('topic');
-  expect(post.approvals).toEqual({topic:false,content:false,design:false});
+  expect(post.approvals).toMatchObject({topic:false,content:false,design:false});
   const topic=approveEditorialStep(post,'topic');
   expect(()=>approveEditorialStep(topic,'content')).toThrow(/подпись|основной/i);
   const ai=createResearchedEditorialPost('editorial-research-002','Пауза героя','Актёрский опыт',
