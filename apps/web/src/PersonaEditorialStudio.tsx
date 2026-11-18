@@ -2,7 +2,8 @@ import React,{useEffect,useState} from 'react';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- CAROUSEL_BASELINE_ID,editorialChecklistState,editorialChecklistReady,
+ CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,createDirectorQuestionCarousel,
+ editorialChecklistState,editorialChecklistReady,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
@@ -77,6 +78,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onSelect(CAROUSEL_BASELINE_ID);setError('');
   }catch(e){setError((e as Error).message)}
  }
+ function openDirectorQuestionCarousel(){
+  try{
+   if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(createDirectorQuestionCarousel());
+   onSelect(CAROUSEL_002_ID);setError('');
+  }catch(e){setError((e as Error).message)}
+ }
  function choose(choice:TopicChoice){
   try{
    const id=targetId?.startsWith('photo-week-')&&choice.kind==='photo'
@@ -134,6 +141,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
     <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
      {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
+    </button>
+   </p>
+   <p className="personaEditorialNote">Карусель №2: «Зачем режиссёру оставлять зрителя без ответа» · text-only · 6 слайдов · исследовательские источники.
+    <button type="button" data-testid="open-carousel-002" onClick={openDirectorQuestionCarousel}>
+     {posts.some(p=>p.id===CAROUSEL_002_ID)?'Открыть карусель №2':'Создать карусель №2'}
     </button>
    </p>
    <div className="personaEditorialSuggestions">
