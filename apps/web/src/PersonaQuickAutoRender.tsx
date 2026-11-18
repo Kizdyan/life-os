@@ -2,8 +2,9 @@ import React,{useEffect,useRef,useState} from 'react';
 import {personaWorkerUrl} from './personaWorkerUrl';
 import './persona-quick-auto-render.css';
 
-type QuickRenderJob={id:string;title:string;state:'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
- uploaded:number;expected:number;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
+type QuickRenderJob={id:string;title:string;state:'waiting_for_footage'|'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
+ uploaded:number;expected:number;uploadedIndices?:number[];seedKey?:string|null;goal?:string|null;
+ slides?:{text:string;photo?:string}[]|null;productionStatus?:string|null;error:string|null;strategyStatus:'PASS'|'WARNING'|'BLOCKED'|null;ready:boolean;notice:string|null;
  moments?:{sourceName:string;startSec:number;peakSec:number;role:string;emotion:string;reason:string}[];
  styleChoice?:'cinematic'|'dynamic'|'signature-gold'|'auto';colorPreset?:'SoftCinematic'|'DetailCinematic'|null;
  autoStyle?:boolean;styleDecision?:{mode:'ai'|'manual'|'fallback'|'test-injected';mood:string|null;reason:string;provider:string}|null;
@@ -43,13 +44,15 @@ export function checkQuickRenderFiles(files:File[],contentType:ContentType='vide
   throw Error('Исходники должны быть не пустыми, общим объёмом до 500 МБ.');
  return files.map(file=>({kind:video.has(ext(file.name))?'video' as const:'audio' as const,name:file.name,size:file.size}));
 }
-const statusLabel=(job:QuickRenderJob)=>job.state==='completed'?'Готов к скачиванию':job.state==='running'?'Создаю ролик…':
+const statusLabel=(job:QuickRenderJob)=>job.state==='waiting_for_footage'?'Проект ожидает фотографии':job.state==='completed'?'Готов к скачиванию':job.state==='running'?'Создаю ролик…':
  job.state==='uploading'?'Загружаю видео…':'Не удалось собрать ролик';
 export default function PersonaQuickAutoRender(){
  const [files,setFiles]=useState<File[]>([]);
  const [contentType,setContentType]=useState<ContentType>('video');
  const [carouselAspect,setCarouselAspect]=useState<'4:5'|'1:1'>('4:5');
  const [coverTitle,setCoverTitle]=useState('');
+ const [slideTexts,setSlideTexts]=useState<string[]>([]);
+ const [attachingId,setAttachingId]=useState<string|null>(null);
  const [exportingId,setExportingId]=useState<string|null>(null);
  const [exportChoices,setExportChoices]=useState<Record<string,string>>({});
  const [prompt,setPrompt]=useState(DEFAULT_PROMPT);
@@ -99,7 +102,8 @@ export default function PersonaQuickAutoRender(){
   return()=>{mounted.current=false;window.clearInterval(interval)};
  },[]);
  function accept(selected:File[]){
-  try{checkQuickRenderFiles(selected,contentType);setFiles(selected);setError('')}
+  try{checkQuickRenderFiles(selected,contentType);setFiles(selected);
+   setSlideTexts(selected.filter(x=>photo.has(ext(x.name))).map(()=>''));setError('')}
   catch(e){setError((e as Error).message)}
  }
  async function submit(event:React.FormEvent){
@@ -107,12 +111,16 @@ export default function PersonaQuickAutoRender(){
   busy.current=true;setSubmitting(true);setError('');setServiceError('');
   try{
    const selected=checkQuickRenderFiles(files,contentType);
+   const hasIndividualText=contentType==='photo-carousel'&&slideTexts.some(x=>x.trim());
+   if(hasIndividualText&&(slideTexts.length!==selected.length||slideTexts.some(x=>!x.trim())))
+    throw Error('Чтобы использовать индивидуальные титры, заполни текст каждого слайда.');
+   const slides=hasIndividualText?slideTexts.map(text=>({text:text.trim()})):undefined;
    if(prompt.trim().length<3||prompt.length>600)throw Error('Напиши короткую задачу для монтажа (от 3 до 600 символов).');
    const key=await token();
    const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
    const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
     body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,textAccents,
-     contentType,carouselAspect,coverTitle,
+     contentType,carouselAspect,coverTitle,...(slides?{slides}:{}),
      ...(!autoStyle?{styleChoice,colorPreset}:{})})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
@@ -126,7 +134,7 @@ export default function PersonaQuickAutoRender(){
    const launched=await fetch(personaWorkerUrl+'/quick-render/'+id+'/run',{method:'POST',
     headers:{'X-Persona-Worker-Token':key}});
    if(!launched.ok)throw Error((await launched.json().catch(()=>({}))).error||'Не удалось запустить монтаж.');
-   setFiles([]);setPrompt(DEFAULT_PROMPT);if(fileRef.current)fileRef.current.value='';
+   setFiles([]);setSlideTexts([]);setPrompt(DEFAULT_PROMPT);if(fileRef.current)fileRef.current.value='';
    await refresh();
   }catch(e){setError((e as Error).message)}
   finally{busy.current=false;setSubmitting(false)}
@@ -144,6 +152,34 @@ export default function PersonaQuickAutoRender(){
   }catch(error){setError((error as Error).message)}
   finally{setPromotingId(null)}
  }
+ async function attachToSeed(job:QuickRenderJob,selected:File[]){
+  if(busy.current||attachingId)return;
+  busy.current=true;setAttachingId(job.id);setError('');
+  try{
+   const meta=checkQuickRenderFiles(selected,'photo-carousel');
+   if(meta.length!==job.slides?.length)
+    throw Error('Для '+job.seedKey+' нужно выбрать ровно '+job.slides?.length+' фото в порядке слайдов.');
+   const key=await token();
+   const headers={'X-Persona-Worker-Token':key};
+   const attached=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/attach-photos',{
+    method:'POST',headers:{...headers,'Content-Type':'application/json'},
+    body:JSON.stringify({files:meta})});
+   const manifest=await attached.json().catch(()=>({}));
+   if(!attached.ok)throw Error(manifest.error||'Не удалось прикрепить фотографии.');
+   const existing=new Set<number>(manifest.uploadedIndices??[]);
+   for(const [index,file] of selected.entries()){
+    if(existing.has(index))continue;
+    const sent=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/upload/'+index,{
+     method:'PUT',headers:{...headers,'X-Persona-Original-Name':encodeURIComponent(file.name)},body:file});
+    if(!sent.ok)throw Error((await sent.json().catch(()=>({}))).error||'Ошибка фото '+(index+1));
+   }
+   const run=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/run',{
+    method:'POST',headers});
+   if(!run.ok)throw Error((await run.json().catch(()=>({}))).error||'Сборка карусели не запустилась.');
+   await refresh();
+  }catch(error){setError((error as Error).message)}
+  finally{busy.current=false;setAttachingId(null)}
+ }
  async function preparePackage(id:string){
   if(exportingId||busy.current)return;
   setExportingId(id);setError('');
@@ -157,7 +193,7 @@ export default function PersonaQuickAutoRender(){
   }catch(error){setError((error as Error).message)}
   finally{setExportingId(null)}
  }
- const visibleJobs=jobs.slice(0,8);
+ const visibleJobs=jobs.slice(0,10);
  return <section className="personaQuick" aria-label="Быстрый автомонтаж" data-testid="persona-quick-auto-render">
   <div className="personaQuickHeading">
    <div><small>PERSONA / ONE-CLICK STUDIO</small><h2>Быстрый автомонтаж</h2>
@@ -169,7 +205,7 @@ export default function PersonaQuickAutoRender(){
     {([['video','Видео'],['photo-carousel','Фото-карусель'],['photo-slideshow','Фото-слайдшоу']] as const)
      .map(([value,label])=><label key={value}><input type="radio" name="persona-content-mode"
       value={value} checked={contentType===value}
-      onChange={()=>{setContentType(value);setFiles([]);setError('');if(fileRef.current)fileRef.current.value=''}}/>{label}</label>)}
+      onChange={()=>{setContentType(value);setFiles([]);setSlideTexts([]);setError('');if(fileRef.current)fileRef.current.value=''}}/>{label}</label>)}
    </fieldset>
    {contentType==='photo-carousel'&&<fieldset className="personaQuickMode" aria-label="Формат фотографий">
     <legend>Соотношение сторон</legend>
@@ -190,6 +226,16 @@ export default function PersonaQuickAutoRender(){
      accept={contentType==='video'?".mp4,.mov,.mkv,.webm,.m4v,.mp3,.wav,.m4a,.aac,.flac":contentType==='photo-carousel'?".jpg,.jpeg,.png":".jpg,.jpeg,.png,.mp3,.wav,.m4a,.aac,.flac"}
      onChange={event=>accept(Array.from(event.target.files??[]))}/>
    </div>
+   {contentType==='photo-carousel'&&files.length>0&&<fieldset className="personaQuickSlideTexts">
+    <legend>Индивидуальные титры (по желанию)</legend>
+    <p>Каждой фотографии можно назначить свой золотой титр. Заполни все поля или оставь все пустыми для прежнего режима.</p>
+    {files.filter(x=>photo.has(ext(x.name))).map((file,index)=><label key={index} htmlFor={'persona-slide-'+index}>
+     <span>{'Слайд '+(index+1)+' · '+file.name}</span>
+     <input id={'persona-slide-'+index} value={slideTexts[index]??''}
+      placeholder="Короткая фраза для этого кадра"
+      onChange={event=>setSlideTexts(old=>old.map((x,i)=>i===index?event.target.value:x))}/>
+    </label>)}
+   </fieldset>}
    <label className="personaQuickPrompt" htmlFor="persona-quick-prompt">Пожелание к монтажу (можно не менять)
     <textarea id="persona-quick-prompt" value={prompt} maxLength={600} rows={3}
      onChange={event=>setPrompt(event.target.value)}
@@ -251,14 +297,23 @@ export default function PersonaQuickAutoRender(){
   {visibleJobs.length>0&&<div className="personaQuickResults" aria-label="Мои быстрые проекты">
    <h3>Мои быстрые проекты</h3>
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')} data-quick-status={job.state}>
-    <div><small>{job.ready?(job.contentType==='photo-carousel'?'ГОТОВАЯ КАРУСЕЛЬ':'ГОТОВЫЙ МЕДИАПРОЕКТ'):job.state==='failed'?'НУЖНО ВНИМАНИЕ':'МЕДИАПРОЕКТ'}</small><h4>{job.title}</h4>
+    <div><small>{job.state==='waiting_for_footage'?'ОЖИДАЕТ ФОТО':job.ready?(job.contentType==='photo-carousel'?'ГОТОВАЯ КАРУСЕЛЬ':'ГОТОВЫЙ МЕДИАПРОЕКТ'):job.state==='failed'?'НУЖНО ВНИМАНИЕ':'МЕДИАПРОЕКТ'}</small><h4>{job.title}</h4>
+     {job.seedKey&&<p className="personaQuickCardLooks">{job.seedKey} · {job.slides?.length??0} слайда · {job.goal}</p>}
      <p>{statusLabel(job)} · {job.contentType==='photo-carousel'?'Фото-карусель '+(job.carouselAspect??'4:5'):
       job.contentType==='photo-slideshow'?'Фото-слайдшоу':'Видео'}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
      {job.ready&&job.textAccents&&job.captionDecision?.mode==='ai-quote'&&<p className="personaQuickCardLooks">Текстовый акцент ИИ (не речь из видео): «{job.captionDecision.generatedText}»</p>}
+     {job.ready&&job.captionDecision?.mode==='per-slide-author'&&<p className="personaQuickCardLooks">Каждый слайд содержит собственный авторский титр Signature Gold</p>}
      {job.ready&&job.textAccents&&job.captionDecision?.mode==='speech'&&<p className="personaQuickCardLooks">Титры по распознанной речи Whisper · проверь точность слов</p>}
      {job.ready&&job.textAccents&&['unverified','quote-unavailable','speech-not-in-cut'].includes(job.captionDecision?.mode??'')&&<p className="personaQuickCardLooks">Текстовые акценты не добавлены: {job.captionDecision?.reason}</p>}
      {job.ready&&job.autoStyle&&<p className="personaQuickCardLooks">{job.styleDecision?.mode==='ai'?'ИИ определил настроение: '+(moodLabels[job.styleDecision.mood??'']??'неопределённое')+'.':job.styleDecision?.mode==='fallback'?'Автовыбор недоступен — применён проверенный стиль по умолчанию.':'Стиль назначен тестовым Director Agent.'}</p>}
+     {job.seedKey&&job.slides?.length&&<details className="personaQuickMoments">
+      <summary>Тексты и фотографии · {job.slides.length} слайда</summary>
+      <ol>{job.slides.map((slide,i)=><li key={i}>
+       <strong>{'№'+(i+1)+' · «'+slide.text+'»'}</strong>
+       {slide.photo&&<span>{' — '+slide.photo}</span>}
+      </li>)}</ol>
+     </details>}
      {job.error&&<p className="personaQuickCardError">{job.error}</p>}
      {job.ready&&Boolean(job.moments?.length)&&<details className="personaQuickMoments"><summary>Показать найденные моменты</summary><ol aria-label="Автоматически найденные моменты">
       {job.moments?.map((moment,index)=><li key={index}>
@@ -274,6 +329,15 @@ export default function PersonaQuickAutoRender(){
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
     <div className="personaQuickCardActions">
+     {job.seedKey&&job.state!=='completed'&&job.state!=='running'&&job.state!=='failed'&&
+      <label className="personaQuickSeedUpload">
+       {attachingId===job.id?'Загружаю фотографии…':'Выбрать фото по порядку (1–'+job.slides?.length+')'}
+       <input type="file" multiple accept=".jpg,.jpeg,.png"
+        disabled={Boolean(attachingId)||submitting}
+        aria-label={'Загрузить фотографии для '+job.seedKey}
+        onChange={event=>{const selected=Array.from(event.target.files??[]);
+         event.target.value='';if(selected.length)void attachToSeed(job,selected)}}/>
+      </label>}
      {job.ready&&job.contentType!=='photo-carousel'&&workerToken.current&&<a className="personaQuickDownload"
       href={personaWorkerUrl+'/quick-render/'+job.id+'/video?token='+encodeURIComponent(workerToken.current)}
       download={'persona-'+job.id+'-draft.mp4'}>{job.fastDraft?'Скачать черновик 720p':'Скачать готовый MP4'}</a>}
