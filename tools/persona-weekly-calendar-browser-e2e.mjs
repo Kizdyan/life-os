@@ -111,7 +111,7 @@ try{
  assert.equal(files[4].bytes.toString('utf8'),expectedCarouselCaption);
  assert.doesNotMatch(files[4].bytes.toString('utf8'),/ТЕМА:|Проверено автором|Публикация не выполнялась|PERSONA/i);
  const drawn=await page.evaluate(()=>window.__personaPublicCanvasText);
- assert.deepEqual(drawn,['Он ещё верит','Ещё секунда','Время остановилось','Выбор сделан']);
+ assert.deepEqual(drawn,['Он ещё верит','Теперь он сомневается','Улыбка ничего не объясняет','Решение уже принято']);
  assert.ok(drawn.every(x=>!/(PERSONA|EDITORIAL|АВТОРСКИЙ МАТЕРИАЛ)/i.test(x)));
  // After reload the companion approval and photo stored in IndexedDB survive.
  await page.reload({waitUntil:'domcontentloaded'});
