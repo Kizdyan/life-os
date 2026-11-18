@@ -1,9 +1,10 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import type {PersonaProject} from './personaProjectStore';
+import {PERSONA_ARCHITECT_IDS} from './personaArchitectSeeds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 import {
  addCalendarDays,buildPersonaWeeklyCalendar,calendarMonday,calendarWeekOffset,
- loadPersonaCalendarAnchor,localCalendarDate,PERSONA_PHOTO_SEED_IDS,PERSONA_ARCHITECT_IDS,
+ loadPersonaCalendarAnchor,localCalendarDate,PERSONA_PHOTO_SEED_IDS,
  type CalendarPhotoJob,type PersonaWeeklyItem
 } from './personaWeeklyContentCalendar';
 import './persona-weekly-content-calendar.css';
