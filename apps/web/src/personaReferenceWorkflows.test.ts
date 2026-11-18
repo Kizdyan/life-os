@@ -37,6 +37,9 @@ describe('Persona: five media reference adaptations',()=>{
   const campaign=makeTrialCampaign('Пробный Reel','2026-11-19T08:00:00Z','trial-1');
   expect(campaign.variants).toHaveLength(5);
   expect(campaign.variants.every(v=>v.state==='draft'&&v.views===undefined)).toBe(true);
+  expect(campaign.variants.map(v=>v.plannedDate)).toEqual([
+   '2026-11-19','2026-11-26','2026-12-03','2026-12-10','2026-12-17'
+  ]);
   expect(trialObservations(campaign)).toEqual([]);
   campaign.variants[0]={...campaign.variants[0],views:100,shares:3};
   campaign.variants[1]={...campaign.variants[1],views:200,shares:2};
