@@ -143,16 +143,14 @@ export async function exportPersonaCompleteBackup(
 ):Promise<string>{
  const base=parseJson(exportDeviceData(storage));
  const editorialPosts=storedEditorial(storage),stories=storedStories(storage);
- const validIds=new Set(editorialPosts.map(p=>p.id));
  const images=await media.list();
  if(images.length>MAX_IMAGES)throw Error('Слишком много фотографий для одного архива');
  const keys=new Set<string>();
  const result:ImageRecord[]=[];
  for(const image of images){
-  const {postId,slideId}=imageIdentity(image.key);
-  const post=editorialPosts.find(p=>p.id===postId);
-  if(!post||!validIds.has(postId)||!post.slides.some(s=>s.id===slideId))
-   continue; // only pictures actually belonging to an editable editorial post
+  imageIdentity(image.key);
+  // Include EVERY editorial-asset record, even a former slide that is now
+  // background-only. Never drop dormant photos from the user's device backup.
   if(keys.has(image.key))throw Error('Повторяющиеся фотографии в базе');
   keys.add(image.key);
   if(!['image/png','image/jpeg'].includes(image.mime)||image.blob.size!==image.bytes)
@@ -206,8 +204,7 @@ export async function importPersonaCompleteBackup(
   const {postId,slideId}=imageIdentity(image.key);
   // Existing editorial decisions win; never attach imported photos to a
   // same-ID project that may be independently edited in this browser.
-  if(currentPostIds.has(postId))continue;
-  if(!newPosts.some(p=>p.id===postId&&p.slides.some(s=>s.id===slideId)))continue;
+  if(currentPostIds.has(postId))continue; // existing authored project is authoritative
   const bytes=decode64(image.base64);
   if(bytes.length!==image.bytes||(await digest(bytes))!==image.sha256)
    throw Error('Повреждённая фотография или несовпадение SHA-256: '+image.key);
