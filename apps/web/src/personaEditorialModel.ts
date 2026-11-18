@@ -4,13 +4,60 @@
  */
 export const EDITORIAL_KEY='lifeos:persona:editorial-posts:v1';
 export const STORY_KEY='lifeos:persona:weekly-stories:v1';
+export const CAROUSEL_BASELINE_ID='carousel-baseline-pause';
+const emptyChecklist=()=>[false,false,false,false,false,false,false];
+const freshApproval=()=>({topic:false,content:false,design:false,
+ checklist:emptyChecklist(),checkedAt:'',checkedBy:'',contentHashAtApproval:''});
+const PALETTE_CONTRAST={
+ ink:{bg:['#172132'],main:'#f3ead9',heading:'#cdb489'},
+ cream:{bg:['#eee8dc'],main:'#242c33',heading:'#8a6b43'},
+ chocolate:{bg:['#302720'],main:'#f7eade',heading:'#d3b18a'},
+ filmic:{bg:['#292e30'],main:'#f3e9d6',heading:'#c5af8a'},
+ 'chocolate-graphite':{bg:['#2B1D14','#1C1C1E'],main:'#F2E9DC',heading:'#C9A882'}
+} as const;
+function luminance(hex:string):number{
+ const c=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255)
+  .map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+ return .2126*c[0]+.7152*c[1]+.0722*c[2];
+}
+export function editorialContrastRatio(a:string,b:string):number{
+ const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+}
+/** Palette only: image-backed slides need additional human visual review. */
+export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean{
+ const c=PALETTE_CONTRAST[post.preset];
+ return c.bg.every(bg=>editorialContrastRatio(c.main,bg)>=4.5&&editorialContrastRatio(c.heading,bg)>=3);
+}
+export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
+ const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
+  post.caption,post.preset,post.slides.map(s=>[s.id,s.text,s.visual,s.photoDirection])]));
+ let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
+ return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
+}
+export function editorialChecklistState(post:EditorialPost):boolean[]{
+ const a=post.approvals.checklist??emptyChecklist();
+ return [...a.slice(0,6),editorialContrastPass(post)];
+}
+export function editorialChecklistReady(post:EditorialPost):boolean{
+ return post.kind==='carousel'&&editorialChecklistState(post).every(Boolean);
+}
+export function setEditorialChecklistItem(post:EditorialPost,index:number,checked:boolean,now=new Date().toISOString()):EditorialPost{
+ if(post.kind!=='carousel'||editorialStage(post)!=='design')throw Error('Чек-лист доступен до утверждения оформления');
+ if(!Number.isInteger(index)||index<0||index>5||typeof checked!=='boolean')throw Error('Пункт 7 проверяется автоматически');
+ const checklist=editorialChecklistState(post);checklist[index]=checked;
+ const result={...post,revision:post.revision+1,updatedAt:now,approvals:{...post.approvals,checklist}};
+ validatePost(result);return result;
+}
+
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
-export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic';
+export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
 export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
- approvals:{topic:boolean;content:boolean;design:boolean};createdAt:string;updatedAt:string;revision:number;
+ approvals:{topic:boolean;content:boolean;design:boolean;
+ checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string};
+ createdAt:string;updatedAt:string;revision:number;
  origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string};
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
@@ -108,7 +155,7 @@ export function createSeedEditorialCarousel(id:string,now=new Date().toISOString
  return {
   version:1,id,kind:'carousel',title:seed.title,topic:seed.title,goal:seed.goal,
   slides:seed.slides.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background' as const,photoDirection:''})),
-  caption:seed.caption,preset:'ink',approvals:{topic:false,content:false,design:false},
+  caption:seed.caption,preset:'ink',approvals:freshApproval(),
   createdAt:now,updatedAt:now,revision:1,origin:'seed-carousel'
  };
 }
@@ -118,7 +165,7 @@ export function createEditorialFromTopic(id:string,choice:TopicChoice,now=new Da
  return {version:1,id,kind:choice.kind,title:choice.title,topic:choice.title,goal:choice.angle,
   slides:choice.slides.map((text,i)=>({id:'slide-'+(i+1),text,visual:choice.kind==='photo'?'archive-photo':'background',
    photoDirection:choice.photoDirection})),
-  caption:choice.caption,preset:'ink',approvals:{topic:false,content:false,design:false},
+  caption:choice.caption,preset:'ink',approvals:freshApproval(),
   origin:'topic-choice',createdAt:now,updatedAt:now,revision:1};
 }
 /** Research-derived concepts enter the SAME approval workflow as legacy
@@ -136,9 +183,28 @@ export function createResearchedEditorialPost(
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
   goal:angle.trim(),slides:steps.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
   caption:draft?.caption?.slice(0,4500)??'',preset:'ink',
-  approvals:{topic:false,content:false,design:false},origin:'researched-topic',
+  approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(result);return result;
+}
+/** Opt-in Editorial Desk seed. Never overwrites PHOTO-001…010. */
+export function createBaselinePauseCarousel(now=new Date().toISOString()):EditorialPost{
+ const texts=[
+  'Пауза — это не отсутствие текста.',
+  'Персонаж уже знает ответ.',
+  'Но сказать правду — значит что-то потерять.',
+  'Поэтому он задерживает слово.',
+  'Зритель замечает этот выбор.',
+  'Так молчание становится действием.'
+ ];
+ const post:EditorialPost={version:1,id:CAROUSEL_BASELINE_ID,kind:'carousel',
+  title:'Почему пауза сильнее реплики',topic:'Почему пауза сильнее реплики',
+  goal:'Авторская мысль · text-only, без фотографий',
+  slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  caption:'Пауза в кадре — это не пустота, а решение. Персонаж, который молчит дольше, чем нужно реплике, уже что-то скрывает от собеседника или от себя. Задача актёра — не "держать паузу", а точно знать, что именно происходит внутри неё. Когда это знание есть, зритель читает его без слов. Когда его нет, пауза превращается в ожидание. Разница между ними — не в длительности, а в наличии внутреннего действия.',
+  preset:'chocolate-graphite',approvals:freshApproval(),origin:'researched-topic',
+  revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
 }
 export function editorialStage(post:EditorialPost):'topic'|'content'|'design'|'production'{
  if(!post.approvals.topic)return 'topic';
@@ -147,6 +213,8 @@ export function editorialStage(post:EditorialPost):'topic'|'content'|'design'|'p
  return 'production';
 }
 export function editorialStageLabel(post:EditorialPost):string{
+ if(post.kind==='carousel'&&!post.approvals.design&&post.approvals.contentHashAtApproval)
+  return 'Требует повторного утверждения';
  switch(editorialStage(post)){
   case 'topic':return 'Тема на утверждении';
   case 'content':return 'Текст на утверждении';
@@ -162,7 +230,7 @@ export function validatePost(post:EditorialPost):void{
   (post.scheduledDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate)||
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
-  !['ink','cream','chocolate','filmic'].includes(post.preset)||
+  !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
