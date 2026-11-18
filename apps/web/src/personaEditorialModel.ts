@@ -240,35 +240,59 @@ export function validatePost(post:EditorialPost):void{
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350))
   throw Error('Invalid editorial project');
+ const a=post.approvals;
+ if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||
+  a.checklist.some(x=>typeof x!=='boolean')))throw Error('Invalid carousel checklist');
+ if([a.checkedAt,a.checkedBy,a.contentHashAtApproval].some(x=>x!==undefined&&typeof x!=='string'))
+  throw Error('Invalid checklist audit');
+ if(a.checkedAt&&(!Number.isFinite(Date.parse(a.checkedAt))||!a.checkedBy||!a.contentHashAtApproval))
+  throw Error('Incomplete checklist audit');
+ // Previously approved legacy v1 projects without checklist metadata are preserved.
+ if(post.kind==='carousel'&&a.design&&a.checklist){
+  if(!a.checklist.every(Boolean)||!editorialContrastPass(post)||
+   a.contentHashAtApproval!==editorialContentHash(post)||!a.checkedAt||!a.checkedBy)
+   throw Error('Carousel acceptance approval is missing or stale');
+ }
  if(post.approvals.content&&!post.approvals.topic)throw Error('Content approved before topic');
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
 export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
- const result={...post,...changes,updatedAt:now,revision:post.revision+1,
-  approvals:{...post.approvals}};
+ const result:EditorialPost={...post,...changes,updatedAt:now,revision:post.revision+1,approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
-  result.approvals={topic:false,content:false,design:false};
+  result.approvals={...result.approvals,topic:false,content:false,design:false};
  else if(changes.caption!==undefined)
   result.approvals={...result.approvals,content:false,design:false};
  else if(changes.slides!==undefined){
   const copyChanged=changes.slides.length!==post.slides.length||
-   changes.slides.some((s,i)=>s.id!==post.slides[i]?.id||s.text!==post.slides[i]?.text);
+   changes.slides.some((slide,i)=>slide.id!==post.slides[i]?.id||slide.text!==post.slides[i]?.text);
   result.approvals=copyChanged?{...result.approvals,content:false,design:false}:
    {...result.approvals,design:false};
  }else if(changes.preset!==undefined)
   result.approvals={...result.approvals,design:false};
+ if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
+  changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined){
+  result.approvals.checklist=emptyChecklist();
+  // Retain old fingerprint in audit to label the subsequent re-approval.
+ }
  validatePost(result);return result;
 }
 export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'design',now=new Date().toISOString()):EditorialPost{
- const stage=editorialStage(post);
- if(stage!==step)throw Error('Approve steps in order: topic, content, design');
+ if(editorialStage(post)!==step)throw Error('Approve steps in order: topic, content, design');
  if(step==='topic'&&(!post.topic.trim()||!post.title.trim()||!post.goal.trim()))
   throw Error('Для утверждения нужна конкретная тема и редакционная задача');
  if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
   throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
- const result={...post,revision:post.revision+1,updatedAt:now,
-  approvals:{...post.approvals,[step]:true}};validatePost(result);return result;
+ if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
+  throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
+ const approvals={...post.approvals,[step]:true};
+ if(step==='design'&&post.kind==='carousel'){
+  approvals.checklist=editorialChecklistState(post);
+  approvals.checkedAt=now;approvals.checkedBy='Автор';
+  approvals.contentHashAtApproval=editorialContentHash(post);
+ }
+ const result={...post,revision:post.revision+1,updatedAt:now,approvals};
+ validatePost(result);return result;
 }
 export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialStore{
  try{
