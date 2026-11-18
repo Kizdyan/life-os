@@ -28,7 +28,8 @@ import {cachedFfprobe,fullProbeArgs} from './persona-stage-cache.mjs';
 import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook-variants.mjs';
 import {personaMediaPaths} from './persona-media-paths.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
-import {createPersonaQuickRenderService} from './persona-quick-render.mjs';
+import {createPersonaQuickRenderService,quickRenderRoot} from './persona-quick-render.mjs';
+import {seedCarousels} from './seed_carousels.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
@@ -683,5 +684,9 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
   server.listen(config.port,host,()=>{server.off('error',reject);resolveStart(server.address().port);});
  })};
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{if(await exists(resolve('.env.local'))){if(typeof process.loadEnvFile!=='function')fail('Use Node22+ to load .env.local');process.loadEnvFile(resolve('.env.local'));}const worker=createPersonaMediaWorker();const port=await worker.start();process.stdout.write('Persona AI Media Worker: http://127.0.0.1:'+port+'\n')}catch(error){process.stderr.write(String(error.message||error)+'\n');process.exitCode=1}}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{if(await exists(resolve('.env.local'))){if(typeof process.loadEnvFile!=='function')fail('Use Node22+ to load .env.local');process.loadEnvFile(resolve('.env.local'));}const worker=createPersonaMediaWorker();
+try{const seed=await seedCarousels(worker.config.quickRenderRoot||quickRenderRoot());
+ process.stdout.write('Persona carousel seeds: '+seed.count+' projects, '+seed.created+' new, '+seed.existing+' existing.\n');}
+catch(error){process.stderr.write('CAROUSEL_SEED_WARNING: '+String(error.message||error)+'\n');}
+const port=await worker.start();process.stdout.write('Persona AI Media Worker: http://127.0.0.1:'+port+'\n')}catch(error){process.stderr.write(String(error.message||error)+'\n');process.exitCode=1}}
 
