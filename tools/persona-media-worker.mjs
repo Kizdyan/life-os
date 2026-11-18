@@ -17,6 +17,7 @@ import {join,resolve,basename,extname,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {selectCreativePreset,getVisualPreset} from './persona-creative-director.mjs';
+import {generateLocalPersonaScriptDraft} from './persona-script-draft.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
@@ -527,6 +528,20 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      if(body.consent!==true)fail('Подтвердите платный текстовый запрос');externalCalls.push(now);
      respond(res,200,await generateExternalIdeas({provider:body.provider,theme:body.theme,consent:body.consent,env:config.apiEnv??process.env}));
     }finally{externalBusy=false}return;
+   }
+   if(req.method==='POST'&&url.pathname==='/script-draft'){
+    const body=await json(req,5000);
+    if(ideationBusy||directorPending||activeExport)fail('Local AI is busy');
+    ideationBusy=true;
+    try{
+     const result=await (config.scriptDraft??generateLocalPersonaScriptDraft)({
+      idea:body.idea,history:body.history,model:config.ollamaModel
+     });
+     // A mock may be injected in unit tests, but production calls real Ollama.
+     if(result?.mode!=='ai'||!result.draft||!result.model)fail('Invalid local model result');
+     respond(res,200,result);
+    }finally{ideationBusy=false}
+    return;
    }
    if(req.method==='POST'&&url.pathname==='/manual-script'){
     const body=await json(req,96000);if(ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('Worker занят; повторите после текущей задачи');
