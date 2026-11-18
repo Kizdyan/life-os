@@ -82,6 +82,12 @@ try{
  assert.match(await editor.textContent(),/Четыре секунды до выбора/);
  await editor.getByRole('button',{name:'Утвердить тему'}).click();
  assert.match(await editor.textContent(),/Он ещё верит/);
+ const authoredTitles=[];
+ const contentStep=editor.locator('[aria-label="Шаг 2. Текст и подпись"]');
+ for(let i=0;i<4;i++){
+  await contentStep.getByRole('button',{name:'Слайд '+(i+1),exact:true}).click();
+  authoredTitles.push((await contentStep.getByRole('textbox',{name:'Текст выбранного слайда'}).inputValue()).trim());
+ }
  const caption=(await editor.locator('.personaEditorialCaption').inputValue()).trim()+
   '\n\n#актёр #сценарий';
  await editor.locator('.personaEditorialCaption').fill(caption);
@@ -110,8 +116,9 @@ try{
  assert.equal(files[4].bytes.toString('utf8'),caption);
  assert.doesNotMatch(files[4].bytes.toString('utf8'),/Проверено автором|ТЕМА:|Публикация не выполнялась/);
  const painted=await page.evaluate(()=>window.__personaPaintLabels);
- assert.equal(painted.length,4,'Only four authored slide titles should be painted');
- assert.equal(painted[0],'Он ещё верит');
+ assert.equal(painted.join(' ').replace(/\s+/g,' ').trim(),
+  authoredTitles.join(' ').replace(/\s+/g,' ').trim(),
+  'Canvas must paint every authored title exactly and nothing else (line wraps allowed)');
  assert.ok(painted.every(s=>!/PERSONA|EDITORIAL|АВТОРСКИЙ МАТЕРИАЛ|КАРУСЕЛЬ|ФОТО/i.test(s)),
   'No service brand, format or status burned into PNG');
  // After reload the companion approval and photo stored in IndexedDB survive.
