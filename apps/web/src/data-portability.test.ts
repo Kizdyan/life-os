@@ -84,7 +84,7 @@ describe('portable local Life OS + Persona backup',()=>{
     s.setItem('lifeos:persona:projects:v1','{damaged-projects');
     s.setItem('supabase_access_token','must-not-export');
     s.setItem('lifeos:persona:editorial-posts:v1','{damaged-editorial');
-    s.setItem('lifeos:persona:story-notes:v1','[{"id":"story-1"}]');
+    s.setItem('lifeos:persona:weekly-stories:v1','[{"id":"story-1"}]');
 
     const emergency=JSON.parse(exportEmergencyRawData(s));
 
