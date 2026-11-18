@@ -55,6 +55,8 @@ try{
  await lab.getByLabel('Название экспериментального ролика').fill('Пять разных первых секунд');
  await lab.getByRole('button',{name:'Создать 5 гипотез первых секунд'}).click();
  assert.equal(await lab.locator('.personaReferenceVariant').count(),5);
+ await lab.getByLabel('Звук V1').fill('Оригинальный авторский звук');
+ await lab.getByLabel('Визуал V1').fill('Новая сцена в первом кадре');
  await lab.getByLabel('views V1').fill('100');
  await lab.getByLabel('shares V1').fill('3');
  await lab.getByLabel('views V2').fill('200');
@@ -83,6 +85,8 @@ try{
  assert.equal(manifest.referenceLab.batch.length,2);
  assert.equal(manifest.referenceLab.trials.length,1);
  assert.equal(manifest.referenceLab.trials[0].variants.length,5);
+ assert.equal(manifest.referenceLab.trials[0].variants[0].audioNote,'Оригинальный авторский звук');
+ assert.ok(manifest.referenceLab.trials[0].variants[0].plannedDate);
  assert.equal(manifest.referenceLab.capture.codec,'prores');
  assert.ok(manifest.editorial.posts.some(x=>x.origin==='researched-topic'&&x.approvals.topic));
  assert.equal(manifest.referenceLab.trials[0].variants.every(x=>x.state==='draft'),true);
