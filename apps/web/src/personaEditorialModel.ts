@@ -140,7 +140,9 @@ export function validatePost(post:EditorialPost):void{
   !['photo','carousel'].includes(post.kind)||!post.topic.trim()||post.topic.length>160||
   (post.approvals.topic&&(!post.title.trim()||!post.topic.trim()||!post.goal.trim()))||post.title.length>160||post.goal.length>500||
   typeof post.caption!=='string'||post.caption.length>4500||
-  (post.scheduledDate!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate))||
+  (post.scheduledDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate)||
+   !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
+   new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   !['ink','cream','chocolate','filmic'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -195,7 +197,22 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
  }catch{return {version:1,posts:[]}}
 }
 export function saveEditorialPost(storage:Pick<Storage,'getItem'|'setItem'>,post:EditorialPost):EditorialStore{
- validatePost(post);const current=loadEditorialStore(storage);
+ validatePost(post);
+ // A damaged or unknown versioned store must NEVER be replaced with an empty
+ // collection: preserve the author's source bytes for manual recovery.
+ const previousRaw=storage.getItem(EDITORIAL_KEY);
+ if(previousRaw!==null){
+  const currentCheck=loadEditorialStore(storage);
+  if(currentCheck.posts.length===0){
+   let parsed:unknown;
+   try{parsed=JSON.parse(previousRaw)}catch{throw Error('Editorial storage invalid; refusing to overwrite')}
+   if(!parsed||typeof parsed!=='object'||(parsed as EditorialStore).version!==1||
+    !Array.isArray((parsed as EditorialStore).posts)||
+    (parsed as EditorialStore).posts.length!==0)
+    throw Error('Editorial storage invalid; refusing to overwrite');
+  }
+ }
+ const current=loadEditorialStore(storage);
  const prev=current.posts.find(x=>x.id===post.id);
  if(prev&&post.revision<=prev.revision)throw Error('Editorial revision conflict; reload before editing');
  const next={version:1 as const,posts:[...current.posts.filter(x=>x.id!==post.id),post]};
