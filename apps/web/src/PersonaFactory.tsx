@@ -10,9 +10,10 @@ import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
 import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
 import PersonaEditorialStudio from './PersonaEditorialStudio';
+import PersonaReferenceWorkflows from './PersonaReferenceWorkflows';
 import {generatePersonaDraftWithRealAi} from './personaScriptGeneration';
 import {
- EDITORIAL_KEY,createSeedEditorialCarousel,loadEditorialStore,saveEditorialPost,
+ EDITORIAL_KEY,createSeedEditorialCarousel,createResearchedEditorialPost,loadEditorialStore,saveEditorialPost,
  type EditorialPost
 } from './personaEditorialModel';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
@@ -832,6 +833,20 @@ export default function PersonaFactory(){
     onCreate={saveEditorial} onChange={saveEditorial} onSelect={openEditorial}
     onClose={()=>setEditorialTargetId(null)}/>
   </div>
+  <PersonaReferenceWorkflows
+   videos={projects.filter(p=>p.contentType==='reel').map(p=>({id:p.id,title:p.title}))}
+   onCreateCarouselDraft={(title,angle,aiDraft)=>{
+    try{
+     const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+     // The full research notes remain in the backed-up Reference Lab;
+     // Editorial Desk stores a concise (500-char) production goal.
+     const post=createResearchedEditorialPost(id,title,angle.slice(0,500),aiDraft);
+     saveEditorial(post);openEditorial(id);
+    }catch(error){setEditorialError('Новый редакционный черновик не создан: '+String((error as Error).message||error))}
+   }}
+   onCreateReelDraft={(title,angle)=>{
+    select({id:'research-reel-'+Date.now(),title,angle,format:'reel',score:0});
+   }}/>
   <PersonaQuickAutoRender/>
   <details className="personaBackupDisclosure"><summary>Сохранность контента · резервная копия</summary><DataPortability/></details>
   <section className="personaCreativeProjectsHome" aria-label="Мои проекты">

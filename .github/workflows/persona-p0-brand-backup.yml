@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/web/**"
       - "tools/persona-p0-public-backup-browser-e2e.mjs"
+      - "tools/persona-reference-workflows-browser-e2e.mjs"
       - "tools/persona-script-draft.mjs"
       - "tools/persona-script-draft.test.mjs"
       - ".github/workflows/persona-p0-brand-backup.yml"
@@ -37,6 +38,16 @@ jobs:
           exit 1
       - name: Verify public PNG pixels, clean copy and full IndexedDB ZIP restore
         run: node tools/persona-p0-public-backup-browser-e2e.mjs
+      - name: Verify 5 video lessons, persistent research, batch and Trial Reels in Chromium
+        run: node tools/persona-reference-workflows-browser-e2e.mjs
+      - name: Retain five-video integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-five-reference-workflows
+          path: artifacts/persona-reference-workflows/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Retain public export and restored ZIP evidence
         if: always()
         uses: actions/upload-artifact@v4

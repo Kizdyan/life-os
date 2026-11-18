@@ -11,7 +11,7 @@ export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirect
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
  approvals:{topic:boolean;content:boolean;design:boolean};createdAt:string;updatedAt:string;revision:number;
- origin:'seed-carousel'|'topic-choice';scheduledDate?:string};
+ origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string};
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
@@ -120,6 +120,25 @@ export function createEditorialFromTopic(id:string,choice:TopicChoice,now=new Da
    photoDirection:choice.photoDirection})),
   caption:choice.caption,preset:'ink',approvals:{topic:false,content:false,design:false},
   origin:'topic-choice',createdAt:now,updatedAt:now,revision:1};
+}
+/** Research-derived concepts enter the SAME approval workflow as legacy
+ * carousels. Model text is an unverified draft, never author-approved. */
+export function createResearchedEditorialPost(
+ id:string,title:string,angle:string,
+ draft?:{caption:string;slides:{title:string;body:string}[]},
+ now=new Date().toISOString()
+):EditorialPost{
+ if(!/^[A-Za-z0-9-]{3,75}$/.test(id)||!title.trim()||title.length>160||
+  !angle.trim()||angle.length>500)throw Error('Нужна конкретная тема и задача');
+ const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=7
+  ?draft.slides.map(s=>s.title.trim().slice(0,170))
+  :['Зацепка и вопрос зрителю','Конфликт или контраст','Новая деталь','Поворот в смысле','Незавершённый вывод'];
+ const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
+  goal:angle.trim(),slides:steps.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  caption:draft?.caption?.slice(0,4500)??'',preset:'ink',
+  approvals:{topic:false,content:false,design:false},origin:'researched-topic',
+  revision:1,createdAt:now,updatedAt:now};
+ validatePost(result);return result;
 }
 export function editorialStage(post:EditorialPost):'topic'|'content'|'design'|'production'{
  if(!post.approvals.topic)return 'topic';
