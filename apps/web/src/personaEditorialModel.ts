@@ -301,7 +301,14 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
   if(!parsed||typeof parsed!=='object'||(parsed as EditorialStore).version!==1||
    !Array.isArray((parsed as EditorialStore).posts)||
    (parsed as EditorialStore).posts.length>200)return {version:1,posts:[]};
-  const posts=(parsed as EditorialStore).posts;
+  const posts=(parsed as EditorialStore).posts.map(post=>{
+   // Check the saved content against the approval fingerprint on every load.
+   if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
+      post.approvals.contentHashAtApproval!==editorialContentHash(post)){
+    return {...post,approvals:{...post.approvals,content:false,design:false,checklist:emptyChecklist()}};
+   }
+   return post;
+  });
   posts.forEach(validatePost);
   if(new Set(posts.map(x=>x.id)).size!==posts.length)return {version:1,posts:[]};
   return {version:1,posts};
