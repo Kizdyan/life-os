@@ -138,7 +138,7 @@ export function editorialStageLabel(post:EditorialPost):string{
 export function validatePost(post:EditorialPost):void{
  if(post.version!==1||!/^[A-Za-z0-9-]{3,75}$/.test(post.id)||
   !['photo','carousel'].includes(post.kind)||!post.topic.trim()||post.topic.length>160||
-  !post.title.trim()||post.title.length>160||!post.goal.trim()||post.goal.length>500||
+  (post.approvals.topic&&(!post.title.trim()||!post.topic.trim()||!post.goal.trim()))||post.title.length>160||post.goal.length>500||
   typeof post.caption!=='string'||post.caption.length>4500||
   !['ink','cream','chocolate','filmic'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
@@ -146,8 +146,9 @@ export function validatePost(post:EditorialPost):void{
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
   post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?7:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||s.text.length>170||!s.text.trim()||
-   !['background','archive-photo'].includes(s.visual)||s.photoDirection.length>350))
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
+   (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
+   !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350))
   throw Error('Invalid editorial project');
  if(post.approvals.content&&!post.approvals.topic)throw Error('Content approved before topic');
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
@@ -167,6 +168,10 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
 export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'design',now=new Date().toISOString()):EditorialPost{
  const stage=editorialStage(post);
  if(stage!==step)throw Error('Approve steps in order: topic, content, design');
+ if(step==='topic'&&(!post.topic.trim()||!post.title.trim()||!post.goal.trim()))
+  throw Error('Для утверждения нужна конкретная тема и редакционная задача');
+ if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
+  throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
  const result={...post,revision:post.revision+1,updatedAt:now,
   approvals:{...post.approvals,[step]:true}};validatePost(result);return result;
 }
