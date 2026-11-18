@@ -225,11 +225,51 @@ try{
  assert.equal(revoked.content,false);
  assert.equal(revoked.design,false);
  assert.equal(revoked.contentHashAtApproval,snapshot.contentHashAtApproval);
+ // Carousel 002 uses the unchanged gate, PNG exporter and isolated Chromium user profile.
+ await editor.getByRole('button',{name:'Все темы ↖'}).click();
+ await editor.getByTestId('open-carousel-002').click();
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
+ assert.equal(await editor.locator('.personaEditorialProjectHead h3').textContent(),
+  'Зачем режиссёру оставлять зрителя без ответа');
+ const researchDraft=await page.evaluate(()=>{
+  const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
+  return store.posts.find(p=>p.id==='carousel-why-director-leaves-question');
+ });
+ assert.equal(researchDraft.kind,'carousel');
+ assert.equal(researchDraft.preset,'chocolate-graphite');
+ assert.equal(researchDraft.slides.length,6);
+ assert.ok(researchDraft.slides.every(s=>s.visual==='background'));
+ assert.equal(researchDraft.researchSourceDoc,'docs/carousel-002-research-sources.md');
+ assert.equal(researchDraft.approvals.content,false,'Caption must remain a draft until approved');
+ assert.ok(researchDraft.caption.includes('Брук называет пустое пространство приглашением к воображению.'));
+ assert.equal(researchDraft.slides[0].text,'Открытый финал — не отсутствие ответа, а другой его адрес.');
+ assert.equal(researchDraft.slides[5].text,'Режиссёр оставляет вопрос, когда ответ был бы ложью.');
+ await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ assert.equal(await editor.getByRole('button',{name:'Утвердить оформление'}).isDisabled(),true);
+ await completeCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ const researchApproval=await page.evaluate(()=>{
+  const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
+  return store.posts.find(p=>p.id==='carousel-why-director-leaves-question').approvals;
+ });
+ assert.ok(researchApproval.topic&&researchApproval.content&&researchApproval.design);
+ assert.match(researchApproval.contentHashAtApproval,/^fnv1a32:[0-9a-f]{8}$/);
+ assert.ok(researchApproval.checkedAt&&Number.isFinite(Date.parse(researchApproval.checkedAt)));
+ assert.deepEqual(researchApproval.checklist,[true,true,true,true,true,true,true]);
+ const researchZip=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
+  join(artifacts,'carousel-why-director-leaves-question.zip'));
+ assert.deepEqual(researchZip.map(f=>f.name),[
+  'slide-01.png','slide-02.png','slide-03.png','slide-04.png','slide-05.png','slide-06.png','caption.txt'
+ ]);
+ researchZip.slice(0,6).forEach(assertPng);
+ assert.equal(researchZip[6].bytes.toString('utf8'),researchDraft.caption);
+ await writeFile(join(artifacts,'carousel-why-director-leaves-question-slide-01.png'),researchZip[0].bytes);
  await clean.close();
  assert.deepEqual(errors,[]);
  console.log('PERSONA_P0_FULL_BROWSER_PASS '+JSON.stringify({
   publicPngBrandFree:true,carouselPngs:4,photoPngs:1,
   cleanCaptions:true,originalPhotosRestored:2,editorialPostsRestored:2,
-  storiesRestored:1,reexportAfterRestore:true
+  storiesRestored:1,reexportAfterRestore:true,researchCarouselPngs:6
  }));
 }finally{await browser.close()}
