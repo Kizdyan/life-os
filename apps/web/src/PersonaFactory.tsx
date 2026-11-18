@@ -814,6 +814,7 @@ export default function PersonaFactory(){
     onClose={()=>setEditorialTargetId(null)}/>
   </div>
   <PersonaQuickAutoRender/>
+  <details className="personaCreativeAdvanced"><summary>Сохранность контента · резервная копия</summary><DataPortability/></details>
   <section className="personaCreativeProjectsHome" aria-label="Мои проекты">
    <div className="personaCreativeSectionHead"><div><h3>Мои проекты</h3></div>
     <button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
@@ -835,7 +836,7 @@ export default function PersonaFactory(){
     <button type="button" onClick={()=>createQuickProject('photo')}><span aria-hidden="true">▧</span><strong>Обработка фото</strong></button>
     <button type="button" onClick={()=>createQuickProject('carousel')}><span aria-hidden="true">▤</span><strong>Карусель</strong></button>
    </div>
-   <details className="personaCreativeAdvanced"><summary>Настройки разработчика · экспорт и резервная копия</summary><DataPortability/></details>
+
   </details>
  </section>;
  if(screen==='projects')return <section className="personaFactoryV2 personaProjectList personaCreativeStudio">
