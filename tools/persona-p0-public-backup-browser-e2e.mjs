@@ -179,6 +179,52 @@ try{
  assert.deepEqual(result.map(x=>x.name),carousel.map(x=>x.name));
  result.slice(0,4).forEach(assertPng);
  assert.equal(result[4].bytes.toString('utf8'),carouselCaption);
+ // Baseline v0 is created only after the existing backup assertions, preserving PHOTO-001/010.
+ await editor.getByRole('button',{name:'Все темы ↖'}).click();
+ await editor.getByTestId('open-carousel-baseline').click();
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
+ assert.equal(await editor.locator('.personaEditorialProjectHead h3').textContent(),'Почему пауза сильнее реплики');
+ const pending=await page.evaluate(()=>{
+  const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
+  return store.posts.find(p=>p.id==='carousel-baseline-pause');
+ });
+ assert.equal(pending.slides.length,6);
+ assert.equal(pending.preset,'chocolate-graphite');
+ assert.equal(pending.approvals.content,false,'Caption must still be a draft');
+ assert.ok(pending.slides.every(slide=>slide.visual==='background'));
+ await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ const baselineButton=editor.getByRole('button',{name:'Утвердить оформление'});
+ assert.equal(await baselineButton.isDisabled(),true);
+ await completeCarouselChecklist(editor);
+ await baselineButton.click();
+ const snapshot=await page.evaluate(()=>{
+  const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
+  return store.posts.find(p=>p.id==='carousel-baseline-pause').approvals;
+ });
+ assert.ok(snapshot.topic&&snapshot.content&&snapshot.design);
+ assert.ok(snapshot.checkedAt&&Number.isFinite(Date.parse(snapshot.checkedAt)));
+ assert.equal(snapshot.checkedBy,'Автор');
+ assert.match(snapshot.contentHashAtApproval,/^fnv1a32:[0-9a-f]{8}$/);
+ assert.deepEqual(snapshot.checklist,[true,true,true,true,true,true,true]);
+ const baseline=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
+  join(artifacts,'carousel-baseline-pause.zip'));
+ assert.deepEqual(baseline.map(file=>file.name),[
+  'slide-01.png','slide-02.png','slide-03.png','slide-04.png','slide-05.png','slide-06.png','caption.txt'
+ ]);
+ baseline.slice(0,6).forEach(assertPng);
+ assert.ok(baseline[6].bytes.toString('utf8').includes('Пауза в кадре — это не пустота'));
+ await writeFile(join(artifacts,'carousel-baseline-pause-slide-01.png'),baseline[0].bytes);
+ await editor.getByRole('button',{name:'Слайд 1'}).click();
+ await editor.getByRole('textbox',{name:'Текст выбранного слайда'}).fill('После правки — требуется новое утверждение.');
+ assert.equal(await editor.locator('.personaEditorialState').textContent(),'Требует повторного утверждения');
+ const revoked=await page.evaluate(()=>{
+  const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
+  return store.posts.find(p=>p.id==='carousel-baseline-pause').approvals;
+ });
+ assert.equal(revoked.content,false);
+ assert.equal(revoked.design,false);
+ assert.equal(revoked.contentHashAtApproval,snapshot.contentHashAtApproval);
  await clean.close();
  assert.deepEqual(errors,[]);
  console.log('PERSONA_P0_FULL_BROWSER_PASS '+JSON.stringify({
