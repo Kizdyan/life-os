@@ -53,6 +53,19 @@ export async function readEditorialImage(postId:string,slideId:string):Promise<S
   req.onerror=()=>bad(Error('Не удалось получить фотографию из архива'));
  });
 }
+/** Include all editorial archive assets, including photos temporarily not used in a slide. */
+export async function listEditorialImages():Promise<StoredImage[]>{
+ return dbAction<StoredImage[]>('readonly',(store,ok,bad)=>{
+  const req=store.getAll();
+  req.onsuccess=()=>{
+   if(!Array.isArray(req.result)||req.result.length>260){
+    bad(Error('Слишком много изображений в локальной медиатеке'));return;
+   }
+   ok(req.result as StoredImage[]);
+  };
+  req.onerror=()=>bad(Error('Не удалось прочитать локальные фотографии для архива'));
+ });
+}
 export async function forgetEditorialImage(postId:string,slideId:string):Promise<void>{
  await dbAction<void>('readwrite',(store,ok,bad)=>{
   const req=store.delete(key(postId,slideId));
@@ -112,11 +125,11 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let j=0;j<8;j++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0});
-function crc32(bytes:Uint8Array){
+export function crc32(bytes:Uint8Array){
  let c=0xffffffff;for(const n of bytes)c=crcTable[(c^n)&255]^(c>>>8);return (c^0xffffffff)>>>0;
 }
 export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
- if(files.length>50)throw Error('Слишком много файлов для экспорта');
+ if(files.length>300)throw Error('Слишком много файлов для экспорта');
  const encoder=new TextEncoder();
  const parts:Uint8Array[]=[],central:Uint8Array[]=[];
  let offset=0,size=0;
@@ -125,7 +138,7 @@ export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  for(const f of files){
   const name=encoder.encode(f.name);
   const hash=crc32(f.data);size+=f.data.length;
-  if(size>170*1024*1024||name.length>255)throw Error('Размер ZIP слишком большой');
+  if(size>512*1024*1024||name.length>255)throw Error('Размер ZIP слишком большой (предел 512 МиБ)');
   const local=new Uint8Array(30+name.length),lv=new DataView(local.buffer);
   w32(lv,0,0x04034b50);w16(lv,4,20);w16(lv,6,0x0800);
   w16(lv,8,0);w32(lv,14,hash);w32(lv,18,f.data.length);w32(lv,22,f.data.length);
