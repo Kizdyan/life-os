@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createPersonaProject} from './personaProjectStore';
-import {createSeedEditorialCarousel,approveEditorialStep,createEditorialFromTopic,TOPIC_CHOICES} from './personaEditorialModel';
+import {createSeedEditorialCarousel,approveEditorialStep,createEditorialFromTopic,TOPIC_CHOICES,setEditorialChecklistItem} from './personaEditorialModel';
 import {
  localCalendarDate,calendarMonday,addCalendarDays,calendarWeekOffset,
  buildPersonaWeeklyCalendar,videoCalendarStatus,photoCalendarStatus,loadPersonaCalendarAnchor,
@@ -75,7 +75,9 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   const seed=createSeedEditorialCarousel('PHOTO-001');
   const weekly=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[seed],weekMonday:'2026-11-16'});
   expect(weekly.items[1].status).toBe('Тема на утверждении');
-  const approved=approveEditorialStep(approveEditorialStep(approveEditorialStep(seed,'topic'),'content'),'design');
+  const reviewed=approveEditorialStep(approveEditorialStep(seed,'topic'),'content');
+   const checked=[0,1,2,3,4,5].reduce((post,index)=>setEditorialChecklistItem(post,index,true),reviewed);
+   const approved=approveEditorialStep(checked,'design');
   expect(buildPersonaWeeklyCalendar({...plans(),editorialPosts:[approved],
    weekMonday:'2026-11-16'}).items[1].status).toBe('Готов к производству');
  });
