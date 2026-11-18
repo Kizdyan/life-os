@@ -4,7 +4,7 @@ import {
  proposeTopics,editorialStage,editorialStageLabel,approveEditorialStep,reviseEditorialPost,
  loadEditorialStore,saveEditorialPost,loadStoryNotes,saveStoryNotes,EDITORIAL_KEY,STORY_KEY,
  createBaselinePauseCarousel,editorialChecklistReady,editorialChecklistState,
- setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,editorialStageLabel
+ setEditorialChecklistItem,editorialContentHash,editorialContrastRatio
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
