@@ -90,6 +90,18 @@ jobs:
           path: ${{ runner.temp }}/persona-architect-10-jobs.tar.gz
           retention-days: 14
           if-no-files-found: error
+      - name: Seed 10 carousels as local ProductionJobs and verify persistent waiting states
+        run: |
+          node tools/seed_carousels.mjs --output-root "${RUNNER_TEMP}/persona-carousel-10"
+          node tools/seed_carousels.mjs --output-root "${RUNNER_TEMP}/persona-carousel-10"
+          tar -czf "${RUNNER_TEMP}/persona-carousel-10-jobs.tar.gz" -C "${RUNNER_TEMP}" persona-carousel-10
+      - name: Upload 10 reproducible awaiting-photo carousel jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-carousel-ten-production-jobs
+          path: ${{ runner.temp }}/persona-carousel-10-jobs.tar.gz
+          retention-days: 14
+          if-no-files-found: error
       - name: Persona calendar and distribution regression tests
         run: |
           set -o pipefail
@@ -97,7 +109,15 @@ jobs:
       - name: Verify full Persona media pipeline with real FFmpeg
         run: |
           set -o pipefail
-          npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+          PERSONA_CAROUSEL_PROOF_DIR="${RUNNER_TEMP}/persona-carousel-proof" npm run media:test 2>&1 | tee /tmp/persona-ci-media.log
+      - name: Upload actual three distinct Gold-captioned PNGs and ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-carousel-three-distinct-titles
+          path: ${{ runner.temp }}/persona-carousel-proof/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Persona scenario and delivery regression gate
         run: |
           set -o pipefail

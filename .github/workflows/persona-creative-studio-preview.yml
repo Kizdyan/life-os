@@ -50,8 +50,18 @@ jobs:
         run: node tools/persona-architect-browser-e2e.mjs
       - name: Verify industry portfolios and real A4 PDF with browser
         run: node tools/persona-industry-browser-e2e.mjs
+      - name: Verify all 10 seeded waiting carousels in real Chromium (desktop and mobile)
+        run: node tools/persona-carousel-browser-e2e.mjs
       - name: Verify real one-click browser-to-MP4 workflow
         run: node tools/persona-quick-browser-e2e.mjs
+      - name: Upload carousel 10-card screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-carousel-seed-dashboard
+          path: artifacts/persona-carousel-seed/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload one-click real browser screenshots and MP4 fixture
         if: always()
         uses: actions/upload-artifact@v4
