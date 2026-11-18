@@ -2,7 +2,9 @@ import {describe,it,expect} from 'vitest';
 import {
  SEED_CAROUSELS,TOPIC_CHOICES,createSeedEditorialCarousel,createEditorialFromTopic,
  proposeTopics,editorialStage,editorialStageLabel,approveEditorialStep,reviseEditorialPost,
- loadEditorialStore,saveEditorialPost,loadStoryNotes,saveStoryNotes,EDITORIAL_KEY,STORY_KEY
+ loadEditorialStore,saveEditorialPost,loadStoryNotes,saveStoryNotes,EDITORIAL_KEY,STORY_KEY,
+ createBaselinePauseCarousel,editorialChecklistReady,editorialChecklistState,
+ setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,editorialStageLabel
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -21,7 +23,7 @@ describe('Persona Editorial Content Planner',()=>{
    expect(post.kind).toBe('carousel');
    expect(post.slides.map(s=>s.text)).toEqual(seed.slides);
    expect(post.caption.length).toBeGreaterThan(40);
-   expect(post.approvals).toEqual({topic:false,content:false,design:false});
+   expect(post.approvals).toMatchObject({topic:false,content:false,design:false,checklist:[false,false,false,false,false,false,false]});
    expect(editorialStage(post)).toBe('topic');
   }
  });
@@ -41,21 +43,24 @@ describe('Persona Editorial Content Planner',()=>{
   expect(()=>approveEditorialStep(topic,'design')).toThrow();
   const copy=approveEditorialStep(topic,'content');
   expect(editorialStage(copy)).toBe('design');
-  const ready=approveEditorialStep(copy,'design');
+  expect(()=>approveEditorialStep(copy,'design')).toThrow(/чек-лист|контраст/i);
+  const checked=[0,1,2,3,4,5].reduce((p,i)=>setEditorialChecklistItem(p,i,true),copy);
+  expect(editorialChecklistReady(checked)).toBe(true);
+  const ready=approveEditorialStep(checked,'design');
   expect(editorialStage(ready)).toBe('production');
-  expect(ready.approvals).toEqual({topic:true,content:true,design:true});
+  expect(ready.approvals).toMatchObject({topic:true,content:true,design:true,checklist:[true,true,true,true,true,true,true]});
   const designEdit=reviseEditorialPost(ready,{preset:'chocolate'});
-  expect(designEdit.approvals).toEqual({topic:true,content:true,design:false});
+  expect(designEdit.approvals).toMatchObject({topic:true,content:true,design:false});
   const photoVisual=reviseEditorialPost(ready,{slides:ready.slides.map((slide,i)=>
    i===1?{...slide,visual:'archive-photo' as const}:slide)});
-  expect(photoVisual.approvals).toEqual({topic:true,content:true,design:false});
+  expect(photoVisual.approvals).toMatchObject({topic:true,content:true,design:false});
   const editedSlide=reviseEditorialPost(ready,{slides:ready.slides.map((slide,i)=>
    i===1?{...slide,text:'Обновлённая мысль'}:slide)});
-  expect(editedSlide.approvals).toEqual({topic:true,content:false,design:false});
+  expect(editedSlide.approvals).toMatchObject({topic:true,content:false,design:false});
   const captionEdit=reviseEditorialPost(ready,{caption:'Новый текст поста'});
-  expect(captionEdit.approvals).toEqual({topic:true,content:false,design:false});
+  expect(captionEdit.approvals).toMatchObject({topic:true,content:false,design:false});
   const topicEdit=reviseEditorialPost(ready,{topic:'Другое наблюдение'});
-  expect(topicEdit.approvals).toEqual({topic:false,content:false,design:false});
+  expect(topicEdit.approvals).toMatchObject({topic:false,content:false,design:false});
   expect(()=>approveEditorialStep(reviseEditorialPost(topic,{caption:''}),'content')).toThrow(/подпись|основной/i);
  });
  it('photo posts can have no title burned on an archive photo, but background needs text',()=>{
@@ -107,4 +112,58 @@ describe('Persona Editorial Content Planner',()=>{
   expect(loadStoryNotes(memory)[0].state).toBe('idea');
   expect(memory.getItem(STORY_KEY)).not.toBeNull();
  });
+ it('initializes the text-only pause fixture without approval, photos or duplicate seed jobs',()=>{
+  const post=createBaselinePauseCarousel('2026-11-19T01:00:00Z');
+  expect(post.id).toBe('carousel-baseline-pause');
+  expect(post.kind).toBe('carousel');
+  expect(post.slides).toHaveLength(6);
+  expect(post.slides.every(s=>s.visual==='background')).toBe(true);
+  expect(post.slides.map(s=>s.text)).toEqual([
+   'Пауза — это не отсутствие текста.','Персонаж уже знает ответ.',
+   'Но сказать правду — значит что-то потерять.','Поэтому он задерживает слово.',
+   'Зритель замечает этот выбор.','Так молчание становится действием.'
+  ]);
+  expect(post.preset).toBe('chocolate-graphite');
+  expect(post.approvals).toMatchObject({topic:false,content:false,design:false,checklist:[false,false,false,false,false,false,false]});
+  expect(post.approvals.content).toBe(false);
+  expect(post.caption).toContain('Разница между ними — не в длительности');
+  expect(SEED_CAROUSELS).toHaveLength(10);
+ });
+ it('disables final approval until all six author choices and automatic contrast pass',()=>{
+  const draft=createBaselinePauseCarousel();
+  const content=approveEditorialStep(approveEditorialStep(draft,'topic'),'content');
+  expect(()=>approveEditorialStep(content,'design')).toThrow();
+  let checked=content;
+  for(let i=0;i<5;i++)checked=setEditorialChecklistItem(checked,i,true);
+  expect(editorialChecklistReady(checked)).toBe(false);
+  expect(()=>approveEditorialStep(checked,'design')).toThrow();
+  checked=setEditorialChecklistItem(checked,5,true);
+  expect(editorialChecklistState(checked)).toEqual([true,true,true,true,true,true,true]);
+  expect(()=>setEditorialChecklistItem(checked,6,true)).toThrow(/автоматически/);
+  expect(editorialContrastRatio('#777777','#777777')).toBe(1);
+  expect(editorialContrastRatio('#F2E9DC','#2B1D14')).toBeGreaterThan(4.5);
+  expect(editorialContrastRatio('#C9A882','#1C1C1E')).toBeGreaterThan(3);
+  expect(approveEditorialStep(checked,'design').approvals.checkedBy).toBe('Автор');
+ });
+ it('persists acceptance hash and revokes final approval on edits or stale loaded snapshots',()=>{
+  const memory=storage();
+  const start=createBaselinePauseCarousel('2026-11-19T01:00:00Z');
+  const content=approveEditorialStep(approveEditorialStep(start,'topic'),'content');
+  const checked=[0,1,2,3,4,5].reduce((p,i)=>setEditorialChecklistItem(p,i,true),content);
+  const approved=approveEditorialStep(checked,'design','2026-11-19T01:05:00Z');
+  expect(approved.approvals.checkedAt).toBe('2026-11-19T01:05:00Z');
+  expect(approved.approvals.contentHashAtApproval).toBe(editorialContentHash(approved));
+  saveEditorialPost(memory,approved);
+  expect(loadEditorialStore(memory).posts[0].approvals.contentHashAtApproval).toBe(approved.approvals.contentHashAtApproval);
+  const edited=reviseEditorialPost(approved,{slides:approved.slides.map((slide,i)=>
+   i===0?{...slide,text:'Другая реплика'}:slide)});
+  expect(edited.approvals.content).toBe(false);
+  expect(edited.approvals.design).toBe(false);
+  expect(editorialStageLabel(edited)).toBe('Требует повторного утверждения');
+  const tampered=JSON.parse(memory.getItem(EDITORIAL_KEY)!);
+  tampered.posts[0].slides[0].text='Подмена после утверждения';
+  memory.setItem(EDITORIAL_KEY,JSON.stringify(tampered));
+  expect(loadEditorialStore(memory).posts[0].approvals.design).toBe(false);
+ });
+
 });
