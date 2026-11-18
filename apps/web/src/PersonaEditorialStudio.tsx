@@ -200,6 +200,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {asset?<><p>Локально сохранено: {asset.name}</p><img src={asset.url} alt="Выбранное архивное фото" /></>:
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
+    <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset}
+     role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
+     {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
+     <div className="personaEditorialPreviewOverlay">
+      <span>СЛАЙД {selectedSlide+1} / {post.slides.length}</span>
+      <strong>{slide?.text||'Фото без надписи'}</strong>
+      <small>PERSONA · EDITORIAL</small>
+     </div>
+    </div>
+    <p>Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.</p>
     {!post.approvals.design?<button className="personaEditorialApprove" type="button"
      onClick={()=>approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
