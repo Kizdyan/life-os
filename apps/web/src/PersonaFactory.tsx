@@ -8,6 +8,7 @@ import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaActorPortfolio from './PersonaActorPortfolio';
 import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
+import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
 import PersonaPreparationStudio from './PersonaPreparationStudio';
 import './persona-creative-studio.css';
 
@@ -256,6 +257,7 @@ export default function PersonaFactory(){
  const[guideGuardMessage,setGuideGuardMessage]=useState('');
  const[projects,setProjects]=useState<PersonaProject[]>(()=>projectBootstrap.current?.projects??[]);const[activeProjectId,setActiveProjectId]=useState<string|null>(()=>projectBootstrap.current?.activeProjectId??null);const[timeline,setTimeline]=useState<PersonaTimelineSettings|null>(()=>initialProject?.timeline as PersonaTimelineSettings|null??null);
  const[screen,setScreen]=useState<PersonaScreen>(screenFromHash);
+ const[calendarPhotoFocus,setCalendarPhotoFocus]=useState<{id:string;request:number}|null>(null);
  const[demoNotice,setDemoNotice]=useState('');
  const[workspaceStep,setWorkspaceStep]=useState<WorkspaceStep>(()=>workspaceStepFrom(initialProject?.lastOpenStep,initialProject?.contentType));
  const[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
@@ -768,7 +770,13 @@ export default function PersonaFactory(){
    <div><small>PERSONA / CREATIVE STUDIO</small><h2>Твоя мастерская</h2></div>
    <button type="button" className="personaCreativeNew" onClick={()=>createQuickProject('reel')}>+ Новый Reels</button>
   </header>
-  <PersonaQuickAutoRender/>
+  <PersonaWeeklyContentCalendar videos={projects} onStartVideo={projectId=>{
+   const target=projects.find(project=>project.id===projectId&&project.contentType==='reel');
+   if(target)continueProject(target);
+  }} onStartPhoto={id=>setCalendarPhotoFocus(previous=>({id,request:(previous?.request??0)+1}))}
+   onImportReels={()=>{window.location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
+  <PersonaQuickAutoRender focusJobId={calendarPhotoFocus?.id??null}
+   focusRequest={calendarPhotoFocus?.request??0}/>
   <section className="personaCreativeProjectsHome" aria-label="Мои проекты">
    <div className="personaCreativeSectionHead"><div><h3>Мои проекты</h3></div>
     <button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
