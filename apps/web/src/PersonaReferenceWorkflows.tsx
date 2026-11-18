@@ -83,7 +83,7 @@ export default function PersonaReferenceWorkflows({videos,onCreateCarouselDraft,
  function createTrial(){
   try{
    const chosen=videos.find(v=>v.id===trialProject);
-   const campaign=makeTrialCampaign(trialName.trim()||chosen?.title||'');
+   const campaign=makeTrialCampaign(trialName.trim()||chosen?.title||'',new Date().toISOString(),uuid('trial'));
    if(chosen)campaign.sourceProjectId=chosen.id;
    if(data.trials.length>=30)throw Error('Достигнут предел экспериментальных планов');
    write({trials:[...data.trials,campaign]});setTrialName('');
