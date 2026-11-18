@@ -833,7 +833,7 @@ export default function PersonaFactory(){
     onClose={()=>setEditorialTargetId(null)}/>
   </div>
   <PersonaQuickAutoRender/>
-  <details className="personaCreativeAdvanced"><summary>Сохранность контента · резервная копия</summary><DataPortability/></details>
+  <details className="personaBackupDisclosure"><summary>Сохранность контента · резервная копия</summary><DataPortability/></details>
   <section className="personaCreativeProjectsHome" aria-label="Мои проекты">
    <div className="personaCreativeSectionHead"><div><h3>Мои проекты</h3></div>
     <button type="button" onClick={()=>navigate('projects')}>Все проекты <span aria-hidden="true">↗</span></button></div>
