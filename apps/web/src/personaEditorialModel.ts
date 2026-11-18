@@ -160,9 +160,14 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
   approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
   result.approvals={topic:false,content:false,design:false};
- else if(changes.caption!==undefined||changes.slides!==undefined)
+ else if(changes.caption!==undefined)
   result.approvals={...result.approvals,content:false,design:false};
- else if(changes.preset!==undefined)
+ else if(changes.slides!==undefined){
+  const copyChanged=changes.slides.length!==post.slides.length||
+   changes.slides.some((s,i)=>s.id!==post.slides[i]?.id||s.text!==post.slides[i]?.text);
+  result.approvals=copyChanged?{...result.approvals,content:false,design:false}:
+   {...result.approvals,design:false};
+ }else if(changes.preset!==undefined)
   result.approvals={...result.approvals,design:false};
  validatePost(result);return result;
 }
