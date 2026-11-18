@@ -85,6 +85,8 @@ try{
  assert.equal(imageCommand.status,0,imageCommand.stderr);
  await style.locator('input[type=file]').setInputFiles(image);
  await style.getByText('Локально сохранено:').waitFor({timeout:15000});
+ const carouselChecklist=editor.getByTestId('carousel-acceptance-checklist');
+ for(let i=1;i<=6;i++)await carouselChecklist.getByRole('checkbox',{name:'Пункт '+i}).check();
  await style.getByRole('button',{name:'Утвердить оформление'}).click();
  // Intercept the ACTUAL Canvas exporter, not only its source code: every
  // public text drawing call must be an authored slide title, never a watermark.
