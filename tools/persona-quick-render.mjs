@@ -264,7 +264,7 @@ export function createPersonaQuickRenderService(config={}){
    return view(job); // resume partial upload using uploadedIndices
   }
   normalizeCarouselSlides(job.slides,files.length);
-  job.files=files;job.sourceConsent=true;job.stage='Загрузка фотографий по слайдам';
+  job.files=files;job.state='uploading';job.sourceConsent=true;job.stage='Загрузка фотографий по слайдам';
   job.updatedAt=new Date().toISOString();await save(job);
   return view(job);
  }
