@@ -1,8 +1,8 @@
-import type {EditorialPost,EditorialSlide} from './personaEditorialModel';
+import {editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
-type StoredImage={key:string;name:string;mime:string;bytes:number;blob:Blob};
+export type StoredImage={key:string;name:string;mime:string;bytes:number;blob:Blob};
 const key=(postId:string,slideId:string)=>postId+'/'+slideId;
 function openDB():Promise<IDBDatabase>{
  if(typeof indexedDB==='undefined')return Promise.reject(Error('Браузер не поддерживает локальный архив IndexedDB'));
@@ -52,6 +52,24 @@ export async function readEditorialImage(postId:string,slideId:string):Promise<S
   req.onsuccess=()=>ok(req.result??null);
   req.onerror=()=>bad(Error('Не удалось получить фотографию из архива'));
  });
+}
+/** Read an original by its existing IndexedDB key. Do not duplicate the blob. */
+export async function readEditorialImageByRef(ref:string):Promise<StoredImage|null>{
+ if(!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(ref))throw Error('Invalid original archive photo key');
+ return dbAction<StoredImage|null>('readonly',(store,ok,bad)=>{
+  const req=store.get(ref);req.onsuccess=()=>ok(req.result??null);
+  req.onerror=()=>bad(Error('Не удалось прочитать исходное фото из архива'));
+ });
+}
+/** Verify actual IndexedDB assets, not merely the submitted string IDs. */
+export async function verifyEditorialArchivePhotos(post:EditorialPost):Promise<boolean>{
+ if(!post.carouselFormat)return true;
+ const photos=post.slides.filter(s=>s.visual==='archive-photo');
+ if(!photos.length)return true;
+ const entries=await listEditorialImages();
+ return editorialArchiveProvenancePass(post,entries.filter(entry=>
+  entry.blob instanceof Blob&&entry.bytes===entry.blob.size&&
+  ['image/jpeg','image/png'].includes(entry.mime)).map(entry=>entry.key));
 }
 /** Include all editorial archive assets, including photos temporarily not used in a slide. */
 export async function listEditorialImages():Promise<StoredImage[]>{
@@ -103,7 +121,8 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  ctx.fillRect(0,0,1080,1350);
  const usePhoto=slide.visual==='archive-photo';
  if(usePhoto){
-  const stored=await readEditorialImage(post.id,slide.id);
+  const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):
+   await readEditorialImage(post.id,slide.id);
   if(!stored)throw Error('Нет фото для слайда №'+(index+1)+'. Выбери изображение из архива.');
   let image:ImageBitmap;
   try{image=await createImageBitmap(stored.blob)}catch{throw Error('Повреждено архивное изображение для слайда №'+(index+1))}
@@ -120,11 +139,26 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  // photo/background. Internal Persona labels, section numbers and metadata
  // are never burned into publication pixels.
  if(slide.text.trim()){
-  ctx.font='500 80px "Cormorant Garamond", Georgia, serif';
-  const lines=wrapText(ctx,slide.text,870,4);
-  let y=Math.max(660,1010-lines.length*95);
-  ctx.fillStyle=post.preset==='chocolate-graphite'?theme.fg:theme.accent; // Existing public Canvas typography.
-  for(const line of lines){ctx.fillText(line,94,y);y+=100}
+  if(usePhoto&&post.carouselFormat){
+   // High-opacity dark backing yields contrast independent of the photo pixels.
+   let lines:string[]=[],fontSize=68;
+   for(;fontSize>=44;fontSize-=4){
+    ctx.font='500 '+fontSize+'px "Cormorant Garamond", Georgia, serif';
+    try{lines=wrapText(ctx,slide.text,884,2);break}catch{}
+   }
+   if(!lines.length)throw Error('Подпись слишком длинная для фото-слайда');
+   const step=fontSize+15,firstBaseline=1132-(lines.length-1)*step;
+   const panelTop=firstBaseline-fontSize-30,panelBottom=1188;
+   ctx.fillStyle='rgba(8,10,12,.94)';ctx.fillRect(52,panelTop,976,panelBottom-panelTop);
+   ctx.fillStyle=theme.fg;
+   lines.forEach((line,i)=>ctx.fillText(line,88,firstBaseline+i*step));
+  }else{
+   ctx.font='500 80px "Cormorant Garamond", Georgia, serif';
+   const lines=wrapText(ctx,slide.text,870,4);
+   let y=Math.max(660,1010-lines.length*95);
+   ctx.fillStyle=post.preset==='chocolate-graphite'?theme.fg:theme.accent;
+   for(const line of lines){ctx.fillText(line,94,y);y+=100}
+  }
  }
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
@@ -166,6 +200,8 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
  if(!post.caption.trim())throw Error('Для публикации нужен основной текст поста');
+ if(post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
+  throw Error('Пункт 6: фото не найдено в архиве IndexedDB; экспорт заблокирован');
  const files:{name:string;data:Uint8Array}[]=[];
  for(const [i,slide] of post.slides.entries()){
   const blob=await renderSlide(post,slide,i);
