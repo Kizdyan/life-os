@@ -47,7 +47,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat);
- const archiveRefsReady=post===null||!post.slides.some(s=>s.visual==='archive-photo')||
+ const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
   (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
    archiveChoices.map(x=>x.key)));
  const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post)&&archiveRefsReady:true;
