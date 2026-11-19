@@ -149,7 +149,14 @@ export function createPersonaQuickRenderService(config={}){
   if(!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
    canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
   }
-  const state=canonical.status==='FAILED'?'failed':canonical.status==='AWAITING_APPROVAL'?'completed':
+  // Never expose completed before the final quick-state card metadata is
+  // committed. The canonical production record transitions first; on a live
+  // Worker the final captionDecision/exportItems are saved shortly afterwards.
+  // With no cached job (after restart), recovery trusts the persisted receipt.
+  const pendingCardSave=Boolean(cached&&cached.state==='running'&&
+   canonical.status==='AWAITING_APPROVAL');
+  const state=canonical.status==='FAILED'?'failed':pendingCardSave?'running':
+   canonical.status==='AWAITING_APPROVAL'?'completed':
    ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':
    meta.seedKey&&meta.files.length===0?'waiting_for_footage':'uploading';
   if(!cached&&!active&&canonical.fullRender?.status==='RENDERING')
