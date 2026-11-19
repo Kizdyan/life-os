@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'carousels-v*'
+    branches:
+      - main
+    paths:
+      - 'docs/persona-carousel-release-approvals.json'
   pull_request:
     paths:
       - 'tools/persona-build-publish-packages.mjs'
@@ -63,7 +67,7 @@ jobs:
           RELEASE_EVENT: ${{ github.event_name }}
           RELEASE_RUN: ${{ github.run_number }}
         run: |
-          if [ "$RELEASE_EVENT" = "push" ]; then
+          if [ "$RELEASE_EVENT" = "push" ] && [[ "$RELEASE_REF" == carousels-v* ]]; then
             TAG="$RELEASE_REF"
           elif gh release view carousels-v1 >/dev/null 2>&1; then
             TAG="carousels-v1-$(date -u +%Y%m%d)-$RELEASE_RUN"
