@@ -40,7 +40,7 @@ function requireApproval(post:EditorialPost):void{
  if(!publicationCarouselApproved(post))throw Error(UNAPPROVED_PUBLICATION_MESSAGE);
 }
 export function publicationIsTextFallback(post:EditorialPost):boolean{
- return Boolean(post.carouselFormat&&post.slides.some(s=>s.visual==='background'));
+ return Boolean(post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'));
 }
 export function publicationInstructions(post:EditorialPost):string{
  const lines=[

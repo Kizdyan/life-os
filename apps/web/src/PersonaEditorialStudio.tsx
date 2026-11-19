@@ -10,6 +10,11 @@ import {
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
 import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload} from './personaEditorialMedia';
+import {
+ PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
+ buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
+ UNAPPROVED_PUBLICATION_MESSAGE,type PublicationCarouselId
+} from './personaEditorialPublish';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -32,11 +37,35 @@ const CHECKLIST_TEXT=[
  'Контраст текста к фону ≥ 4.5:1 для основного текста и ≥ 3:1 для крупных заголовков. Проверяется автоматически.'
 ];
 const copy=(text:string)=>{void navigator.clipboard?.writeText(text)};
+
+/** Lightweight first-slide preview; final publication pixels still come from the original Canvas renderer. */
+function EditorialPublishCover({post}: {post:EditorialPost}){
+ const first=post.slides[0];
+ const [url,setUrl]=useState<string|null>(null);
+ useEffect(()=>{
+  let alive=true,objectUrl:string|null=null;
+  setUrl(null);
+  if(first?.visual!=='archive-photo')return;
+  (first.photoRef?readEditorialImageByRef(first.photoRef):readEditorialImage(post.id,first.id))
+   .then(record=>{if(!alive||!record)return;
+    objectUrl=URL.createObjectURL(record.blob);setUrl(objectUrl);
+   }).catch(()=>{if(alive)setUrl(null)});
+  return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
+ },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
+ return <div className="personaEditorialPublishCover" role="img"
+  aria-label={'Первый слайд: '+post.slides[0].text}>
+  {url&&<img src={url} alt=""/>}
+  <strong>{post.slides[0].text}</strong>
+ </div>;
+}
+
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
  const [kind,setKind]=useState<PostKind>('carousel');
  const [selectedSlide,setSelectedSlide]=useState(0);
  const [busy,setBusy]=useState(false);
+ const [showPublish,setShowPublish]=useState(false);
+ const [publishError,setPublishError]=useState('');
  const [error,setError]=useState('');
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
  const [archiveChoices,setArchiveChoices]=useState<{key:string;name:string;url:string}[]>([]);
@@ -44,6 +73,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [archiveError,setArchiveError]=useState('');
  const [archiveRefresh,setArchiveRefresh]=useState(0);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
+ const publishRows=PUBLICATION_CAROUSEL_IDS.map(id=>
+  posts.find(p=>p.id===id)??publicationCarouselDraft(id));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat);
@@ -151,6 +182,28 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onCreate(created);onSelect(id);setError('');
   }catch(e){setError((e as Error).message)}
  }
+
+ function openPublicationApproval(id:PublicationCarouselId){
+  try{
+   if(!posts.some(p=>p.id===id))onCreate(publicationCarouselDraft(id));
+   setPublishError('');onSelect(id);
+  }catch(e){setPublishError((e as Error).message)}
+ }
+ async function downloadPublication(id:PublicationCarouselId|null){
+  if(busy)return;
+  const targets=id?publishRows.filter(p=>p.id===id):publishRows;
+  if(targets.length!==(id?1:4)||targets.some(p=>!publicationCarouselApproved(p))){
+   setPublishError(UNAPPROVED_PUBLICATION_MESSAGE);return;
+  }
+  setPublishError('');setBusy(true);
+  try{
+   const zip=id?await buildSinglePublicationZip(targets[0]):
+    await buildAllPublicationZip(targets);
+   triggerEditorialDownload(zip,publicationFilename(id));
+  }catch(e){setPublishError((e as Error).message)}
+  finally{setBusy(false)}
+ }
+
  async function upload(file:File|null){
   if(!post||!slide||!file)return;
   setBusy(true);setError('');
@@ -178,9 +231,47 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <h2>Редакция: карусели и фото</h2>
     <p>Сначала выбираем тему, затем текст и только после — оформление. Никаких выдуманных съёмок и публикаций.</p>
    </div>
-   {post&&<button type="button" className="personaEditorialBack" onClick={onClose}>Все темы ↖</button>}
+   {post&&<div className="personaEditorialPublishHeadActions">
+    <button type="button" className="personaEditorialBack" onClick={()=>{setShowPublish(true);onClose()}}>Пакет для публикации</button>
+    <button type="button" className="personaEditorialBack" onClick={onClose}>Все темы ↖</button>
+   </div>}
   </header>
-  {!post?<div className="personaEditorialPick" data-testid="editorial-topic-chooser">
+  {!post&&showPublish?<div className="personaEditorialPublish" data-testid="editorial-publication-package">
+   <div className="personaEditorialPublishIntro">
+    <div><h3>Пакет для публикации</h3>
+     <p>Здесь четыре готовых сценария каруселей. Скачивание доступно только после твоего утверждения темы, текста и оформления. Instagram ничего не публикует автоматически.</p>
+    </div>
+    <button type="button" onClick={()=>{setShowPublish(false);setPublishError('')}}>← К темам</button>
+   </div>
+   <div className="personaEditorialPublishList">
+    {publishRows.map(entry=><article key={entry.id} data-publish-carousel-id={entry.id}>
+     <EditorialPublishCover post={entry}/>
+     <div className="personaEditorialPublishDetails">
+      <h4>{entry.title}</h4>
+      <span className="personaEditorialPublishStatus" data-approved={publicationCarouselApproved(entry)?'true':'false'}>
+       {publicationCarouselApproved(entry)?'Утверждена':'Черновик'}</span>
+      <p>6 слайдов · {entry.carouselFormat?(entry.slides.some(s=>s.visual==='archive-photo')?
+       'фото из архива':'текстовый вариант без фото'):'текстовая карусель'}</p>
+      <div className="personaEditorialPublishActions">
+       {!publicationCarouselApproved(entry)&&<button type="button"
+        onClick={()=>openPublicationApproval(entry.id as PublicationCarouselId)}>Утвердить</button>}
+       {publicationCarouselApproved(entry)&&<button type="button"
+        onClick={()=>openPublicationApproval(entry.id as PublicationCarouselId)}>Редактировать</button>}
+       <button type="button" disabled={busy}
+        onClick={()=>void downloadPublication(entry.id as PublicationCarouselId)}>Скачать пакет</button>
+      </div>
+     </div>
+    </article>)}
+   </div>
+   <button type="button" className="personaEditorialExport"
+    disabled={busy} onClick={()=>void downloadPublication(null)}>
+    {busy?'Собираю архив…':'Скачать все четыре одним архивом'}
+   </button>
+   {publishError&&<p role="alert" className="personaEditorialError">{publishError}</p>}
+  </div>:!post?<div className="personaEditorialPick" data-testid="editorial-topic-chooser">
+   <p className="personaEditorialNote">Четыре карусели можно собрать в один архив для ручной публикации.
+    <button type="button" data-testid="open-publication-package" onClick={()=>{setShowPublish(true);setPublishError('')}}>Пакет для публикации</button>
+   </p>
    <div className="personaEditorialSplit">
     <div>
      <h3>Темы от Persona</h3>
