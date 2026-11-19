@@ -839,7 +839,11 @@ export function createPersonaQuickRenderService(config={}){
     const quality=await analyzePersonaVideoQuality({
      videoPath:video,expectedDurationSec:details.durationSec,outputPath:qualityPath,
      ffmpegDir:config.ffmpegDir,timelinePath:join(out,'full-edited.mp4.persona.json'),
-     timelineSourceVideoPath:fullDraft});
+     timelineSourceVideoPath:fullDraft,
+     ...(hasCaptions?{
+      subtitleBurnManifestPath:video+'.persona-subtitles.json',
+      subtitleReviewPath:reviewPath,
+     }:{})});
     if(quality.video.sha256!==hash)throw Error('Video Quality Lab проверил не тот MP4');
     const warnings=quality.findings.filter(item=>item.status==='warning');
     const contact=quality.visualEvidence?.contactSheetPath;
