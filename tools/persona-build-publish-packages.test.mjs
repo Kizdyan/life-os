@@ -66,7 +66,7 @@ test('self-test assets must not be published as a real GitHub Release',async()=>
  assert.equal(meta.previewFiles.length,24);
  const previews=(await readdir(join(dir,'previews'))).sort();
  assert.deepEqual(previews,meta.previewFiles.slice().sort());
- const bundle=files.find(x=>x.startsWith('persona-carousels-publish-'));
+ const bundle=meta.files.find(x=>x.startsWith('persona-carousels-publish-'));
  const combined=unzip(await readFile(join(dir,bundle)));
  for(const [id,alias] of [
   ['carousel-baseline-pause','baseline-pause'],
