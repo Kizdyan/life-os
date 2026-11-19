@@ -7,6 +7,7 @@ import {
  PERSONA_WEEKLY_CALENDAR_KEY,PERSONA_WEEKLY_WORKDAYS
 } from './personaWeeklyContentCalendar';
 import {PERSONA_ARCHITECT_IDS} from './personaArchitectSeeds';
+import {DEFAULT_PERSONA_PUBLICATION_SCHEDULE,PERSONA_PUBLICATION_SCHEDULE,personaPublicationMondayIndex} from './config/publication-schedule';
 
 const now='2026-11-18T12:00:00Z';
 const videos=PERSONA_ARCHITECT_IDS.map((id,i)=>({
@@ -18,6 +19,7 @@ const photos=Array.from({length:10},(_,i)=>({
  title:'Photo carousel '+String(i+1),state:'waiting_for_footage',productionStatus:'WAITING_FOR_FOOTAGE'
 }));
 const plans=()=>({videos,photos,anchorMonday:'2026-11-16'});
+const firstDefinedSlotTimes=()=>buildPersonaWeeklyCalendar({...plans(),weekMonday:'2026-11-16'}).items.map(item=>item.scheduledTime);
 
 describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
  it('uses seven local weekdays and is stable across DST and New Year',()=>{
@@ -51,9 +53,16 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(carouselSeen.size).toBe(10);
   expect(photoSlots.size).toBe(10);
   expect(PERSONA_WEEKLY_WORKDAYS).toEqual([1,3,5]);
+  expect(PERSONA_PUBLICATION_SCHEDULE).toBe(DEFAULT_PERSONA_PUBLICATION_SCHEDULE);
+  expect(PERSONA_PUBLICATION_SCHEDULE.timezone).toBe('Europe/Moscow');
+  expect([PERSONA_PUBLICATION_SCHEDULE.reels.dayOfWeek,PERSONA_PUBLICATION_SCHEDULE.carousel.dayOfWeek,PERSONA_PUBLICATION_SCHEDULE.photo.dayOfWeek]).toEqual([2,4,6]);
+  expect(firstDefinedSlotTimes()).toEqual(['19:00','09:00','21:00']);
+  expect(personaPublicationMondayIndex(0)).toBe(6);
+  expect(personaPublicationMondayIndex(2)).toBe(1);
   // Mon-based dates are stable; only generated editorial slots move.
   const first=buildPersonaWeeklyCalendar({...plans(),weekMonday:'2026-11-16'});
   expect(first.items.map(x=>x.scheduledDate)).toEqual(['2026-11-17','2026-11-19','2026-11-21']);
+  expect(first.items.map(x=>x.scheduledTime)).toEqual(['19:00','09:00','21:00']);
   expect(first.days[0].items).toHaveLength(0);
   expect(first.days[1].items.map(x=>x.sourceId)).toEqual(['reel-01']);
   expect(first.days[3].items.map(x=>x.sourceId)).toEqual(['PHOTO-001']);
@@ -98,6 +107,7 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(plan.items.find(x=>x.sourceId==='photo-week-01')?.title).toBe(idea.title);
   expect(plan.items.find(x=>x.sourceId==='photo-week-01')?.placeholder).toBe(false);
   expect(plan.items.find(x=>x.sourceId==='editorial-photo-extra')?.scheduledDate).toBe('2026-11-17');
+  expect(plan.items.find(x=>x.sourceId==='editorial-photo-extra')?.scheduledTime).toBeUndefined();
   expect(plan.items.find(x=>x.sourceId==='PHOTO-001')?.dayIndex).toBe(3);
  });
  it('persists the calendar anchor without silently shifting existing dates',()=>{

@@ -8,6 +8,7 @@ import {
  loadPersonaCalendarAnchor,localCalendarDate,PERSONA_PHOTO_SEED_IDS,
  type CalendarPhotoJob,type PersonaWeeklyItem
 } from './personaWeeklyContentCalendar';
+import {PERSONA_PUBLICATION_SCHEDULE} from './config/publication-schedule';
 import './persona-weekly-content-calendar.css';
 
 type Props={
@@ -133,6 +134,7 @@ export default function PersonaWeeklyContentCalendar({
      <span className="personaWeekCalendarKind">{item.kind==='video'?'◉ Видео':
       item.kind==='carousel'?'▤ Карусель':'▧ Фото-пост'}</span>
      <h3>{item.title}</h3>
+     {item.scheduledTime&&<span className="personaWeekCalendarState">План: {item.scheduledTime} · {PERSONA_PUBLICATION_SCHEDULE.timezone}</span>}
      <span className="personaWeekCalendarState">{item.status}</span>
      <button type="button" className="personaWeekCalendarStart"
       aria-label={'Начать работу: '+item.title} onClick={()=>start(item)}>
