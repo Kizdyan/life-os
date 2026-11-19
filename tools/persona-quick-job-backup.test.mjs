@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
-import {mkdtemp,mkdir,readFile,rm,stat,symlink,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rename,rm,stat,symlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
@@ -106,5 +106,26 @@ test('refuses active render state, symlink payload and manifest traversal',async
   manifest.files[0].path='../escape.mp4';
   await writeFile(manifestPath,JSON.stringify(manifest));
   await assert.rejects(verifyPersonaQuickJobBackup(dst),/Unsafe path|malformed/);
+ }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('rejects a linked manifest or a non-directory backup payload',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-backup-manifest-links-'));
+ try{
+  const job=await fixture(root),destination=join(root,'archive');
+  await backupPersonaQuickJob({quickRoot:job.quickRoot,id:job.id,destination});
+  const manifestPath=join(destination,'manifest.json'),realManifest=join(root,'real-manifest.json');
+  await rename(manifestPath,realManifest);
+  let linked=false;
+  try{await symlink(realManifest,manifestPath,'file');linked=true}
+  catch(error){if(!['EPERM','EACCES','ENOTSUP'].includes(error?.code))throw error}
+  if(linked){
+   await assert.rejects(verifyPersonaQuickJobBackup(destination),/regular payload folder and manifest file/);
+   await rm(manifestPath);
+  }
+  await rename(realManifest,manifestPath);
+  await rm(join(destination,'files'),{recursive:true});
+  await writeFile(join(destination,'files'),'this is not a payload folder');
+  await assert.rejects(verifyPersonaQuickJobBackup(destination),/regular payload folder and manifest file/);
  }finally{await rm(root,{recursive:true,force:true})}
 });

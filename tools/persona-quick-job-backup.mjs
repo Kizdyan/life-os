@@ -126,12 +126,16 @@ function validateManifest(manifest){
 }
 export async function verifyPersonaQuickJobBackup(backupDir){
  const folder=resolve(backupDir);
- if(!(await lstat(folder)).isDirectory()||(await lstat(join(folder,'files'))).isSymbolicLink())
-  fail('Backup must be a real folder without linked payloads');
- const file=join(folder,'manifest.json');
- if((await stat(file)).size>2_000_000)fail('Backup manifest is too large');
+ if(!(await lstat(folder)).isDirectory())
+  fail('Backup must be a real folder');
+ const payload=join(folder,'files'),file=join(folder,'manifest.json');
+ const [payloadInfo,manifestInfo]=await Promise.all([lstat(payload),lstat(file)]);
+ if(!payloadInfo.isDirectory()||payloadInfo.isSymbolicLink()||
+    !manifestInfo.isFile()||manifestInfo.isSymbolicLink())
+  fail('Backup must have a regular payload folder and manifest file (no symlinks)');
+ if(manifestInfo.size>2_000_000)fail('Backup manifest is too large');
  const manifest=validateManifest(JSON.parse(await readFile(file,'utf8')));
- await verifiedContents(join(folder,'files'),manifest);
+ await verifiedContents(payload,manifest);
  await stableJob(join(folder,'files'),manifest.id);
  return {id:manifest.id,fileCount:manifest.files.length,totalBytes:manifest.totalBytes,
   productionStatus:manifest.productionStatus,originalJobDir:manifest.originalJobDir,verified:true};
