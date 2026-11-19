@@ -321,7 +321,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
       <summary>Резервная копия этого проекта (Windows)</summary>
       <p>UUID для локального архивирования: <code>{job.id}</code></p>
       <p>Браузерный ZIP не включает эти исходники и MP4. На компьютере с Media Worker останови рендер и сохрани проверяемую копию на другом диске по <a href="https://github.com/Kizdyan/life-os/blob/main/docs/persona-worker-job-backup.md" target="_blank" rel="noreferrer">инструкции</a>. Копирование пока ручное; повторный монтаж на другом компьютере не гарантирован.</p>
-     </details>
+     </details>}
      <p>{statusLabel(job)} · {job.contentType==='photo-carousel'?'Фото-карусель '+(job.carouselAspect??'4:5'):
       job.contentType==='photo-slideshow'?'Фото-слайдшоу':'Видео'}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
