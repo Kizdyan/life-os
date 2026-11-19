@@ -33,6 +33,7 @@ import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
+import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 import {quickDirectorFrameSchedule,quickDirectorMoodToAppearance,selectQuickStyleFromVision} from './persona-quick-style-director.mjs';
 import {classifyQuoteSpeech,cueFromWhisper,validateQuoteText,layoutQuoteForSignatureGold,quoteCue,generatePersonaQuote} from './persona-ai-quote.mjs';
 import {inspectPhoto,normalizeCarouselSlides,renderPhotoCarousel,renderPhotoSlideshow,renderPlatformPackage} from './persona-quick-platforms.mjs';
@@ -184,7 +185,7 @@ export function createPersonaQuickRenderService(config={}){
   ready:job.state==='completed'&&typeof job.sha256==='string',idSource:'local-production-job',
   fastDraft:job.fastDraft===true,
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
-  fullReady:job.fullRender?.status==='COMPLETED',
+  fullReady:job.fullRender?.status==='COMPLETED',finalQuality:job.finalQuality??null,
   moments:job.moments??[],
   autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
@@ -802,9 +803,10 @@ export function createPersonaQuickRenderService(config={}){
    // Retry is allowed only after a recorded full-render failure; stale derivatives
    // are removed but the original draft and the verified edit plan are untouched.
    for(const filename of ['full-timeline.json','full-edited.mp4','full-edited.mp4.persona.json',
-     'full-ready.mp4','RESULT-FULL.json']){
+     'full-ready.mp4','RESULT-FULL.json','video-quality-full.json']){
     await rm(join(out,filename),{force:true});
    }
+   await rm(join(out,'visual-evidence-video-quality-full'),{recursive:true,force:true});
    const fullTimeline={...timeline,width:1080,height:1920,fps:30,renderProfile:'full-quality'};
    const fullTimelinePath=join(out,'full-timeline.json');
    await writeFile(fullTimelinePath,JSON.stringify(fullTimeline,null,2)+'\n',{flag:'wx'});
@@ -829,6 +831,31 @@ export function createPersonaQuickRenderService(config={}){
    if(details.width!==1080||details.height!==1920)
     throw Error('Финальный экспорт не достиг разрешения 1080×1920');
    const hash=await sha(video),bytes=(await stat(video)).size;
+   // Run the existing Video Quality Lab against the actual, final 1080p MP4.
+   // Findings are local measurements, NOT creative quality approval.
+   const qualityPath=join(out,'video-quality-full.json');
+   try{
+    job.stage='1080p: проверяю кадры, звук и цвет';await save(job);
+    const quality=await analyzePersonaVideoQuality({
+     videoPath:video,expectedDurationSec:details.durationSec,outputPath:qualityPath,
+     ffmpegDir:config.ffmpegDir,timelinePath:join(out,'full-edited.mp4.persona.json'),
+     timelineSourceVideoPath:fullDraft});
+    if(quality.video.sha256!==hash)throw Error('Video Quality Lab проверил не тот MP4');
+    const warnings=quality.findings.filter(item=>item.status==='warning');
+    const contact=quality.visualEvidence?.contactSheetPath;
+    job.finalQuality={status:'REVIEW_REQUIRED',videoSha256:hash,
+     reportSha256:await sha(qualityPath),contactSheetSha256:contact?await sha(contact):null,
+     warnings:warnings.map(item=>({id:item.id,title:item.title,timecodes:item.timecodes??[]})).slice(0,30),
+     notMeasuredCount:quality.findings.filter(item=>item.status==='not_measured').length};
+    await save(job);
+    if(quality.findings.some(item=>item.id==='decode_integrity'&&item.status==='warning'))
+     throw Error('MP4 не прошёл полное декодирование: экспорт остановлен, проверь файл вручную');
+   }catch(error){
+    if(job.finalQuality?.status==='REVIEW_REQUIRED')throw error;
+    job.finalQuality={status:'UNAVAILABLE',videoSha256:hash,reason:String(error.message||error).slice(0,250)};
+    await save(job);
+    // Do not misrepresent unavailable QC as PASS; author must check the MP4.
+   }
    const receipt={version:1,status:'awaiting-author-review',distributionAllowed:false,
     id,videoName:basename(video),sha256:hash,bytes,width:1080,height:1920,
     durationSec:details.durationSec,hasCaptions,renderProfile:'full-quality',
@@ -862,7 +889,7 @@ export function createPersonaQuickRenderService(config={}){
    throw Error('Локальный Worker уже выполняет рендер');
   const receipt=await new ProductionJob(directory(id)).updateFullRender('RENDERING',{
    reason:'1080p export reuses stored author EditPlan; cloud analysis disabled'});
-  active=id;job.fullRender=receipt.fullRender;job.stage='Начинаю 1080p';await save(job);
+  active=id;job.fullRender=receipt.fullRender;job.finalQuality=null;job.stage='Начинаю 1080p';await save(job);
   void executeFull(job,{withPackage});return view(job);
  }
  async function video(id,res,quality='draft'){
@@ -918,6 +945,34 @@ export function createPersonaQuickRenderService(config={}){
   job.stage='Готовлю платформенные файлы';await save(job);
   void executePackage(job);return view(job);
  }
+ async function qualityArtifact(id,kind,res){
+  if(!['report','contact-sheet'].includes(kind))throw Error('Unknown quality artifact');
+  const job=await get(id);
+  if(!job||job.state!=='completed'||job.fullRender?.status!=='COMPLETED'||
+     job.finalQuality?.status!=='REVIEW_REQUIRED'||
+     job.finalQuality.videoSha256!==job.fullRender.sha256)
+   throw Error('Full-quality evidence is not available');
+  const out=join(directory(id),'output'),reportPath=join(out,'video-quality-full.json');
+  // The report also becomes stale if its referenced master was changed.
+  if(!['full-edited.mp4','full-ready.mp4'].includes(job.fullRender.videoName)||
+    await sha(join(out,job.fullRender.videoName))!==job.fullRender.sha256)
+   throw Error('Final MP4 checksum mismatch: quality evidence is stale');
+  if(await sha(reportPath)!==job.finalQuality.reportSha256)
+   throw Error('Quality report checksum mismatch');
+  const report=JSON.parse(await readFile(reportPath,'utf8'));
+  if(report.kind!=='persona-video-quality-v1'||report.video?.sha256!==job.fullRender.sha256||
+     report.publicationApproved!==false||report.distributionAllowed!==false)
+   throw Error('Quality report does not match final MP4');
+  const file=kind==='report'?reportPath:join(out,'visual-evidence-video-quality-full','contact-sheet.jpg');
+  if(kind==='contact-sheet'&&(!job.finalQuality.contactSheetSha256||
+     await sha(file)!==job.finalQuality.contactSheetSha256))
+   throw Error('Quality contact sheet checksum mismatch');
+  const size=(await stat(file)).size;
+  res.writeHead(200,{'Content-Type':kind==='report'?'application/json':'image/jpeg','Content-Length':size,
+   'Content-Disposition':'attachment; filename="persona-'+id+(kind==='report'?'-quality-report.json':'-quality-contact-sheet.jpg')+'"',
+   'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+  createReadStream(file).pipe(res);
+ }
  async function exported(id,slug,res){
   const job=await get(id);
   if(!job||job.state!=='completed'||job.exportStatus!=='COMPLETED')
@@ -957,7 +1012,7 @@ export function createPersonaQuickRenderService(config={}){
     let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Invalid quick render JSON')}
     resJson(res,201,await create(body));return true;
    }
-   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full|attach-photos|export-package|export\/([a-z0-9-]+)))?$/.exec(path);
+   const matched=/^\/quick-render\/([0-9a-f-]{36})(?:\/(upload\/(\d+)|run|status|video|video-full|render-full|attach-photos|export-package|quality-report|quality-contact-sheet|export\/([a-z0-9-]+)))?$/.exec(path);
    if(!matched){resJson(res,404,{error:'unknown_quick_render_route'});return true}
    const id=checkedJobId(matched[1]),action=matched[2];
    if(req.method==='GET'&&action==='status'){
@@ -982,6 +1037,8 @@ export function createPersonaQuickRenderService(config={}){
    if(req.method==='GET'&&action?.startsWith('export/')){await exported(id,matched[4],res);return true}
    if(req.method==='GET'&&action==='video'){await video(id,res);return true}
    if(req.method==='GET'&&action==='video-full'){await video(id,res,'full');return true}
+   if(req.method==='GET'&&action==='quality-report'){await qualityArtifact(id,'report',res);return true}
+   if(req.method==='GET'&&action==='quality-contact-sheet'){await qualityArtifact(id,'contact-sheet',res);return true}
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }

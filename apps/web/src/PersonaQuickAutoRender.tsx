@@ -12,6 +12,9 @@ type QuickRenderJob={id:string;title:string;state:'waiting_for_footage'|'uploadi
  textAccents?:boolean;captionDecision?:{mode:string;reason:string;generatedText?:string|null;wordCount?:number}|null;
  fastDraft?:boolean;fullRenderStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;
  fullRenderError?:string|null;fullReady?:boolean;
+ finalQuality?:{status:'REVIEW_REQUIRED'|'UNAVAILABLE';videoSha256:string;reason?:string;
+  warnings?:{id:string;title:string;timecodes:string[]}[];notMeasuredCount?:number;
+  reportSha256?:string;contactSheetSha256?:string|null}|null;
  contentType?:'video'|'photo-carousel'|'photo-slideshow';carouselAspect?:'4:5'|'1:1';
  carouselFiles?:{id:string;width:number;height:number;textOverlay:boolean}[];
  exportStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;exportError?:string|null;
@@ -341,8 +344,26 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
      {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&<p>Черновик 720×1280 готов. Скачай и просмотри его: после просмотра одна кнопка подготовит мастер 1080p и варианты для соцсетей. Проверь итоговые файлы; автоматического утверждения и публикации нет.</p>}
      {job.fullRenderStatus==='RENDERING'&&<p role="status">Создаю 1080×1920 из сохранённого EditPlan без новых запросов ИИ. Затем автоматически подготовлю платформенные версии. Это не утверждение и не публикация.</p>}
       {job.fullReady&&job.exportStatus==='RENDERING'&&<p role="status">1080p готов · собираю версии для соцсетей. Исходники и монтажный план не меняются.</p>}
+      {job.fullReady&&job.finalQuality?.status==='UNAVAILABLE'&&<p role="alert" className="personaQuickCardError">
+       Video Quality Lab не смог закончить проверку: {job.finalQuality.reason}. Технический отчёт недоступен; необходим самостоятельный просмотр финального MP4.
+      </p>}
+      {job.fullReady&&job.finalQuality?.status==='REVIEW_REQUIRED'&&<details className="personaQuickMoments" data-testid="persona-final-quality">
+       <summary>Video Quality Lab · {job.finalQuality.warnings?.length??0} предупреждений · требуется просмотр</summary>
+       <p>Проверены кадры, цветовые сигналы и звук финального файла 1080p. Это измерения, а не оценка актёрской игры, естественности кожи или разрешение на публикацию.</p>
+       {(job.finalQuality.notMeasuredCount??0)>0&&<p>Не удалось измерить: {job.finalQuality.notMeasuredCount}. Проверь эти аспекты вручную.</p>}
+       {Boolean(job.finalQuality.warnings?.length)&&<ul aria-label="QC-предупреждения">{job.finalQuality.warnings?.map(item=>
+        <li key={item.id}>{item.title}{item.timecodes?.length?' · '+item.timecodes.slice(0,4).join(', '):''}</li>)}</ul>}
+       {(job.finalQuality.warnings?.length??0)===0&&<p>Автоматических предупреждений нет; художественная приёмка всё равно необходима.</p>}
+       {workerToken.current&&<>
+        <a className="personaQuickDownload" href={personaWorkerUrl+'/quick-render/'+job.id+'/quality-report?token='+encodeURIComponent(workerToken.current)}>Скачать полный QC-отчёт JSON</a>
+        {job.finalQuality.contactSheetSha256&&<a className="personaQuickDownload"
+         href={personaWorkerUrl+'/quick-render/'+job.id+'/quality-contact-sheet?token='+encodeURIComponent(workerToken.current)}>
+         Скачать контактный лист кадров JPG
+        </a>}
+       </>}
+      </details>}
      {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
-     {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
+     {job.ready&&<p>MP4 создан и прошёл базовую проверку файла. Качество игры, цвета, звука и субтитров требует твоего просмотра перед публикацией.</p>}
     </div>
     <div className="personaQuickCardActions">
      {job.seedKey&&job.state!=='completed'&&job.state!=='running'&&job.state!=='failed'&&
