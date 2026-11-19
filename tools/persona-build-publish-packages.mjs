@@ -29,7 +29,7 @@ const ids=[
  'carousel-photo-archive','carousel-mixed-narrative'
 ];
 const fail=message=>{throw Error('[Persona publication release] '+message)};
-if(!testMode===false&&(inputPath||authorApprovalsPath))
+if(testMode&&(inputPath||authorApprovalsPath))
  fail('Self-test cannot read real approval data');
 if(!testMode&&Boolean(inputPath)===Boolean(authorApprovalsPath))
  fail('Specify exactly one --approved-json or --author-approvals');
