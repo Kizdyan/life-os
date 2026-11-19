@@ -151,7 +151,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
   if(promotingId||busy.current)return;
   setPromotingId(id);setError('');
   try{
-   const response=await workerFetch('/quick-render/'+id+'/render-full',{method:'POST'});
+   const response=await workerFetch('/quick-render/'+id+'/render-full?withPackage=1',{method:'POST'});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(data.error||'Полный рендер не запустился');
    await refresh();
@@ -338,8 +338,9 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
       </li>)}
      </ol></details>}
      {job.notice&&<p>{job.notice}</p>}
-     {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&<p>Черновик 720×1280 готов. Для публикации рекомендуем проверить полноразмерную версию.</p>}
-     {job.fullRenderStatus==='RENDERING'&&<p role="status">Создаю 1080×1920 из сохранённого EditPlan; Vision повторно не запускается…</p>}
+     {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&<p>Черновик 720×1280 готов. Скачай и просмотри его: после просмотра одна кнопка подготовит мастер 1080p и варианты для соцсетей. Проверь итоговые файлы; автоматического утверждения и публикации нет.</p>}
+     {job.fullRenderStatus==='RENDERING'&&<p role="status">Создаю 1080×1920 из сохранённого EditPlan без новых запросов ИИ. Затем автоматически подготовлю платформенные версии. Это не утверждение и не публикация.</p>}
+      {job.fullReady&&job.exportStatus==='RENDERING'&&<p role="status">1080p готов · собираю версии для соцсетей. Исходники и монтажный план не меняются.</p>}
      {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
      {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
     </div>
@@ -359,7 +360,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
      {job.ready&&(job.contentType??'video')==='video'&&job.fastDraft&&!job.fullReady&&<button type="button" className="personaQuickFull"
       disabled={job.fullRenderStatus==='RENDERING'||promotingId===job.id}
       onClick={()=>void renderFull(job.id)}>
-      {job.fullRenderStatus==='RENDERING'?'Рендер 1080p…':'Сделать в полном качестве (1080p)'}
+      {job.fullRenderStatus==='RENDERING'?'Готовлю 1080p + пакет…':job.fullRenderStatus==='FAILED'?'Повторить 1080p + пакет':'После просмотра черновика: 1080p + пакет для соцсетей'}
      </button>}
      {job.fullReady&&workerToken.current&&<a className="personaQuickDownload"
       href={personaWorkerUrl+'/quick-render/'+job.id+'/video-full?token='+encodeURIComponent(workerToken.current)}
