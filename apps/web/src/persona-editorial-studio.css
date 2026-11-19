@@ -126,3 +126,10 @@
 .personaEditorialPublishActions button:disabled{opacity:.5}
 @media(max-width:900px){.personaEditorialPublishList{grid-template-columns:1fr}}
 @media(max-width:490px){.personaEditorialPublishIntro{flex-direction:column}.personaEditorialPublishList article{gap:10px}.personaEditorialPublishCover{flex-basis:32%;padding:8px}}
+
+/* Pixel-identical baseline previews; the only resize is browser CSS scaling. */
+.personaEditorialPublishCover--exact{padding:0;align-items:stretch}
+.personaEditorialPublishCover--exact:before{display:none!important}
+.personaEditorialPublishCover--exact img{position:relative;z-index:0;width:100%;height:100%;object-fit:contain}
+.personaEditorialPreview--exact{padding:0;align-items:stretch}
+.personaEditorialPreview--exact img{width:100%;height:100%;object-fit:contain;border-radius:inherit}
