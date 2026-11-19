@@ -102,3 +102,27 @@
 .personaEditorialArchiveGrid small{font-size:10px;color:#645e59;overflow-wrap:anywhere}
 .personaEditorialArchiveOrder{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding-top:8px;border-top:1px solid #d3c8b6}
 .personaEditorialArchiveOrder strong{flex-basis:100%;font-size:12px}
+
+/* Publication bundle: compact overview within the existing Editorial Desk. */
+.personaEditorialPublish{display:grid;gap:18px}
+.personaEditorialPublishIntro{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}
+.personaEditorialPublishIntro h3{font-size:30px;margin:0 0 5px}
+.personaEditorialPublishIntro p{font-size:12px;color:#5d6267;line-height:1.6;max-width:660px;margin:0}
+.personaEditorialPublishIntro>button,.personaEditorialPublishActions button{border:1px solid #bda98b;background:white;color:#252d38;border-radius:8px;padding:10px 14px;font-size:12px;font-weight:700}
+.personaEditorialPublishHeadActions{display:flex;gap:8px;flex-wrap:wrap}
+.personaEditorialPublishList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.personaEditorialPublishList article{display:flex;align-items:stretch;gap:14px;min-width:0;border:1px solid #ded1c2;padding:12px;border-radius:12px;background:#fffdf9}
+.personaEditorialPublishCover{position:relative;isolation:isolate;flex:0 0 min(34%,155px);aspect-ratio:4/5;background:#2B1D14;display:flex;align-items:flex-end;padding:13px;border-radius:7px;overflow:hidden}
+.personaEditorialPublishCover img{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover}
+.personaEditorialPublishCover:has(img):before{content:"";position:absolute;z-index:-1;inset:45% 0 0;background:linear-gradient(transparent,rgba(0,0,0,.94))}
+.personaEditorialPublishCover strong{font:600 clamp(13px,1.6vw,20px)/1.14 "Cormorant Garamond",Georgia,serif;color:#F2E9DC;overflow-wrap:anywhere}
+.personaEditorialPublishDetails{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0}
+.personaEditorialPublishDetails h4{font-size:22px;line-height:1.12;margin:0}
+.personaEditorialPublishDetails p{font-size:11px;color:#696969;margin:0}
+.personaEditorialPublishStatus{padding:4px 9px;border-radius:20px;background:#ece4d9;font-size:11px;font-weight:750}
+.personaEditorialPublishStatus[data-approved=true]{color:#22553c;background:#e3ecdf}
+.personaEditorialPublishActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
+.personaEditorialPublishActions button:last-child{background:#253248;color:white;border-color:#253248}
+.personaEditorialPublishActions button:disabled{opacity:.5}
+@media(max-width:900px){.personaEditorialPublishList{grid-template-columns:1fr}}
+@media(max-width:490px){.personaEditorialPublishIntro{flex-direction:column}.personaEditorialPublishList article{gap:10px}.personaEditorialPublishCover{flex-basis:32%;padding:8px}}

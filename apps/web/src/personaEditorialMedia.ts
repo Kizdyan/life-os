@@ -162,6 +162,8 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  }
  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
+/** Shared original Canvas renderer; publication ZIPs reuse identical pixels. */
+export {renderSlide as renderEditorialSlide};
 const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let j=0;j<8;j++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0});
 export function crc32(bytes:Uint8Array){
  let c=0xffffffff;for(const n of bytes)c=crcTable[(c^n)&255]^(c>>>8);return (c^0xffffffff)>>>0;

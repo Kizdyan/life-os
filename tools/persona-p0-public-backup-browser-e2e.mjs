@@ -424,6 +424,94 @@ try{
   assert.equal(fallback.length,7);
  }finally{await emptyCtx.close()}
 
+
+ // P0 publication package: existing gate is never bypassed by download.
+ await editor.getByRole('button',{name:'Все темы ↖'}).click();
+ await editor.getByTestId('open-publication-package').click();
+ const publicationPage=editor.getByTestId('editorial-publication-package');
+ await publicationPage.waitFor({timeout:10000});
+ const expectedIds=[
+  'carousel-baseline-pause','carousel-why-director-leaves-question',
+  'carousel-photo-archive','carousel-mixed-narrative'
+ ];
+ assert.equal(await publicationPage.locator('[data-publish-carousel-id]').count(),4);
+ const carousel3Row=publicationPage.locator('[data-publish-carousel-id="carousel-photo-archive"]');
+ assert.equal(await carousel3Row.locator('.personaEditorialPublishStatus').textContent(),'Черновик',
+  'Photo edit revoked prior design approval');
+ await carousel3Row.getByRole('button',{name:'Скачать пакет'}).click();
+ await publicationPage.getByRole('alert').getByText(
+  'Карусель не утверждена. Пройдите чек-лист и нажмите "Утвердить"').waitFor();
+ await publicationPage.getByRole('button',{name:'Скачать все четыре одним архивом'}).click();
+ assert.equal(await publicationPage.getByRole('alert').count(),1);
+ // Complete approval in the original Editorial Desk; no extra publish gate.
+ await carousel3Row.getByRole('button',{name:'Утвердить'}).click();
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
+ await completeArchiveCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+ await editor.getByRole('button',{name:'Пакет для публикации'}).click();
+ await publicationPage.waitFor();
+ // The earlier baseline regression deliberately edited its text and revoked
+ // approval. Re-approve its content/design through the same existing gate.
+ const baselineRow=publicationPage.locator('[data-publish-carousel-id="carousel-baseline-pause"]');
+ assert.equal(await baselineRow.locator('.personaEditorialPublishStatus').textContent(),'Черновик');
+ await baselineRow.getByRole('button',{name:'Утвердить'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ await completeCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+ await editor.getByRole('button',{name:'Пакет для публикации'}).click();
+ await publicationPage.waitFor();
+ for(const id of expectedIds){
+  const row=publicationPage.locator('[data-publish-carousel-id="'+id+'"]');
+  assert.equal(await row.locator('.personaEditorialPublishStatus').textContent(),'Утверждена');
+  assert.equal(await row.locator('.personaEditorialPublishCover').count(),1);
+ }
+ const individual=await downloadZip(page,publicationPage.locator(
+  '[data-publish-carousel-id="carousel-baseline-pause"]'
+ ).getByRole('button',{name:'Скачать пакет'}),join(artifacts,'carousel-baseline-publish.zip'));
+ assert.deepEqual(individual.map(x=>x.name),[
+  ...Array.from({length:6},(_,i)=>'carousel-baseline-pause/slide-'+String(i+1).padStart(2,'0')+'.png'),
+  'carousel-baseline-pause/caption.txt',
+  'carousel-baseline-pause/publish-instructions.txt',
+  'carousel-baseline-pause/checklist.json'
+ ]);
+ individual.slice(0,6).forEach(assertPng);
+ const individualGate=JSON.parse(individual[8].bytes.toString('utf8'));
+ assert.equal(individualGate.status,'approved');
+ assert.equal(individualGate.published,false);
+ assert.equal(individualGate.checks.length,7);
+ assert.ok(individualGate.checks.every(x=>x.pass));
+ assert.equal(individual[6].bytes.toString('utf8'),
+  'Пауза в кадре — это не пустота, а решение. Персонаж, который молчит дольше, чем нужно реплике, уже что-то скрывает от собеседника или от себя. Задача актёра — не "держать паузу", а точно знать, что именно происходит внутри неё. Когда это знание есть, зритель читает его без слов. Когда его нет, пауза превращается в ожидание. Разница между ними — не в длительности, а в наличии внутреннего действия.');
+ const complete=await downloadZip(page,publicationPage.getByRole('button',
+  {name:'Скачать все четыре одним архивом'}),join(artifacts,'persona-four-carousels-publish.zip'));
+ assert.equal(complete.length,36);
+ assert.deepEqual(complete.map(x=>x.name),expectedIds.flatMap(id=>[
+  ...Array.from({length:6},(_,i)=>id+'/slide-'+String(i+1).padStart(2,'0')+'.png'),
+  id+'/caption.txt',id+'/publish-instructions.txt',id+'/checklist.json'
+ ]));
+ for(const id of expectedIds){
+  const folder=complete.filter(x=>x.name.startsWith(id+'/'));
+  assert.equal(folder.length,9);
+  folder.slice(0,6).forEach(assertPng);
+  assert.ok(folder[6].bytes.length>80);
+  assert.match(folder[7].bytes.toString('utf8'),/Instagram/);
+  const json=JSON.parse(folder[8].bytes.toString('utf8'));
+  assert.equal(json.carouselId,id);
+  assert.equal(json.status,'approved');
+  assert.equal(json.published,false);
+  assert.ok(json.checks.every(x=>x.pass));
+ }
+ assert.equal(JSON.parse(complete.find(x=>x.name==='carousel-mixed-narrative/checklist.json')
+  .bytes.toString('utf8')).textFallback,true);
+ assert.match(complete.find(x=>x.name==='carousel-mixed-narrative/publish-instructions.txt')
+  .bytes.toString('utf8'),/Это текстовая версия. Чтобы добавить фотографии/);
+ console.log('PERSONA_FOUR_PUBLICATION_ZIP_PASS '+JSON.stringify({
+  folders:4,slidePngs:24,files:36,dimensions:[1080,1350],approvedOnly:true,
+  manualInstagram:true,textOnlyFallback:true
+ }));
+
  await clean.close();
  assert.deepEqual(errors,[]);
  console.log('PERSONA_P0_FULL_BROWSER_PASS '+JSON.stringify({
