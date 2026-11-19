@@ -20,6 +20,7 @@ function option(name,defaultValue=''){
 }
 const testMode=argv.includes('--self-test');
 const inputPath=option('--approved-json');
+const authorApprovalsPath=option('--author-approvals');
 const outputPath=resolve(option('--output-dir',testMode?
  'artifacts/persona-publish-self-test':'dist/publish-packages'));
 const origin=option('--origin',process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173');
@@ -28,19 +29,24 @@ const ids=[
  'carousel-photo-archive','carousel-mixed-narrative'
 ];
 const fail=message=>{throw Error('[Persona publication release] '+message)};
-if(!testMode&&!inputPath)fail(
- 'Нет подтверждённого снимка утверждений. Для реального Release нужен --approved-json с четырьмя действующими авторскими approvals; фикстуры в main — черновики.');
-if(testMode&&inputPath)fail('Self-test cannot read a real approval snapshot');
-const approvedData=testMode?null:JSON.parse(await readFile(resolve(inputPath),'utf8'));
-if(!testMode&&!(Array.isArray(approvedData?.posts)&&approvedData.posts.length===4))
+if(!testMode===false&&(inputPath||authorApprovalsPath))
+ fail('Self-test cannot read real approval data');
+if(!testMode&&Boolean(inputPath)===Boolean(authorApprovalsPath))
+ fail('Specify exactly one --approved-json or --author-approvals');
+const approvedData=testMode?null:JSON.parse(await readFile(resolve(
+ authorApprovalsPath||inputPath),'utf8'));
+if(!testMode&&inputPath&&!(Array.isArray(approvedData?.posts)&&approvedData.posts.length===4))
  fail('Approved snapshot must contain exactly four EditorialPost records in posts[]');
+if(!testMode&&authorApprovalsPath&&(!approvedData||Array.isArray(approvedData)||
+ typeof approvedData!=='object'||Object.keys(approvedData).length!==4))
+ fail('Expected four canonical chat approval records');
 const browser=await chromium.launch({headless:true});
 try{
  const context=await browser.newContext({acceptDownloads:true});
  try{
   const page=await context.newPage();
   await page.goto(origin+'/#persona',{waitUntil:'domcontentloaded',timeout:45000});
-  const validated=await page.evaluate(async ({testMode,approvedData,ids})=>{
+  const validated=await page.evaluate(async ({testMode,approvedData,ids,authorApprovals})=>{
    const model=await import('/src/personaEditorialModel.ts');
    const pub=await import('/src/personaEditorialPublish.ts');
    const drafts=pub.PUBLICATION_CAROUSEL_IDS.map(id=>pub.publicationCarouselDraft(id));
@@ -55,6 +61,22 @@ try{
      for(let i=0;i<(p.carouselFormat?5:6);i++)
       p=model.setEditorialChecklistItem(p,i,true,'2026-11-20T10:02:00.000Z');
      return model.approveEditorialStep(p,'design','2026-11-20T10:03:00.000Z');
+    });
+   }else if(authorApprovals){
+    posts=drafts.map(draft=>{
+     const record=approvedData[draft.id];
+     if(!record||record.approved!==true||!Array.isArray(record.checklist)||
+        record.checklist.length!==7||record.checklist.some(v=>v!==true))
+      throw Error('Missing or incomplete chat author approval: '+draft.id);
+     if(record.contentHashAtApproval!==model.editorialContentHash(draft))
+      throw Error('Chat approval hash does not match canonical content: '+draft.id);
+     const post=model.applyChatCarouselApproval(draft);
+     const a=post.approvals;
+     if(!pub.publicationCarouselApproved(post)||a.checkedAt!==record.checkedAt||
+        a.checkedBy!==record.checkedBy||
+        a.contentHashAtApproval!==record.contentHashAtApproval)
+      throw Error('Chat approval record differs from imported existing gate: '+draft.id);
+     return post;
     });
    }else{
     posts=ids.map(id=>approvedData.posts.find(p=>p.id===id));
@@ -72,7 +94,7 @@ try{
    }
    return {posts,meta:posts.map(p=>({id:p.id,title:p.title,checkedAt:p.approvals.checkedAt,
     checkedBy:p.approvals.checkedBy,textFallback:pub.publicationIsTextFallback(p)}))};
-  },{testMode,approvedData,ids});
+  },{testMode,approvedData,ids,authorApprovals:Boolean(authorApprovalsPath)});
   // Never begin downloading until ALL four posts pass approval and provenance.
   await mkdir(outputPath,{recursive:true});
   const date=new Date();
@@ -104,11 +126,51 @@ try{
   const bundle=await pending;
   if(bundle.suggestedFilename()!==bundleName)fail('Unexpected combined download name');
   await bundle.saveAs(join(outputPath,bundleName));zipFiles.push(bundleName);
+
+  // Extract 24 actual PNG bytes from the combined ZIP. This is the same
+  // Canvas-rendered payload, NOT a second renderer or synthetic thumbnail.
+  const zipData=await readFile(join(outputPath,bundleName)),entries=[];
+  for(let offset=0;offset+30<=zipData.length;){
+   if(zipData.readUInt32LE(offset)!==0x04034b50)break;
+   const nameLength=zipData.readUInt16LE(offset+26),
+    extraLength=zipData.readUInt16LE(offset+28),
+    payloadSize=zipData.readUInt32LE(offset+18),
+    method=zipData.readUInt16LE(offset+8);
+   const start=offset+30+nameLength+extraLength;
+   if(method!==0||start+payloadSize>zipData.length)
+    fail('Unsupported/truncated ZIP payload');
+   entries.push({name:zipData.subarray(offset+30,offset+30+nameLength).toString('utf8'),
+    bytes:zipData.subarray(start,start+payloadSize)});
+   offset=start+payloadSize;
+  }
+  if(entries.length!==36)fail('Combined ZIP must contain 36 files');
+  const slugMap=new Map([
+   [ids[0],'baseline-pause'],[ids[1],'why-director'],
+   [ids[2],'photo-archive'],[ids[3],'mixed-narrative']
+  ]);
+  const previewDir=join(outputPath,'previews');
+  await mkdir(previewDir,{recursive:true});
+  const previews=[];
+  for(const id of ids){
+   for(let i=1;i<=6;i++){
+    const suffix='slide-'+String(i).padStart(2,'0')+'.png';
+    const match=entries.filter(x=>x.name===id+'/'+suffix);
+    if(match.length!==1)fail('Missing unique preview '+id+'/'+suffix);
+    const png=match[0].bytes;
+    if(png.length<32||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||
+       png.readUInt32BE(16)!==1080||png.readUInt32BE(20)!==1350)
+     fail('Bad 1080x1350 PNG: '+id+'/'+suffix);
+    const filename=slugMap.get(id)+'-'+suffix;
+    await writeFile(join(previewDir,filename),png);
+    previews.push(filename);
+   }
+  }
+  if(previews.length!==24||new Set(previews).size!==24)fail('Expected 24 unique PNG previews');
   await writeFile(join(outputPath,'release-metadata.json'),
    JSON.stringify({kind:'persona-github-carousel-release-v1',testOnly:testMode,
-    date:day,files:zipFiles,carousels:validated.meta},null,2)+'\n');
+    date:day,files:zipFiles,previewFiles:previews,carousels:validated.meta},null,2)+'\n');
   console.log('PERSONA_FIVE_PUBLISH_ZIPS_CREATED '+JSON.stringify({
-   count:zipFiles.length,files:zipFiles,outputPath,testOnly:testMode,
+   count:zipFiles.length,files:zipFiles,previews:24,outputPath,testOnly:testMode,
    metadata:validated.meta
   }));
  }finally{await context.close()}
