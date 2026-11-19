@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'carousels-v*'
+    branches:
+      - main
+    paths:
+      - '.github/workflows/persona-publish-release.yml'
+      - 'tools/persona-build-baseline-review.mjs'
   pull_request:
     paths:
       - 'tools/persona-build-publish-packages.mjs'
@@ -14,12 +19,16 @@ on:
       - 'apps/web/src/PersonaEditorialStudio.tsx'
       - 'apps/web/src/personaEditorialPublish.ts'
       - 'docs/how-to-publish-carousels.md'
+      - 'tools/persona-build-baseline-review.mjs'
+      - 'tools/persona-build-baseline-review.test.mjs'
+      - 'docs/persona-baseline-v2-review.md'
 
 permissions:
   contents: write
 
 jobs:
   publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/carousels-v1')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -107,5 +116,87 @@ jobs:
            throw Error('Release must contain exactly five nonempty ZIP and 24 PNG assets');
           console.log('PERSONA_GITHUB_RELEASE_VERIFIED '+JSON.stringify({
            html_url:d.html_url,assets:assets.map(a=>({name:a.name,size:a.size,url:a.browser_download_url}))
+          }));
+          NODE
+
+  baseline_review:
+    name: Persona v2 Baseline Review Assets
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing deps and Chromium (local fontsource packages)
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Start original local Vite renderer
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/persona-v2-vite.log 2>&1 &
+          for attempt in {1..50}; do
+            if curl --silent --fail http://127.0.0.1:4173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/persona-v2-vite.log
+          exit 1
+      - name: Build one review-only ZIP + six PNG + one contact sheet
+        run: |
+          node tools/persona-build-baseline-review.mjs
+          node --test tools/persona-build-baseline-review.test.mjs
+          test "$(find dist/baseline-review-v2 -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 1
+          test "$(find dist/baseline-review-v2 -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 7
+      - name: Publish new carousels-v2-baseline Release without touching v1
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          TAG=carousels-v2-baseline
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release v2 already exists. Refusing to overwrite a reviewed snapshot."
+            exit 1
+          fi
+          cat > /tmp/persona-v2-notes.md <<'NOTES'
+          # Persona Carousels v2 — артистический дизайн карусели №1
+
+          **«Почему пауза сильнее реплики»**, шесть новых Canvas-слайдов 1080×1350: шоколад/графит, Playfair Display и Inter, сдержанное зерно и развитие типографики.
+
+          **Оформление ждёт визуального подтверждения автора.** Текст подтверждён в чате, но дизайн не утверждён. Это **просмотровый ZIP**, а не разрешение публикации.
+
+          Три варианта caption — короткий, средний (по умолчанию), длинный. Автор выбирает один после просмотра.
+
+          **Контактный лист всех шести слайдов:**
+
+          ![Persona v2 — шесть слайдов](https://github.com/Kizdyan/life-os/releases/download/carousels-v2-baseline/contact-sheet-baseline-pause.png)
+
+          - [Просмотр контактного листа и инструкция](https://github.com/Kizdyan/life-os/blob/main/docs/persona-baseline-v2-review.md)
+          - [Проверочный чек-лист](https://github.com/Kizdyan/life-os/blob/main/docs/carousel-acceptance-checklist.md)
+          - [Три варианта подписи](https://github.com/Kizdyan/life-os/blob/main/config/carousel-baseline-pause-captions.json)
+
+          Остальные три карусели **не входят** в этот выпуск. Исторический Release carousels-v1 не изменялся. Instagram ничего не публикует автоматически.
+          NOTES
+          gh release create "$TAG" dist/baseline-review-v2/*.png dist/baseline-review-v2/*.zip \
+            --title "Persona Carousels v2 — артистическая карусель №1 (просмотр)" \
+            --notes-file /tmp/persona-v2-notes.md \
+            --target "$GITHUB_SHA"
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          RELEASE_JSON="$RELEASE_JSON" node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const release=JSON.parse(process.env.RELEASE_JSON||'{}');
+          const manifest=JSON.parse(readFileSync('dist/baseline-review-v2/review-metadata.json','utf8'));
+          if(release.tag_name!=='carousels-v2-baseline'||manifest.designApproved!==false)
+           throw Error('Wrong Release or visual approval improperly set');
+          const expected=manifest.files.slice().sort();
+          const assets=(release.assets||[]).map(x=>x.name).sort();
+          if(release.assets?.length!==8||JSON.stringify(assets)!==JSON.stringify(expected)||
+             release.assets.some(a=>a.size<2000||!a.browser_download_url))
+           throw Error('Expected exactly one ZIP, six slide PNG and one contact sheet');
+          console.log('PERSONA_V2_GITHUB_RELEASE_VERIFIED '+JSON.stringify({
+           url:release.html_url,assets:release.assets.map(x=>({name:x.name,size:x.size,url:x.browser_download_url}))
           }));
           NODE
