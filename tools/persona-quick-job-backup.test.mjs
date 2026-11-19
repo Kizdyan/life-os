@@ -41,6 +41,8 @@ test('copies a full stable job, verifies every byte, restores to new root withou
  const root=await mkdtemp(join(tmpdir(),'persona-backup-e2e-'));
  try{
   const job=await fixture(root),destination=join(root,'external','job-backup');
+  // Empty folders matter for jobs later resumed with more source uploads.
+  await mkdir(join(job.source,'output','empty-notes'));
   await mkdir(join(root,'external'));
   const before=await readFile(join(job.source,'input','video-01.mp4'));
   const result=await backupPersonaQuickJob({quickRoot:job.quickRoot,id:job.id,destination});
@@ -52,6 +54,7 @@ test('copies a full stable job, verifies every byte, restores to new root withou
   assert.equal(restored.relocated,true);assert.equal(restored.rerenderVerified,false);
   assert.equal(restored.verified,true);
   const restoredJob=join(targetRoot,'quick-'+job.id);
+  assert.ok((await stat(join(restoredJob,'output','empty-notes'))).isDirectory());
   assert.equal((await new ProductionJob(restoredJob).read()).status,'AWAITING_APPROVAL');
   assert.equal(sha(await readFile(join(restoredJob,'input','video-01.mp4'))),job.originalHash);
   assert.equal(sha(await readFile(join(restoredJob,'output','full-ready.mp4'))),job.finalHash);
