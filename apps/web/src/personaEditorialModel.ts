@@ -60,7 +60,8 @@ function editorialHash(value:string):string{
 }
 /** Content, palette and font-version fingerprint for artist visual approval. */
 export function editorialDesignHash(post:EditorialPost):string{
- return editorialHash(JSON.stringify([editorialContentHash(post),'persona-editorial-fonts-v1']));
+ return editorialHash(JSON.stringify([editorialContentHash(post),'persona-editorial-fonts-v1',
+  post.fontPreset??'legacy']));
 }
 export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
 export function publicationDesignApproved(post:EditorialPost):boolean{
@@ -132,7 +133,8 @@ export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
 export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
- goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;carouselFormat?:'photo-led'|'mixed';
+ goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
+  fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -383,6 +385,7 @@ export function validatePost(post:EditorialPost):void{
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
+  (post.fontPreset!==undefined&&!['legacy','playfair-inter'].includes(post.fontPreset))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -415,7 +418,7 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
-export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
  const result:EditorialPost={...post,...changes,updatedAt:now,revision:post.revision+1,approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
   result.approvals={...result.approvals,topic:false,content:false,design:false};
@@ -426,10 +429,11 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    changes.slides.some((slide,i)=>slide.id!==post.slides[i]?.id||slide.text!==post.slides[i]?.text);
   result.approvals=copyChanged?{...result.approvals,content:false,design:false}:
    {...result.approvals,design:false};
- }else if(changes.preset!==undefined)
+ }else if(changes.preset!==undefined||changes.fontPreset!==undefined)
   result.approvals={...result.approvals,design:false};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
-  changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined){
+  changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined||
+  changes.fontPreset!==undefined){
   result.approvals.checklist=emptyChecklist();
   result.approvals.designApproved=false;result.approvals.designApprovedAt=null;
   result.approvals.contentHashAtDesignApproval='';
