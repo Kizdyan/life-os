@@ -4,7 +4,8 @@ import {spawnSync} from 'node:child_process';
 import {mkdtemp,readFile,rm,stat,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
+import {QUICK_RELOCATION_KIND,validateQuickRelocation,rebindQuickTimeline} from './persona-quick-relocation.mjs';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {quickRenderAppearance} from './persona-quick-render.mjs';
@@ -12,6 +13,43 @@ import {backupPersonaQuickJob,verifyPersonaQuickJobBackup,restorePersonaQuickJob
 
 const available=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore'}).status===0);
 const sha=data=>createHash('sha256').update(data).digest('hex');
+
+test('relocation: rebind only verified video/audio paths; reject path substitution and forged provenance',()=>{
+ const id=randomUUID(),original=join(tmpdir(),'old-root','quick-'+id),
+  restored=join(tmpdir(),'new-root','quick-'+id);
+ const receiptSha256='e'.repeat(64),sourceSha='a'.repeat(64),musicSha='b'.repeat(64);
+ const files=[
+  {index:0,kind:'video',name:'video-01.mp4',sha256:sourceSha},
+  {index:1,kind:'audio',name:'audio-02.wav',sha256:musicSha},
+ ];
+ const plan={choices:[
+  {fileIndex:0,sourceSha256:sourceSha,startSec:0,durationSec:3},
+  {fileIndex:0,sourceSha256:sourceSha,startSec:3,durationSec:3},
+ ]};
+ const timeline={width:720,height:1280,clips:[
+  {path:join(original,'input','video-01.mp4'),startSec:0,durationSec:3},
+  {path:join(original,'input','video-01.mp4'),startSec:3,durationSec:3},
+ ],soundtrack:{path:join(original,'input','audio-02.wav'),volume:.38}};
+ const saved=JSON.stringify(timeline),record={
+  kind:QUICK_RELOCATION_KIND,version:1,id,originalJobDir:original,
+  restoredJobDir:restored,receiptSha256};
+ assert.equal(validateQuickRelocation(record,{id,currentJobDir:restored,receiptSha256}),original);
+ const rebound=rebindQuickTimeline({jobDir:restored,originalJobDir:original,files,plan,timeline});
+ assert.equal(rebound.clips[0].path,join(restored,'input','video-01.mp4'));
+ assert.equal(rebound.soundtrack.path,join(restored,'input','audio-02.wav'));
+ assert.equal(JSON.stringify(timeline),saved,'approved source timeline must stay unchanged');
+ assert.throws(()=>rebindQuickTimeline({jobDir:restored,originalJobDir:original,files,plan,
+  timeline:{...timeline,clips:[{...timeline.clips[0],path:join(tmpdir(),'foreign.mp4')},timeline.clips[1]]}}),
+  /does not match/);
+ assert.throws(()=>rebindQuickTimeline({jobDir:restored,originalJobDir:original,files,plan,
+  timeline:{...timeline,soundtrack:{...timeline.soundtrack,path:join(tmpdir(),'untrusted.wav')}}}),
+  /soundtrack/);
+ assert.throws(()=>validateQuickRelocation({...record,restoredJobDir:original},
+  {id,currentJobDir:restored,receiptSha256}),/target|source/);
+ assert.throws(()=>validateQuickRelocation(record,
+  {id,currentJobDir:restored,receiptSha256:'f'.repeat(64)}),/receipt/);
+});
+
 test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actual FFmpeg+subtitle MP4 -> persisted dashboard card',{skip:!available,timeout:210000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'persona-one-click-e2e-'));
  const source=join(root,'user-original.mp4'),music=join(root,'user-music.wav');
@@ -141,7 +179,7 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
  {skip:!available,timeout:450000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-one-click-final-package-'));
  const original=join(root,'source.mp4');
- let worker,recoveryWorker;
+ let worker,recoveryWorker,finalRecoveryWorker;
  try{
   const generated=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',
    'testsrc2=size=144x256:rate=12:duration=8.5',
@@ -151,8 +189,8 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   const bytes=await readFile(original),originalHash=sha(bytes);
   worker=createPersonaMediaWorker({port:0,outputRoot:join(root,'media'),
    quickRenderRoot:join(root,'quick'),apiEnv:{OPENROUTER_API_KEY:''}});
-  const base='http://127.0.0.1:'+await worker.start();
-  const token=(await(await fetch(base+'/health')).json()).token,headers={'X-Persona-Worker-Token':token};
+  let base='http://127.0.0.1:'+await worker.start();
+  let token=(await(await fetch(base+'/health')).json()).token,headers={'X-Persona-Worker-Token':token};
   const start=await fetch(base+'/quick-render',{method:'POST',headers:{...headers,'Content-Type':'application/json'},
    body:JSON.stringify({prompt:'Собери локальный кинематографичный черновик',
     consent:true,fastDraft:true,autoStyle:false,textAccents:false,
@@ -174,10 +212,43 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   assert.equal(status.state,'completed',status.error||status.stage);
   assert.equal(status.ready,true);assert.equal(status.fastDraft,true);
   assert.equal(status.fullReady,false);
-  const output=join(root,'quick','quick-'+id,'output');
+  let output=join(root,'quick','quick-'+id,'output');
   const draft=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'));
   assert.equal(draft.width,720);assert.equal(draft.height,1280);
   assert.equal(draft.distributionAllowed,false);
+
+  // Real recovery acceptance begins with ONLY the 720p draft. The second
+  // Worker must promote a relocated, byte-identical immutable EditPlan.
+  const originalJob=join(root,'quick','quick-'+id);
+  const originalPlan=await readFile(join(output,'edit-plan.json'));
+  const originalTimeline=await readFile(join(output,'timeline.json'));
+  const originalReceipt=await readFile(join(output,'RESULT.json'));
+  const draftArchive=join(root,'offline-draft-archive');
+  const relocatedQuickRoot=join(root,'relocated-quick');
+  await backupPersonaQuickJob({quickRoot:join(root,'quick'),id,destination:draftArchive});
+  const relocatedDraft=await restorePersonaQuickJob({backupDir:draftArchive,quickRoot:relocatedQuickRoot});
+  assert.equal(relocatedDraft.verified,true);
+  assert.equal(relocatedDraft.draftRerenderEligible,true);
+  assert.equal(relocatedDraft.rerenderVerified,false,'Only a real FFmpeg E2E can verify the rerender');
+  const relocatedJob=join(relocatedQuickRoot,'quick-'+id);
+  const record=JSON.parse(await readFile(join(relocatedJob,'persona-relocation.json'),'utf8'));
+  assert.equal(record.originalJobDir,originalJob);
+  assert.equal(record.restoredJobDir,relocatedJob);
+  assert.equal(record.receiptSha256,sha(originalReceipt));
+  if(worker.server.listening)await new Promise(done=>worker.server.close(done));
+  recoveryWorker=createPersonaMediaWorker({port:0,outputRoot:join(root,'relocated-media'),
+   quickRenderRoot:relocatedQuickRoot,apiEnv:{OPENROUTER_API_KEY:''}});
+  base='http://127.0.0.1:'+await recoveryWorker.start();
+  token=(await(await fetch(base+'/health')).json()).token;
+  headers={'X-Persona-Worker-Token':token};
+  output=join(relocatedJob,'output');
+  assert.deepEqual(await readFile(join(output,'edit-plan.json')),originalPlan);
+  assert.deepEqual(await readFile(join(output,'timeline.json')),originalTimeline);
+  assert.deepEqual(await readFile(join(output,'RESULT.json')),originalReceipt);
+  const recoveredCard=await(await fetch(base+'/quick-render/'+id+'/status',{headers})).json();
+  assert.equal(recoveredCard.state,'completed');
+  assert.equal(recoveredCard.fullReady,false);
+
   const request=await fetch(base+'/quick-render/'+id+'/render-full?withPackage=1',
    {method:'POST',headers});
   assert.equal(request.status,202,await request.clone().text());
@@ -230,6 +301,13 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   assert.equal(pkg.sourceSha256,final.sha256);
   assert.equal(final.reusedEditPlanSha256,draft.editPlanSha256);
   assert.equal(final.reusedTimelineSha256,draft.timelineSha256);
+  assert.deepEqual(await readFile(join(output,'edit-plan.json')),originalPlan);
+  assert.deepEqual(await readFile(join(output,'timeline.json')),originalTimeline);
+  assert.deepEqual(await readFile(join(output,'RESULT.json')),originalReceipt);
+  const derived=JSON.parse(await readFile(join(output,'full-timeline.json'),'utf8'));
+  assert.ok(derived.clips.every(clip=>clip.path.startsWith(join(relocatedJob,'input'))));
+  assert.equal(derived.width,1080);
+  assert.equal(derived.height,1920);
   assert.equal(sha(await readFile(original)),originalHash);
   assert.equal((await new ProductionJob(join(root,'quick','quick-'+id)).read()).status,'AWAITING_APPROVAL');
   const full=await fetch(base+'/quick-render/'+id+'/video-full?token='+token);
@@ -242,20 +320,21 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   assert.ok(observedPackageRender||status.exportStatus==='COMPLETED');
   // Back up and restore the real rendered job with its original source and
   // 1080p master; recovery Worker must serve the identical MP4 bytes.
-  const folder=join(root,'offline-job-backup'),recoveryRoot=join(root,'recovered-quick');
-  const archive=await backupPersonaQuickJob({quickRoot:join(root,'quick'),id,destination:folder});
+  const folder=join(root,'offline-job-backup'),finalRecoveryRoot=join(root,'recovered-again');
+  const archive=await backupPersonaQuickJob({quickRoot:relocatedQuickRoot,id,destination:folder});
   assert.equal(archive.verified,true);
   assert.equal((await verifyPersonaQuickJobBackup(folder)).id,id);
-  const recovered=await restorePersonaQuickJob({backupDir:folder,quickRoot:recoveryRoot});
+  const recovered=await restorePersonaQuickJob({backupDir:folder,quickRoot:finalRecoveryRoot});
   assert.equal(recovered.verified,true);
   assert.equal(recovered.relocated,true);
+  assert.equal(recovered.draftRerenderEligible,true,'Second relocation preserves original signed source root');
   assert.equal(recovered.rerenderVerified,false);
-  const copied=join(recoveryRoot,'quick-'+id);
+  const copied=join(finalRecoveryRoot,'quick-'+id);
   assert.equal(sha(await readFile(join(copied,'output',final.videoName))),final.sha256);
   assert.equal(sha(await readFile(join(copied,'input','video-01.mp4'))),originalHash);
-  recoveryWorker=createPersonaMediaWorker({port:0,outputRoot:join(root,'recovered-media'),
-   quickRenderRoot:recoveryRoot,apiEnv:{OPENROUTER_API_KEY:''}});
-  const recoveredBase='http://127.0.0.1:'+await recoveryWorker.start();
+  finalRecoveryWorker=createPersonaMediaWorker({port:0,outputRoot:join(root,'recovered-media'),
+   quickRenderRoot:finalRecoveryRoot,apiEnv:{OPENROUTER_API_KEY:''}});
+  const recoveredBase='http://127.0.0.1:'+await finalRecoveryWorker.start();
   const recoveredToken=(await(await fetch(recoveredBase+'/health')).json()).token;
   const recoveredList=await(await fetch(recoveredBase+'/quick-render',
    {headers:{'X-Persona-Worker-Token':recoveredToken}})).json();
@@ -269,6 +348,7 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
    qaWarnings:status.finalQuality.warnings.length,qualityReport:true,contactSheet:true,
    published:false,authorReviewRequired:true}));
  }finally{
+  if(finalRecoveryWorker?.server?.listening)await new Promise(ok=>finalRecoveryWorker.server.close(ok));
   if(recoveryWorker?.server?.listening)await new Promise(ok=>recoveryWorker.server.close(ok));
   if(worker?.server?.listening)await new Promise(ok=>worker.server.close(ok));
   await rm(root,{recursive:true,force:true});
