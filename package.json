@@ -18,6 +18,7 @@
     "media:bridge": "node tools/persona-render-bridge.mjs",
     "media:worker": "node tools/persona-media-worker.mjs",
     "persona:preflight": "node tools/persona-preflight.mjs",
+    "persona:preflight:test": "node --test tools/persona-preflight.test.mjs",
     "persona:batch:test": "node --test tools/persona-orchestrator.test.mjs",
     "persona:demo:seed": "node tools/seed-persona-demo.mjs",
     "persona:architect:seed10": "node tools/seed_10_projects.mjs",
