@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Real Chromium proof: 10 imported videos, 10 existing carousel Worker jobs,
- * editorial approvals, mixed slide PNG/ZIP export, a Friday photo and optional stories.
+ * editorial approvals, mixed slide PNG/ZIP export, a Saturday photo and optional stories.
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
@@ -54,11 +54,17 @@ try{
  assert.equal(await calendar.locator('[data-calendar-day]').count(),7);
  const reel=calendar.locator('[data-calendar-item-id="reel-01"]');
  const carousel=calendar.locator('[data-calendar-item-id="PHOTO-001"]');
- const friday=calendar.locator('[data-calendar-item-id="photo-week-01"]');
+ const saturday=calendar.locator('[data-calendar-item-id="photo-week-01"]');
  assert.match(await reel.textContent(),/Видео/);
  assert.match(await carousel.textContent(),/Карусель/);
- assert.match(await friday.textContent(),/Фото-пост/);
- assert.match(await friday.textContent(),/Тема не выбрана/);
+ assert.match(await saturday.textContent(),/Фото-пост/);
+ assert.match(await saturday.textContent(),/Тема не выбрана/);
+ // The current default cadence must be reflected in the actual seven-day UI.
+ const weekDays=calendar.locator('[data-calendar-day]');
+ assert.equal(await weekDays.nth(1).locator('[data-calendar-item-id="reel-01"]').count(),1);
+ assert.equal(await weekDays.nth(3).locator('[data-calendar-item-id="PHOTO-001"]').count(),1);
+ assert.equal(await weekDays.nth(5).locator('[data-calendar-item-id="photo-week-01"]').count(),1);
+ assert.match(await calendar.locator('.personaWeekCalendarHead p').textContent(),/вторник.*четверг.*суббота/);
  await page.screenshot({path:join(artifacts,'editorial-calendar-desktop.png'),fullPage:true,animations:'disabled'});
  // Stories are an optional, independently saved manual layer.
  await calendar.getByRole('textbox',{name:'Идея Stories'}).fill('Короткий рабочий кадр из реального архива');
