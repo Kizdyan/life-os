@@ -129,3 +129,20 @@ test('rejects a linked manifest or a non-directory backup payload',async()=>{
   await assert.rejects(verifyPersonaQuickJobBackup(destination),/regular payload folder and manifest file/);
  }finally{await rm(root,{recursive:true,force:true})}
 });
+
+
+test('refuses cross-operating-system or relative source directories instead of silently claiming rerender eligibility',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-backup-foreign-path-'));
+ try{
+  const job=await fixture(root),archive=join(root,'archive');
+  await backupPersonaQuickJob({quickRoot:job.quickRoot,id:job.id,destination:archive});
+  const file=join(archive,'manifest.json'),manifest=JSON.parse(await readFile(file,'utf8'));
+  manifest.originalJobDir='relative-foreign-path/quick-'+job.id;
+  await writeFile(file,JSON.stringify(manifest));
+  const recovery=join(root,'recovery');
+  await assert.rejects(restorePersonaQuickJob({backupDir:archive,quickRoot:recovery}),
+   /Cross-operating-system|original job path/);
+  await assert.rejects(stat(join(recovery,'quick-'+job.id)),/ENOENT/);
+  assert.ok((await stat(job.source)).isDirectory(),'Original source was not removed');
+ }finally{await rm(root,{recursive:true,force:true})}
+});

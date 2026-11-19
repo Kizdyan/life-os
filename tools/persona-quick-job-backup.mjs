@@ -8,7 +8,7 @@
 import {constants,createReadStream} from 'node:fs';
 import {copyFile,lstat,mkdir,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
+import {basename,dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {QUICK_RELOCATION_RECORD,QUICK_RELOCATION_KIND,validateQuickRelocation} from './persona-quick-relocation.mjs';
 
@@ -187,6 +187,11 @@ export async function restorePersonaQuickJob({backupDir,quickRoot}){
  try{
   await mkdir(target);created=true;
   const manifest=validateManifest(JSON.parse(await readFile(join(resolve(backupDir),'manifest.json'),'utf8')));
+  // Path syntax is OS-specific: do not quietly reinterpret C:\\Windows paths
+  // as relative Unix paths or report a cross-OS migration as render-ready.
+  if(typeof manifest.originalJobDir!=='string'||!isAbsolute(manifest.originalJobDir)||
+     basename(resolve(manifest.originalJobDir))!=='quick-'+verified.id)
+   fail('Cross-operating-system or invalid original job path: restore on a compatible OS');
   for(const directory of manifest.directories)
    await mkdir(join(target,...directory.split('/')),{recursive:true});
   for(const item of manifest.files){
