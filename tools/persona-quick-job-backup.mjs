@@ -37,7 +37,7 @@ async function folderEntries(dir,prefix=''){
   else out.push({path:relativeName,bytes:info.size});
   if(out.length>MAX_FILES)fail('Too many files in job');
  }
- return out.sort((a,b)=>a.path.localeCompare(b.path));
+ return out.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
 }
 async function stableJob(folder,id){
  const [state,meta]=await Promise.all([
@@ -159,7 +159,7 @@ export async function restorePersonaQuickJob({backupDir,quickRoot}){
   await stableJob(target,verified.id);
   return {id:verified.id,restoredTo:target,verified:true,files:manifest.files.length,
    relocated:target!==resolve(manifest.originalJobDir),
-   rerenderVerified:target===resolve(manifest.originalJobDir),
+   rerenderVerified:false,
    note:'No existing job overwritten. Review restored projects in Worker; relocated absolute EditPlan paths require a separate migration before re-rendering.'};
  }catch(error){if(created)await rm(target,{recursive:true,force:true});throw error}
 }
