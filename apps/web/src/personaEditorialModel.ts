@@ -6,6 +6,8 @@ export const EDITORIAL_KEY='lifeos:persona:editorial-posts:v1';
 export const STORY_KEY='lifeos:persona:weekly-stories:v1';
 export const CAROUSEL_BASELINE_ID='carousel-baseline-pause';
 export const CAROUSEL_002_ID='carousel-why-director-leaves-question';
+export const CAROUSEL_003_ID='carousel-photo-archive';
+export const CAROUSEL_004_ID='carousel-mixed-narrative';
 const emptyChecklist=()=>[false,false,false,false,false,false,false];
 const freshApproval=()=>({topic:false,content:false,design:false,
  checklist:emptyChecklist(),checkedAt:'',checkedBy:'',contentHashAtApproval:''});
@@ -31,20 +33,28 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
 }
 export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>[s.id,s.text,s.visual,s.photoDirection])]));
+  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
+export function editorialArchiveProvenancePass(post:EditorialPost,availableKeys:readonly string[]):boolean{
+ return post.slides.every(s=>s.visual!=='archive-photo'||Boolean(s.photoRef&&availableKeys.includes(s.photoRef)));
+}
 export function editorialChecklistState(post:EditorialPost):boolean[]{
- const a=post.approvals.checklist??emptyChecklist();
- return [...a.slice(0,6),editorialContrastPass(post)];
+ const a=post.approvals.checklist??emptyChecklist(),manual=a.slice(0,6);
+ // The new archive-aware fixtures derive item 6; existing fixtures retain
+ // the original manual checklist behavior. IndexedDB existence is checked
+ // separately before approving or exporting.
+ if(post.carouselFormat)manual[5]=editorialArchiveProvenancePass(post,
+  post.slides.flatMap(s=>s.photoRef&&/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)?[s.photoRef]:[]));
+ return [...manual,editorialContrastPass(post)];
 }
 export function editorialChecklistReady(post:EditorialPost):boolean{
  return post.kind==='carousel'&&editorialChecklistState(post).every(Boolean);
 }
 export function setEditorialChecklistItem(post:EditorialPost,index:number,checked:boolean,now=new Date().toISOString()):EditorialPost{
  if(post.kind!=='carousel'||editorialStage(post)!=='design')throw Error('Чек-лист доступен до утверждения оформления');
- if(!Number.isInteger(index)||index<0||index>5||typeof checked!=='boolean')throw Error('Пункт 7 проверяется автоматически');
+ if(!Number.isInteger(index)||index<0||index>5||typeof checked!=='boolean'||(post.carouselFormat&&index===5))throw Error('Пункт 6/7 проверяется автоматически для архивных каруселей');
  const checklist=editorialChecklistState(post);checklist[index]=checked;
  const result={...post,revision:post.revision+1,updatedAt:now,approvals:{...post.approvals,checklist}};
  validatePost(result);return result;
@@ -53,9 +63,9 @@ export function setEditorialChecklistItem(post:EditorialPost,index:number,checke
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
-export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string};
+export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
- goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
+ goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;carouselFormat?:'photo-led'|'mixed';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
@@ -232,6 +242,50 @@ export function createDirectorQuestionCarousel(now=new Date().toISOString()):Edi
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
+
+/** Carousel 003: original archive photos, text-only until the author picks assets. */
+export function createPhotoArchiveCarousel(now=new Date().toISOString()):EditorialPost{
+ const texts=[
+  'Стул — не мебель. Это обстоятельство.',
+  'Первый персонаж садится, потому что устал.',
+  'Второй — потому что должен ждать.',
+  'Третий не садится вовсе.',
+  'Одна и та же точка в кадре, три разных решения.',
+  'Тело актёра читается раньше слов.'
+ ];
+ const post:EditorialPost={version:1,id:CAROUSEL_003_ID,kind:'carousel',carouselFormat:'photo-led',
+  title:'Один стул — три совершенно разных персонажа',
+  topic:'Один стул — три совершенно разных персонажа',
+  goal:'Актёрская задача и мизансцена: архивные фото; без них — text-only fallback.',
+  slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',
+   photoDirection:'Авторское фото для слайда '+(i+1)+': один стул, разные обстоятельства.'})),
+  caption:'Один стул может означать отдых, ожидание или отказ. Меняется не декорация, а обстоятельство и задача актёра. Важно не сыграть «усталость» или «ожидание» в общем виде, а понять, зачем человек занимает это место и чего хочет от другого. Тогда одна и та же мизансцена обнаруживает разные характеры — ещё до первой реплики.',
+  preset:'chocolate-graphite',approvals:freshApproval(),origin:'researched-topic',
+  revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
+}
+/** Carousel 004: photo/text alternation with safe text fallback. */
+export function createMixedNarrativeCarousel(now=new Date().toISOString()):EditorialPost{
+ const texts=[
+  'До первой реплики герой уже что-то решил.',
+  'Зритель ещё не знает что.',
+  'Тело уже выдаёт решение — плечи, взгляд, дыхание.',
+  'Слово только подтверждает то, что уже произошло.',
+  'Поэтому первая реплика — не начало, а следствие.',
+  'Сцена начинается раньше, чем произносится первое слово.'
+ ];
+ const post:EditorialPost={version:1,id:CAROUSEL_004_ID,kind:'carousel',carouselFormat:'mixed',
+  title:'Что происходит с героем до первой реплики',
+  topic:'Что происходит с героем до первой реплики',
+  goal:'Фото → текст → фото → текст → фото → текст; без фото — text-only fallback.',
+  slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',
+   photoDirection:i%2===0?'Фото: невербальное решение персонажа':'Текстовый слайд'})),
+  caption:'Сценическое действие начинается до первого произнесённого слова. Актёр может уже принять решение, скрыть страх, выбрать дистанцию или отказаться от контакта. Зритель считывает направление взгляда, дыхание, положение плеч. Поэтому первая реплика работает как последствие внутреннего действия — и её смысл зависит от того, что происходило с телом до неё.',
+  preset:'chocolate-graphite',approvals:freshApproval(),origin:'researched-topic',
+  revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
+}
+
 export function editorialStage(post:EditorialPost):'topic'|'content'|'design'|'production'{
  if(!post.approvals.topic)return 'topic';
  if(!post.approvals.content)return 'content';
@@ -259,6 +313,7 @@ export function validatePost(post:EditorialPost):void{
   (post.scheduledDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(post.scheduledDate)||
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
+  (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -267,7 +322,8 @@ export function validatePost(post:EditorialPost):void{
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
   post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
-   !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350))
+   !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
+    (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
   throw Error('Invalid editorial project');
  const a=post.approvals;
  if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||

@@ -2,12 +2,14 @@ import React,{useEffect,useState} from 'react';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,createDirectorQuestionCarousel,
+ CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
+ createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
+ editorialArchiveProvenancePass,
  editorialChecklistState,editorialChecklistReady,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
-import {buildEditorialExport,readEditorialImage,saveEditorialImage,triggerEditorialDownload} from './personaEditorialMedia';
+import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload} from './personaEditorialMedia';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -37,22 +39,47 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
+ const [archiveChoices,setArchiveChoices]=useState<{key:string;name:string;url:string}[]>([]);
+ const [archiveLoading,setArchiveLoading]=useState(false);
+ const [archiveError,setArchiveError]=useState('');
+ const [archiveRefresh,setArchiveRefresh]=useState(0);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
- const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post):true;
+ const archiveFixture=Boolean(post?.carouselFormat);
+ const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
+  (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
+   archiveChoices.map(x=>x.key)));
+ const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post)&&archiveRefsReady:true;
+ const photoSequence=post?.slides.map((s,i)=>({s,i})).filter(x=>x.s.visual==='archive-photo'&&x.s.photoRef)??[];
+ const selectedPhotoPosition=photoSequence.findIndex(x=>x.i===selectedSlide);
  useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
  useEffect(()=>{
   let alive=true,url:string|null=null;
   setAsset(null);
   if(!post||!slide||slide.visual!=='archive-photo')return;
-  readEditorialImage(post.id,slide.id).then(record=>{
+  (slide.photoRef?readEditorialImageByRef(slide.photoRef):readEditorialImage(post.id,slide.id)).then(record=>{
    if(!alive||!record)return;
    url=URL.createObjectURL(record.blob);setAsset({name:record.name,url});
   }).catch(e=>{if(alive)setError((e as Error).message)});
   return()=>{alive=false;if(url)URL.revokeObjectURL(url)};
- },[post?.id,slide?.id,slide?.visual,post?.revision]);
+ },[post?.id,slide?.id,slide?.visual,slide?.photoRef,post?.revision]);
+ useEffect(()=>{
+  if(!post?.carouselFormat){setArchiveChoices([]);setArchiveError('');return}
+  let alive=true;const urls:string[]=[];
+  setArchiveLoading(true);setArchiveError('');
+  listEditorialImages().then(images=>{
+   if(!alive)return;
+   const options=images.filter(img=>img.blob instanceof Blob&&img.blob.size===img.bytes&&
+    ['image/jpeg','image/png'].includes(img.mime)).map(img=>{
+     const url=URL.createObjectURL(img.blob);urls.push(url);
+     return {key:img.key,name:img.name,url};
+    });
+   setArchiveChoices(options);setArchiveLoading(false);
+  }).catch(e=>{if(alive){setArchiveLoading(false);setArchiveChoices([]);setArchiveError((e as Error).message)}});
+  return()=>{alive=false;urls.forEach(url=>URL.revokeObjectURL(url))};
+ },[post?.id,post?.carouselFormat,archiveRefresh]);
  function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>){
   if(!post)return;
   try{onChange(reviseEditorialPost(post,changes));setError('')}
@@ -62,10 +89,13 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   if(!post||!slide)return;
   persist({slides:post.slides.map(x=>x.id===slide.id?{...x,...changes}:x)});
  }
- function approve(step:'topic'|'content'|'design'){
+ async function approve(step:'topic'|'content'|'design'){
   if(!post)return;
-  try{onChange(approveEditorialStep(post,step));setError('')}
-  catch(e){setError((e as Error).message)}
+  try{
+   if(step==='design'&&post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
+    throw Error('Пункт 6: выбранные фотографии не подтверждены архивом IndexedDB');
+   onChange(approveEditorialStep(post,step));setError('');
+  }catch(e){setError((e as Error).message)}
  }
  function setChecklist(index:number,checked:boolean){
   if(!post)return;
@@ -83,6 +113,34 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(createDirectorQuestionCarousel());
    onSelect(CAROUSEL_002_ID);setError('');
   }catch(e){setError((e as Error).message)}
+ }
+ function openArchiveCarousel(id:string){
+  try{
+   if(id===CAROUSEL_003_ID){
+    if(!posts.some(p=>p.id===id))onCreate(createPhotoArchiveCarousel());
+   }else if(id===CAROUSEL_004_ID){
+    if(!posts.some(p=>p.id===id))onCreate(createMixedNarrativeCarousel());
+   }else throw Error('Неизвестная карусель');
+   onSelect(id);setError('');
+  }catch(e){setError((e as Error).message)}
+ }
+ function chooseArchivePhoto(photoRef:string){
+  if(!post||!slide||!post.carouselFormat)return;
+  if(post.carouselFormat==='mixed'&&selectedSlide%2===1)return;
+  modifySlide({visual:'archive-photo',photoRef});
+ }
+ function clearArchivePhoto(){
+  if(!post||!slide||!post.carouselFormat)return;
+  modifySlide({visual:'background',photoRef:undefined});
+ }
+ function moveArchivePhoto(delta:-1|1){
+  if(!post||selectedPhotoPosition<0)return;
+  const next=photoSequence[selectedPhotoPosition+delta];
+  if(!next)return;
+  const slides=post.slides.map(s=>({...s}));
+  const current=slides[selectedSlide],other=slides[next.i];
+  const oldRef=current.photoRef;current.photoRef=other.photoRef;other.photoRef=oldRef;
+  persist({slides});setSelectedSlide(next.i);
  }
  function choose(choice:TopicChoice){
   try{
@@ -148,6 +206,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {posts.some(p=>p.id===CAROUSEL_002_ID)?'Открыть карусель №2':'Создать карусель №2'}
     </button>
    </p>
+   <p className="personaEditorialNote">Карусель №3: «Один стул — три совершенно разных персонажа» · 6 слайдов · фото из архива или текстовый fallback.
+    <button type="button" data-testid="open-carousel-003" onClick={()=>openArchiveCarousel(CAROUSEL_003_ID)}>
+     {posts.some(p=>p.id===CAROUSEL_003_ID)?'Открыть карусель №3':'Создать карусель №3'}
+    </button>
+   </p>
+   <p className="personaEditorialNote">Карусель №4: «Что происходит с героем до первой реплики» · 6 слайдов · фото / текст / фото / текст / фото / текст.
+    <button type="button" data-testid="open-carousel-004" onClick={()=>openArchiveCarousel(CAROUSEL_004_ID)}>
+     {posts.some(p=>p.id===CAROUSEL_004_ID)?'Открыть карусель №4':'Создать карусель №4'}
+    </button>
+   </p>
    <div className="personaEditorialSuggestions">
     {allTopics.slice(0,8).map(choice=><article key={choice.id}>
      <span>{choice.kind==='photo'?'ФОТО':'КАРУСЕЛЬ'}</span><h4>{choice.title}</h4>
@@ -186,7 +254,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <label>Тема<input value={post.topic} maxLength={160} onChange={e=>persist({topic:e.target.value,title:e.target.value})}/></label>
     <label>Редакционная задача<textarea value={post.goal} maxLength={500} onChange={e=>persist({goal:e.target.value})}/></label>
     <p>Что узнает или почувствует зритель? Тема должна быть конкретной. Редакционные идеи — только предложение, факты проверяются автором.</p>
-    {!post.approvals.topic?<button className="personaEditorialApprove" type="button" onClick={()=>approve('topic')}>Утвердить тему</button>:
+    {!post.approvals.topic?<button className="personaEditorialApprove" type="button" onClick={()=>void approve('topic')}>Утвердить тему</button>:
      <span className="personaEditorialApproved">Тема утверждена ✓</span>}
    </section>
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
@@ -214,7 +282,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </label>
     <button type="button" className="personaEditorialCopy" onClick={()=>copy(post.caption)}>Скопировать подпись</button>
     {!post.approvals.content?<button type="button" className="personaEditorialApprove"
-     onClick={()=>approve('content')} disabled={!post.caption.trim()}>Утвердить тексты и подпись</button>:
+     onClick={()=>void approve('content')} disabled={!post.caption.trim()}>Утвердить тексты и подпись</button>:
      <span className="personaEditorialApproved">Текст утверждён ✓</span>}
    </section>}
    {post.approvals.content&&<section aria-label="Шаг 3. Оформление">
@@ -230,10 +298,44 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </div>
     <fieldset className="personaEditorialMediaChoices">
      <legend>Оформление слайда {selectedSlide+1}</legend>
-     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>modifySlide({visual:'background'})}/>Фон + текст</label>
-     <label><input type="radio" checked={slide?.visual==='archive-photo'} onChange={()=>modifySlide({visual:'archive-photo'})}/>Фото из архива + текст</label>
+     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
+     <label><input type="radio" checked={slide?.visual==='archive-photo'}
+      disabled={Boolean(post.carouselFormat)} onChange={()=>modifySlide({visual:'archive-photo'})}/>Фото из архива + текст</label>
     </fieldset>
-    {slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
+    {archiveFixture&&<section className="personaEditorialArchivePicker" data-testid="editorial-archive-picker"
+     aria-label="Выбор фотографий из архива IndexedDB">
+     <div className="personaEditorialArchiveHead"><strong>Фотографии из архива Persona</strong>
+      <button type="button" onClick={()=>setArchiveRefresh(n=>n+1)}>Обновить архив</button></div>
+     <p>Выбирай фотографии для слайдов. Их оригиналы остаются в IndexedDB; в плане сохраняется лишь ключ и порядок. Для смешанной карусели фото ставятся на слайды 1, 3 и 5.</p>
+     {archiveLoading&&<p role="status">Читаю архив фотографий…</p>}
+     {archiveError&&<p role="alert">{archiveError}. Можно сохранить текстовый вариант.</p>}
+     {!archiveLoading&&!archiveError&&archiveChoices.length===0&&<p data-testid="editorial-archive-empty">В архиве нет фотографий. Добавьте фотографии в архив Persona, чтобы использовать их в карусели</p>}
+     {post.carouselFormat==='mixed'&&selectedSlide%2===1&&<p>Это текстовый слайд. Для фотографии выбери слайд 1, 3 или 5.</p>}
+     <div className="personaEditorialArchiveGrid">
+      {archiveChoices.map(item=><button type="button" key={item.key} data-archive-key={item.key}
+       disabled={post.carouselFormat==='mixed'&&selectedSlide%2===1}
+       aria-label={'Выбрать фото '+item.name+' ('+item.key+')'}
+       aria-pressed={slide?.photoRef===item.key} onClick={()=>chooseArchivePhoto(item.key)}>
+       <img src={item.url} alt={item.name}/><strong>{item.name}</strong><small>{item.key}</small>
+      </button>)}
+     </div>
+     {slide?.photoRef&&<p data-testid="editorial-selected-photo">Выбрано: {archiveChoices.find(x=>x.key===slide.photoRef)?.name??'Не найдено в текущем архиве'} · {slide.photoRef}</p>}
+     {slide?.visual==='archive-photo'&&<button type="button" onClick={clearArchivePhoto}>Заменить фото текстовым фоном</button>}
+     {photoSequence.length>1&&<div className="personaEditorialArchiveOrder">
+      <strong>Порядок выбранных фотографий</strong>
+      {photoSequence.map(({s,i},order)=><div key={s.id}>
+       <button type="button" onClick={()=>setSelectedSlide(i)} aria-pressed={selectedSlide===i}>
+        {order+1}. Слайд {i+1} · {archiveChoices.find(x=>x.key===s.photoRef)?.name??s.photoRef}
+       </button>
+      </div>)}
+      <button type="button" disabled={selectedPhotoPosition<=0} aria-label="Выбранное фото выше"
+       onClick={()=>moveArchivePhoto(-1)}>↑ Переместить фото выше</button>
+      <button type="button" disabled={selectedPhotoPosition<0||selectedPhotoPosition===photoSequence.length-1}
+       aria-label="Выбранное фото ниже" onClick={()=>moveArchivePhoto(1)}>↓ Переместить фото ниже</button>
+     </div>}
+     <p>Пункт 6: {archiveRefsReady?'архивные ссылки подтверждены / text-only':'ссылка не найдена в архиве, утверждение заблокировано'}.</p>
+    </section>}
+    {!archiveFixture&&slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
      <label>Фотография из локального архива (JPEG/PNG, до 25 МБ)
       <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{
        void upload(e.target.files?.[0]??null);e.target.value='';
@@ -258,15 +360,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <legend>Чек-лист приёмки · 7 проверок</legend>
      {CHECKLIST_TEXT.map((description,index)=><label key={index}>
       <input type="checkbox" checked={Boolean(checklist[index])}
-       disabled={index===6} aria-label={'Пункт '+(index+1)}
+       disabled={index===6||(index===5&&archiveFixture)} aria-label={'Пункт '+(index+1)}
        onChange={e=>setChecklist(index,e.target.checked)}/>
       <span><strong>{index+1}.</strong> {description}</span>
      </label>)}
+     {archiveFixture&&<p>Пункт 6: {archiveRefsReady?'PASS — все выбранные фото найдены в существующем архиве или карусель text-only':'FAIL — отсутствует оригинал по ключу IndexedDB'}.</p>}
      <p>Пункт 7: {editorialContrastPass(post)?'PASS — цвета пресета удовлетворяют WCAG':'FAIL — контраст пресета ниже порога'}.
       Для фото поверх фона нужна дополнительная визуальная проверка.</p>
     </fieldset>}
     {!post.approvals.design?<button className="personaEditorialApprove" type="button"
-     disabled={!checklistReady} onClick={()=>approve('design')}>Утвердить оформление</button>:
+     disabled={!checklistReady} onClick={()=>void approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
    </section>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">

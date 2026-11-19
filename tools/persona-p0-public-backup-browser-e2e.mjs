@@ -53,6 +53,20 @@ async function completeCarouselChecklist(editor){
  assert.equal(await checks.getByRole('checkbox',{name:'Пункт 7'}).isDisabled(),true,'Contrast must not be manually editable');
  assert.equal(await approve.isEnabled(),true);
 }
+
+async function completeArchiveCarouselChecklist(editor){
+ const checks=editor.getByTestId('carousel-acceptance-checklist');
+ const approve=editor.getByRole('button',{name:'Утвердить оформление'});
+ assert.equal(await approve.isDisabled(),true);
+ for(let i=1;i<=5;i++)await checks.getByRole('checkbox',{name:'Пункт '+i}).check();
+ assert.equal(await checks.getByRole('checkbox',{name:'Пункт 6'}).isDisabled(),true);
+ assert.equal(await checks.getByRole('checkbox',{name:'Пункт 6'}).isChecked(),true,
+  'Archive reference or explicit background fallback is verified automatically');
+ assert.equal(await checks.getByRole('checkbox',{name:'Пункт 7'}).isChecked(),true);
+ await approve.waitFor({state:'visible'});
+ assert.equal(await approve.isEnabled(),true);
+}
+
 const browser=await chromium.launch({headless:true});
 try{
  const first=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
@@ -265,6 +279,151 @@ try{
  researchZip.slice(0,6).forEach(assertPng);
  assert.equal(researchZip[6].bytes.toString('utf8'),researchDraft.caption);
  await writeFile(join(artifacts,'carousel-why-director-leaves-question-slide-01.png'),researchZip[0].bytes);
+
+ // Carousel 003/004 P0: use 3 tiny synthetic PNG fixtures, upscaled into the
+ // EXISTING IndexedDB store. No new media library, and no real user files.
+ const archivePngs=await Promise.all([1,2,3].map(i=>readFile(resolve(
+  'apps/web/src/fixtures/carousel-archive-test-0'+i+'.png'))));
+ const seeds=archivePngs.map(buf=>buf.toString('base64'));
+ const inserted=await page.evaluate(async samples=>{
+  const photos=[];
+  for(const [i,b64] of samples.entries()){
+   const image=new Image();image.src='data:image/png;base64,'+b64;await image.decode();
+   const canvas=document.createElement('canvas');canvas.width=480;canvas.height=600;
+   const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas unavailable');
+   ctx.imageSmoothingEnabled=false;ctx.drawImage(image,0,0,480,600);
+   const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Missing test PNG')),'image/png'));
+   photos.push({key:'fixture-carousel/slide-'+(i+1),name:'fixture-carousel-0'+(i+1)+'.png',
+    mime:'image/png',bytes:blob.size,blob});
+  }
+  const db=await new Promise((resolve,reject)=>{
+   const req=indexedDB.open('persona-editorial-assets-v1',1);
+   req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('images'))
+    req.result.createObjectStore('images',{keyPath:'key'})};
+   req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+  });
+  try{
+   await new Promise((resolve,reject)=>{
+    const tx=db.transaction('images','readwrite');
+    for(const item of photos)tx.objectStore('images').put(item);
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+   });
+  }finally{db.close()}
+  return photos.map(x=>({key:x.key,size:x.bytes}));
+ },seeds);
+ assert.equal(inserted.length,3);
+ assert.ok(inserted.every(x=>x.size>1024));
+ await editor.getByRole('button',{name:'Все темы ↖'}).click();
+ await editor.getByTestId('open-carousel-003').click();
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
+ await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ const design003=editor.locator('[aria-label="Шаг 3. Оформление"]');
+ const picker003=editor.getByTestId('editorial-archive-picker');
+ for(let i=1;i<=3;i++){
+  await design003.getByRole('button',{name:new RegExp('^'+i+' · Фон')}).click();
+  await picker003.locator('[data-archive-key="fixture-carousel/slide-'+i+'"]').click();
+  await picker003.getByTestId('editorial-selected-photo').waitFor();
+ }
+ const selectedRecord=await page.evaluate(()=>{
+  const posts=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')).posts;
+  return posts.find(p=>p.id==='carousel-photo-archive');
+ });
+ assert.equal(selectedRecord.carouselFormat,'photo-led');
+ assert.deepEqual(selectedRecord.slides.slice(0,3).map(s=>s.photoRef),
+  inserted.map(x=>x.key));
+ // Change order without changing the authored caption/meaning of slides.
+ await picker003.getByRole('button',{name:'Выбранное фото выше'}).click();
+ const movedRecord=await page.evaluate(()=>JSON.parse(localStorage.getItem(
+  'lifeos:persona:editorial-posts:v1')).posts.find(p=>p.id==='carousel-photo-archive'));
+ assert.deepEqual(movedRecord.slides.slice(0,3).map(s=>s.photoRef),
+  [inserted[0].key,inserted[2].key,inserted[1].key]);
+ await completeArchiveCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+ const approved003=await page.evaluate(()=>JSON.parse(localStorage.getItem(
+  'lifeos:persona:editorial-posts:v1')).posts.find(p=>p.id==='carousel-photo-archive'));
+ assert.ok(approved003.approvals.design&&approved003.approvals.contentHashAtApproval);
+ const carousel003=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
+  join(artifacts,'carousel-photo-archive.zip'));
+ assert.deepEqual(carousel003.map(x=>x.name),[
+  'slide-01.png','slide-02.png','slide-03.png','slide-04.png','slide-05.png','slide-06.png','caption.txt']);
+ carousel003.slice(0,6).forEach(assertPng);
+ assert.equal(carousel003[6].bytes.toString('utf8'),approved003.caption);
+ const photoPixels=[];
+ for(const png of carousel003.slice(0,3)){
+  const pixels=await page.evaluate(async b64=>{
+   const image=new Image();image.src='data:image/png;base64,'+b64;await image.decode();
+   const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+   const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
+   return Array.from(ctx.getImageData(200,100,1,1).data).slice(0,3);
+  },png.bytes.toString('base64'));
+  photoPixels.push(pixels);
+ }
+ // The existing Canvas photo renderer deliberately applies a 14% dark
+ // gradient even at the top edge. Compare the exact blended source colors
+ // with a small raster-rounding tolerance, not raw ungraded input pixels.
+ const originalColors=[[80,112,93],[142,83,88],[79,89,123]];
+ for(let i=0;i<3;i++){
+  const blended=originalColors[i].map((v,c)=>Math.round(v*.86+[5,8,12][c]*.14));
+  assert.ok(photoPixels[i].every((v,c)=>Math.abs(v-blended[c])<=3),
+   'PNG '+i+' must retain corresponding original archive photo pixels under overlay');
+ }
+ assert.equal(new Set(photoPixels.map(x=>x.join(','))).size,3);
+ await writeFile(join(artifacts,'carousel-photo-archive-slide-01.png'),carousel003[0].bytes);
+ // Change a photo after approval: existing reviseEditorialPost must revoke design
+ // and the immutable approval hash cannot silently validate the new photo.
+ await design003.getByRole('button',{name:/1 · Фото/}).click();
+ await picker003.locator('[data-archive-key="fixture-carousel/slide-2"]').click();
+ const changed003=await page.evaluate(()=>JSON.parse(localStorage.getItem(
+  'lifeos:persona:editorial-posts:v1')).posts.find(p=>p.id==='carousel-photo-archive'));
+ assert.equal(changed003.approvals.design,false);
+ assert.notEqual(changed003.approvals.contentHashAtApproval,changed003.approvals.design?
+  changed003.approvals.contentHashAtApproval:'', 'Hash remains audit evidence, not a fresh approval');
+ assert.equal(changed003.approvals.contentHashAtApproval,approved003.approvals.contentHashAtApproval);
+ // Carousel 004: no image chosen, all 6 photo/text positions remain text fallback;
+ // the same approval gate and same PNG exporter must still work.
+ await editor.getByRole('button',{name:'Все темы ↖'}).click();
+ await editor.getByTestId('open-carousel-004').click();
+ await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
+ await editor.getByRole('button',{name:'Утвердить тему'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ const mixed=await page.evaluate(()=>JSON.parse(localStorage.getItem(
+  'lifeos:persona:editorial-posts:v1')).posts.find(p=>p.id==='carousel-mixed-narrative'));
+ assert.equal(mixed.carouselFormat,'mixed');
+ assert.equal(mixed.slides.length,6);
+ assert.ok(mixed.slides.every(x=>x.visual==='background'&&!x.photoRef));
+ await completeArchiveCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+ const carousel004=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
+  join(artifacts,'carousel-mixed-fallback.zip'));
+ carousel004.slice(0,6).forEach(assertPng);
+ assert.equal(carousel004[6].bytes.toString('utf8'),mixed.caption);
+ assert.equal(carousel004.length,7);
+ // An empty archive is explicit, never fabricated. New browser context has no
+ // indexed photos; author can still approve the text-only carousel.
+ const emptyCtx=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
+ try{
+  const empty=await emptyCtx.newPage();
+  await empty.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
+  await empty.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="PHOTO-001"]')
+   .getByRole('button',{name:/Начать работу/}).click();
+  const emptyEditor=empty.getByTestId('persona-editorial-studio');
+  await emptyEditor.getByRole('button',{name:'Все темы ↖'}).click();
+  await emptyEditor.getByTestId('open-carousel-003').click();
+  await emptyEditor.getByRole('button',{name:'Утвердить тему'}).click();
+  await emptyEditor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+  await emptyEditor.getByTestId('editorial-archive-empty').waitFor({timeout:15000});
+  await completeArchiveCarouselChecklist(emptyEditor);
+  await emptyEditor.getByRole('button',{name:'Утвердить оформление'}).click();
+  await emptyEditor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+  const fallback=await downloadZip(empty,emptyEditor.getByRole('button',
+   {name:'Скачать ZIP с PNG и подписью'}),join(artifacts,'carousel-003-empty-fallback.zip'));
+  fallback.slice(0,6).forEach(assertPng);
+  assert.equal(fallback.length,7);
+ }finally{await emptyCtx.close()}
+
  await clean.close();
  assert.deepEqual(errors,[]);
  console.log('PERSONA_P0_FULL_BROWSER_PASS '+JSON.stringify({
