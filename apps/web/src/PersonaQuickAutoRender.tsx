@@ -317,6 +317,11 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
    <div className="personaQuickCards">{visibleJobs.map(job=><article key={job.id} className={'personaQuickCard'+(job.ready?' personaQuickCard--done':'')+(focusJobId===job.id?' personaQuickCard--calendarFocused':'')} id={'persona-quick-project-'+job.id} tabIndex={-1} data-quick-status={job.state} data-focused-project={focusJobId===job.id?'true':'false'}>
     <div><small>{job.state==='waiting_for_footage'?'ОЖИДАЕТ ФОТО':job.ready?(job.contentType==='photo-carousel'?'ГОТОВАЯ КАРУСЕЛЬ':'ГОТОВЫЙ МЕДИАПРОЕКТ'):job.state==='failed'?'НУЖНО ВНИМАНИЕ':'МЕДИАПРОЕКТ'}</small><h4>{job.title}</h4>
      {job.seedKey&&<p className="personaQuickCardLooks">{job.seedKey} · {job.slides?.length??0} слайда · {job.goal}</p>}
+     {job.ready&&<details className="personaQuickMoments">
+      <summary>Резервная копия этого проекта (Windows)</summary>
+      <p>UUID для локального архивирования: <code>{job.id}</code></p>
+      <p>Браузерный ZIP не включает эти исходники и MP4. На компьютере с Media Worker останови рендер и сохрани проверяемую копию на другом диске по <a href="https://github.com/Kizdyan/life-os/blob/main/docs/persona-worker-job-backup.md" target="_blank" rel="noreferrer">инструкции</a>. Копирование пока ручное; повторный монтаж на другом компьютере не гарантирован.</p>
+     </details>
      <p>{statusLabel(job)} · {job.contentType==='photo-carousel'?'Фото-карусель '+(job.carouselAspect??'4:5'):
       job.contentType==='photo-slideshow'?'Фото-слайдшоу':'Видео'}</p>
      {job.ready&&job.colorPreset&&<p className="personaQuickCardLooks">Цвет: {job.colorPreset==='DetailCinematic'?'Detail Cinematic':'Soft Cinematic'} · Титры: {job.styleChoice==='dynamic'?'Dynamic Interview':job.styleChoice==='signature-gold'?'Signature Gold':'Cinematic'}</p>}
