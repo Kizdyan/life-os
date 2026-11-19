@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {fetchQuickWorkerWithReconnect} from './personaQuickWorkerSession';
 import './persona-quick-auto-render.css';
 
 type QuickRenderJob={id:string;title:string;state:'waiting_for_footage'|'uploading'|'running'|'completed'|'failed'|'interrupted';stage:string;
@@ -87,19 +88,27 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
   workerToken.current=status.token;
   return status.token as string;
  }
- async function refresh(showFailure=false){
+ // A restarted Worker has a different token; reconnect automatically.
+ async function workerFetch(path:string,init:RequestInit={}):Promise<Response>{
+  return fetchQuickWorkerWithReconnect(
+   personaWorkerUrl+path,init,token,async()=>{workerToken.current=null;return token()});
+ }
+ async function refresh(){
   try{
-   const key=await token();
-   const response=await fetch(personaWorkerUrl+'/quick-render',{headers:{'X-Persona-Worker-Token':key},cache:'no-store'});
+   const response=await workerFetch('/quick-render',{cache:'no-store'});
    if(!response.ok)throw Error('Не удалось прочитать список автомонтажей.');
    const result=await response.json();
    if(mounted.current)setJobs(Array.isArray(result.jobs)?result.jobs:[]);
    if(mounted.current)setServiceError('');
-  }catch(e){if(showFailure&&mounted.current)setServiceError((e as Error).message)}
+  }catch(e){
+   // Do not display a stale token or offer broken downloads while disconnected.
+   workerToken.current=null;
+   if(mounted.current){setVisionAvailable(null);setServiceError((e as Error).message)}
+  }
  }
  useEffect(()=>{
-  mounted.current=true;void refresh(true);
-  const interval=window.setInterval(()=>{if(!busy.current)void refresh(false)},2200);
+  mounted.current=true;void refresh();
+  const interval=window.setInterval(()=>{if(!busy.current)void refresh()},2200);
   return()=>{mounted.current=false;window.clearInterval(interval)};
  },[]);
  function accept(selected:File[]){
@@ -117,9 +126,8 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
     throw Error('Чтобы использовать индивидуальные титры, заполни текст каждого слайда.');
    const slides=hasIndividualText?slideTexts.map(text=>({text:text.trim()})):undefined;
    if(prompt.trim().length<3||prompt.length>600)throw Error('Напиши короткую задачу для монтажа (от 3 до 600 символов).');
-   const key=await token();
-   const headers={'Content-Type':'application/json','X-Persona-Worker-Token':key};
-   const response=await fetch(personaWorkerUrl+'/quick-render',{method:'POST',headers,
+   const response=await workerFetch('/quick-render',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,textAccents,
      contentType,carouselAspect,coverTitle,...(slides?{slides}:{}),
      ...(!autoStyle?{styleChoice,colorPreset}:{})})});
@@ -127,13 +135,12 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
    const id=created.id as string;setActiveId(id);
    for(const [index,file] of files.entries()){
-    const sent=await fetch(personaWorkerUrl+'/quick-render/'+id+'/upload/'+index,{
-     method:'PUT',headers:{'X-Persona-Worker-Token':key,'X-Persona-Original-Name':encodeURIComponent(file.name)},
+    const sent=await workerFetch('/quick-render/'+id+'/upload/'+index,{
+     method:'PUT',headers:{'X-Persona-Original-Name':encodeURIComponent(file.name)},
      body:file});
     if(!sent.ok)throw Error((await sent.json().catch(()=>({}))).error||'Ошибка загрузки файла: '+file.name);
    }
-   const launched=await fetch(personaWorkerUrl+'/quick-render/'+id+'/run',{method:'POST',
-    headers:{'X-Persona-Worker-Token':key}});
+   const launched=await workerFetch('/quick-render/'+id+'/run',{method:'POST'});
    if(!launched.ok)throw Error((await launched.json().catch(()=>({}))).error||'Не удалось запустить монтаж.');
    setFiles([]);setSlideTexts([]);setPrompt(DEFAULT_PROMPT);if(fileRef.current)fileRef.current.value='';
    await refresh();
@@ -144,9 +151,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
   if(promotingId||busy.current)return;
   setPromotingId(id);setError('');
   try{
-   const key=await token();
-   const response=await fetch(personaWorkerUrl+'/quick-render/'+id+'/render-full',{
-    method:'POST',headers:{'X-Persona-Worker-Token':key}});
+   const response=await workerFetch('/quick-render/'+id+'/render-full',{method:'POST'});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(data.error||'Полный рендер не запустился');
    await refresh();
@@ -160,22 +165,19 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
    const meta=checkQuickRenderFiles(selected,'photo-carousel');
    if(meta.length!==job.slides?.length)
     throw Error('Для '+job.seedKey+' нужно выбрать ровно '+job.slides?.length+' фото в порядке слайдов.');
-   const key=await token();
-   const headers={'X-Persona-Worker-Token':key};
-   const attached=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/attach-photos',{
-    method:'POST',headers:{...headers,'Content-Type':'application/json'},
+   const attached=await workerFetch('/quick-render/'+job.id+'/attach-photos',{
+    method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({files:meta})});
    const manifest=await attached.json().catch(()=>({}));
    if(!attached.ok)throw Error(manifest.error||'Не удалось прикрепить фотографии.');
    const existing=new Set<number>(manifest.uploadedIndices??[]);
    for(const [index,file] of selected.entries()){
     if(existing.has(index))continue;
-    const sent=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/upload/'+index,{
-     method:'PUT',headers:{...headers,'X-Persona-Original-Name':encodeURIComponent(file.name)},body:file});
+    const sent=await workerFetch('/quick-render/'+job.id+'/upload/'+index,{
+     method:'PUT',headers:{'X-Persona-Original-Name':encodeURIComponent(file.name)},body:file});
     if(!sent.ok)throw Error((await sent.json().catch(()=>({}))).error||'Ошибка фото '+(index+1));
    }
-   const run=await fetch(personaWorkerUrl+'/quick-render/'+job.id+'/run',{
-    method:'POST',headers});
+   const run=await workerFetch('/quick-render/'+job.id+'/run',{method:'POST'});
    if(!run.ok)throw Error((await run.json().catch(()=>({}))).error||'Сборка карусели не запустилась.');
    await refresh();
   }catch(error){setError((error as Error).message)}
@@ -185,9 +187,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
   if(exportingId||busy.current)return;
   setExportingId(id);setError('');
   try{
-   const key=await token();
-   const response=await fetch(personaWorkerUrl+'/quick-render/'+id+'/export-package',{
-    method:'POST',headers:{'X-Persona-Worker-Token':key}});
+   const response=await workerFetch('/quick-render/'+id+'/export-package',{method:'POST'});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(data.error||'Не удалось подготовить платформенный пакет');
    await refresh();
