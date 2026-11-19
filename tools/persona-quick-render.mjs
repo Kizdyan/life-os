@@ -12,6 +12,7 @@ import {homedir,tmpdir} from 'node:os';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {getVisualPreset} from './persona-creative-director.mjs';
 import {frameCandidates,validateEditPlan,editPlanProvider} from './persona-quick-edit-plan.mjs';
+import {QUICK_RELOCATION_RECORD,validateQuickRelocation,rebindQuickTimeline} from './persona-quick-relocation.mjs';
 
 /** No inference or fabricated emotion labels when Vision is unavailable. */
 export function offlineEditPlan(videos){
@@ -797,16 +798,16 @@ export function createPersonaQuickRenderService(config={}){
    await verifyUploadedFiles(join(dir,'input'),job.files);
    const plan=JSON.parse(await readFile(join(out,'edit-plan.json'),'utf8'));
    const timeline=JSON.parse(await readFile(join(out,'timeline.json'),'utf8'));
-   if(plan.choices?.length!==timeline.clips?.length||plan.choices.length<2)
-     throw Error('EditPlan и таймлайн не совпадают');
-   const videos=job.files.filter(f=>f.kind==='video');
-   for(const [i,choice] of plan.choices.entries()){
-    const clip=timeline.clips[i],source=videos[choice.fileIndex];
-    if(!source||!clip||clip.path!==join(dir,'input',source.name)||
-      source.sha256!==choice.sourceSha256||
-      clip.startSec!==choice.startSec||clip.durationSec!==choice.durationSec)
-     throw Error('EditPlan больше не соответствует проверенным исходникам');
-   }
+   let originalJobDir=dir;
+   try{
+    const record=JSON.parse(await readFile(join(dir,QUICK_RELOCATION_RECORD),'utf8'));
+    originalJobDir=validateQuickRelocation(record,{
+     id,currentJobDir:dir,receiptSha256:await sha(join(out,'RESULT.json'))});
+   }catch(error){if(error.code!=='ENOENT')throw error;}
+   // Verify signed original source paths, then rebind only the derived full
+   // timeline. edit-plan.json, timeline.json and RESULT.json remain immutable.
+   const verifiedTimeline=rebindQuickTimeline({jobDir:dir,originalJobDir,
+    files:job.files,plan,timeline});
    // Retry is allowed only after a recorded full-render failure; stale derivatives
    // are removed but the original draft and the verified edit plan are untouched.
    for(const filename of ['full-timeline.json','full-edited.mp4','full-edited.mp4.persona.json',
@@ -814,7 +815,7 @@ export function createPersonaQuickRenderService(config={}){
     await rm(join(out,filename),{force:true});
    }
    await rm(join(out,'visual-evidence-video-quality-full'),{recursive:true,force:true});
-   const fullTimeline={...timeline,width:1080,height:1920,fps:30,renderProfile:'full-quality'};
+   const fullTimeline={...verifiedTimeline,width:1080,height:1920,fps:30,renderProfile:'full-quality'};
    const fullTimelinePath=join(out,'full-timeline.json');
    await writeFile(fullTimelinePath,JSON.stringify(fullTimeline,null,2)+'\n',{flag:'wx'});
    job.stage='1080p: локальный FFmpeg (без Vision)';await save(job);
