@@ -155,6 +155,13 @@ export function createPersonaQuickRenderService(config={}){
    canonical=await production.updateFullRender('FAILED',{reason:'Worker перезапущен до проверки полноразмерного MP4. Черновик сохранён.'});
   const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null,
    fullRender:canonical.fullRender??null};
+  // Worker restarts cannot leave an in-flight platform export indefinitely stuck.
+  // Recover the package status without revoking the already verified master.
+  if(!cached&&!active&&job.exportStatus==='RENDERING'){
+   job.exportStatus='FAILED';
+   job.exportError='Media Worker перезапущен во время подготовки пакета. Финальный MP4 сохранён; повторите экспорт.';
+   await save(job);
+  }
   if(state==='completed'&&(!job.sha256||!job.videoName)){
    try{const result=JSON.parse(await readFile(join(directory(id),'output','RESULT.json'),'utf8'));
     job.sha256=result.sha256;job.videoName=result.videoName;}catch{}
@@ -767,7 +774,7 @@ export function createPersonaQuickRenderService(config={}){
  /** Re-render a verified draft's immutable timeline at 1080x1920. No model, Vision,
   * Whisper, or strategic calls; original EditPlan and source hashes are checked again.
   */
- async function executeFull(job){
+ async function executeFull(job,{withPackage=false}={}){
   const id=job.id,dir=directory(id),out=join(dir,'output');
   const production=new ProductionJob(dir),started=Date.now();
   try{
@@ -832,6 +839,13 @@ export function createPersonaQuickRenderService(config={}){
     reason:'Verified 1080p MP4 from unchanged author EditPlan; zero new Vision calls',
     videoName:basename(video),sha256:hash,bytes});
    job.fullRender=canonical.fullRender;job.stage='Полный MP4 готов';await save(job);
+   if(withPackage){
+    // Both deliverables are requested by one explicit click after draft review.
+    // Keep active=id throughout; platform variants are not author-approved.
+    job.exportStatus='RENDERING';job.exportError=null;
+    job.stage='1080p готов · готовлю платформенные версии';await save(job);
+    await executePackage(job);
+   }
   }catch(error){
    const message=String(error.message||error).replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,400);
    try{job.fullRender=(await production.updateFullRender('FAILED',{reason:message})).fullRender}
@@ -839,7 +853,7 @@ export function createPersonaQuickRenderService(config={}){
    job.stage='1080p: ошибка';await save(job);
   }finally{active=null}
  }
- async function promote(id){
+ async function promote(id,{withPackage=false}={}){
   const job=await get(id);
   if(!job||job.state!=='completed'||job.fastDraft!==true||!job.sha256)
    throw Error('Сначала создайте и проверьте быстрый MP4-черновик');
@@ -849,7 +863,7 @@ export function createPersonaQuickRenderService(config={}){
   const receipt=await new ProductionJob(directory(id)).updateFullRender('RENDERING',{
    reason:'1080p export reuses stored author EditPlan; cloud analysis disabled'});
   active=id;job.fullRender=receipt.fullRender;job.stage='Начинаю 1080p';await save(job);
-  void executeFull(job);return view(job);
+  void executeFull(job,{withPackage});return view(job);
  }
  async function video(id,res,quality='draft'){
   const job=await get(id);
@@ -959,7 +973,11 @@ export function createPersonaQuickRenderService(config={}){
     resJson(res,200,await upload(id,Number(matched[3]),req));return true;
    }
    if(req.method==='POST'&&action==='run'){resJson(res,202,await run(id));return true}
-   if(req.method==='POST'&&action==='render-full'){resJson(res,202,await promote(id));return true}
+   if(req.method==='POST'&&action==='render-full'){
+    const withPackage=url.searchParams.get('withPackage');
+    if(withPackage!==null&&withPackage!=='1')throw Error('Unsupported full-render package option');
+    resJson(res,202,await promote(id,{withPackage:withPackage==='1'}));return true;
+   }
    if(req.method==='POST'&&action==='export-package'){resJson(res,202,await preparePackage(id));return true}
    if(req.method==='GET'&&action?.startsWith('export/')){await exported(id,matched[4],res);return true}
    if(req.method==='GET'&&action==='video'){await video(id,res);return true}
