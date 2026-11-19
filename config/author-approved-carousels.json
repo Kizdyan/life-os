@@ -1,7 +1,5 @@
 {
   "carousel-baseline-pause": {
-    "approved": true,
-    "checkedAt": "2026-11-19T22:26:50.010Z",
     "checkedBy": "Author (chat confirmation 2026-11-20)",
     "checklist": [
       true,
@@ -12,11 +10,14 @@
       true,
       true
     ],
-    "contentHashAtApproval": "fnv1a32:1be357e3"
+    "contentHashAtApproval": "fnv1a32:1be357e3",
+    "textApproved": true,
+    "textApprovedAt": "2026-11-19T22:26:50.010Z",
+    "designApproved": false,
+    "designApprovedAt": null,
+    "checklistScope": "text"
   },
   "carousel-why-director-leaves-question": {
-    "approved": true,
-    "checkedAt": "2026-11-19T22:26:50.010Z",
     "checkedBy": "Author (chat confirmation 2026-11-20)",
     "checklist": [
       true,
@@ -27,11 +28,14 @@
       true,
       true
     ],
-    "contentHashAtApproval": "fnv1a32:876d5b48"
+    "contentHashAtApproval": "fnv1a32:876d5b48",
+    "textApproved": true,
+    "textApprovedAt": "2026-11-19T22:26:50.010Z",
+    "designApproved": false,
+    "designApprovedAt": null,
+    "checklistScope": "text"
   },
   "carousel-photo-archive": {
-    "approved": true,
-    "checkedAt": "2026-11-19T22:26:50.010Z",
     "checkedBy": "Author (chat confirmation 2026-11-20)",
     "checklist": [
       true,
@@ -42,11 +46,14 @@
       true,
       true
     ],
-    "contentHashAtApproval": "fnv1a32:18a10cb3"
+    "contentHashAtApproval": "fnv1a32:18a10cb3",
+    "textApproved": true,
+    "textApprovedAt": "2026-11-19T22:26:50.010Z",
+    "designApproved": false,
+    "designApprovedAt": null,
+    "checklistScope": "text"
   },
   "carousel-mixed-narrative": {
-    "approved": true,
-    "checkedAt": "2026-11-19T22:26:50.010Z",
     "checkedBy": "Author (chat confirmation 2026-11-20)",
     "checklist": [
       true,
@@ -57,6 +64,11 @@
       true,
       true
     ],
-    "contentHashAtApproval": "fnv1a32:e43f1f1a"
+    "contentHashAtApproval": "fnv1a32:e43f1f1a",
+    "textApproved": true,
+    "textApprovedAt": "2026-11-19T22:26:50.010Z",
+    "designApproved": false,
+    "designApprovedAt": null,
+    "checklistScope": "text"
   }
 }

@@ -39,7 +39,8 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
-type ChatCarouselApproval={approved:boolean;checkedAt:string;checkedBy:string;checklist:boolean[];contentHashAtApproval:string};
+type ChatCarouselApproval={textApproved:boolean;textApprovedAt:string;designApproved:boolean;
+ designApprovedAt:string|null;checkedBy:string;checklist:boolean[];checklistScope:'text';contentHashAtApproval:string};
 const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approvedRecords;
 
 /** Use chat-approved data INSIDE the existing editorial approvals/gate, not as a parallel status.
@@ -47,29 +48,60 @@ const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approved
  * The archived approval hash remains for the existing "Требует повторного утверждения" label.
  * Manual approvals for already-approved local projects always take precedence.
  */
+/** Separate text hash: palette changes cannot undo written approval. */
+export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'>):string{
+ return editorialHash(JSON.stringify([post.title,post.topic,post.goal,post.caption,
+  post.slides.map(s=>[s.id,s.text])]));
+}
+function editorialHash(value:string):string{
+ let hash=0x811c9dc5;
+ for(const byte of new TextEncoder().encode(value))hash=Math.imul(hash^byte,0x01000193)>>>0;
+ return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
+}
+/** Content, palette and font-version fingerprint for artist visual approval. */
+export function editorialDesignHash(post:EditorialPost):string{
+ return editorialHash(JSON.stringify([editorialContentHash(post),'persona-editorial-fonts-v1']));
+}
+export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
+export function publicationDesignApproved(post:EditorialPost):boolean{
+ return post.approvals.design===true&&post.approvals.designApproved!==false&&
+  (!post.approvals.contentHashAtDesignApproval||
+   post.approvals.contentHashAtDesignApproval===editorialDesignHash(post));
+}
+/** Chat confirmation approves written content only; never implies rendered visual review. */
 export function applyChatCarouselApproval(post:EditorialPost):EditorialPost{
  const record=authorApprovedCarouselRecords[post.id];
- if(!record||!record.approved||post.kind!=='carousel')return post;
- if(post.approvals.design&&post.approvals.contentHashAtApproval===editorialContentHash(post))return post;
- const valid=record.checklist.length===7&&record.checklist.every(x=>x===true)&&
-  Number.isFinite(Date.parse(record.checkedAt))&&
+ if(!record||!record.textApproved||post.kind!=='carousel')return post;
+ const valid=record.checklistScope==='text'&&record.checklist.length===7&&
+  record.checklist.every(Boolean)&&record.designApproved===false&&
+  record.designApprovedAt===null&&Number.isFinite(Date.parse(record.textApprovedAt))&&
   record.checkedBy==='Author (chat confirmation 2026-11-20)'&&
   /^fnv1a32:[a-f0-9]{8}$/.test(record.contentHashAtApproval);
  if(!valid)return post;
+ if(post.approvals.design&&post.approvals.designApproved===true&&
+    post.approvals.contentHashAtDesignApproval===editorialDesignHash(post))return post;
+ // Preserve verified manual approvals that were not imported from chat.
+ if(post.approvals.design&&post.approvals.checkedBy==='Автор'&&
+  post.approvals.contentHashAtApproval===editorialContentHash(post))return post;
  if(record.contentHashAtApproval!==editorialContentHash(post)){
-  // Preserve a prior valid author approval if one exists; otherwise record a
-  // non-design historical fingerprint without approving edited content.
+  // A changed palette preserves text approval only with a separate matching text hash.
+  if(post.approvals.textApproved&&post.approvals.content&&
+   post.approvals.textHashAtApproval===editorialTextHash(post)){
+   return {...post,approvals:{...post.approvals,design:false,designApproved:false,
+    designApprovedAt:null,contentHashAtDesignApproval:''}};
+  }
   if(post.approvals.contentHashAtApproval)return post;
   return {...post,approvals:{...post.approvals,topic:false,content:false,design:false,
-   checklist:emptyChecklist(),checkedAt:record.checkedAt,
-   checkedBy:record.checkedBy,contentHashAtApproval:record.contentHashAtApproval}};
+   textApproved:false,designApproved:false,designApprovedAt:null,checklist:emptyChecklist(),
+   checkedAt:record.textApprovedAt,checkedBy:record.checkedBy,
+   contentHashAtApproval:record.contentHashAtApproval}};
  }
- const approvals={...post.approvals,topic:true,content:true,design:true,
-  checklist:[...record.checklist],checkedAt:record.checkedAt,
-  checkedBy:record.checkedBy,contentHashAtApproval:record.contentHashAtApproval};
- const hydrated={...post,approvals};
- validatePost(hydrated);
- return hydrated;
+ const hydrated={...post,approvals:{...post.approvals,topic:true,content:true,design:false,
+  textApproved:true,textHashAtApproval:editorialTextHash(post),
+  designApproved:false,designApprovedAt:null,contentHashAtDesignApproval:'',
+  checklist:[...record.checklist],checkedAt:record.textApprovedAt,
+  checkedBy:record.checkedBy,contentHashAtApproval:record.contentHashAtApproval}};
+ validatePost(hydrated);return hydrated;
 }
 
 export function editorialArchiveProvenancePass(post:EditorialPost,availableKeys:readonly string[]):boolean{
@@ -102,7 +134,9 @@ export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirect
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;carouselFormat?:'photo-led'|'mixed';
  approvals:{topic:boolean;content:boolean;design:boolean;
- checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string};
+ checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
+  textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
+  designApprovedAt?:string|null;contentHashAtDesignApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
  origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string};
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
@@ -363,7 +397,8 @@ export function validatePost(post:EditorialPost):void{
  const a=post.approvals;
  if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||
   a.checklist.some(x=>typeof x!=='boolean')))throw Error('Invalid carousel checklist');
- if([a.checkedAt,a.checkedBy,a.contentHashAtApproval].some(x=>x!==undefined&&typeof x!=='string'))
+ if([a.checkedAt,a.checkedBy,a.contentHashAtApproval,a.textHashAtApproval,
+  a.contentHashAtDesignApproval].some(x=>x!==undefined&&typeof x!=='string'))
   throw Error('Invalid checklist audit');
  if(a.checkedAt&&(!Number.isFinite(Date.parse(a.checkedAt))||!a.checkedBy||!a.contentHashAtApproval))
   throw Error('Incomplete checklist audit');
@@ -373,6 +408,9 @@ export function validatePost(post:EditorialPost):void{
    a.contentHashAtApproval!==editorialContentHash(post)||!a.checkedAt||!a.checkedBy)
    throw Error('Carousel acceptance approval is missing or stale');
  }
+ if(a.designApproved===true&&(!a.design||!a.designApprovedAt||
+   a.contentHashAtDesignApproval!==editorialDesignHash(post)))
+  throw Error('Visual approval missing or stale');
  if(post.approvals.content&&!post.approvals.topic)throw Error('Content approved before topic');
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
@@ -393,6 +431,13 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
   changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined){
   result.approvals.checklist=emptyChecklist();
+  result.approvals.designApproved=false;result.approvals.designApprovedAt=null;
+  result.approvals.contentHashAtDesignApproval='';
+  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
+     changes.caption!==undefined||(changes.slides!==undefined&&
+       (changes.slides.length!==post.slides.length||changes.slides.some((s,i)=>s.text!==post.slides[i]?.text)))){
+   result.approvals.textApproved=false;result.approvals.textHashAtApproval='';
+  }
   // Retain old fingerprint in audit to label the subsequent re-approval.
  }
  validatePost(result);return result;
@@ -406,10 +451,18 @@ export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'
  if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
   throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
  const approvals={...post.approvals,[step]:true};
+ if(step==='content'&&post.kind==='carousel'){
+  approvals.textApproved=true;approvals.textHashAtApproval=editorialTextHash(post);
+  approvals.designApproved=false;approvals.designApprovedAt=null;
+  approvals.contentHashAtDesignApproval='';
+ }
  if(step==='design'&&post.kind==='carousel'){
   approvals.checklist=editorialChecklistState(post);
   approvals.checkedAt=now;approvals.checkedBy='Автор';
   approvals.contentHashAtApproval=editorialContentHash(post);
+  approvals.textApproved=true;approvals.textHashAtApproval=editorialTextHash(post);
+  approvals.designApproved=true;approvals.designApprovedAt=now;
+  approvals.contentHashAtDesignApproval=editorialDesignHash(post);
  }
  const result={...post,revision:post.revision+1,updatedAt:now,approvals};
  validatePost(result);return result;
