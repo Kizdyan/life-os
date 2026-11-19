@@ -368,7 +368,7 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   expect(preset.approvals.content).toBe(true);
   expect(preset.approvals.designApproved).toBe(false);
   expect(editorialTextHash(preset)).toBe(editorialTextHash(signed));
-  const font=reviseEditorialPost(signed,{fontPreset:'playfair-inter'});
+  const font=reviseEditorialPost(signed,{fontPreset:'legacy'});
   expect(font.approvals.textApproved).toBe(true);
   expect(font.approvals.designApproved).toBe(false);
   expect(editorialDesignHash(font)).not.toBe(editorialDesignHash(signed));
