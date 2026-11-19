@@ -6,7 +6,21 @@ import {mkdtemp,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
+import {analyzePersonaVideoQuality,auditPersonaBurnedSubtitleCues} from './persona-video-quality.mjs';
+
+test('verified subtitle metadata warns about overlap, out-of-video, short and dense text without OCR',()=>{
+ const report=auditPersonaBurnedSubtitleCues([
+  {startMs:0,endMs:1500,text:'Нормальная реплика'},
+  {startMs:1400,endMs:1550,text:'Слишком короткая и перегруженная длинная реплика'},
+  {startMs:2500,endMs:3400,text:'За пределами видео'},
+ ],3);
+ assert.equal(report.cueCount,3);
+ for(const id of ['subtitle_overlap','subtitle_too_brief','subtitle_fast_reading','subtitle_outside_video'])
+  assert.ok(report.problems.some(p=>p.id===id),id);
+ assert.deepEqual(auditPersonaBurnedSubtitleCues([{startMs:200,endMs:1800,text:'Нормальный титр'}],3).problems,[]);
+ assert.ok(auditPersonaBurnedSubtitleCues([{startMs:-1,endMs:200,text:'некорректно'}],3).problems.some(p=>p.id==='subtitle_invalid_time'));
+ assert.throws(()=>auditPersonaBurnedSubtitleCues([],NaN),/duration/);
+});
 
 const media=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{encoding:'utf8'}).status===0);
 const ffmpegBin=(()=>{
