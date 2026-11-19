@@ -9,7 +9,8 @@ import {
  setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,
  CAROUSEL_002_ID,createDirectorQuestionCarousel,
  CAROUSEL_003_ID,CAROUSEL_004_ID,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass,applyChatCarouselApproval
+ editorialArchiveProvenancePass,applyChatCarouselApproval,editorialDesignHash,editorialTextHash,
+ publicationDesignApproved,UNAPPROVED_DESIGN_MESSAGE
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -318,13 +319,13 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
    expect(draft.approvals.design).toBe(false);
    const approved=applyChatCarouselApproval(draft);
    expect(approved.approvals).toMatchObject({
-    topic:true,content:true,design:true,
+    topic:true,content:true,design:false,textApproved:true,designApproved:false,
     checkedBy:'Author (chat confirmation 2026-11-20)',
     contentHashAtApproval:editorialContentHash(draft),
     checklist:[true,true,true,true,true,true,true]
    });
    expect(editorialChecklistReady(approved)).toBe(true);
-   expect(editorialStage(approved)).toBe('production');
+   expect(editorialStage(approved)).toBe('design');
   }
  });
  it('hydrates stored drafts, but changed slides immediately require reapproval',()=>{
@@ -332,8 +333,10 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   const memory=storage();
   memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[draft]}));
   const approved=loadEditorialStore(memory).posts[0];
-  expect(approved.approvals.design).toBe(true);
-  const edited=reviseEditorialPost(approved,{slides:approved.slides.map((s,i)=>
+  expect(approved.approvals.design).toBe(false);
+  const manuallyApproved=approveEditorialStep(approved,'design');
+  expect(manuallyApproved.approvals.designApproved).toBe(true);
+  const edited=reviseEditorialPost(manuallyApproved,{slides:approved.slides.map((s,i)=>
    i===0?{...s,text:'Текст изменён после утверждения'}:s)});
   expect(edited.approvals.design).toBe(false);
   memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[edited]}));
@@ -341,5 +344,34 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   expect(loaded.approvals.design).toBe(false);
   expect(editorialStageLabel(loaded)).toBe('Требует повторного утверждения');
   expect(loaded.approvals.contentHashAtApproval).not.toBe(editorialContentHash(loaded));
+ });
+ it('text-only approval prevents publication; visual button approves a signed design',()=>{
+  const draft=createBaselinePauseCarousel();
+  const reviewed=applyChatCarouselApproval(draft);
+  expect(reviewed.approvals.textApproved).toBe(true);
+  expect(reviewed.approvals.designApproved).toBe(false);
+  expect(publicationDesignApproved(reviewed)).toBe(false);
+  expect(UNAPPROVED_DESIGN_MESSAGE).toBe('Оформление не утверждено. Посмотрите PNG и подтвердите');
+  const signed=approveEditorialStep(reviewed,'design','2026-11-20T12:00:00Z');
+  expect(signed.approvals.designApproved).toBe(true);
+  expect(publicationDesignApproved(signed)).toBe(true);
+  expect(signed.approvals.contentHashAtDesignApproval).toBe(editorialDesignHash(signed));
+  expect(signed.approvals.designApprovedAt).toBe('2026-11-20T12:00:00Z');
+  const preset=reviseEditorialPost(signed,{preset:'filmic'});
+  expect(preset.approvals.textApproved).toBe(true);
+  expect(preset.approvals.content).toBe(true);
+  expect(preset.approvals.designApproved).toBe(false);
+  expect(editorialTextHash(preset)).toBe(editorialTextHash(signed));
+  const font=reviseEditorialPost(signed,{fontPreset:'playfair-inter'});
+  expect(font.approvals.textApproved).toBe(true);
+  expect(font.approvals.designApproved).toBe(false);
+  expect(editorialDesignHash(font)).not.toBe(editorialDesignHash(signed));
+  const caption=reviseEditorialPost(signed,{caption:'Другой текст'});
+  expect(caption.approvals.textApproved).toBe(false);
+  expect(caption.approvals.designApproved).toBe(false);
+  const copy=reviseEditorialPost(signed,{slides:signed.slides.map((s,i)=>i===0?
+   {...s,text:'Изменённый тезис'}:s)});
+  expect(copy.approvals.textApproved).toBe(false);
+  expect(copy.approvals.designApproved).toBe(false);
  });
 });

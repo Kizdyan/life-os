@@ -3,7 +3,8 @@ import {
  CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createBaselinePauseCarousel,createDirectorQuestionCarousel,createPhotoArchiveCarousel,
  createMixedNarrativeCarousel,editorialChecklistReady,editorialChecklistState,
- editorialContentHash,validatePost,type EditorialPost,type EditorialSlide
+ editorialContentHash,validatePost,publicationDesignApproved,UNAPPROVED_DESIGN_MESSAGE,
+ type EditorialPost,type EditorialSlide
 } from './personaEditorialModel';
 import {renderEditorialSlide,verifyEditorialArchivePhotos,zipFileBytes} from './personaEditorialMedia';
 
@@ -12,6 +13,7 @@ export const PUBLICATION_CAROUSEL_IDS=[
 ] as const;
 export type PublicationCarouselId=typeof PUBLICATION_CAROUSEL_IDS[number];
 export const UNAPPROVED_PUBLICATION_MESSAGE='Карусель не утверждена. Пройдите чек-лист и нажмите "Утвердить"';
+export {UNAPPROVED_DESIGN_MESSAGE};
 export type PublicationZipEntry={name:string;data:Uint8Array};
 export type PublicationSlideRenderer=(post:EditorialPost,slide:EditorialSlide,index:number)=>Promise<Blob>;
 
@@ -29,6 +31,7 @@ export function publicationCarouselApproved(post:EditorialPost|undefined):boolea
   validatePost(post);
   const approval=post.approvals;
   return post.kind==='carousel'&&post.slides.length===6&&
+   publicationDesignApproved(post)&&
    approval.topic&&approval.content&&approval.design&&
    editorialChecklistReady(post)&&
    approval.checklist?.length===7&&approval.checklist.every(Boolean)===true&&
@@ -37,7 +40,8 @@ export function publicationCarouselApproved(post:EditorialPost|undefined):boolea
  }catch{return false}
 }
 function requireApproval(post:EditorialPost):void{
- if(!publicationCarouselApproved(post))throw Error(UNAPPROVED_PUBLICATION_MESSAGE);
+ if(!publicationCarouselApproved(post))throw Error(post.approvals.textApproved&&
+  post.approvals.designApproved===false?UNAPPROVED_DESIGN_MESSAGE:UNAPPROVED_PUBLICATION_MESSAGE);
 }
 export function publicationIsTextFallback(post:EditorialPost):boolean{
  return Boolean(post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'));
