@@ -4,7 +4,7 @@ import {
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
  CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass,
+ editorialArchiveProvenancePass,applyChatCarouselApproval,
  editorialChecklistState,editorialChecklistReady,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
@@ -74,7 +74,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [archiveRefresh,setArchiveRefresh]=useState(0);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
  const publishRows=PUBLICATION_CAROUSEL_IDS.map(id=>
-  posts.find(p=>p.id===id)??publicationCarouselDraft(id));
+  posts.find(p=>p.id===id)??applyChatCarouselApproval(publicationCarouselDraft(id)));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat);
@@ -135,22 +135,22 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  }
  function openBaseline(){
   try{
-   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(createBaselinePauseCarousel());
+   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(applyChatCarouselApproval(createBaselinePauseCarousel()));
    onSelect(CAROUSEL_BASELINE_ID);setError('');
   }catch(e){setError((e as Error).message)}
  }
  function openDirectorQuestionCarousel(){
   try{
-   if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(createDirectorQuestionCarousel());
+   if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(applyChatCarouselApproval(createDirectorQuestionCarousel()));
    onSelect(CAROUSEL_002_ID);setError('');
   }catch(e){setError((e as Error).message)}
  }
  function openArchiveCarousel(id:string){
   try{
    if(id===CAROUSEL_003_ID){
-    if(!posts.some(p=>p.id===id))onCreate(createPhotoArchiveCarousel());
+    if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(createPhotoArchiveCarousel()));
    }else if(id===CAROUSEL_004_ID){
-    if(!posts.some(p=>p.id===id))onCreate(createMixedNarrativeCarousel());
+    if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(createMixedNarrativeCarousel()));
    }else throw Error('Неизвестная карусель');
    onSelect(id);setError('');
   }catch(e){setError((e as Error).message)}
@@ -185,7 +185,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
 
  function openPublicationApproval(id:PublicationCarouselId){
   try{
-   if(!posts.some(p=>p.id===id))onCreate(publicationCarouselDraft(id));
+   if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(publicationCarouselDraft(id)));
    setPublishError('');onSelect(id);
   }catch(e){setPublishError((e as Error).message)}
  }

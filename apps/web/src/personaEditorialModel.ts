@@ -1,3 +1,5 @@
+import approvedRecords from '../../../config/author-approved-carousels.json';
+
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
  * This is a companion to existing PHOTO-001…010 ProductionJobs, not a second media job.
  * Local storage persists TEXT and editorial decisions. Image bytes live in IndexedDB.
@@ -37,6 +39,39 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
+type ChatCarouselApproval={approved:boolean;checkedAt:string;checkedBy:string;checklist:boolean[];contentHashAtApproval:string};
+const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approvedRecords;
+
+/** Use chat-approved data INSIDE the existing editorial approvals/gate, not as a parallel status.
+ * A locally changed content fingerprint is never reapproved by this import.
+ * The archived approval hash remains for the existing "Требует повторного утверждения" label.
+ * Manual approvals for already-approved local projects always take precedence.
+ */
+export function applyChatCarouselApproval(post:EditorialPost):EditorialPost{
+ const record=authorApprovedCarouselRecords[post.id];
+ if(!record||!record.approved||post.kind!=='carousel')return post;
+ if(post.approvals.design&&post.approvals.contentHashAtApproval===editorialContentHash(post))return post;
+ const valid=record.checklist.length===7&&record.checklist.every(x=>x===true)&&
+  Number.isFinite(Date.parse(record.checkedAt))&&
+  record.checkedBy==='Author (chat confirmation 2026-11-20)'&&
+  /^fnv1a32:[a-f0-9]{8}$/.test(record.contentHashAtApproval);
+ if(!valid)return post;
+ if(record.contentHashAtApproval!==editorialContentHash(post)){
+  // Preserve a prior valid author approval if one exists; otherwise record a
+  // non-design historical fingerprint without approving edited content.
+  if(post.approvals.contentHashAtApproval)return post;
+  return {...post,approvals:{...post.approvals,topic:false,content:false,design:false,
+   checklist:emptyChecklist(),checkedAt:record.checkedAt,
+   checkedBy:record.checkedBy,contentHashAtApproval:record.contentHashAtApproval}};
+ }
+ const approvals={...post.approvals,topic:true,content:true,design:true,
+  checklist:[...record.checklist],checkedAt:record.checkedAt,
+  checkedBy:record.checkedBy,contentHashAtApproval:record.contentHashAtApproval};
+ const hydrated={...post,approvals};
+ validatePost(hydrated);
+ return hydrated;
+}
+
 export function editorialArchiveProvenancePass(post:EditorialPost,availableKeys:readonly string[]):boolean{
  return post.slides.every(s=>s.visual!=='archive-photo'||Boolean(s.photoRef&&availableKeys.includes(s.photoRef)));
 }
@@ -387,12 +422,13 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
    !Array.isArray((parsed as EditorialStore).posts)||
    (parsed as EditorialStore).posts.length>200)return {version:1,posts:[]};
   const posts=(parsed as EditorialStore).posts.map(post=>{
-   // Check the saved content against the approval fingerprint on every load.
+   // Check saved manual approval before importing text approvals from the chat.
    if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
       post.approvals.contentHashAtApproval!==editorialContentHash(post)){
-    return {...post,approvals:{...post.approvals,content:false,design:false,checklist:emptyChecklist()}};
+    return applyChatCarouselApproval({...post,approvals:{...post.approvals,
+     content:false,design:false,checklist:emptyChecklist()}});
    }
-   return post;
+   return applyChatCarouselApproval(post);
   });
   posts.forEach(validatePost);
   if(new Set(posts.map(x=>x.id)).size!==posts.length)return {version:1,posts:[]};
