@@ -135,22 +135,22 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  }
  function openBaseline(){
   try{
-   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(applyChatCarouselApproval(createBaselinePauseCarousel()));
+   if(!posts.some(p=>p.id===CAROUSEL_BASELINE_ID))onCreate(createBaselinePauseCarousel());
    onSelect(CAROUSEL_BASELINE_ID);setError('');
   }catch(e){setError((e as Error).message)}
  }
  function openDirectorQuestionCarousel(){
   try{
-   if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(applyChatCarouselApproval(createDirectorQuestionCarousel()));
+   if(!posts.some(p=>p.id===CAROUSEL_002_ID))onCreate(createDirectorQuestionCarousel());
    onSelect(CAROUSEL_002_ID);setError('');
   }catch(e){setError((e as Error).message)}
  }
  function openArchiveCarousel(id:string){
   try{
    if(id===CAROUSEL_003_ID){
-    if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(createPhotoArchiveCarousel()));
+    if(!posts.some(p=>p.id===id))onCreate(createPhotoArchiveCarousel());
    }else if(id===CAROUSEL_004_ID){
-    if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(createMixedNarrativeCarousel()));
+    if(!posts.some(p=>p.id===id))onCreate(createMixedNarrativeCarousel());
    }else throw Error('Неизвестная карусель');
    onSelect(id);setError('');
   }catch(e){setError((e as Error).message)}
