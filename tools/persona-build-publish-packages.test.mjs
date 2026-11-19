@@ -63,4 +63,25 @@ test('self-test assets must not be published as a real GitHub Release',async()=>
  assert.equal(meta.files.length,5);
  assert.equal(meta.testOnly,true);
  assert.equal(meta.carousels.length,4);
+ assert.equal(meta.previewFiles.length,24);
+ const previews=(await readdir(join(dir,'previews'))).sort();
+ assert.deepEqual(previews,meta.previewFiles.slice().sort());
+ const bundle=meta.files.find(x=>x.startsWith('persona-carousels-publish-'));
+ const combined=unzip(await readFile(join(dir,bundle)));
+ for(const [id,alias] of [
+  ['carousel-baseline-pause','baseline-pause'],
+  ['carousel-why-director-leaves-question','why-director'],
+  ['carousel-photo-archive','photo-archive'],
+  ['carousel-mixed-narrative','mixed-narrative']
+ ]){
+  for(let i=1;i<=6;i++){
+   const suffix='slide-'+String(i).padStart(2,'0')+'.png';
+   const preview=await readFile(join(dir,'previews',alias+'-'+suffix));
+   const source=combined.find(x=>x.name===id+'/'+suffix);
+   assert.ok(source,'Missing ZIP pixel source: '+id+'/'+suffix);
+   assert.ok(preview.equals(source.data),'Standalone preview must equal ZIP PNG bytes');
+   assert.equal(preview.readUInt32BE(16),1080);
+   assert.equal(preview.readUInt32BE(20),1350);
+  }
+ }
 });

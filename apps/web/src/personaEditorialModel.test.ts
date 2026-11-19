@@ -9,7 +9,7 @@ import {
  setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,
  CAROUSEL_002_ID,createDirectorQuestionCarousel,
  CAROUSEL_003_ID,CAROUSEL_004_ID,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass
+ editorialArchiveProvenancePass,applyChatCarouselApproval
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -306,5 +306,40 @@ describe('Carousel 003/004 archived-photo fixtures and existing editorial gate',
   const restored=reviseEditorialPost(noRef,{slides:noRef.slides.map((s,i)=>i===0?
    {...s,visual:'background' as const}:s)});
   expect(editorialArchiveProvenancePass(restored,[])).toBe(true);
+ });
+});
+
+describe('2026-11-20 author approvals imported through existing gate',()=>{
+ const factories=[createBaselinePauseCarousel,createDirectorQuestionCarousel,
+  createPhotoArchiveCarousel,createMixedNarrativeCarousel];
+ it('author-approved hashes match all canonical texts and the existing checklist',()=>{
+  for(const factory of factories){
+   const draft=factory('2026-11-20T00:00:00.000Z');
+   expect(draft.approvals.design).toBe(false);
+   const approved=applyChatCarouselApproval(draft);
+   expect(approved.approvals).toMatchObject({
+    topic:true,content:true,design:true,
+    checkedBy:'Author (chat confirmation 2026-11-20)',
+    contentHashAtApproval:editorialContentHash(draft),
+    checklist:[true,true,true,true,true,true,true]
+   });
+   expect(editorialChecklistReady(approved)).toBe(true);
+   expect(editorialStage(approved)).toBe('production');
+  }
+ });
+ it('hydrates stored drafts, but changed slides immediately require reapproval',()=>{
+  const draft=createPhotoArchiveCarousel('2026-11-20T00:00:00.000Z');
+  const memory=storage();
+  memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[draft]}));
+  const approved=loadEditorialStore(memory).posts[0];
+  expect(approved.approvals.design).toBe(true);
+  const edited=reviseEditorialPost(approved,{slides:approved.slides.map((s,i)=>
+   i===0?{...s,text:'Текст изменён после утверждения'}:s)});
+  expect(edited.approvals.design).toBe(false);
+  memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[edited]}));
+  const loaded=loadEditorialStore(memory).posts[0];
+  expect(loaded.approvals.design).toBe(false);
+  expect(editorialStageLabel(loaded)).toBe('Требует повторного утверждения');
+  expect(loaded.approvals.contentHashAtApproval).not.toBe(editorialContentHash(loaded));
  });
 });
