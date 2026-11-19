@@ -1,0 +1,19 @@
+{
+  "experimentId": "ruflo-sandbox-01",
+  "pinnedRuntimeVersion": "3.66.2",
+  "domain": "engineering",
+  "dataClass": "public",
+  "taskIds": ["review-synthetic-code", "test-synthetic-code"],
+  "taskDescription": "Evaluate synthetic open-source fixture with independent coder and QA roles",
+  "fixtureOnly": true,
+  "containsSecrets": false,
+  "networkRequested": false,
+  "writesToUserWorkspace": false,
+  "changesProduction": false,
+  "risks": ["read_only"],
+  "independentObserverAssigned": true,
+  "ownerApprovedThirdPartyExecution": false,
+  "rollbackDocumented": true,
+  "maxEstimatedCostUsd": 0,
+  "maxDurationSeconds": 120
+}
