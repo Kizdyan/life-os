@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {quickRenderAppearance} from './persona-quick-render.mjs';
+import {backupPersonaQuickJob,verifyPersonaQuickJobBackup,restorePersonaQuickJob} from './persona-quick-job-backup.mjs';
 
 const available=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore'}).status===0);
 const sha=data=>createHash('sha256').update(data).digest('hex');
@@ -140,7 +141,7 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
  {skip:!available,timeout:450000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-one-click-final-package-'));
  const original=join(root,'source.mp4');
- let worker;
+ let worker,recoveryWorker;
  try{
   const generated=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',
    'testsrc2=size=144x256:rate=12:duration=8.5',
@@ -239,12 +240,36 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   assert.equal(instagram.headers.get('content-type'),'video/mp4');
   assert.ok((await instagram.arrayBuffer()).byteLength>20000);
   assert.ok(observedPackageRender||status.exportStatus==='COMPLETED');
+  // Back up and restore the real rendered job with its original source and
+  // 1080p master; recovery Worker must serve the identical MP4 bytes.
+  const folder=join(root,'offline-job-backup'),recoveryRoot=join(root,'recovered-quick');
+  const archive=await backupPersonaQuickJob({quickRoot:join(root,'quick'),id,destination:folder});
+  assert.equal(archive.verified,true);
+  assert.equal((await verifyPersonaQuickJobBackup(folder)).id,id);
+  const recovered=await restorePersonaQuickJob({backupDir:folder,quickRoot:recoveryRoot});
+  assert.equal(recovered.verified,true);
+  assert.equal(recovered.relocated,true);
+  assert.equal(recovered.rerenderVerified,false);
+  const copied=join(recoveryRoot,'quick-'+id);
+  assert.equal(sha(await readFile(join(copied,'output',final.videoName))),final.sha256);
+  assert.equal(sha(await readFile(join(copied,'input','video-01.mp4'))),originalHash);
+  recoveryWorker=createPersonaMediaWorker({port:0,outputRoot:join(root,'recovered-media'),
+   quickRenderRoot:recoveryRoot,apiEnv:{OPENROUTER_API_KEY:''}});
+  const recoveredBase='http://127.0.0.1:'+await recoveryWorker.start();
+  const recoveredToken=(await(await fetch(recoveredBase+'/health')).json()).token;
+  const recoveredList=await(await fetch(recoveredBase+'/quick-render',
+   {headers:{'X-Persona-Worker-Token':recoveredToken}})).json();
+  assert.ok(recoveredList.jobs.some(item=>item.id===id&&item.fullReady===true));
+  const recoveredMaster=await fetch(recoveredBase+'/quick-render/'+id+'/video-full?token='+recoveredToken);
+  assert.equal(recoveredMaster.status,200);
+  assert.equal(sha(Buffer.from(await recoveredMaster.arrayBuffer())),final.sha256);
   console.log('PERSONA_ONE_CLICK_FULL_PACKAGE_PASS '+JSON.stringify({
    originalVerified:true,draft:[720,1280],final:[1080,1920],
    platformFiles:status.exportItems.length,cloudCalls:final.cloudCalls,
    qaWarnings:status.finalQuality.warnings.length,qualityReport:true,contactSheet:true,
    published:false,authorReviewRequired:true}));
  }finally{
+  if(recoveryWorker?.server?.listening)await new Promise(ok=>recoveryWorker.server.close(ok));
   if(worker?.server?.listening)await new Promise(ok=>worker.server.close(ok));
   await rm(root,{recursive:true,force:true});
  }
