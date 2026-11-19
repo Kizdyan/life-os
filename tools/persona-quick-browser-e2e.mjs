@@ -128,7 +128,7 @@ try{
  assert.ok(Number(parsed.format.duration)>7);
  assert.equal(hash(await readFile(source)),original,'original user media untouched');
  assert.equal(hash(await readFile(second)),original,'second source remains untouched');
- const promotion=job.getByRole('button',{name:'Сделать в полном качестве (1080p)'});
+ const promotion=job.getByRole('button',{name:'После просмотра черновика: 1080p + пакет для соцсетей'});
  await promotion.click();
  const fullLink=job.getByRole('link',{name:'Скачать MP4 в полном качестве (1080p)'});
  await fullLink.waitFor({timeout:240000});
@@ -148,6 +148,27 @@ try{
  const fullVideo=JSON.parse(fullProbe.stdout).streams.find(stream=>stream.codec_type==='video');
  assert.equal(fullVideo.width,1080);assert.equal(fullVideo.height,1920);
  assert.equal(hash(await readFile(source)),original,'full render must not mutate source');
+ // Existing Chromium E2E proves that the same click automatically completes
+ // the social package after the high-quality MP4 is SHA-verified.
+ const platformSelect=job.getByRole('combobox',{name:'Скачать для платформы'});
+ await platformSelect.waitFor({timeout:240000});
+ await platformSelect.selectOption('instagram');
+ const packaged=JSON.parse(await readFile(join(jobRoot,'output','platform-package','EXPORTS.json'),'utf8'));
+ assert.equal(packaged.distributionAllowed,false,'packaging is not publication or author approval');
+ assert.equal(packaged.sourceSha256,receipt.sha256);
+ assert.deepEqual(packaged.entries.map(item=>item.id).sort(),
+  ['cover','instagram','tiktok','youtube','vk','vk-4x5'].sort());
+ assert.equal(plannerCalls,1,'platform packaging must not call the model');
+ const platformDownload=page.waitForEvent('download',{timeout:120000});
+ await job.getByRole('link',{name:'Скачать выбранное'}).click();
+ const platformFile=await platformDownload;
+ const platformDestination=join(output,'real-one-click-platform-instagram.mp4');
+ await platformFile.saveAs(platformDestination);
+ const platformProbe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type,width,height',
+  '-of','json',platformDestination],{encoding:'utf8'});
+ assert.equal(platformProbe.status,0,platformProbe.stderr);
+ const platformVideo=JSON.parse(platformProbe.stdout).streams.find(stream=>stream.codec_type==='video');
+ assert.equal(platformVideo.width,1080);assert.equal(platformVideo.height,1920);
 
  await page.reload({waitUntil:'domcontentloaded'});
  await page.getByTestId('persona-quick-auto-render').locator('[data-quick-status="completed"]').waitFor({timeout:15000});
@@ -157,7 +178,7 @@ try{
  await mobile.screenshot({path:join(output,'dashboard-390.png'),fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);
  await mobile.close();await page.close();
- console.log('PASS default-on AI text accents + auto-style and manual toggles; real quote burned into 720p MP4 and reused in 1080p, no repeated LLM calls');
+ console.log('PASS default-on AI text accents + auto-style; one draft-review click created verified 1080p plus platform package without repeat LLM calls or publication');
 }finally{
  await browser.close();await new Promise(resolve=>worker.server.close(resolve));
  await rm(temp,{recursive:true,force:true});
