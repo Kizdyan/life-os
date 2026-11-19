@@ -340,6 +340,7 @@ try{
   [inserted[0].key,inserted[2].key,inserted[1].key]);
  await completeArchiveCarouselChecklist(editor);
  await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
  const approved003=await page.evaluate(()=>JSON.parse(localStorage.getItem(
   'lifeos:persona:editorial-posts:v1')).posts.find(p=>p.id==='carousel-photo-archive'));
  assert.ok(approved003.approvals.design&&approved003.approvals.contentHashAtApproval);
@@ -394,6 +395,7 @@ try{
  assert.ok(mixed.slides.every(x=>x.visual==='background'&&!x.photoRef));
  await completeArchiveCarouselChecklist(editor);
  await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
  const carousel004=await downloadZip(page,editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}),
   join(artifacts,'carousel-mixed-fallback.zip'));
  carousel004.slice(0,6).forEach(assertPng);
@@ -415,6 +417,7 @@ try{
   await emptyEditor.getByTestId('editorial-archive-empty').waitFor({timeout:15000});
   await completeArchiveCarouselChecklist(emptyEditor);
   await emptyEditor.getByRole('button',{name:'Утвердить оформление'}).click();
+  await emptyEditor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
   const fallback=await downloadZip(empty,emptyEditor.getByRole('button',
    {name:'Скачать ZIP с PNG и подписью'}),join(artifacts,'carousel-003-empty-fallback.zip'));
   fallback.slice(0,6).forEach(assertPng);
