@@ -359,8 +359,16 @@ try{
   },png.bytes.toString('base64'));
   photoPixels.push(pixels);
  }
- assert.deepEqual(photoPixels,[[80,112,93],[142,83,88],[79,89,123]],
-  'Full PNG output must include 3 distinct IndexedDB photo pixels, not just chocolate backgrounds');
+ // The existing Canvas photo renderer deliberately applies a 14% dark
+ // gradient even at the top edge. Compare the exact blended source colors
+ // with a small raster-rounding tolerance, not raw ungraded input pixels.
+ const originalColors=[[80,112,93],[142,83,88],[79,89,123]];
+ for(let i=0;i<3;i++){
+  const blended=originalColors[i].map((v,c)=>Math.round(v*.86+[5,8,12][c]*.14));
+  assert.ok(photoPixels[i].every((v,c)=>Math.abs(v-blended[c])<=3),
+   'PNG '+i+' must retain corresponding original archive photo pixels under overlay');
+ }
+ assert.equal(new Set(photoPixels.map(x=>x.join(','))).size,3);
  await writeFile(join(artifacts,'carousel-photo-archive-slide-01.png'),carousel003[0].bytes);
  // Change a photo after approval: existing reviseEditorialPost must revoke design
  // and the immutable approval hash cannot silently validate the new photo.
