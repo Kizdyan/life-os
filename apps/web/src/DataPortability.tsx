@@ -87,7 +87,8 @@ export default function DataPortability(){
  }
  return <section className="dataPortability" aria-label="Резервная копия Persona">
   <h3>Резервная копия и перенос данных</h3>
-  <p>Сохраняй <strong>полный ZIP</strong> перед очисткой Safari, переносом на другое устройство или сменой домена. Архив включает редакционные тексты, Stories и оригинальные фотографии IndexedDB. Никакие API-ключи и пароли в него не входят.</p>
+  <p>Сохраняй <strong>полный браузерный ZIP</strong> перед очисткой Safari, переносом на другое устройство или сменой домена. Он включает редакционные тексты, Stories и оригинальные фотографии IndexedDB; API-ключи и пароли не входят.</p>
+  <p role="note"><strong>Видеоархив Media Worker не входит в этот ZIP.</strong> Исходные MOV/MP4, готовые Reels и монтажные планы на Windows сохраняются отдельно. Для проверяемой копии каждого завершённого проекта на другом диске используй <a href="https://github.com/Kizdyan/life-os/blob/main/docs/persona-worker-job-backup.md" target="_blank" rel="noreferrer">инструкцию по локальному архиву Media Worker</a>. Перенос в другой каталог пока не гарантирует повторный рендер.</p>
   <div className="dataPortabilityActions">
    <button type="button" disabled={busy} onClick={()=>void download()}>
     {busy?'Проверка архива…':'Сохранить полный архив ZIP'}
