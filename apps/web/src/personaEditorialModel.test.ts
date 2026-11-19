@@ -7,7 +7,9 @@ import {
  loadEditorialStore,saveEditorialPost,loadStoryNotes,saveStoryNotes,EDITORIAL_KEY,STORY_KEY,
  createBaselinePauseCarousel,editorialChecklistReady,editorialChecklistState,
  setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,
- CAROUSEL_002_ID,createDirectorQuestionCarousel
+ CAROUSEL_002_ID,createDirectorQuestionCarousel,
+ CAROUSEL_003_ID,CAROUSEL_004_ID,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
+ editorialArchiveProvenancePass
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -219,4 +221,90 @@ describe('Persona Editorial Content Planner',()=>{
   expect(changed.researchSourceDoc).toBe(restored.researchSourceDoc);
  });
 
+});
+
+
+describe('Carousel 003/004 archived-photo fixtures and existing editorial gate',()=>{
+ const readyForDesign=(post:ReturnType<typeof createPhotoArchiveCarousel>)=>{
+  const topic=approveEditorialStep(post,'topic');
+  return approveEditorialStep(topic,'content');
+ };
+ const fullyApprove=(post:ReturnType<typeof createPhotoArchiveCarousel>)=>{
+  let current=readyForDesign(post);
+  for(let i=0;i<5;i++)current=setEditorialChecklistItem(current,i,true);
+  expect(editorialChecklistState(current)[5]).toBe(true,'Archive provenance is automatic');
+  expect(editorialChecklistState(current)[6]).toBe(true,'WCAG preset contrast is automatic');
+  return approveEditorialStep(current,'design','2026-11-19T10:00:00Z');
+ };
+ it('initializes exact six-slide fixtures with named format, chocolate-graphite and draft captions',()=>{
+  const photo=createPhotoArchiveCarousel(),mixed=createMixedNarrativeCarousel();
+  expect(photo.id).toBe(CAROUSEL_003_ID);
+  expect(mixed.id).toBe(CAROUSEL_004_ID);
+  expect(photo.carouselFormat).toBe('photo-led');
+  expect(mixed.carouselFormat).toBe('mixed');
+  for(const post of [photo,mixed]){
+   expect(post.slides).toHaveLength(6);
+   expect(post.preset).toBe('chocolate-graphite');
+   expect(post.caption.length).toBeGreaterThan(100);
+   expect(post.approvals).toMatchObject({topic:false,content:false,design:false});
+   expect(post.slides.every(s=>s.visual==='background'&&s.photoRef===undefined)).toBe(true);
+   expect(editorialArchiveProvenancePass(post,[])).toBe(true,'Empty archive permits text-only fallback');
+  }
+  expect(photo.slides.map(s=>s.text)).toEqual([
+   'Стул — не мебель. Это обстоятельство.',
+   'Первый персонаж садится, потому что устал.',
+   'Второй — потому что должен ждать.',
+   'Третий не садится вовсе.',
+   'Одна и та же точка в кадре, три разных решения.',
+   'Тело актёра читается раньше слов.'
+  ]);
+  expect(mixed.slides.map(s=>s.text)).toEqual([
+   'До первой реплики герой уже что-то решил.',
+   'Зритель ещё не знает что.',
+   'Тело уже выдаёт решение — плечи, взгляд, дыхание.',
+   'Слово только подтверждает то, что уже произошло.',
+   'Поэтому первая реплика — не начало, а следствие.',
+   'Сцена начинается раньше, чем произносится первое слово.'
+  ]);
+ });
+ it('uses unchanged step approvals, hash and auto-check item 6 for text-only fallback',()=>{
+  const approved=fullyApprove(createMixedNarrativeCarousel());
+  expect(approved.approvals.contentHashAtApproval).toBe(editorialContentHash(approved));
+  expect(editorialChecklistState(approved)).toEqual([true,true,true,true,true,true,true]);
+  expect(()=>setEditorialChecklistItem(readyForDesign(createPhotoArchiveCarousel()),5,true))
+   .toThrow(/автоматически/);
+  const adjusted=reviseEditorialPost(approved,{slides:approved.slides.map((s,i)=>
+   i===0?{...s,text:'Новое действие'}:s)});
+  expect(adjusted.approvals.content).toBe(false);
+  expect(adjusted.approvals.design).toBe(false);
+  const legacy=createBaselinePauseCarousel();
+  expect(editorialContentHash(legacy)).toMatch(/^fnv1a32:[a-f0-9]{8}$/);
+  expect(editorialChecklistState(readyForDesign(legacy))[5]).toBe(false,
+   'Existing fixture still has manually checked item 6');
+ });
+ it('photo ID is in approval hash; mutation revokes design; missing original blocks provenance',()=>{
+  const src='PHOTO-001/slide-2',other='photo-week-01/slide-1';
+  const base=createPhotoArchiveCarousel();
+  const withImage=reviseEditorialPost(base,{slides:base.slides.map((s,i)=>i===0?
+   {...s,visual:'archive-photo' as const,photoRef:src}:s)});
+  expect(editorialArchiveProvenancePass(withImage,[])).toBe(false);
+  expect(editorialArchiveProvenancePass(withImage,[src])).toBe(true);
+  expect(editorialChecklistState(withImage)[5]).toBe(true);
+  const approved=fullyApprove(withImage);
+  const originalHash=approved.approvals.contentHashAtApproval;
+  const altered=reviseEditorialPost(approved,{slides:approved.slides.map((s,i)=>i===0?
+   {...s,photoRef:other}:s)});
+  expect(altered.approvals.design).toBe(false);
+  expect(altered.approvals.contentHashAtApproval).toBe(originalHash,
+   'Audit retains old fingerprint until author reapproves');
+  expect(editorialContentHash(altered)).not.toBe(originalHash);
+  expect(editorialArchiveProvenancePass(altered,[src])).toBe(false);
+  const noRef=reviseEditorialPost(withImage,{slides:withImage.slides.map((s,i)=>i===0?
+   {...s,photoRef:undefined}:s)});
+  expect(editorialChecklistState(noRef)[5]).toBe(false);
+  expect(editorialChecklistReady(readyForDesign(noRef))).toBe(false);
+  const restored=reviseEditorialPost(noRef,{slides:noRef.slides.map((s,i)=>i===0?
+   {...s,visual:'background' as const}:s)});
+  expect(editorialArchiveProvenancePass(restored,[])).toBe(true);
+ });
 });
