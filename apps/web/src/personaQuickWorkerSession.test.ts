@@ -17,8 +17,9 @@ describe('quick-render local Worker session recovery',()=>{
  });
  it('reauthenticates exactly once on 401 from a restarted Worker and preserves the original upload',async()=>{
   const body=new Blob(['real media payload'],{type:'video/mp4'});
+  let attempts=0;
   const fetcher=vi.fn(async (_url:string,_init?:RequestInit)=>
-   new Response(null,{status:fetcher.mock.calls.length===1?401:200}));
+   new Response(null,{status:++attempts===1?401:200}));
   const getToken=vi.fn(async()=> 'previous-process-token');
   const renewToken=vi.fn(async()=> 'new-process-token');
   const response=await fetchQuickWorkerWithReconnect(url+'/job/upload/0',{
