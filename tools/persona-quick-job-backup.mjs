@@ -61,6 +61,19 @@ async function stableJob(folder,id){
   if(await hash(join(folder,'input',entry.name))!==entry.sha256)
    fail('Original media SHA-256 differs from its intake receipt');
  }
+ // Do not archive already-damaged verified masters as though they were healthy.
+ if(state.fullRender?.status==='COMPLETED'){
+  const full=state.fullRender;
+  if(!['full-edited.mp4','full-ready.mp4'].includes(full.videoName)||
+     !/^[a-f0-9]{64}$/.test(full.sha256??'')||
+     await hash(join(folder,'output',full.videoName))!==full.sha256)
+   fail('Final MP4 SHA-256 differs from the approved production receipt');
+ }
+ if(meta.contentType==='video'&&state.status==='AWAITING_APPROVAL'&&meta.sha256){
+  if(!['edited.mp4','ready.mp4'].includes(meta.videoName)||
+     !/^[a-f0-9]{64}$/.test(meta.sha256)||await hash(join(folder,'output',meta.videoName))!==meta.sha256)
+   fail('Draft MP4 SHA-256 differs from the saved project receipt');
+ }
  return {productionStatus:state.status,contentType:meta.contentType??'video',fileCount:meta.files.length};
 }
 async function scanAndHash(folder){
