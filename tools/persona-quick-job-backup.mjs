@@ -24,7 +24,7 @@ function safeRelative(path){
   fail('Unsafe path in backup manifest');
  return path;
 }
-async function folderEntries(dir,prefix=''){
+async function folderEntries(dir,prefix='',directories=[]){
  const out=[],children=await readdir(dir,{withFileTypes:true});
  for(const child of children){
   const name=safeRelative(child.name),relativeName=prefix?prefix+'/'+name:name;
@@ -33,7 +33,10 @@ async function folderEntries(dir,prefix=''){
    fail('Job contains a symbolic link or unsupported file: '+relativeName);
   if(child.name.endsWith('.lock')||child.name.endsWith('.tmp'))
    fail('Found an in-progress lock/temp file. Stop the Worker first: '+relativeName);
-  if(info.isDirectory())out.push(...await folderEntries(full,relativeName));
+  if(info.isDirectory()){
+   directories.push(relativeName);
+   out.push(...await folderEntries(full,relativeName,directories));
+  }
   else out.push({path:relativeName,bytes:info.size});
   if(out.length>MAX_FILES)fail('Too many files in job');
  }
@@ -61,15 +64,18 @@ async function stableJob(folder,id){
  return {productionStatus:state.status,contentType:meta.contentType??'video',fileCount:meta.files.length};
 }
 async function scanAndHash(folder){
- const entries=await folderEntries(folder);
+ const directories=[],entries=await folderEntries(folder,'',directories);
  if(!entries.some(x=>x.path==='job.json')||!entries.some(x=>x.path==='quick-state.json'))
   fail('Not a complete Quick Render job folder');
  const total=entries.reduce((sum,x)=>sum+x.bytes,0);
  if(total>MAX_BYTES)fail('Job exceeds the safe per-backup size limit');
- return {files:await Promise.all(entries.map(async x=>({...x,sha256:await hash(join(folder,...x.path.split('/')))}))),totalBytes:total};
+ return {files:await Promise.all(entries.map(async x=>({...x,sha256:await hash(join(folder,...x.path.split('/')))}))),
+  directories:directories.sort(),totalBytes:total};
 }
 async function verifiedContents(folder,manifest){
- const found=await folderEntries(folder);
+ const directories=[],found=await folderEntries(folder,'',directories);
+ if(JSON.stringify(directories.sort())!==JSON.stringify(manifest.directories))
+  fail('Backup has missing or unexpected project directories');
  if(found.length!==manifest.files.length)fail('Backup contains missing or extra files');
  for(let i=0;i<found.length;i++){
   const current=found[i],expected=manifest.files[i];
@@ -80,9 +86,17 @@ async function verifiedContents(folder,manifest){
 }
 function validateManifest(manifest){
  if(manifest?.kind!==FORMAT||manifest.version!==1||!UUID.test(manifest.id??'')||
-    !Array.isArray(manifest.files)||manifest.files.length>MAX_FILES||!Number.isSafeInteger(manifest.totalBytes)||
+    !Array.isArray(manifest.files)||manifest.files.length>MAX_FILES||
+    !Array.isArray(manifest.directories)||manifest.directories.length>MAX_FILES||
+    !Number.isSafeInteger(manifest.totalBytes)||
     manifest.totalBytes<0||manifest.totalBytes>MAX_BYTES)
   fail('Invalid or unsupported backup manifest');
+ let lastDirectory='';
+ for(const directory of manifest.directories){
+  safeRelative(directory);
+  if(directory<=lastDirectory)fail('Duplicate or unsorted directory manifest');
+  lastDirectory=directory;
+ }
  let total=0,previous='';
  for(const file of manifest.files){
   safeRelative(file?.path);
@@ -120,6 +134,8 @@ export async function backupPersonaQuickJob({quickRoot,id,destination}){
   await mkdir(target);created=true;
   const store=join(target,'files');
   await mkdir(store);
+  for(const directory of snapshot.directories)
+   await mkdir(join(store,...directory.split('/')),{recursive:true});
   for(const item of snapshot.files){
    const original=join(source,...item.path.split('/')),copy=join(store,...item.path.split('/'));
    await mkdir(dirname(copy),{recursive:true});
@@ -133,7 +149,8 @@ export async function backupPersonaQuickJob({quickRoot,id,destination}){
    fail('Source changed while creating the backup. Stop the Worker and retry');
   const manifest={version:1,kind:FORMAT,id,createdAt:new Date().toISOString(),
    originalJobDir:source,productionStatus:stable.productionStatus,
-   contentType:stable.contentType,files:snapshot.files,totalBytes:snapshot.totalBytes,
+   contentType:stable.contentType,files:snapshot.files,directories:snapshot.directories,
+   totalBytes:snapshot.totalBytes,
    publicationApproved:false,limitation:'A relocated restored job is for recovery and download; old absolute paths in edit manifests can block rerendering.'};
   await writeFile(join(target,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
   await verifyPersonaQuickJobBackup(target);
@@ -150,6 +167,8 @@ export async function restorePersonaQuickJob({backupDir,quickRoot}){
  try{
   await mkdir(target);created=true;
   const manifest=validateManifest(JSON.parse(await readFile(join(resolve(backupDir),'manifest.json'),'utf8')));
+  for(const directory of manifest.directories)
+   await mkdir(join(target,...directory.split('/')),{recursive:true});
   for(const item of manifest.files){
    const source=join(original,...item.path.split('/')),dest=join(target,...item.path.split('/'));
    await mkdir(dirname(dest),{recursive:true});
