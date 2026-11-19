@@ -4,7 +4,7 @@ import {createSeedEditorialCarousel,approveEditorialStep,createEditorialFromTopi
 import {
  localCalendarDate,calendarMonday,addCalendarDays,calendarWeekOffset,
  buildPersonaWeeklyCalendar,videoCalendarStatus,photoCalendarStatus,loadPersonaCalendarAnchor,
- PERSONA_WEEKLY_CALENDAR_KEY
+ PERSONA_WEEKLY_CALENDAR_KEY,PERSONA_WEEKLY_WORKDAYS
 } from './personaWeeklyContentCalendar';
 import {PERSONA_ARCHITECT_IDS} from './personaArchitectSeeds';
 
@@ -30,7 +30,7 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(localCalendarDate(new Date(2026,10,18))).toBe('2026-11-18');
   expect(()=>calendarMonday('2026-02-30')).toThrow();
  });
- it('schedules 30 slots across 10 weeks: Mon video, Wed existing carousel, Fri topic-first photo',()=>{
+ it('schedules 30 slots across 10 weeks: Tue video, Thu existing carousel, Sat topic-first photo',()=>{
   const videoSeen=new Set<string>(),carouselSeen=new Set<string>(),photoSlots=new Set<string>();
   for(let i=0;i<10;i++){
    const monday=addCalendarDays('2026-11-16',i*7);
@@ -38,7 +38,7 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
    expect(plan.days).toHaveLength(7);
    expect(plan.items).toHaveLength(3);
    expect(plan.items.map(x=>x.kind)).toEqual(['video','carousel','photo']);
-   expect(plan.items.map(x=>x.dayIndex)).toEqual([0,2,4]);
+   expect(plan.items.map(x=>x.dayIndex)).toEqual([1,3,5]);
    expect(plan.items[0].projectId).toBe('reel-'+String(i+1).padStart(2,'0'));
    expect(plan.items[1].projectId).toBe('test-photo-job-'+i);
    expect(plan.items[2].placeholder).toBe(true);
@@ -50,9 +50,16 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(videoSeen.size).toBe(10);
   expect(carouselSeen.size).toBe(10);
   expect(photoSlots.size).toBe(10);
+  expect(PERSONA_WEEKLY_WORKDAYS).toEqual([1,3,5]);
+  // Mon-based dates are stable; only generated editorial slots move.
   const first=buildPersonaWeeklyCalendar({...plans(),weekMonday:'2026-11-16'});
+  expect(first.items.map(x=>x.scheduledDate)).toEqual(['2026-11-17','2026-11-19','2026-11-21']);
+  expect(first.days[0].items).toHaveLength(0);
+  expect(first.days[1].items.map(x=>x.sourceId)).toEqual(['reel-01']);
+  expect(first.days[3].items.map(x=>x.sourceId)).toEqual(['PHOTO-001']);
+  expect(first.days[5].items.map(x=>x.sourceId)).toEqual(['photo-week-01']);
   expect(first.items.map(x=>[x.sourceId,x.dayIndex,x.status])).toEqual([
-   ['reel-01',0,'Ждёт видео'],['PHOTO-001',2,'Ждёт фото'],['photo-week-01',4,'Тема не выбрана']
+   ['reel-01',1,'Ждёт видео'],['PHOTO-001',3,'Ждёт фото'],['photo-week-01',5,'Тема не выбрана']
   ]);
  });
  it('keeps missing sources visible as unapproved planning slots, never fabricates media jobs',()=>{
@@ -81,17 +88,17 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(buildPersonaWeeklyCalendar({...plans(),editorialPosts:[approved],
    weekMonday:'2026-11-16'}).items[1].status).toBe('Готов к производству');
  });
- it('updates the Friday slot when a topic is selected, and adds manually scheduled posts without shifting existing slots',()=>{
+ it('updates the Saturday slot when a topic is selected, and adds manually scheduled posts without shifting existing slots',()=>{
   const idea=TOPIC_CHOICES.find(x=>x.kind==='photo')!;
-  const Friday=createEditorialFromTopic('photo-week-01',idea);
+  const Saturday=createEditorialFromTopic('photo-week-01',idea);
   const extra=createEditorialFromTopic('editorial-photo-extra',idea);
   extra.scheduledDate='2026-11-17';
-  const plan=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[Friday,extra],weekMonday:'2026-11-16'});
+  const plan=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[Saturday,extra],weekMonday:'2026-11-16'});
   expect(plan.items).toHaveLength(4);
   expect(plan.items.find(x=>x.sourceId==='photo-week-01')?.title).toBe(idea.title);
   expect(plan.items.find(x=>x.sourceId==='photo-week-01')?.placeholder).toBe(false);
   expect(plan.items.find(x=>x.sourceId==='editorial-photo-extra')?.scheduledDate).toBe('2026-11-17');
-  expect(plan.items.find(x=>x.sourceId==='PHOTO-001')?.dayIndex).toBe(2);
+  expect(plan.items.find(x=>x.sourceId==='PHOTO-001')?.dayIndex).toBe(3);
  });
  it('persists the calendar anchor without silently shifting existing dates',()=>{
   const data=new Map<string,string>();

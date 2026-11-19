@@ -99,7 +99,7 @@ export default function PersonaWeeklyContentCalendar({
    <div>
     <small>PERSONA / EDITORIAL CALENDAR</small>
     <h2>Календарь на неделю</h2>
-    <p>План выпусков: понедельник — Reels, среда — карусель, пятница — фото. Stories — дополнительно.</p>
+    <p>План выпусков: вторник — Reels, четверг — карусель, суббота — фото. Stories — дополнительно.</p>
    </div>
    <div className="personaWeekCalendarControls" aria-label="Переключение недель">
     <button type="button" onClick={()=>setWeekMonday(day=>addCalendarDays(day,-7))}
