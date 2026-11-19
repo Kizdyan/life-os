@@ -1,0 +1,105 @@
+name: Persona Carousel Publication ZIP Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'carousels-v*'
+    branches:
+      - main
+    paths:
+      - 'docs/persona-carousel-release-approvals.json'
+  pull_request:
+    paths:
+      - 'tools/persona-build-publish-packages.mjs'
+      - 'tools/persona-build-publish-packages.test.mjs'
+      - '.github/workflows/persona-publish-release.yml'
+      - 'apps/web/src/personaEditorialPublish.ts'
+      - 'docs/how-to-publish-carousels.md'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing app and Chromium tooling
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Start local Vite for existing Canvas renderer
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/persona-release-vite.log 2>&1 &
+          for attempt in {1..50}; do
+            if curl --silent --fail http://127.0.0.1:4173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/persona-release-vite.log
+          exit 1
+      - name: Test publication ZIP builder (synthetic approvals, not releasable)
+        run: |
+          node tools/persona-build-publish-packages.mjs --self-test
+          node --test tools/persona-build-publish-packages.test.mjs
+      - name: Build five author-approved publication packages
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ ! -s docs/persona-carousel-release-approvals.json ]; then
+            echo "::error::Four canonical fixtures are drafts. No author-approved snapshot exists. Real Release cannot be fabricated from test approvals."
+            exit 1
+          fi
+          node tools/persona-build-publish-packages.mjs \
+            --approved-json docs/persona-carousel-release-approvals.json \
+            --output-dir dist/publish-packages
+          test "$(find dist/publish-packages -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 5
+          node --test tools/persona-build-publish-packages-release.test.mjs
+      - name: Publish five assets to GitHub Release (never Instagram)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_REF: ${{ github.ref_name }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_RUN: ${{ github.run_number }}
+        run: |
+          if [ "$RELEASE_EVENT" = "push" ] && [[ "$RELEASE_REF" == carousels-v* ]]; then
+            TAG="$RELEASE_REF"
+          elif gh release view carousels-v1 >/dev/null 2>&1; then
+            TAG="carousels-v1-$(date -u +%Y%m%d)-$RELEASE_RUN"
+          else
+            TAG=carousels-v1
+          fi
+          if ! [[ "$TAG" =~ ^carousels-v[0-9][a-zA-Z0-9._-]*$ ]]; then
+            echo "::error::Invalid release tag" >&2
+            exit 1
+          fi
+          export TAG
+          node --input-type=module <<'NODE' > /tmp/persona-carousel-release-notes.md
+          import {readFileSync} from 'node:fs';
+          const m=JSON.parse(readFileSync('dist/publish-packages/release-metadata.json','utf8'));
+          if(m.testOnly||m.files.length!==5)throw Error('Only real reviewed packages can be released');
+          console.log('# Persona — 4 карусели для ручной публикации\n');
+          for(const p of m.carousels)
+           console.log('- **'+p.title+'** — утверждена в Editorial Desk; '+(p.textFallback?'текстовая версия':'с фото')+'.');
+          console.log('\nСкачать нужный ZIP или общий ZIP. Слайды имеют размер 1080×1350. Автопубликации в Instagram нет.\n');
+          console.log('Инструкция: https://github.com/'+process.env.GITHUB_REPOSITORY+'/blob/main/docs/how-to-publish-carousels.md');
+          NODE
+          gh release create "$TAG" dist/publish-packages/*.zip \
+            --title "Persona: 4 карусели · $TAG" \
+            --notes-file /tmp/persona-carousel-release-notes.md \
+            --target "$GITHUB_SHA"
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          RELEASE_JSON="$RELEASE_JSON" node --input-type=module <<'NODE'
+          const d=JSON.parse(process.env.RELEASE_JSON||'{}');
+          const assets=d.assets??[];
+          if(assets.length!==5||assets.some(x=>!x.name.endsWith('.zip')||x.size<1000))
+           throw Error('Release does not contain five non-empty publication ZIPs');
+          console.log('PERSONA_GITHUB_RELEASE_VERIFIED '+JSON.stringify({
+           html_url:d.html_url,assets:assets.map(a=>({name:a.name,size:a.size}))
+          }));
+          NODE

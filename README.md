@@ -20,3 +20,6 @@ Independent foundation for Life OS and Erika.
 Life planning, Erika orchestration, Skills, Observer, Memory, Analytics. Later the same kernel can coordinate Media and product agents without coupling those products to Life OS.
 
 See docs/ARCHITECTURE.md and docs/AUTONOMY.md.
+
+## Persona — карусели для Instagram
+Утверждённые ZIP-пакеты (после публикации GitHub Release): [скачивание и инструкция](docs/how-to-publish-carousels.md). Без открытия Persona и без автоматической публикации.
