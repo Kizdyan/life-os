@@ -193,6 +193,33 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   assert.ok(status.exportItems.some(x=>x.id==='instagram'));
   assert.ok(status.exportItems.some(x=>x.id==='cover'));
   const final=JSON.parse(await readFile(join(output,'RESULT-FULL.json'),'utf8'));
+  // Full Video Quality Lab measures real encoded frames and audio, not artistic merit.
+  assert.equal(status.finalQuality?.status,'REVIEW_REQUIRED');
+  assert.equal(status.finalQuality.videoSha256,final.sha256);
+  const quality=JSON.parse(await readFile(join(output,'video-quality-full.json'),'utf8'));
+  assert.equal(quality.video.sha256,final.sha256);
+  assert.equal(quality.video.width,1080);assert.equal(quality.video.height,1920);
+  assert.equal(quality.publicationApproved,false);assert.equal(quality.distributionAllowed,false);
+  assert.ok(quality.findings.some(item=>item.id==='decode_integrity'&&item.status==='measured'));
+  assert.ok(quality.findings.some(item=>item.id==='black_frames'));
+  assert.ok(quality.findings.some(item=>item.id==='frozen_frames'));
+  assert.ok(quality.findings.some(item=>item.id==='audio_stream'||item.id==='audio_loudness'));
+  assert.ok(quality.findings.some(item=>item.id==='acting'&&item.status==='needs_human_review'));
+  assert.ok(quality.findings.some(item=>item.id==='identity_preservation'&&item.status==='needs_human_review'));
+  assert.ok(status.finalQuality.notMeasuredCount>=0);
+  assert.equal(status.finalQuality.warnings.length,quality.findings.filter(x=>x.status==='warning').length);
+  const noToken=await fetch(base+'/quick-render/'+id+'/quality-report');
+  assert.equal(noToken.status,401,'QC evidence must require the local Worker token');
+  const reportDownload=await fetch(base+'/quick-render/'+id+'/quality-report?token='+token);
+  assert.equal(reportDownload.status,200);
+  assert.match(reportDownload.headers.get('content-type'),/application\/json/);
+  assert.deepEqual(JSON.parse(await reportDownload.text()),quality);
+  const contact=await fetch(base+'/quick-render/'+id+'/quality-contact-sheet?token='+token);
+  assert.equal(contact.status,200);
+  assert.match(contact.headers.get('content-type'),/image\/jpeg/);
+  const pixels=Buffer.from(await contact.arrayBuffer());
+  assert.ok(pixels.length>1000);
+  assert.deepEqual([...pixels.subarray(0,3)],[0xff,0xd8,0xff]);
   const pkg=JSON.parse(await readFile(join(output,'platform-package','EXPORTS.json'),'utf8'));
   assert.equal(final.width,1080);assert.equal(final.height,1920);
   assert.equal(final.visionRequests,0);assert.equal(final.cloudCalls,0);
@@ -215,6 +242,7 @@ test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform file
   console.log('PERSONA_ONE_CLICK_FULL_PACKAGE_PASS '+JSON.stringify({
    originalVerified:true,draft:[720,1280],final:[1080,1920],
    platformFiles:status.exportItems.length,cloudCalls:final.cloudCalls,
+   qaWarnings:status.finalQuality.warnings.length,qualityReport:true,contactSheet:true,
    published:false,authorReviewRequired:true}));
  }finally{
   if(worker?.server?.listening)await new Promise(ok=>worker.server.close(ok));
