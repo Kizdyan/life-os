@@ -478,8 +478,12 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
    // Check saved manual approval before importing text approvals from the chat.
    if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
       post.approvals.contentHashAtApproval!==editorialContentHash(post)){
+    const textMatches=post.approvals.textHashAtApproval===editorialTextHash(post);
     return applyChatCarouselApproval({...post,approvals:{...post.approvals,
-     content:false,design:false,checklist:emptyChecklist()}});
+     content:textMatches&&post.approvals.content,design:false,
+     textApproved:textMatches&&Boolean(post.approvals.textApproved),
+     designApproved:false,designApprovedAt:null,contentHashAtDesignApproval:'',
+     checklist:emptyChecklist()}});
    }
    return applyChatCarouselApproval(post);
   });
