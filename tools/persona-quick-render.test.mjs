@@ -136,6 +136,92 @@ test('ONE real-click API: staging -> strategy/light -> bounded EditPlan -> actua
  }
 });
 
+test('opt-in finalization: reviewed 720p draft -> verified 1080p + platform files without another click or cloud calls',
+ {skip:!available,timeout:450000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-one-click-final-package-'));
+ const original=join(root,'source.mp4');
+ let worker;
+ try{
+  const generated=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',
+   'testsrc2=size=144x256:rate=12:duration=8.5',
+   '-an','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-y',original],
+   {timeout:45000,encoding:'utf8'});
+  assert.equal(generated.status,0,generated.stderr);
+  const bytes=await readFile(original),originalHash=sha(bytes);
+  worker=createPersonaMediaWorker({port:0,outputRoot:join(root,'media'),
+   quickRenderRoot:join(root,'quick'),apiEnv:{OPENROUTER_API_KEY:''}});
+  const base='http://127.0.0.1:'+await worker.start();
+  const token=(await(await fetch(base+'/health')).json()).token,headers={'X-Persona-Worker-Token':token};
+  const start=await fetch(base+'/quick-render',{method:'POST',headers:{...headers,'Content-Type':'application/json'},
+   body:JSON.stringify({prompt:'Собери локальный кинематографичный черновик',
+    consent:true,fastDraft:true,autoStyle:false,textAccents:false,
+    styleChoice:'cinematic',colorPreset:'SoftCinematic',
+    files:[{kind:'video',name:'source.mp4',size:bytes.length}]})});
+  assert.equal(start.status,201,await start.clone().text());
+  const {id}=await start.json();
+  const upload=await fetch(base+'/quick-render/'+id+'/upload/0',{method:'PUT',
+   headers:{...headers,'X-Persona-Original-Name':encodeURIComponent('source.mp4')},body:bytes});
+  assert.equal(upload.status,200,await upload.clone().text());
+  const run=await fetch(base+'/quick-render/'+id+'/run',{method:'POST',headers});
+  assert.equal(run.status,202,await run.clone().text());
+  let status;
+  for(let i=0;i<500;i++){
+   status=await(await fetch(base+'/quick-render/'+id+'/status',{headers})).json();
+   if(['completed','failed'].includes(status.state))break;
+   await new Promise(ok=>setTimeout(ok,300));
+  }
+  assert.equal(status.state,'completed',status.error||status.stage);
+  assert.equal(status.ready,true);assert.equal(status.fastDraft,true);
+  assert.equal(status.fullReady,false);
+  const output=join(root,'quick','quick-'+id,'output');
+  const draft=JSON.parse(await readFile(join(output,'RESULT.json'),'utf8'));
+  assert.equal(draft.width,720);assert.equal(draft.height,1280);
+  assert.equal(draft.distributionAllowed,false);
+  const request=await fetch(base+'/quick-render/'+id+'/render-full?withPackage=1',
+   {method:'POST',headers});
+  assert.equal(request.status,202,await request.clone().text());
+  let observedPackageRender=false;
+  for(let i=0;i<1300;i++){
+   status=await(await fetch(base+'/quick-render/'+id+'/status',{headers})).json();
+   if(status.exportStatus==='RENDERING')observedPackageRender=true;
+   if(status.exportStatus==='COMPLETED'||status.exportStatus==='FAILED'||status.fullRenderStatus==='FAILED')break;
+   await new Promise(ok=>setTimeout(ok,300));
+  }
+  assert.equal(status.fullRenderStatus,'COMPLETED',status.fullRenderError||status.stage);
+  assert.equal(status.exportStatus,'COMPLETED',status.exportError||status.stage);
+  assert.equal(status.fullReady,true);
+  assert.ok(status.exportItems.some(x=>x.id==='instagram'));
+  assert.ok(status.exportItems.some(x=>x.id==='cover'));
+  const final=JSON.parse(await readFile(join(output,'RESULT-FULL.json'),'utf8'));
+  const pkg=JSON.parse(await readFile(join(output,'platform-package','EXPORTS.json'),'utf8'));
+  assert.equal(final.width,1080);assert.equal(final.height,1920);
+  assert.equal(final.visionRequests,0);assert.equal(final.cloudCalls,0);
+  assert.equal(final.status,'awaiting-author-review');
+  assert.equal(final.distributionAllowed,false);
+  assert.equal(pkg.distributionAllowed,false);
+  assert.equal(pkg.sourceSha256,final.sha256);
+  assert.equal(final.reusedEditPlanSha256,draft.editPlanSha256);
+  assert.equal(final.reusedTimelineSha256,draft.timelineSha256);
+  assert.equal(sha(await readFile(original)),originalHash);
+  assert.equal((await new ProductionJob(join(root,'quick','quick-'+id)).read()).status,'AWAITING_APPROVAL');
+  const full=await fetch(base+'/quick-render/'+id+'/video-full?token='+token);
+  assert.equal(full.status,200);
+  assert.equal(sha(Buffer.from(await full.arrayBuffer())),final.sha256);
+  const instagram=await fetch(base+'/quick-render/'+id+'/export/instagram?token='+token);
+  assert.equal(instagram.status,200);
+  assert.equal(instagram.headers.get('content-type'),'video/mp4');
+  assert.ok((await instagram.arrayBuffer()).byteLength>20000);
+  assert.ok(observedPackageRender||status.exportStatus==='COMPLETED');
+  console.log('PERSONA_ONE_CLICK_FULL_PACKAGE_PASS '+JSON.stringify({
+   originalVerified:true,draft:[720,1280],final:[1080,1920],
+   platformFiles:status.exportItems.length,cloudCalls:final.cloudCalls,
+   published:false,authorReviewRequired:true}));
+ }finally{
+  if(worker?.server?.listening)await new Promise(ok=>worker.server.close(ok));
+  await rm(root,{recursive:true,force:true});
+ }
+});
+
 test('Session 2 appearance mapping is explicit, backwards-compatible and rejects invented FFmpeg options',()=>{
  assert.deepEqual(quickRenderAppearance(),{styleChoice:'auto',colorPreset:null,stylePack:null,subtitlePreset:'cinematic'});
  assert.deepEqual(quickRenderAppearance({styleChoice:'cinematic',colorPreset:'DetailCinematic'}),
