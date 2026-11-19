@@ -10,6 +10,7 @@ import {copyFile,lstat,mkdir,readFile,readdir,rm,stat,writeFile} from 'node:fs/p
 import {createHash} from 'node:crypto';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {QUICK_RELOCATION_RECORD,QUICK_RELOCATION_KIND,validateQuickRelocation} from './persona-quick-relocation.mjs';
 
 const FORMAT='persona-quick-render-folder-backup-v1';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -170,7 +171,7 @@ export async function backupPersonaQuickJob({quickRoot,id,destination}){
    originalJobDir:source,productionStatus:stable.productionStatus,
    contentType:stable.contentType,files:snapshot.files,directories:snapshot.directories,
    totalBytes:snapshot.totalBytes,
-   publicationApproved:false,limitation:'A relocated restored job is for recovery and download; old absolute paths in edit manifests can block rerendering.'};
+   publicationApproved:false,limitation:'Relocated Fast Draft rerender requires verification of immutable draft receipts and a local provenance marker; final MP4 still requires author review.'};
   await writeFile(join(target,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
   await verifyPersonaQuickJobBackup(target);
   return {id,destination:target,fileCount:snapshot.files.length,totalBytes:snapshot.totalBytes,verified:true};
@@ -195,10 +196,41 @@ export async function restorePersonaQuickJob({backupDir,quickRoot}){
   }
   await verifiedContents(target,manifest);
   await stableJob(target,verified.id);
+  const relocated=target!==resolve(manifest.originalJobDir);
+  let draftRerenderEligible=false;
+  const meta=JSON.parse(await readFile(join(target,'quick-state.json'),'utf8'));
+  if(relocated&&meta.contentType==='video'&&meta.fastDraft===true&&
+     manifest.files.some(x=>x.path==='output/RESULT.json')){
+   const receiptPath=join(target,'output','RESULT.json');
+   const receipt=JSON.parse(await readFile(receiptPath,'utf8'));
+   const receiptSha256=await hash(receiptPath);
+   if(receipt.id!==verified.id||receipt.fastDraft!==true||
+      !/^[a-f0-9]{64}$/.test(receipt.editPlanSha256??'')||
+      !/^[a-f0-9]{64}$/.test(receipt.timelineSha256??'')||
+      receipt.editPlanSha256!==await hash(join(target,'output','edit-plan.json'))||
+      receipt.timelineSha256!==await hash(join(target,'output','timeline.json')))
+    fail('Verified draft receipt is missing or does not match its EditPlan');
+   // A second restore must preserve the first (signed) timeline source root.
+   let originalJobDir=resolve(manifest.originalJobDir);
+   const markerPath=join(target,QUICK_RELOCATION_RECORD);
+   const previous=await readFile(markerPath,'utf8').then(JSON.parse).catch(error=>{
+    if(error.code==='ENOENT')return null;throw error;
+   });
+   if(previous)originalJobDir=validateQuickRelocation(previous,{
+    id:verified.id,currentJobDir:manifest.originalJobDir,receiptSha256});
+   if(!isAbsolute(originalJobDir))fail('Cross-platform path relocation is not supported');
+   await writeFile(markerPath,JSON.stringify({
+    version:1,kind:QUICK_RELOCATION_KIND,id:verified.id,
+    originalJobDir,restoredJobDir:target,receiptSha256,
+    derivedAt:new Date().toISOString(),authorApproved:false},null,2)+'\n',
+    {flag:previous?'w':'wx'});
+   draftRerenderEligible=true;
+  }
   return {id:verified.id,restoredTo:target,verified:true,files:manifest.files.length,
-   relocated:target!==resolve(manifest.originalJobDir),
-   rerenderVerified:false,
-   note:'No existing job overwritten. Review restored projects in Worker; relocated absolute EditPlan paths require a separate migration before re-rendering.'};
+   relocated,draftRerenderEligible,rerenderVerified:false,
+   note:draftRerenderEligible
+    ?'Verified draft and local relocation record are ready for an explicit author-triggered full render; no source or approval was changed.'
+    :'No existing job overwritten. Existing MP4 can be checked and downloaded; no full rerender has been performed.'};
  }catch(error){if(created)await rm(target,{recursive:true,force:true});throw error}
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){
