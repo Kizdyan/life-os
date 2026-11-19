@@ -2,7 +2,7 @@ import type {PersonaProject} from './personaProjectStore';
 import {PERSONA_ARCHITECT_IDS} from './personaArchitectSeeds';
 import {SEED_CAROUSELS,editorialStageLabel,type EditorialPost} from './personaEditorialModel';
 
-/** Editorial production cadence: Mon Reel, Wed Carousel, Fri Photo.
+/** Editorial production cadence: Tue Reel, Thu Carousel, Sat Photo.
  * These are proposed publication slots, never a claim of actual platform posting.
  * Pre-existing PHOTO jobs and Reels retain their canonical IDs; photo slots are
  * explicitly unselected until the author chooses a topic.
@@ -10,7 +10,7 @@ import {SEED_CAROUSELS,editorialStageLabel,type EditorialPost} from './personaEd
 export const PERSONA_WEEKLY_CALENDAR_KEY='lifeos:persona:unified-weekly-calendar:v1';
 export const PERSONA_WEEKLY_DAYS=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'] as const;
 export const PERSONA_PHOTO_SEED_IDS=Object.freeze(Array.from({length:10},(_,i)=>'PHOTO-'+String(i+1).padStart(3,'0')));
-export const PERSONA_WEEKLY_WORKDAYS=[0,2,4] as const;
+export const PERSONA_WEEKLY_WORKDAYS=[1,3,5] as const;
 export type CalendarPhotoJob={
  id:string;seedKey:string|null;title:string;state:string;
  ready?:boolean;exportStatus?:string|null;productionStatus?:string|null;
@@ -83,20 +83,20 @@ export function buildPersonaWeeklyCalendar({
   const reelId=PERSONA_ARCHITECT_IDS[weekIndex],carouselId=PERSONA_PHOTO_SEED_IDS[weekIndex];
   const video=videoById.get(reelId);
   if(video)scheduled.push({id:'video:'+reelId,projectId:video.id,sourceId:reelId,title:video.title,
-   kind:'video',status:videoCalendarStatus(video),scheduledDate:weekMonday,weekIndex,dayIndex:0});
+   kind:'video',status:videoCalendarStatus(video),scheduledDate:addCalendarDays(weekMonday,PERSONA_WEEKLY_WORKDAYS[0]),weekIndex,dayIndex:PERSONA_WEEKLY_WORKDAYS[0]});
   else missingVideos++;
   const job=photoById.get(carouselId),plan=editorialById.get(carouselId),seed=SEED_CAROUSELS[weekIndex];
   if(!job)missingPhotos++;
   scheduled.push({id:'carousel:'+carouselId,projectId:job?.id??carouselId,sourceId:carouselId,
    title:plan?.title??job?.title??seed.title,kind:'carousel',
    status:plan?editorialStageLabel(plan):job?photoCalendarStatus(job):'Редакция доступна · Worker не подключён',
-   scheduledDate:addCalendarDays(weekMonday,2),weekIndex,dayIndex:2,
+   scheduledDate:addCalendarDays(weekMonday,PERSONA_WEEKLY_WORKDAYS[1]),weekIndex,dayIndex:PERSONA_WEEKLY_WORKDAYS[1],
    placeholder:!job&&!plan});
   const photoId='photo-week-'+String(weekIndex+1).padStart(2,'0'),photo=editorialById.get(photoId);
   scheduled.push({id:'photo:'+photoId,projectId:photoId,sourceId:photoId,
    title:photo?.title??'Выбрать тему фото-поста',kind:'photo',
    status:photo?editorialStageLabel(photo):'Тема не выбрана',
-   scheduledDate:addCalendarDays(weekMonday,4),weekIndex,dayIndex:4,
+   scheduledDate:addCalendarDays(weekMonday,PERSONA_WEEKLY_WORKDAYS[2]),weekIndex,dayIndex:PERSONA_WEEKLY_WORKDAYS[2],
    placeholder:!photo});
  }
  // Author-scheduled additional editorial posts are shown alongside existing slots,
