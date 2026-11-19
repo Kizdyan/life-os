@@ -443,7 +443,7 @@ try{
   'Оформление не утверждено. Посмотрите PNG и подтвердите').waitFor();
  assert.equal(await publicationPage.getByRole('button',{name:'Скачать все четыре одним архивом'}).isDisabled(),true);
  // Complete approval in the original Editorial Desk; no extra publish gate.
- await carousel3Row.getByRole('button',{name:'Утвердить'}).click();
+ await carousel3Row.getByRole('button',{name:'Утвердить',exact:true}).click();
  await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
  await completeArchiveCarouselChecklist(editor);
  await editor.getByRole('button',{name:'Утвердить оформление'}).click();
@@ -454,7 +454,7 @@ try{
  // approval. Re-approve its content/design through the same existing gate.
  const baselineRow=publicationPage.locator('[data-publish-carousel-id="carousel-baseline-pause"]');
  assert.equal(await baselineRow.locator('.personaEditorialPublishStatus').textContent(),'Черновик');
- await baselineRow.getByRole('button',{name:'Утвердить'}).click();
+ await baselineRow.getByRole('button',{name:'Утвердить',exact:true}).click();
  await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
  await completeCarouselChecklist(editor);
  await editor.getByRole('button',{name:'Утвердить оформление'}).click();
