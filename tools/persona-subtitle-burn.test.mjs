@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {readPersonaAiReelArgs} from './persona-ai-reel.mjs';
 import {buildSubtitleAss,burnPersonaSubtitles,loadApprovedSubtitleReference,loadSubtitlePreset,subtitlePreset} from './persona-subtitle-burn.mjs';
+import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 
 test('invalid timestamps and ASS control syntax cannot enter the rendering filter',async()=>{
  const {style:reference}=await loadApprovedSubtitleReference();
@@ -74,7 +75,7 @@ test('Dynamic Interview breaks wide pairs and compresses single words within the
 
 function run(bin,args){const r=spawnSync(bin,args,{encoding:null,timeout:60000});assert.equal(r.status,0,r.stderr?.toString());return r.stdout}
 function titlePixels(bytes){let n=0;for(let i=0;i<bytes.length;i+=3)if(bytes[i]>130&&bytes[i+1]>125&&bytes[i+2]>80)n++;return n}
-test('real FFmpeg burns visible Cyrillic text into pixels, preserves audio and refuses overwrite',{skip:!available},async()=>{
+test('real FFmpeg burns visible Cyrillic text into pixels, preserves audio and refuses overwrite',{skip:!available,timeout:180000},async()=>{
  const root=await mkdtemp(join(tmpdir(),"persona-captions-' "));
  try{
   const input=join(root,'source.mp4'),output=join(root,'burned.mp4'),review=join(root,'review.json');
@@ -89,6 +90,19 @@ test('real FFmpeg burns visible Cyrillic text into pixels, preserves audio and r
   assert.deepEqual(audio(output),audio(input),'Audio is copied, not reprocessed');
   assert.deepEqual(await readFile(input),before,'Original bytes stay unchanged');
   assert.equal(result.output.sha256,createHash('sha256').update(await readFile(output)).digest('hex'));
+  // Quality Lab examines the actual ASS-burned output, not the SRT or source MP4.
+  const qc=await analyzePersonaVideoQuality({videoPath:output,outputPath:join(root,'real-burn-quality.json'),
+   subtitleBurnManifestPath:result.reportPath,subtitleReviewPath:review});
+  const captions=qc.findings.find(x=>x.id==='subtitles_timing');
+  assert.equal(captions?.status,'measured');
+  assert.equal(captions?.measurement.source,'verified-subtitle-burn-manifest');
+  assert.equal(captions?.measurement.cueCount,1);
+  assert.equal(qc.video.sha256,result.output.sha256);
+  assert.equal(qc.publicationApproved,false);
+  assert.equal(qc.findings.find(x=>x.id==='subtitle_safe_area')?.status,'needs_human_review');
+  await writeFile(review,JSON.stringify({cues:[{startMs:200,endMs:1400,text:'Подменённый текст'}]}));
+  await assert.rejects(analyzePersonaVideoQuality({videoPath:output,subtitleBurnManifestPath:result.reportPath,
+   subtitleReviewPath:review}),/subtitle burn receipt differs/);
   await assert.rejects(burnPersonaSubtitles({videoPath:input,reviewPath:review,outputPath:output}),/exists/);
  }finally{await rm(root,{recursive:true,force:true})}
 });

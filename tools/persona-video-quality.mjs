@@ -74,6 +74,31 @@ function parseSrt(text,durationSec){
  }
  return {cueCount:cue.length,cues:cue,problems};
 }
+
+/** Metadata timing audit only. Cue provenance is verified against a subtitle-burn receipt before use. */
+export function auditPersonaBurnedSubtitleCues(cues,durationSec){
+ if(!Array.isArray(cues)||cues.length>1000||!Number.isFinite(durationSec)||durationSec<=0)
+  fail('invalid burned subtitle cues or duration');
+ const problems=[],observed=[];let previousEnd=-1;
+ for(const [index,cue] of cues.entries()){
+  const number=index+1,start=cue?.startMs,end=cue?.endMs,caption=cue?.text;
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||typeof caption!=='string'||!caption.trim()){
+   problems.push({id:'subtitle_invalid_time',cue:number});continue;
+  }
+  const durationMs=end-start,text=caption.trim(),characters=Array.from(text).length,seconds=durationMs/1000;
+  if(start<previousEnd)problems.push({id:'subtitle_overlap',cue:number,startSec:start/1000,endSec:end/1000});
+  if(end>durationSec*1000+100)problems.push({id:'subtitle_outside_video',cue:number,startSec:start/1000,endSec:end/1000});
+  if(durationMs<250)problems.push({id:'subtitle_too_brief',cue:number,startSec:start/1000,endSec:end/1000,durationMs});
+  if(characters/seconds>28)problems.push({id:'subtitle_fast_reading',cue:number,startSec:start/1000,endSec:end/1000,charactersPerSecond:Number((characters/seconds).toFixed(1))});
+  const lines=text.replace(/\r\n?/g,'\n').split('\n');
+  if(lines.length>2)problems.push({id:'subtitle_too_many_lines',cue:number,startSec:start/1000,endSec:end/1000});
+  if(lines.some(line=>Array.from(line).length>42))
+   problems.push({id:'subtitle_line_too_long',cue:number,startSec:start/1000,endSec:end/1000});
+  observed.push({index:number,startSec:start/1000,endSec:end/1000,characters});
+  previousEnd=Math.max(previousEnd,end);
+ }
+ return {cueCount:observed.length,cues:observed,problems};
+}
 async function scan(path,args,env){
  const result=await cachedFfmpegStage(path,'ffmpeg_qa_scan',{args},async()=>{
   const log=await run('ffmpeg',['-hide_banner','-nostdin','-i',path,...args,'-f','null','-'],{env});
@@ -130,7 +155,7 @@ function distribution(values){
   highlightSamplePercent:values.filter(value=>value>223).length/values.length*100};
 }
 
-export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expectedDurationSec,outputPath,ffmpegDir,timelinePath,timelineSourceVideoPath}={}){
+export async function analyzePersonaVideoQuality({videoPath,subtitlePath,subtitleBurnManifestPath,subtitleReviewPath,expectedDurationSec,outputPath,ffmpegDir,timelinePath,timelineSourceVideoPath}={}){
  if(typeof videoPath!=='string'||!videoPath.trim())fail('videoPath is required');
  const output=typeof outputPath==='string'&&outputPath.trim()?resolve(outputPath):null;
  if(output)await access(output).then(()=>fail('output already exists'),error=>{if(error.code!=='ENOENT')throw error});
@@ -255,7 +280,30 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
    }else findings.push(finding('audio_loudness_jumps','not_measured','Резкие изменения громкости','В FFmpeg-логе нет достаточных momentary-проб; для оценки переходов нужна проверка на слух.'));
   }catch(error){findings.push(finding('audio_loudness','not_measured','Громкость и true peak','EBU R128 не дал полного измерения в текущем FFmpeg.'))}
  }else findings.push(finding('audio_stream','warning','Звуковая дорожка','В MP4 нет аудиопотока. Нужна пересъёмка или корректный рендер.',[]));
- if(typeof subtitlePath==='string'&&subtitlePath.trim()){
+ if(typeof subtitleBurnManifestPath==='string'&&subtitleBurnManifestPath.trim()){
+  // A real subtitle burn receipt binds final MP4 bytes to reviewed cue bytes.
+  // No OCR or claims about text actually being readable in social apps.
+  if(typeof subtitleReviewPath!=='string'||!subtitleReviewPath.trim())
+   fail('burned subtitle verification requires cue review JSON');
+  const burn=JSON.parse(await readFile(resolve(subtitleBurnManifestPath),'utf8'));
+  if(burn?.version!==1||burn?.kind!=='persona-burned-subtitles-v1'||
+     resolve(burn.output?.path??'')!==path||burn.output?.sha256!==await hash(path)||
+     burn.captionReviewSha256!==await hash(resolve(subtitleReviewPath))||
+     !Array.isArray(burn.cues))
+   fail('subtitle burn receipt differs from the verified MP4 or cue review');
+  const parsed=auditPersonaBurnedSubtitleCues(burn.cues,durationSec);
+  if(!parsed.problems.length)findings.push(finding('subtitles_timing','measured','Прожжённые титры: таймкоды',
+   'Тайминги подтверждены отчётом прожига и SHA-256 финального MP4. Читаемость текста не измерялась.',[],
+   {source:'verified-subtitle-burn-manifest',cueCount:parsed.cueCount,captionTiming:burn.captionTiming??'unverified',problems:[]}));
+  else{
+   const byId=new Map();for(const issue of parsed.problems){const list=byId.get(issue.id)||[];list.push(issue);byId.set(issue.id,list)}
+   for(const [id,problems] of byId)findings.push(finding(id,'warning','Прожжённые титры: '+id,
+    'Обнаружено '+problems.length+' предупреждений по длительности или плотности титров. Это повод проверить кадры, не художественный вердикт.',
+    problems.map(x=>timecode(x.startSec??0)),{source:'verified-subtitle-burn-manifest',cueCount:parsed.cueCount,problems}));
+  }
+  findings.push(finding('subtitle_safe_area','needs_human_review','Безопасная зона и читаемость титров',
+   'Метаданные не доказывают читаемость текста на экране и расположение относительно интерфейса Instagram. Нужен просмотр.',[]));
+ }else if(typeof subtitlePath==='string'&&subtitlePath.trim()){
   const subtitle=await readFile(resolve(subtitlePath),'utf8'),parsed=parseSrt(subtitle,durationSec);
   if(!parsed.problems.length)findings.push(finding('subtitles_timing','measured','Субтитры: таймкоды и строки','SRT не содержит пересечений, лишних строк или таймкодов за пределами ролика.',[],{cueCount:parsed.cueCount,problems:[]}));
   else{
@@ -263,7 +311,7 @@ export async function analyzePersonaVideoQuality({videoPath,subtitlePath,expecte
    for(const [id,problems] of byId)findings.push(finding(id,'warning','Субтитры: '+id,`Найдено ${problems.length} проблем(ы) SRT типа ${id}.`,problems.map(x=>timecode(x.startSec||0)),{cueCount:parsed.cueCount,problems}));
   }
   findings.push(finding('subtitle_safe_area','needs_human_review','Безопасная область субтитров','SRT не содержит экранных координат. Проверьте читаемость в Instagram UI, особенно нижнюю безопасную зону.',[]));
- }else findings.push(finding('subtitles_timing','not_measured','Субтитры: таймкоды и строки','SRT не передан: встроенные в MP4 субтитры нельзя надёжно извлечь без OCR.',[]));
+ }else findings.push(finding('subtitles_timing','not_measured','Субтитры: таймкоды и строки','Не переданы проверенные SRT или отчёт прожига; титры внутри MP4 нельзя достоверно восстановить без OCR.',[]));
  if(Number.isFinite(expectedDurationSec)){
   const delta=durationSec-Number(expectedDurationSec),status=Math.abs(delta)>.25?'warning':'measured';
   findings.push(finding('expected_duration',status,'Длительность относительно сценария',status==='warning'?`Файл отличается от ожидаемой длительности на ${delta.toFixed(3)} с.`:'Длительность совпадает с ожидаемой в пределах 0,25 с.',[],{expectedDurationSec:Number(expectedDurationSec),actualDurationSec:durationSec,deltaSec:delta}));
