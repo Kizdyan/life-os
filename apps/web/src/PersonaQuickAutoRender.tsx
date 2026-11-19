@@ -363,7 +363,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
        </>}
       </details>}
      {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
-     {job.ready&&<p>Техническая проверка пройдена. Проверь актёрскую игру, звук и титры перед публикацией.</p>}
+     {job.ready&&<p>MP4 создан и прошёл базовую проверку файла. Качество игры, цвета, звука и субтитров требует твоего просмотра перед публикацией.</p>}
     </div>
     <div className="personaQuickCardActions">
      {job.seedKey&&job.state!=='completed'&&job.state!=='running'&&job.state!=='failed'&&
