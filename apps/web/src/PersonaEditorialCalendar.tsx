@@ -2,7 +2,7 @@ import React, {useMemo,useState} from 'react';
 import {startPersonaProductionPipeline,advancePersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {buildPersonaEditorialCalendar} from '../../../packages/core/src/persona-editorial-calendar.mjs';
 
-type Slot={slotId:string;date:string;format:string;purpose:string;status:string;contentId:string|null;approved:boolean;platforms:string[];notes?:string};
+type Slot={slotId:string;date:string;format:string;purpose:string;status:string;contentId:string|null;approved:boolean;platforms:string[];notes?:string;legacySavedDate?:boolean};
 const KEY='lifeos:persona:editorial-calendar:v1';
 function load():Slot[]{try{const raw=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(raw)?raw.filter(x=>typeof x?.slotId==='string'):[]}catch{return []}}
 function todayUTC(){const now=new Date();return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')}
@@ -24,13 +24,13 @@ export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(
  }
  return <section className="captureCard" aria-label="Редакционный календарь Persona">
   <h3>Контент-план на 90 дней</h3>
-  <p>3 Reels + 1 фотопост с историей + 1 карусель в неделю. Stories — дополнительно. Резерв: 6 Reels, 2 фотопоста и 2 карусели.</p>
+  <p>Единый ритм Persona: вторник — Reels, четверг — карусель, суббота — фото. Три публикации в неделю; Stories — дополнительно. Резерв: по два материала каждого формата.</p>
   <label>Начало периода <input type="date" value={startDate} onChange={e=>{if(e.target.value)setStartDate(e.target.value)}}/></label>
-  <p><b>Период:</b> {plan.horizon.startDate} — {plan.horizon.endDate} · <b>Слотов:</b> {plan.slots.length} · <b>Отмечено в работе или на проверке:</b> {previous.filter(s=>s.status==='in_production'||s.status==='needs_review').length}</p>
-  <p>Это локальная редакционная проекция, а не синхронизация с календарём Life OS. Готовность и утверждение определяются отдельным QA-процессом.</p>
+  <p><b>Период:</b> {plan.horizon.startDate} — {plan.horizon.endDate} · <b>Всего слотов, включая вручную сохранённые даты:</b> {plan.slots.length} · <b>Отмечено в работе или на проверке:</b> {previous.filter(s=>s.status==='in_production'||s.status==='needs_review').length}</p>
+  <p>Это локальная редакционная проекция, а не синхронизация с календарём Life OS. Сохранённые тобой даты из прежнего графика отображаются дополнительно — ничего автоматически не перенесено и не удалено. Готовность и утверждение определяются отдельным QA-процессом.</p>
   <div style={{display:'grid',gap:8}}>
    {upcoming.map(slot=><div key={slot.slotId} style={{borderBottom:'1px solid #8885',padding:'8px 0',display:'flex',gap:12,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}>
-    <div><b>{slot.date} · {names[slot.format]||slot.format}</b><div style={{fontSize:12,opacity:.75}}>{slot.purpose} · {slot.platforms.join(', ')}</div></div>
+    <div><b>{slot.date} · {names[slot.format]||slot.format}</b>{slot.legacySavedDate&&<span> · Сохранённая прежняя дата</span>}<div style={{fontSize:12,opacity:.75}}>{slot.purpose} · {slot.platforms.join(', ')}</div></div>
     <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button type="button" className="ghost" onClick={()=>{setEditing(slot.slotId);setIdea(slot.notes||'')}}>Тема</button><button type="button" className="ghost" onClick={()=>{setBriefSlotId(slot.slotId);onSelectSlot?.(slot)}}>Съёмочный план</button><label>Статус <select aria-label={'Статус '+slot.date+' '+slot.format} value={slot.status} onChange={e=>update(slot,e.target.value)}>
      <option value="planned">Запланировано</option><option value="in_production">В работе</option><option value="needs_review">На проверке</option>
     </select></label></div>{slot.notes&&<p style={{width:'100%',fontSize:13}}>Тема: {slot.notes}</p>}{editing===slot.slotId&&<div style={{width:'100%'}}><label>Идея или съёмочное задание <textarea value={idea} onChange={e=>setIdea(e.target.value)} maxLength={3000}/></label><button type="button" onClick={()=>{persist({...slot,notes:idea.trim(),status:slot.status==='planned'?'in_production':slot.status,approved:false});setEditing(null)}}>Сохранить тему</button><button type="button" className="ghost" onClick={()=>setEditing(null)}>Отмена</button></div>}
