@@ -40,7 +40,7 @@ test('relocation: rebind only verified video/audio paths; reject path substituti
  assert.equal(JSON.stringify(timeline),saved,'approved source timeline must stay unchanged');
  assert.throws(()=>rebindQuickTimeline({jobDir:restored,originalJobDir:original,files,plan,
   timeline:{...timeline,clips:[{...timeline.clips[0],path:join(tmpdir(),'foreign.mp4')},timeline.clips[1]]}}),
-  /does not match/);
+  /no longer matches/);
  assert.throws(()=>rebindQuickTimeline({jobDir:restored,originalJobDir:original,files,plan,
   timeline:{...timeline,soundtrack:{...timeline.soundtrack,path:join(tmpdir(),'untrusted.wav')}}}),
   /soundtrack/);
