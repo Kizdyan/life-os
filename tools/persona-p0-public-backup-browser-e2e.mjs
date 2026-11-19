@@ -451,6 +451,17 @@ try{
  await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
  await editor.getByRole('button',{name:'Пакет для публикации'}).click();
  await publicationPage.waitFor();
+ // The earlier baseline regression deliberately edited its text and revoked
+ // approval. Re-approve its content/design through the same existing gate.
+ const baselineRow=publicationPage.locator('[data-publish-carousel-id="carousel-baseline-pause"]');
+ assert.equal(await baselineRow.locator('.personaEditorialPublishStatus').textContent(),'Черновик');
+ await baselineRow.getByRole('button',{name:'Утвердить'}).click();
+ await editor.getByRole('button',{name:'Утвердить тексты и подпись'}).click();
+ await completeCarouselChecklist(editor);
+ await editor.getByRole('button',{name:'Утвердить оформление'}).click();
+ await editor.getByText('Оформление утверждено ✓').waitFor({timeout:15000});
+ await editor.getByRole('button',{name:'Пакет для публикации'}).click();
+ await publicationPage.waitFor();
  for(const id of expectedIds){
   const row=publicationPage.locator('[data-publish-carousel-id="'+id+'"]');
   assert.equal(await row.locator('.personaEditorialPublishStatus').textContent(),'Утверждена');
