@@ -436,13 +436,12 @@ try{
  ];
  assert.equal(await publicationPage.locator('[data-publish-carousel-id]').count(),4);
  const carousel3Row=publicationPage.locator('[data-publish-carousel-id="carousel-photo-archive"]');
- assert.equal(await carousel3Row.locator('.personaEditorialPublishStatus').textContent(),'Черновик',
-  'Photo edit revoked prior design approval');
- await carousel3Row.getByRole('button',{name:'Скачать пакет'}).click();
- await publicationPage.getByRole('alert').getByText(
-  'Карусель не утверждена. Пройдите чек-лист и нажмите "Утвердить"').waitFor();
- await publicationPage.getByRole('button',{name:'Скачать все четыре одним архивом'}).click();
- assert.equal(await publicationPage.getByRole('alert').count(),1);
+ assert.equal(await carousel3Row.locator('.personaEditorialPublishStatus').textContent(),
+  'Текст утверждён · оформление ожидает просмотра');
+ assert.equal(await carousel3Row.getByRole('button',{name:'Скачать пакет'}).isDisabled(),true);
+ await carousel3Row.getByRole('status').getByText(
+  'Оформление не утверждено. Посмотрите PNG и подтвердите').waitFor();
+ assert.equal(await publicationPage.getByRole('button',{name:'Скачать все четыре одним архивом'}).isDisabled(),true);
  // Complete approval in the original Editorial Desk; no extra publish gate.
  await carousel3Row.getByRole('button',{name:'Утвердить'}).click();
  await editor.locator('[data-testid="editorial-post-workflow"]').waitFor();
@@ -513,6 +512,28 @@ try{
  }));
 
  await clean.close();
+
+// An independent clean browser has chat-approved text, but NO visual approval.
+const reviewCtx=await browser.newContext({acceptDownloads:true,viewport:{width:1200,height:900}});
+try{
+ const review=await reviewCtx.newPage();
+ await review.goto(origin+'/#persona',{waitUntil:'domcontentloaded'});
+ await review.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="PHOTO-001"]')
+  .getByRole('button',{name:/Начать работу/}).click();
+ const gate=review.getByTestId('persona-editorial-studio');
+ await gate.getByRole('button',{name:'Все темы ↖'}).click();
+ await gate.getByTestId('open-publication-package').click();
+ const row=gate.locator('[data-publish-carousel-id="carousel-baseline-pause"]');
+ assert.equal(await row.getByRole('button',{name:'Скачать пакет'}).isDisabled(),true);
+ await row.getByRole('status').getByText('Оформление не утверждено. Посмотрите PNG и подтвердите').waitFor();
+ await row.getByRole('button',{name:'Утвердить оформление'}).click();
+ assert.equal(await row.getByRole('button',{name:'Скачать пакет'}).isEnabled(),true);
+ const packed=await downloadZip(review,row.getByRole('button',{name:'Скачать пакет'}),
+  join(artifacts,'chat-author-reviewed-baseline.zip'));
+ assert.equal(packed.length,9);packed.slice(0,6).forEach(assertPng);
+ console.log('PERSONA_CHAT_TEXT_ONLY_DESIGN_GATE_PASS');
+}finally{await reviewCtx.close()}
+
  assert.deepEqual(errors,[]);
  console.log('PERSONA_P0_FULL_BROWSER_PASS '+JSON.stringify({
   publicPngBrandFree:true,carouselPngs:4,photoPngs:1,

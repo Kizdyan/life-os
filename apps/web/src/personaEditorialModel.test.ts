@@ -9,7 +9,8 @@ import {
  setEditorialChecklistItem,editorialContentHash,editorialContrastRatio,
  CAROUSEL_002_ID,createDirectorQuestionCarousel,
  CAROUSEL_003_ID,CAROUSEL_004_ID,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass,applyChatCarouselApproval
+ editorialArchiveProvenancePass,applyChatCarouselApproval,editorialDesignHash,editorialTextHash,
+ publicationDesignApproved,UNAPPROVED_DESIGN_MESSAGE
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -343,5 +344,30 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   expect(loaded.approvals.design).toBe(false);
   expect(editorialStageLabel(loaded)).toBe('Требует повторного утверждения');
   expect(loaded.approvals.contentHashAtApproval).not.toBe(editorialContentHash(loaded));
+ });
+ it('text-only approval prevents publication; visual button approves a signed design',()=>{
+  const draft=createBaselinePauseCarousel();
+  const reviewed=applyChatCarouselApproval(draft);
+  expect(reviewed.approvals.textApproved).toBe(true);
+  expect(reviewed.approvals.designApproved).toBe(false);
+  expect(publicationDesignApproved(reviewed)).toBe(false);
+  expect(UNAPPROVED_DESIGN_MESSAGE).toBe('Оформление не утверждено. Посмотрите PNG и подтвердите');
+  const signed=approveEditorialStep(reviewed,'design','2026-11-20T12:00:00Z');
+  expect(signed.approvals.designApproved).toBe(true);
+  expect(publicationDesignApproved(signed)).toBe(true);
+  expect(signed.approvals.contentHashAtDesignApproval).toBe(editorialDesignHash(signed));
+  expect(signed.approvals.designApprovedAt).toBe('2026-11-20T12:00:00Z');
+  const preset=reviseEditorialPost(signed,{preset:'filmic'});
+  expect(preset.approvals.textApproved).toBe(true);
+  expect(preset.approvals.content).toBe(true);
+  expect(preset.approvals.designApproved).toBe(false);
+  expect(editorialTextHash(preset)).toBe(editorialTextHash(signed));
+  const caption=reviseEditorialPost(signed,{caption:'Другой текст'});
+  expect(caption.approvals.textApproved).toBe(false);
+  expect(caption.approvals.designApproved).toBe(false);
+  const copy=reviseEditorialPost(signed,{slides:signed.slides.map((s,i)=>i===0?
+   {...s,text:'Изменённый тезис'}:s)});
+  expect(copy.approvals.textApproved).toBe(false);
+  expect(copy.approvals.designApproved).toBe(false);
  });
 });
