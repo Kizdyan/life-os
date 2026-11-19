@@ -8,7 +8,7 @@ import {createPersonaMediaWorker, parseWorkerArgs} from './persona-media-worker.
 
 const port = 3000;
 const origin = `http://127.0.0.1:${port}`;
-const studio = origin + '/#music-studio';
+const studio = origin + '/#persona';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const web = join(root, 'apps', 'web');
 const mime = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',

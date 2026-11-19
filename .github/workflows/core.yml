@@ -74,6 +74,8 @@ jobs:
           node --test tools/persona-arsenal.test.mjs
       - name: One-click strict LLM and verified-interval contract
         run: node --test tools/persona-quick-edit-plan.test.mjs
+      - name: Persona local-first launcher readiness and secure preflight regression
+        run: npm run persona:preflight:test
       - name: ProductionJob persistence and restart regression tests
         run: node --test tools/persona-production-recovery.test.mjs
       - name: Persona demo project seeding and persistence regression
