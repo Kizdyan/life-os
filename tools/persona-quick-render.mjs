@@ -849,7 +849,7 @@ export function createPersonaQuickRenderService(config={}){
      notMeasuredCount:quality.findings.filter(item=>item.status==='not_measured').length};
     await save(job);
     if(quality.findings.some(item=>item.id==='decode_integrity'&&item.status==='warning'))
-     throw Error('Полное декодирование MP4 не прошло: экспорт остановлен, смотри QC-отчёт');
+     throw Error('MP4 не прошёл полное декодирование: экспорт остановлен, проверь файл вручную');
    }catch(error){
     if(job.finalQuality?.status==='REVIEW_REQUIRED')throw error;
     job.finalQuality={status:'UNAVAILABLE',videoSha256:hash,reason:String(error.message||error).slice(0,250)};
@@ -953,6 +953,10 @@ export function createPersonaQuickRenderService(config={}){
      job.finalQuality.videoSha256!==job.fullRender.sha256)
    throw Error('Full-quality evidence is not available');
   const out=join(directory(id),'output'),reportPath=join(out,'video-quality-full.json');
+  // The report also becomes stale if its referenced master was changed.
+  if(!['full-edited.mp4','full-ready.mp4'].includes(job.fullRender.videoName)||
+    await sha(join(out,job.fullRender.videoName))!==job.fullRender.sha256)
+   throw Error('Final MP4 checksum mismatch: quality evidence is stale');
   if(await sha(reportPath)!==job.finalQuality.reportSha256)
    throw Error('Quality report checksum mismatch');
   const report=JSON.parse(await readFile(reportPath,'utf8'));
