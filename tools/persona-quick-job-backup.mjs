@@ -82,8 +82,10 @@ async function scanAndHash(folder){
   fail('Not a complete Quick Render job folder');
  const total=entries.reduce((sum,x)=>sum+x.bytes,0);
  if(total>MAX_BYTES)fail('Job exceeds the safe per-backup size limit');
- return {files:await Promise.all(entries.map(async x=>({...x,sha256:await hash(join(folder,...x.path.split('/')))}))),
-  directories:directories.sort(),totalBytes:total};
+ // Sequential streaming avoids opening hundreds of large videos at once.
+ const files=[];
+ for(const entry of entries)files.push({...entry,sha256:await hash(join(folder,...entry.path.split('/')))});
+ return {files,directories:directories.sort(),totalBytes:total};
 }
 async function verifiedContents(folder,manifest){
  const directories=[],found=await folderEntries(folder,'',directories);
