@@ -4,10 +4,6 @@ on:
   push:
     tags:
       - 'carousels-v*'
-    branches:
-      - main
-    paths:
-      - 'config/author-approved-carousels.json'
   pull_request:
     paths:
       - 'tools/persona-build-publish-packages.mjs'
@@ -50,6 +46,7 @@ jobs:
           node tools/persona-build-publish-packages.mjs --self-test
           node --test tools/persona-build-publish-packages.test.mjs
       - name: Build five chat-approved ZIPs and 24 standalone PNG previews
+        if: github.event_name != 'pull_request'
         run: |
           test -s config/author-approved-carousels.json
           node tools/persona-build-publish-packages.mjs \

@@ -318,13 +318,13 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
    expect(draft.approvals.design).toBe(false);
    const approved=applyChatCarouselApproval(draft);
    expect(approved.approvals).toMatchObject({
-    topic:true,content:true,design:true,
+    topic:true,content:true,design:false,textApproved:true,designApproved:false,
     checkedBy:'Author (chat confirmation 2026-11-20)',
     contentHashAtApproval:editorialContentHash(draft),
     checklist:[true,true,true,true,true,true,true]
    });
    expect(editorialChecklistReady(approved)).toBe(true);
-   expect(editorialStage(approved)).toBe('production');
+   expect(editorialStage(approved)).toBe('design');
   }
  });
  it('hydrates stored drafts, but changed slides immediately require reapproval',()=>{
@@ -332,8 +332,10 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   const memory=storage();
   memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[draft]}));
   const approved=loadEditorialStore(memory).posts[0];
-  expect(approved.approvals.design).toBe(true);
-  const edited=reviseEditorialPost(approved,{slides:approved.slides.map((s,i)=>
+  expect(approved.approvals.design).toBe(false);
+  const manuallyApproved=approveEditorialStep(approved,'design');
+  expect(manuallyApproved.approvals.designApproved).toBe(true);
+  const edited=reviseEditorialPost(manuallyApproved,{slides:approved.slides.map((s,i)=>
    i===0?{...s,text:'Текст изменён после утверждения'}:s)});
   expect(edited.approvals.design).toBe(false);
   memory.setItem(EDITORIAL_KEY,JSON.stringify({version:1,posts:[edited]}));

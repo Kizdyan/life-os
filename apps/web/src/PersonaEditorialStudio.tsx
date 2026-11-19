@@ -4,7 +4,7 @@ import {
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
  CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass,applyChatCarouselApproval,
+ editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
  editorialChecklistState,editorialChecklistReady,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
@@ -13,7 +13,7 @@ import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEdit
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
- UNAPPROVED_PUBLICATION_MESSAGE,type PublicationCarouselId
+ UNAPPROVED_PUBLICATION_MESSAGE,UNAPPROVED_DESIGN_MESSAGE,type PublicationCarouselId
 } from './personaEditorialPublish';
 import './persona-editorial-studio.css';
 
@@ -183,6 +183,17 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
  }
 
+ function approvePublicationVisual(id:PublicationCarouselId){
+  const target=publishRows.find(p=>p.id===id);
+  if(!target)return;
+  if(!target.approvals.content||!target.approvals.textApproved){setPublishError('Сначала утвердите текст');return}
+  if(!editorialChecklistReady(target)){setPublishError('Требуется чек-лист');return}
+  try{
+   const signed=approveEditorialStep(target,'design');
+   if(!posts.some(p=>p.id===id))onCreate(target);
+   onChange(signed);setPublishError('');
+  }catch(e){setPublishError((e as Error).message)}
+ }
  function openPublicationApproval(id:PublicationCarouselId){
   try{
    if(!posts.some(p=>p.id===id))onCreate(applyChatCarouselApproval(publicationCarouselDraft(id)));
@@ -193,7 +204,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   if(busy)return;
   const targets=id?publishRows.filter(p=>p.id===id):publishRows;
   if(targets.length!==(id?1:4)||targets.some(p=>!publicationCarouselApproved(p))){
-   setPublishError(UNAPPROVED_PUBLICATION_MESSAGE);return;
+   setPublishError(targets.some(p=>p.approvals.textApproved&&p.approvals.designApproved===false)?
+    UNAPPROVED_DESIGN_MESSAGE:UNAPPROVED_PUBLICATION_MESSAGE);return;
   }
   setPublishError('');setBusy(true);
   try{
@@ -249,22 +261,28 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <div className="personaEditorialPublishDetails">
       <h4>{entry.title}</h4>
       <span className="personaEditorialPublishStatus" data-approved={publicationCarouselApproved(entry)?'true':'false'}>
-       {publicationCarouselApproved(entry)?'Утверждена':'Черновик'}</span>
+       {publicationCarouselApproved(entry)?'Утверждена':entry.approvals.textApproved?
+        'Текст утверждён · оформление ожидает просмотра':'Черновик'}</span>
       <p>6 слайдов · {entry.carouselFormat?(entry.slides.some(s=>s.visual==='archive-photo')?
        'фото из архива':'текстовый вариант без фото'):'текстовая карусель'}</p>
       <div className="personaEditorialPublishActions">
        {!publicationCarouselApproved(entry)&&<button type="button"
         onClick={()=>openPublicationApproval(entry.id as PublicationCarouselId)}>Утвердить</button>}
+       {entry.approvals.textApproved&&!publicationDesignApproved(entry)&&<button type="button"
+        onClick={()=>approvePublicationVisual(entry.id as PublicationCarouselId)}>Утвердить оформление</button>}
        {publicationCarouselApproved(entry)&&<button type="button"
         onClick={()=>openPublicationApproval(entry.id as PublicationCarouselId)}>Редактировать</button>}
-       <button type="button" disabled={busy}
+       <button type="button" disabled={busy||!publicationCarouselApproved(entry)}
         onClick={()=>void downloadPublication(entry.id as PublicationCarouselId)}>Скачать пакет</button>
+       {!publicationCarouselApproved(entry)&&entry.approvals.textApproved&&
+         <p role="status">{UNAPPROVED_DESIGN_MESSAGE}</p>}
       </div>
      </div>
     </article>)}
    </div>
    <button type="button" className="personaEditorialExport"
-    disabled={busy} onClick={()=>void downloadPublication(null)}>
+    disabled={busy||publishRows.some(p=>!publicationCarouselApproved(p))}
+    onClick={()=>void downloadPublication(null)}>
     {busy?'Собираю архив…':'Скачать все четыре одним архивом'}
    </button>
    {publishError&&<p role="alert" className="personaEditorialError">{publishError}</p>}
