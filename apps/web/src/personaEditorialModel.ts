@@ -34,9 +34,9 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
  const c=PALETTE_CONTRAST[post.preset];
  return c.bg.every(bg=>editorialContrastRatio(c.main,bg)>=4.5&&editorialContrastRatio(c.heading,bg)>=3);
 }
-export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
+export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection])]));
+  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),post.research??null]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -50,9 +50,9 @@ const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approved
  * Manual approvals for already-approved local projects always take precedence.
  */
 /** Separate text hash: palette changes cannot undo written approval. */
-export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'>):string{
+export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'> & Partial<Pick<EditorialPost,'research'>>):string{
  return editorialHash(JSON.stringify([post.title,post.topic,post.goal,post.caption,
-  post.slides.map(s=>[s.id,s.text])]));
+  post.slides.map(s=>[s.id,s.text]),post.research??null]));
 }
 function editorialHash(value:string):string{
  let hash=0x811c9dc5;
@@ -135,6 +135,12 @@ export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
 export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
+/** Imported research is evidence supplied by a person, not automatic fact verification. */
+export type EditorialResearch={
+ provider:'manual';
+ sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
+ interpretationSlides:string[];
+};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
   fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
@@ -143,7 +149,33 @@ export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
   designApprovedAt?:string|null;contentHashAtDesignApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
- origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string};
+ origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string;research?:EditorialResearch};
+/** SOURCE_PASS is meaningful only for imported researched posts. Other legacy
+ * projects keep their existing approval policy unchanged. */
+export function editorialSourcesPass(post:EditorialPost):boolean{
+ if(!post.research)return true;
+ return post.slides.every(slide=>{
+  const sources=post.research!.sourceItems.filter(item=>item.slideId===slide.id);
+  return sources.length>0?sources.every(item=>item.reviewed):
+   post.research!.interpretationSlides.includes(slide.id);
+ });
+}
+/** Explicit human review of a citation; no network request or inferred verification. */
+export function setEditorialSourceReviewed(
+ post:EditorialPost,slideId:string,url:string,reviewed:boolean,
+ now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ if(!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден в проекте');
+ const research:EditorialResearch={...post.research,sourceItems:post.research.sourceItems.map(x=>
+  x.slideId===slideId&&x.url===url?{...x,reviewed}:x)};
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
@@ -399,6 +431,18 @@ export function validatePost(post:EditorialPost):void{
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
   throw Error('Invalid editorial project');
+ if(post.research){
+  const r=post.research,ids=new Set(post.slides.map(s=>s.id));
+  if(r.provider!=='manual'||!Array.isArray(r.sourceItems)||r.sourceItems.length>28||
+   !Array.isArray(r.interpretationSlides)||
+   r.interpretationSlides.some(id=>!ids.has(id))||
+   new Set(r.interpretationSlides).size!==r.interpretationSlides.length||
+   r.sourceItems.some(x=>!ids.has(x.slideId)||!x.title||x.title.length>160||
+    typeof x.reviewed!=='boolean'||!/^https?:\/\/[^\s]+$/i.test(x.url)||x.url.length>2048||
+    x.url.includes('@'))||
+   new Set(r.sourceItems.map(x=>x.slideId+'|'+x.url)).size!==r.sourceItems.length)
+   throw Error('Invalid editorial research evidence');
+ }
  const a=post.approvals;
  if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||
   a.checklist.some(x=>typeof x!=='boolean')))throw Error('Invalid carousel checklist');
@@ -433,6 +477,17 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    {...result.approvals,design:false};
  }else if(changes.preset!==undefined||changes.fontPreset!==undefined)
   result.approvals={...result.approvals,design:false};
+ // Changed wording invalidates human verification for affected factual claims.
+ if(result.research&&(changes.topic!==undefined||changes.title!==undefined||
+    changes.goal!==undefined||changes.caption!==undefined||changes.slides!==undefined)){
+  const all=changes.topic!==undefined||changes.title!==undefined||
+   changes.goal!==undefined||changes.caption!==undefined;
+  const changed=new Set(changes.slides?.filter((s,i)=>s.text!==post.slides[i]?.text||
+   s.id!==post.slides[i]?.id).map(s=>s.id)??[]);
+  result.research={...result.research,
+   sourceItems:result.research.sourceItems.map(s=>
+    all||changed.has(s.slideId)?{...s,reviewed:false}:s)};
+ }
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
   changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined||
   changes.fontPreset!==undefined){
@@ -452,8 +507,10 @@ export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'
  if(editorialStage(post)!==step)throw Error('Approve steps in order: topic, content, design');
  if(step==='topic'&&(!post.topic.trim()||!post.title.trim()||!post.goal.trim()))
   throw Error('Для утверждения нужна конкретная тема и редакционная задача');
+ if(step==='content'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: проверь каждый источник или явно отметь авторскую интерпретацию');
  if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
   throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
+ if(step==='design'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: источники не проверены');
  if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
   throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
  const approvals={...post.approvals,[step]:true};
