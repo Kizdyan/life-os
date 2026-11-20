@@ -426,7 +426,7 @@ export function validatePost(post:EditorialPost):void{
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
   post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?7:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(post.research?260:170)||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
