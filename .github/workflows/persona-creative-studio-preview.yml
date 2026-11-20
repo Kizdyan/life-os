@@ -52,6 +52,15 @@ jobs:
         run: node tools/persona-industry-browser-e2e.mjs
       - name: Verify all 10 seeded waiting carousels in real Chromium (desktop and mobile)
         run: node tools/persona-carousel-browser-e2e.mjs
+      - name: Verify sourced research intake, author fact review and real PNG ZIP in mobile Chromium
+        run: node tools/persona-research-carousel-browser-e2e.mjs
+      - name: Upload research carousel browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-research-carousel-mobile-evidence
+          path: artifacts/persona-research-browser/
+          if-no-files-found: warn
       - name: Verify unified content calendar opens real Reels and photo jobs in Chromium
         run: node tools/persona-weekly-calendar-browser-e2e.mjs
       - name: Verify real one-click browser-to-MP4 workflow
