@@ -422,7 +422,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       Слайд {i+1}</button>)}
     </div>
     <label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
-     <textarea value={slide?.text??''} maxLength={170} onChange={e=>modifySlide({text:e.target.value})}/>
+     <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
     </label>
     {post.research&&<section className="personaEditorialResearchReview" data-testid="editorial-source-review">
      <h4>Источники и проверка фактов</h4>
@@ -445,7 +445,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       </div>;
      })}
     </section>}
-    {post.kind==='carousel'&&<div className="personaEditorialSlideActions">
+    {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
      {post.slides.length<7&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
       setSelectedSlide(post.slides.length);
@@ -470,6 +470,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       aria-pressed={post.preset===x.id} onClick={()=>persist({preset:x.id})}>{x.name}</button>)}
     </div>
     <p>Каждый слайд отдельно: спокойный фон с типографикой либо реальная фотография из твоего архива. Смешивать можно свободно.</p>
+    {post.research&&slide?.photoDirection&&<p className="personaEditorialNote"><strong>Замысел визуала:</strong> {slide.photoDirection}</p>}
     <div className="personaEditorialSlides">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
