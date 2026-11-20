@@ -13,4 +13,5 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --no-audit --no-fund
+      - run: npm run web:typecheck
       - run: npm run web:build
