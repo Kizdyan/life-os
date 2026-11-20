@@ -6,6 +6,7 @@ import {
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
  editorialChecklistState,editorialChecklistReady,editorialSourcesPass,setEditorialSourceReviewed,
+ addEditorialSource,removeEditorialSource,setEditorialInterpretationReviewed,setEditorialPublicCopyReviewed,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
@@ -75,6 +76,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [researchJson,setResearchJson]=useState('');
  const [researchTheme,setResearchTheme]=useState('');
  const [researchBusy,setResearchBusy]=useState(false);
+ const [sourceTitle,setSourceTitle]=useState('');
+ const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
  const [baselinePreviewError,setBaselinePreviewError]=useState('');
@@ -196,6 +199,19 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onCreate(created);onSelect(id);setResearchTheme('');
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
   finally{setResearchBusy(false)}
+ }
+ function updateResearch(fn:(current:EditorialPost)=>EditorialPost){
+  if(!post)return;
+  try{onChange(fn(post));setError('')}
+  catch(e){setError(e instanceof Error?e.message:'Ошибка проверки источника')}
+ }
+ function addCurrentSource(){
+  if(!slide)return;
+  try{
+   if(!post)return;
+   onChange(addEditorialSource(post,slide.id,sourceTitle,sourceUrl));
+   setSourceTitle('');setSourceUrl('');setError('');
+  }catch(e){setError(e instanceof Error?e.message:'Источник не добавлен')}
  }
  function reviewSource(slideId:string,url:string,reviewed:boolean){
   if(!post)return;
@@ -473,21 +489,42 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <p>Открой ссылки, сопоставь каждый факт с оригиналом и отметь только действительно подтверждённые.
       Галочки — ручная редакторская проверка, не автоматический аудит. Если изменишь текст, проверку потребуется повторить.</p>
      <p role="status"><strong>Источник: {sourcePass?'SOURCE_PASS · проверено автором':'UNVERIFIED · утверждение текста заблокировано'}</strong></p>
+     <label>
+      <input type="checkbox" data-testid="research-public-copy-review"
+       checked={post.research.copyReviewed===true}
+       onChange={e=>updateResearch(current=>setEditorialPublicCopyReviewed(current,e.target.checked))}/>
+      Я проверил заголовок и подпись: в них нет неподтверждённых фактов
+     </label>
      {post.slides.map((s,i)=>{
       const sources=post.research!.sourceItems.filter(x=>x.slideId===s.id);
       return <div key={s.id} className="personaEditorialResearchSlide">
        <strong>Слайд {i+1}: {s.text.slice(0,85)}</strong>
-       {!sources.length&&<p>{post.research!.interpretationSlides.includes(s.id)?
-        'Авторская интерпретация: на слайде не должно быть непроверенных фактов.' :
-        'Нет источника: требуется исправить исследование.'}</p>}
+       {!sources.length&&<label>
+        <input type="checkbox" checked={post.research!.interpretationSlides.includes(s.id)}
+         onChange={e=>updateResearch(current=>setEditorialInterpretationReviewed(current,s.id,e.target.checked))}/>
+        Проверено автором: это исключительно художественный вывод или мнение, без проверяемых фактов
+       </label>}
        {sources.map(source=><div key={source.url}>
         <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} · источник</a>
         <label><input type="checkbox" checked={source.reviewed}
          onChange={e=>reviewSource(s.id,source.url,e.target.checked)}/>
          Проверено по оригиналу</label>
+        <button type="button" onClick={()=>updateResearch(current=>removeEditorialSource(current,s.id,source.url))}>Убрать источник</button>
        </div>)}
       </div>;
      })}
+     {slide&&<div className="personaEditorialResearchSlide">
+      <strong>Добавить источник для выбранного слайда {selectedSlide+1}</strong>
+      <label>Название источника
+       <input value={sourceTitle} maxLength={160} onChange={e=>setSourceTitle(e.target.value)}/>
+      </label>
+      <label>Прямая ссылка на источник
+       <input type="url" value={sourceUrl} maxLength={2048}
+        onChange={e=>setSourceUrl(e.target.value)} placeholder="https://..."/>
+      </label>
+      <button type="button" disabled={!sourceTitle.trim()||!sourceUrl.trim()}
+       onClick={addCurrentSource}>Добавить как непроверенный</button>
+     </div>}
     </section>}
     {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
      {post.slides.length<7&&<button type="button" onClick={()=>{
