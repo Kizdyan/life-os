@@ -577,9 +577,9 @@ export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'
  if(editorialStage(post)!==step)throw Error('Approve steps in order: topic, content, design');
  if(step==='topic'&&(!post.topic.trim()||!post.title.trim()||!post.goal.trim()))
   throw Error('Для утверждения нужна конкретная тема и редакционная задача');
- if(step==='content'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: проверь каждый источник или явно отметь авторскую интерпретацию');
  if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
   throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
+ if(step==='content'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: проверь каждый источник или явно отметь авторскую интерпретацию');
  if(step==='design'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: источники не проверены');
  if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
   throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
