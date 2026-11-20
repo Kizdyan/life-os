@@ -5,7 +5,8 @@ import {
  CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
- editorialChecklistState,editorialChecklistReady,
+ editorialChecklistState,editorialChecklistReady,editorialSourcesPass,setEditorialSourceReviewed,
+ addEditorialSource,removeEditorialSource,setEditorialInterpretationReviewed,setEditorialPublicCopyReviewed,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
@@ -15,6 +16,8 @@ import {
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
  UNAPPROVED_PUBLICATION_MESSAGE,UNAPPROVED_DESIGN_MESSAGE,type PublicationCarouselId
 } from './personaEditorialPublish';
+import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
+import {personaWorkerUrl} from './personaWorkerUrl';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -70,6 +73,11 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
  const [kind,setKind]=useState<PostKind>('carousel');
+ const [researchJson,setResearchJson]=useState('');
+ const [researchTheme,setResearchTheme]=useState('');
+ const [researchBusy,setResearchBusy]=useState(false);
+ const [sourceTitle,setSourceTitle]=useState('');
+ const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
  const [baselinePreviewError,setBaselinePreviewError]=useState('');
@@ -88,6 +96,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat);
+ const sourcePass=post?editorialSourcesPass(post):false;
+ const exactCanvasPreview=Boolean(post?.research||(post?.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'));
  const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
   (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
    archiveChoices.map(x=>x.key)));
@@ -99,13 +109,13 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  useEffect(()=>{
   let alive=true;let previewUrl:string|null=null;
   setBaselinePreviewUrl(null);setBaselinePreviewError('');
-  if(post?.id!==CAROUSEL_BASELINE_ID||post.fontPreset!=='playfair-inter'||!slide)return;
+  if(!post||!slide||!exactCanvasPreview)return;
   void renderEditorialSlide(post,slide,selectedSlide).then(blob=>{
    if(!alive)return;
    previewUrl=URL.createObjectURL(blob);setBaselinePreviewUrl(previewUrl);
   }).catch(e=>{if(alive)setBaselinePreviewError((e as Error).message)});
   return()=>{alive=false;if(previewUrl)URL.revokeObjectURL(previewUrl)};
- },[post?.id,post?.revision,slide?.id,slide?.text,selectedSlide,post?.fontPreset,post?.preset]);
+ },[post?.id,post?.revision,slide?.id,slide?.text,selectedSlide,post?.fontPreset,post?.preset,exactCanvasPreview]);
  useEffect(()=>{
   let alive=true,url:string|null=null;
   setAsset(null);
@@ -151,6 +161,61 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  function setChecklist(index:number,checked:boolean){
   if(!post)return;
   try{onChange(setEditorialChecklistItem(post,index,checked));setError('')}
+  catch(e){setError((e as Error).message)}
+ }
+ function importResearch(){
+  try{
+   const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+   const created=importResearchCarousel(id,researchJson);
+   onCreate(created);onSelect(id);setError('');setResearchJson('');
+  }catch(e){setError('Импорт не выполнен: '+(e as Error).message)}
+ }
+ async function researchWithPerplexity(){
+  if(researchBusy)return;
+  if(researchTheme.trim().length<6||researchTheme.length>250){
+   setError('Укажи конкретную тему для исследования (6–250 символов)');return;
+  }
+  setResearchBusy(true);setError('');
+  try{
+   const healthResponse=await fetch(personaWorkerUrl+'/health',{
+    cache:'no-store',signal:AbortSignal.timeout(4500)
+   });
+   if(!healthResponse.ok)throw Error('Локальный Worker недоступен');
+   const health=await healthResponse.json();
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string'||
+      !health.carouselResearch?.configured)
+    throw Error('Perplexity не подключён к локальному Persona Worker. Доступен ручной импорт JSON.');
+   const response=await fetch(personaWorkerUrl+'/carousel-research',{
+    method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},
+    body:JSON.stringify({theme:researchTheme.trim(),consent:true}),
+    signal:AbortSignal.timeout(115000)
+   });
+   const data=await response.json();
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка исследования');
+   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||!data.packet)
+    throw Error('Worker не вернул исследование с источниками');
+   const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+   const created=importResearchCarousel(id,JSON.stringify(data.packet));
+   onCreate(created);onSelect(id);setResearchTheme('');
+  }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
+  finally{setResearchBusy(false)}
+ }
+ function updateResearch(fn:(current:EditorialPost)=>EditorialPost){
+  if(!post)return;
+  try{onChange(fn(post));setError('')}
+  catch(e){setError(e instanceof Error?e.message:'Ошибка проверки источника')}
+ }
+ function addCurrentSource(){
+  if(!slide)return;
+  try{
+   if(!post)return;
+   onChange(addEditorialSource(post,slide.id,sourceTitle,sourceUrl));
+   setSourceTitle('');setSourceUrl('');setError('');
+  }catch(e){setError(e instanceof Error?e.message:'Источник не добавлен')}
+ }
+ function reviewSource(slideId:string,url:string,reviewed:boolean){
+  if(!post)return;
+  try{onChange(setEditorialSourceReviewed(post,slideId,url,reviewed));setError('')}
   catch(e){setError((e as Error).message)}
  }
  function openBaseline(){
@@ -321,6 +386,29 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </div>
     <div className="personaEditorialMiniStats"><strong>{posts.length}</strong><span>редакционных проектов</span></div>
    </div>
+   <details className="personaEditorialNote" data-testid="editorial-research-import">
+    <summary><strong>Создать карусель из исследования</strong> · Perplexity / проверяемый JSON</summary>
+    <p>Новый проект в существующей редакции Persona. Источники будут помечены как непроверенные:
+     одних ссылок недостаточно для публикации.</p>
+    <label>Тема для поиска Perplexity
+     <input value={researchTheme} maxLength={250}
+      onChange={e=>setResearchTheme(e.target.value)}
+      placeholder="Например: необычное решение композитора, изменившее известный фильм"/>
+    </label>
+    <button type="button" disabled={researchBusy||researchTheme.trim().length<6}
+     onClick={()=>void researchWithPerplexity()}>
+     {researchBusy?'Исследую…':'Исследовать через Perplexity (платный запрос)'}
+    </button>
+    {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
+    <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
+    <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
+    <button type="button" onClick={()=>copy(JSON.stringify(RESEARCH_CAROUSEL_EXAMPLE,null,2))}>Скопировать пример JSON</button>
+    <label>JSON исследования с фактами, слайдами и ссылками
+     <textarea rows={9} value={researchJson} onChange={e=>setResearchJson(e.target.value)}
+      placeholder="Вставь JSON, полученный после исследования. Для каждого фактического слайда нужен источник, для авторского вывода — interpretation: true."/>
+    </label>
+    <button type="button" disabled={!researchJson.trim()} onClick={importResearch}>Импортировать как черновик</button>
+   </details>
    {targetId?.startsWith('photo-week-')&&<p className="personaEditorialNote">
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
@@ -394,9 +482,51 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       Слайд {i+1}</button>)}
     </div>
     <label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
-     <textarea value={slide?.text??''} maxLength={170} onChange={e=>modifySlide({text:e.target.value})}/>
+     <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
     </label>
-    {post.kind==='carousel'&&<div className="personaEditorialSlideActions">
+    {post.research&&<section className="personaEditorialResearchReview" data-testid="editorial-source-review">
+     <h4>Источники и проверка фактов</h4>
+     <p>Открой ссылки, сопоставь каждый факт с оригиналом и отметь только действительно подтверждённые.
+      Галочки — ручная редакторская проверка, не автоматический аудит. Если изменишь текст, проверку потребуется повторить.</p>
+     <p role="status"><strong>Источник: {sourcePass?'SOURCE_PASS · проверено автором':'UNVERIFIED · утверждение текста заблокировано'}</strong></p>
+     <label>
+      <input type="checkbox" data-testid="research-public-copy-review"
+       checked={post.research.copyReviewed===true}
+       onChange={e=>updateResearch(current=>setEditorialPublicCopyReviewed(current,e.target.checked))}/>
+      Я проверил заголовок и подпись: в них нет неподтверждённых фактов
+     </label>
+     {post.slides.map((s,i)=>{
+      const sources=post.research!.sourceItems.filter(x=>x.slideId===s.id);
+      return <div key={s.id} className="personaEditorialResearchSlide">
+       <strong>Слайд {i+1}: {s.text.slice(0,85)}</strong>
+       {!sources.length&&<label>
+        <input type="checkbox" checked={post.research!.interpretationSlides.includes(s.id)}
+         onChange={e=>updateResearch(current=>setEditorialInterpretationReviewed(current,s.id,e.target.checked))}/>
+        Проверено автором: это исключительно художественный вывод или мнение, без проверяемых фактов
+       </label>}
+       {sources.map(source=><div key={source.url}>
+        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} · источник</a>
+        <label><input type="checkbox" checked={source.reviewed}
+         onChange={e=>reviewSource(s.id,source.url,e.target.checked)}/>
+         Проверено по оригиналу</label>
+        <button type="button" onClick={()=>updateResearch(current=>removeEditorialSource(current,s.id,source.url))}>Убрать источник</button>
+       </div>)}
+      </div>;
+     })}
+     {slide&&<div className="personaEditorialResearchSlide">
+      <strong>Добавить источник для выбранного слайда {selectedSlide+1}</strong>
+      <label>Название источника
+       <input value={sourceTitle} maxLength={160} onChange={e=>setSourceTitle(e.target.value)}/>
+      </label>
+      <label>Прямая ссылка на источник
+       <input type="url" value={sourceUrl} maxLength={2048}
+        onChange={e=>setSourceUrl(e.target.value)} placeholder="https://..."/>
+      </label>
+      <button type="button" disabled={!sourceTitle.trim()||!sourceUrl.trim()}
+       onClick={addCurrentSource}>Добавить как непроверенный</button>
+     </div>}
+    </section>}
+    {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
      {post.slides.length<7&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
       setSelectedSlide(post.slides.length);
@@ -411,7 +541,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </label>
     <button type="button" className="personaEditorialCopy" onClick={()=>copy(post.caption)}>Скопировать подпись</button>
     {!post.approvals.content?<button type="button" className="personaEditorialApprove"
-     onClick={()=>void approve('content')} disabled={!post.caption.trim()}>Утвердить тексты и подпись</button>:
+     onClick={()=>void approve('content')} disabled={!post.caption.trim()||!sourcePass}>Утвердить тексты и подпись</button>:
      <span className="personaEditorialApproved">Текст утверждён ✓</span>}
    </section>}
    {post.approvals.content&&<section aria-label="Шаг 3. Оформление">
@@ -421,6 +551,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       aria-pressed={post.preset===x.id} onClick={()=>persist({preset:x.id})}>{x.name}</button>)}
     </div>
     <p>Каждый слайд отдельно: спокойный фон с типографикой либо реальная фотография из твоего архива. Смешивать можно свободно.</p>
+    {post.research&&slide?.photoDirection&&<p className="personaEditorialNote"><strong>Замысел визуала:</strong> {slide.photoDirection}</p>}
     <div className="personaEditorialSlides">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
@@ -474,11 +605,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset+
-      (post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?' personaEditorialPreview--exact':'')}
+      (exactCanvasPreview?' personaEditorialPreview--exact':'')}
      data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
-     {post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
-       baselinePreviewUrl?<img data-testid="baseline-exact-preview" src={baselinePreviewUrl} alt={'Готовый PNG слайда '+(selectedSlide+1)}/>:
+     {exactCanvasPreview?
+       baselinePreviewUrl?<img data-testid={post.research?'research-exact-preview':'baseline-exact-preview'} src={baselinePreviewUrl} alt={'Готовый PNG слайда '+(selectedSlide+1)}/>:
         <span>{baselinePreviewError||'Готовится точный PNG...'}</span>:
        <>
         {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
@@ -489,9 +620,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
         </div>
        </>}
     </div>
-    <p>{post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
-      'Предпросмотр сделан тем же Canvas-рендером, что и экспортируемый PNG 1080×1350.':
+    <p>{exactCanvasPreview?
+      'Предпросмотр сделан тем же Canvas-рендером, что и экспортируемый PNG 1080×1350, без служебных подписей.':
       'Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.'}</p>
+    {exactCanvasPreview&&baselinePreviewUrl&&<a href={baselinePreviewUrl}
+     download={'slide-'+String(selectedSlide+1).padStart(2,'0')+'-review.png'}>Скачать этот PNG для проверки на телефоне</a>}
     {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
      data-testid="carousel-acceptance-checklist">
      <legend>Чек-лист приёмки · 7 проверок</legend>

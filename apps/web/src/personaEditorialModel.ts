@@ -34,15 +34,20 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
  const c=PALETTE_CONTRAST[post.preset];
  return c.bg.every(bg=>editorialContrastRatio(c.main,bg)>=4.5&&editorialContrastRatio(c.heading,bg)>=3);
 }
-export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
+export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection])]));
+  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),...(post.research?[post.research]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
 type ChatCarouselApproval={textApproved:boolean;textApprovedAt:string;designApproved:boolean;
  designApprovedAt:string|null;checkedBy:string;checklist:boolean[];checklistScope:'text';contentHashAtApproval:string};
-const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approvedRecords;
+const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=Object.fromEntries(
+ Object.entries(approvedRecords).map(([id,record])=>{
+  if(record.checklistScope!=='text')throw Error('Invalid chat approval scope');
+  return [id,{...record,checklistScope:'text' as const}];
+ })
+);
 
 /** Use chat-approved data INSIDE the existing editorial approvals/gate, not as a parallel status.
  * A locally changed content fingerprint is never reapproved by this import.
@@ -50,9 +55,9 @@ const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approved
  * Manual approvals for already-approved local projects always take precedence.
  */
 /** Separate text hash: palette changes cannot undo written approval. */
-export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'>):string{
+export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'> & Partial<Pick<EditorialPost,'research'>>):string{
  return editorialHash(JSON.stringify([post.title,post.topic,post.goal,post.caption,
-  post.slides.map(s=>[s.id,s.text])]));
+  post.slides.map(s=>[s.id,s.text]),...(post.research?[post.research]:[])]));
 }
 function editorialHash(value:string):string{
  let hash=0x811c9dc5;
@@ -135,6 +140,14 @@ export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
 export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
+/** Imported research is evidence supplied by a person, not automatic fact verification. */
+export type EditorialResearch={
+ provider:'manual';
+ sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
+ interpretationSlides:string[];
+ /** Manual review of public title and caption, not machine fact-checking. */
+ copyReviewed?:boolean;
+};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
   fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
@@ -143,7 +156,95 @@ export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
   designApprovedAt?:string|null;contentHashAtDesignApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
- origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string};
+ origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string;research?:EditorialResearch};
+/** Existing legacy projects keep saved approvals. Every NEW researched project
+ * starts with a source contract that is unverified until reviewed by the author. */
+export function editorialSourcesPass(post:EditorialPost):boolean{
+ if(!post.research)return true;
+ if(post.research.copyReviewed!==true)return false;
+ return post.slides.every(slide=>{
+  const sources=post.research!.sourceItems.filter(item=>item.slideId===slide.id);
+  const interpretation=post.research!.interpretationSlides.includes(slide.id);
+  return interpretation?sources.length===0:sources.length>0&&sources.every(item=>item.reviewed);
+ });
+}
+/** Explicit human review of a citation; no network request or inferred verification. */
+export function setEditorialSourceReviewed(
+ post:EditorialPost,slideId:string,url:string,reviewed:boolean,
+ now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ if(!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден в проекте');
+ const research:EditorialResearch={...post.research,sourceItems:post.research.sourceItems.map(x=>
+  x.slideId===slideId&&x.url===url?{...x,reviewed}:x)};
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
+/** Changing evidence revokes all dependent content and visual approvals. */
+function changeEditorialEvidence(post:EditorialPost,research:EditorialResearch,now:string):EditorialPost{
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  contentHashAtApproval:'',checkedAt:'',checkedBy:'',checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
+export function editorialValidEvidenceUrl(raw:string):boolean{
+ try{
+  const u=new URL(raw),h=u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(!['https:','http:'].includes(u.protocol)||!h||u.username||u.password||
+     raw.length>2048||u.hash.length>512)return false;
+  if(h==='localhost'||h.endsWith('.localhost')||h==='0.0.0.0'||h==='::1'||
+    h.endsWith('.local')||h.startsWith('169.254.')||h.startsWith('192.168.')||
+    h.startsWith('127.')||h.startsWith('10.')||h.startsWith('0.')||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)||h.startsWith('fe80:')||
+    h.startsWith('fc')||h.startsWith('fd'))return false;
+  return true;
+ }catch{return false}
+}
+/** Sources are initially unverified; a URL by itself never proves the fact. */
+export function addEditorialSource(
+ post:EditorialPost,slideId:string,title:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(!title.trim()||title.length>160||!editorialValidEvidenceUrl(url))throw Error('Источник: неверное название или URL');
+ if(post.research.interpretationSlides.includes(slideId))
+  throw Error('Сначала сними пометку об авторской интерпретации');
+ if(post.research.sourceItems.filter(x=>x.slideId===slideId).length>=4)
+  throw Error('Не более четырёх источников на слайд');
+ if(post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Этот источник уже добавлен');
+ const research:EditorialResearch={...post.research,sourceItems:[...post.research.sourceItems,
+  {slideId,title:title.trim(),url,reviewed:false}]};
+ return changeEditorialEvidence(post,research,now);
+}
+export function removeEditorialSource(
+ post:EditorialPost,slideId:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден');
+ return changeEditorialEvidence(post,{...post.research,
+  sourceItems:post.research.sourceItems.filter(x=>x.slideId!==slideId||x.url!==url)},now);
+}
+export function setEditorialInterpretationReviewed(
+ post:EditorialPost,slideId:string,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(reviewed&&post.research.sourceItems.some(x=>x.slideId===slideId))
+  throw Error('У слайда есть источники; нельзя маскировать факт авторской трактовкой');
+ const interpretationSlides=reviewed?[...new Set([...post.research.interpretationSlides,slideId])]:
+  post.research.interpretationSlides.filter(id=>id!==slideId);
+ return changeEditorialEvidence(post,{...post.research,interpretationSlides},now);
+}
+export function setEditorialPublicCopyReviewed(
+ post:EditorialPost,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ return changeEditorialEvidence(post,{...post.research,copyReviewed:reviewed},now);
+}
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
@@ -268,6 +369,7 @@ export function createResearchedEditorialPost(
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
   goal:angle.trim(),slides:steps.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
   caption:draft?.caption?.slice(0,4500)??'',preset:'ink',
+  research:{provider:'manual',sourceItems:[],interpretationSlides:[],copyReviewed:false},
   approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(result);return result;
@@ -286,7 +388,7 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   title:'Почему пауза сильнее реплики',topic:'Почему пауза сильнее реплики',
   goal:'Авторская мысль · text-only, без фотографий',
   slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
-  caption:baselineCaptions.variants[baselineCaptions.active],preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
+  caption:baselineCaptions.active==='short'||baselineCaptions.active==='medium'||baselineCaptions.active==='long'?baselineCaptions.variants[baselineCaptions.active]:baselineCaptions.variants.medium,preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
@@ -394,11 +496,24 @@ export function validatePost(post:EditorialPost):void{
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
   post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?7:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(post.research?260:170)||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
   throw Error('Invalid editorial project');
+ if(post.research){
+  const r=post.research,ids=new Set(post.slides.map(s=>s.id));
+  if(r.provider!=='manual'||(r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
+    !Array.isArray(r.sourceItems)||r.sourceItems.length>28||
+   !Array.isArray(r.interpretationSlides)||
+   r.interpretationSlides.some(id=>!ids.has(id))||
+   new Set(r.interpretationSlides).size!==r.interpretationSlides.length||
+   r.sourceItems.some(x=>!ids.has(x.slideId)||!x.title||x.title.length>160||
+    typeof x.reviewed!=='boolean'||!editorialValidEvidenceUrl(x.url)||
+    r.interpretationSlides.includes(x.slideId))||
+   new Set(r.sourceItems.map(x=>x.slideId+'|'+x.url)).size!==r.sourceItems.length)
+   throw Error('Invalid editorial research evidence');
+ }
  const a=post.approvals;
  if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||
   a.checklist.some(x=>typeof x!=='boolean')))throw Error('Invalid carousel checklist');
@@ -433,6 +548,21 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    {...result.approvals,design:false};
  }else if(changes.preset!==undefined||changes.fontPreset!==undefined)
   result.approvals={...result.approvals,design:false};
+ // Changed wording invalidates human verification for affected factual claims.
+ if(result.research&&(changes.topic!==undefined||changes.title!==undefined||
+    changes.goal!==undefined||changes.caption!==undefined||changes.slides!==undefined)){
+  const all=changes.topic!==undefined||changes.title!==undefined||
+   changes.goal!==undefined||changes.caption!==undefined;
+  const changed=new Set(changes.slides?.filter((s,i)=>s.text!==post.slides[i]?.text||
+   s.id!==post.slides[i]?.id).map(s=>s.id)??[]);
+  const validIds=new Set(result.slides.map(s=>s.id));
+  result.research={...result.research,
+   copyReviewed:all?false:result.research.copyReviewed,
+   interpretationSlides:result.research.interpretationSlides.filter(
+    id=>validIds.has(id)&&!changed.has(id)),
+   sourceItems:result.research.sourceItems.filter(s=>validIds.has(s.slideId)).map(s=>
+    all||changed.has(s.slideId)?{...s,reviewed:false}:s)};
+ }
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
   changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined||
   changes.fontPreset!==undefined){
@@ -454,6 +584,8 @@ export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'
   throw Error('Для утверждения нужна конкретная тема и редакционная задача');
  if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
   throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
+ if(step==='content'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: проверь каждый источник или явно отметь авторскую интерпретацию');
+ if(step==='design'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: источники не проверены');
  if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
   throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
  const approvals={...post.approvals,[step]:true};
@@ -481,6 +613,12 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
    !Array.isArray((parsed as EditorialStore).posts)||
    (parsed as EditorialStore).posts.length>200)return {version:1,posts:[]};
   const posts=(parsed as EditorialStore).posts.map(post=>{
+   // Revocation on load is safer than hiding all drafts when an old review is stale.
+   if(post.research&&(post.approvals?.content||post.approvals?.design)&&!editorialSourcesPass(post)){
+    return {...post,approvals:{...post.approvals,content:false,design:false,
+     designApproved:false,designApprovedAt:null,contentHashAtDesignApproval:'',
+     textApproved:false,textHashAtApproval:'',checklist:emptyChecklist()}};
+   }
    // Check saved manual approval before importing text approvals from the chat.
    if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
       post.approvals.contentHashAtApproval!==editorialContentHash(post)){

@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "jsx": "react-jsx",
+    "types": [
+      "vite/client"
+    ],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.tsx"
+  ],
+  "exclude": [
+    "apps/web/src/**/*.test.ts",
+    "apps/web/src/**/*.test.tsx"
+  ]
+}

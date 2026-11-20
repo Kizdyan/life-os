@@ -133,6 +133,11 @@ jobs:
         run: |
           set -o pipefail
           npm run typecheck 2>&1 | tee /tmp/persona-ci-typecheck.log
+      - name: Typecheck Persona React web source
+        if: success()
+        run: |
+          set -o pipefail
+          npm run web:typecheck 2>&1 | tee /tmp/persona-ci-web-typecheck.log
       - name: Preserve failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -144,4 +149,5 @@ jobs:
             /tmp/persona-ci-scenario-delivery.log
             /tmp/persona-ci-test.log
             /tmp/persona-ci-typecheck.log
+            /tmp/persona-ci-web-typecheck.log
           if-no-files-found: warn

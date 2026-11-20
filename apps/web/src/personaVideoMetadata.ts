@@ -1,10 +1,7 @@
-export type VideoMetadataElement = {
-  duration: number;
-  src: string;
-  preload?: string;
-  onloadedmetadata: null | (() => void);
-  onerror: null | (() => void);
-};
+/** Match DOM event handler signatures exactly; HTMLVideoElement is the real adapter. */
+export type VideoMetadataElement = Pick<
+  HTMLVideoElement,'duration'|'src'|'preload'|'onloadedmetadata'|'onerror'
+>;
 
 export type VideoMetadataPort = {
   createObjectUrl: (file: File) => string;
