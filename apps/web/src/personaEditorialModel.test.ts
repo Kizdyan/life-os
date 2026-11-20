@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest';
+import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {
@@ -132,7 +133,12 @@ describe('Persona Editorial Content Planner',()=>{
   expect(post.preset).toBe('chocolate-graphite');
   expect(post.approvals).toMatchObject({topic:false,content:false,design:false,checklist:[false,false,false,false,false,false,false]});
   expect(post.approvals.content).toBe(false);
-  expect(post.caption).toContain('Разница между ними — не в длительности');
+  expect(post.caption).toBe(baselineCaptions.variants.medium);
+  expect(baselineCaptions.active).toBe('medium');
+  expect(post.fontPreset).toBe('playfair-inter');
+  expect(Object.keys(baselineCaptions.variants).sort()).toEqual(['long','medium','short']);
+  for(const candidate of Object.values(baselineCaptions.variants))
+   expect(candidate).not.toMatch(/а вы как думаете|подпишись/iu);
   expect(SEED_CAROUSELS).toHaveLength(10);
  });
  it('disables final approval until all six author choices and automatic contrast pass',()=>{
@@ -362,7 +368,7 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   expect(preset.approvals.content).toBe(true);
   expect(preset.approvals.designApproved).toBe(false);
   expect(editorialTextHash(preset)).toBe(editorialTextHash(signed));
-  const font=reviseEditorialPost(signed,{fontPreset:'playfair-inter'});
+  const font=reviseEditorialPost(signed,{fontPreset:'legacy'});
   expect(font.approvals.textApproved).toBe(true);
   expect(font.approvals.designApproved).toBe(false);
   expect(editorialDesignHash(font)).not.toBe(editorialDesignHash(signed));

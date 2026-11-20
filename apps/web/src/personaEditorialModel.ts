@@ -1,4 +1,5 @@
 import approvedRecords from '../../../config/author-approved-carousels.json';
+import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
  * This is a companion to existing PHOTO-001…010 ProductionJobs, not a second media job.
@@ -60,7 +61,9 @@ function editorialHash(value:string):string{
 }
 /** Content, palette and font-version fingerprint for artist visual approval. */
 export function editorialDesignHash(post:EditorialPost):string{
- return editorialHash(JSON.stringify([editorialContentHash(post),'persona-editorial-fonts-v1',
+ return editorialHash(JSON.stringify([editorialContentHash(post),
+  post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
+   'persona-baseline-artist-layout-v2':'persona-editorial-fonts-v1',
   post.fontPreset??'legacy']));
 }
 export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
@@ -283,8 +286,7 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   title:'Почему пауза сильнее реплики',topic:'Почему пауза сильнее реплики',
   goal:'Авторская мысль · text-only, без фотографий',
   slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
-  caption:'Пауза в кадре — это не пустота, а решение. Персонаж, который молчит дольше, чем нужно реплике, уже что-то скрывает от собеседника или от себя. Задача актёра — не "держать паузу", а точно знать, что именно происходит внутри неё. Когда это знание есть, зритель читает его без слов. Когда его нет, пауза превращается в ожидание. Разница между ними — не в длительности, а в наличии внутреннего действия.',
-  preset:'chocolate-graphite',approvals:freshApproval(),origin:'researched-topic',
+  caption:baselineCaptions.variants[baselineCaptions.active],preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }

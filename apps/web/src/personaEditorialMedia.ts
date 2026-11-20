@@ -1,4 +1,7 @@
-import {editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {CAROUSEL_BASELINE_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import '@fontsource/playfair-display/400.css';
+import '@fontsource/playfair-display/500.css';
+import '@fontsource/inter/400.css';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -112,7 +115,114 @@ function wrapText(ctx:CanvasRenderingContext2D,text:string,width:number,maxLines
  }
  return lines;
 }
+
+/** Baseline v2 artist layout. Isolated from every other carousel preset. */
+const BASELINE_CHOCOLATE='#2B1D14',BASELINE_GRAPHITE='#1C1C1E',
+ BASELINE_CREAM='#F2E9DC',BASELINE_BEIGE='#C9A882';
+let baselineFixedGrain:HTMLCanvasElement|null=null;
+function baselineGrain():HTMLCanvasElement{
+ if(baselineFixedGrain)return baselineFixedGrain;
+ const c=document.createElement('canvas');c.width=1080;c.height=1350;
+ const ctx=c.getContext('2d');if(!ctx)throw Error('Canvas 2D grain unavailable');
+ const pixels=ctx.createImageData(1080,1350);
+ // One constant seed, identical independent of slide, run order, or export path.
+ let seed=0x1ced2026;
+ for(let i=0;i<pixels.data.length;i+=4){
+  seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+  const value=(seed&0x10000)?255:0;
+  pixels.data[i]=value;pixels.data[i+1]=value;pixels.data[i+2]=value;
+  pixels.data[i+3]=Math.floor(((seed>>>20)&15)*10/15); // 0..10 alpha = up to 3.9%.
+ }
+ ctx.putImageData(pixels,0,0);baselineFixedGrain=c;return c;
+}
+function baselineFont(ctx:CanvasRenderingContext2D,size:number,weight:400|500=500){
+ ctx.font=weight+' '+size+'px "Playfair Display", Georgia, serif';
+ ctx.textBaseline='alphabetic';
+}
+function baselineLine(ctx:CanvasRenderingContext2D,value:string,x:number,y:number,max=900){
+ if(!value.trim())throw Error('Пустой текст в готовой карусели');
+ ctx.fillText(value,x,y,max);
+}
+function baselineTracked(ctx:CanvasRenderingContext2D,text:string,cx:number,y:number,spacing:number){
+ const chars=Array.from(text),widths=chars.map(c=>ctx.measureText(c).width);
+ const width=widths.reduce((n,v)=>n+v,0)+spacing*(chars.length-1);
+ let x=cx-width/2;
+ ctx.save();ctx.textAlign='left';
+ for(let i=0;i<chars.length;i++){ctx.fillText(chars[i],x,y);x+=widths[i]+spacing}
+ ctx.restore();
+}
+async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.slides.length!==6||index<0||index>5||post.preset!=='chocolate-graphite'||
+    slide.visual!=='background'||slide.text!==post.slides[index]?.text)
+  throw Error('Неподдерживаемый вариант эталонной карусели');
+ const fonts=await Promise.all([
+  document.fonts.load('500 100px "Playfair Display"',slide.text),
+  document.fonts.load('400 24px "Inter"','01 / 06')
+ ]);
+ if(fonts.some(faces=>faces.length===0))
+  throw Error('Локальные шрифты Playfair Display / Inter не загрузились; экспорт остановлен');
+ const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+ const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas 2D недоступен');
+ ctx.fillStyle=index%2===0?BASELINE_CHOCOLATE:BASELINE_GRAPHITE;
+ ctx.fillRect(0,0,1080,1350);
+ ctx.drawImage(baselineGrain(),0,0);
+ ctx.fillStyle=BASELINE_CREAM;ctx.textAlign='left';
+ switch(index){
+  case 0:
+   ctx.strokeStyle=BASELINE_BEIGE;ctx.lineWidth=1;
+   ctx.beginPath();ctx.moveTo(90,160.5);ctx.lineTo(522,160.5);ctx.stroke();
+   baselineFont(ctx,88);
+   baselineLine(ctx,'Пауза — это не',90,928);
+   baselineLine(ctx,'отсутствие текста.',90,1051);
+   break;
+  case 1:
+   baselineFont(ctx,72);
+   baselineLine(ctx,'Персонаж уже знает ответ.',90,430);
+   break;
+  case 2:
+   ctx.strokeStyle=BASELINE_BEIGE;ctx.lineWidth=1;
+   ctx.beginPath();ctx.moveTo(90,1250);ctx.lineTo(990,810);ctx.stroke();
+   baselineFont(ctx,80);
+   ctx.fillStyle=BASELINE_CREAM;
+   baselineLine(ctx,'Но сказать правду',90,465);
+   ctx.textAlign='right';ctx.fillStyle=BASELINE_BEIGE;
+   baselineLine(ctx,'— значит что-то',990,1020);
+   baselineLine(ctx,'потерять.',990,1132);
+   break;
+  case 3:
+   ctx.textAlign='center';
+   baselineFont(ctx,84);
+   baselineLine(ctx,'Поэтому',540,470);
+   baselineLine(ctx,'он',540,654);
+   baselineTracked(ctx,'задерживает',540,846,10);
+   baselineLine(ctx,'слово.',540,1010);
+   break;
+  case 4:
+   ctx.fillStyle=BASELINE_BEIGE;
+   ctx.beginPath();ctx.arc(90,90,4,0,Math.PI*2);ctx.fill();
+   ctx.fillStyle=BASELINE_CREAM;ctx.textAlign='center';
+   baselineFont(ctx,96);
+   baselineLine(ctx,'Зритель замечает',540,622);
+   baselineLine(ctx,'этот выбор.',540,757);
+   break;
+  case 5:
+   baselineFont(ctx,100);
+   baselineLine(ctx,'Так молчание',90,530);
+   baselineLine(ctx,'становится',90,700);
+   ctx.fillStyle=BASELINE_BEIGE;
+   baselineLine(ctx,'действием.',150,870);
+   break;
+ }
+ ctx.save();ctx.textAlign='right';ctx.fillStyle=BASELINE_BEIGE;
+ ctx.font='400 24px "Inter", sans-serif';ctx.textBaseline='alphabetic';
+ ctx.fillText(String(index+1).padStart(2,'0')+' / 06',990,1260);
+ ctx.restore();
+ return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
+}
+
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
+  return renderBaselineArtistSlide(post,slide,index);
  const c=document.createElement('canvas');c.width=1080;c.height=1350;
  const ctx=c.getContext('2d');if(!ctx)throw Error('Canvas 2D недоступен');
  const theme=THEMES[post.preset];

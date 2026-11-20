@@ -9,7 +9,7 @@ import {
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
-import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload} from './personaEditorialMedia';
+import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide} from './personaEditorialMedia';
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
@@ -38,13 +38,20 @@ const CHECKLIST_TEXT=[
 ];
 const copy=(text:string)=>{void navigator.clipboard?.writeText(text)};
 
-/** Lightweight first-slide preview; final publication pixels still come from the original Canvas renderer. */
+/** Baseline cover uses the EXACT exported Canvas PNG, not a CSS approximation. */
 function EditorialPublishCover({post}: {post:EditorialPost}){
  const first=post.slides[0];
  const [url,setUrl]=useState<string|null>(null);
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
+  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'){
+   void renderEditorialSlide(post,first,0).then(blob=>{
+    if(!alive)return;
+    objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
+   }).catch(()=>{if(alive)setUrl(null)});
+   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
+  }
   if(first?.visual!=='archive-photo')return;
   (first.photoRef?readEditorialImageByRef(first.photoRef):readEditorialImage(post.id,first.id))
    .then(record=>{if(!alive||!record)return;
@@ -52,10 +59,11 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- return <div className="personaEditorialPublishCover" role="img"
-  aria-label={'Первый слайд: '+post.slides[0].text}>
-  {url&&<img src={url} alt=""/>}
-  <strong>{post.slides[0].text}</strong>
+ const exact=post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter';
+ return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
+  role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
+  {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
+  {!exact&&<strong>{post.slides[0].text}</strong>}
  </div>;
 }
 
@@ -63,6 +71,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const post=posts.find(x=>x.id===targetId)??null;
  const [kind,setKind]=useState<PostKind>('carousel');
  const [selectedSlide,setSelectedSlide]=useState(0);
+ const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
+ const [baselinePreviewError,setBaselinePreviewError]=useState('');
  const [busy,setBusy]=useState(false);
  const [showPublish,setShowPublish]=useState(false);
  const [publishError,setPublishError]=useState('');
@@ -86,6 +96,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const selectedPhotoPosition=photoSequence.findIndex(x=>x.i===selectedSlide);
  useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
+ useEffect(()=>{
+  let alive=true;let previewUrl:string|null=null;
+  setBaselinePreviewUrl(null);setBaselinePreviewError('');
+  if(post?.id!==CAROUSEL_BASELINE_ID||post.fontPreset!=='playfair-inter'||!slide)return;
+  void renderEditorialSlide(post,slide,selectedSlide).then(blob=>{
+   if(!alive)return;
+   previewUrl=URL.createObjectURL(blob);setBaselinePreviewUrl(previewUrl);
+  }).catch(e=>{if(alive)setBaselinePreviewError((e as Error).message)});
+  return()=>{alive=false;if(previewUrl)URL.revokeObjectURL(previewUrl)};
+ },[post?.id,post?.revision,slide?.id,slide?.text,selectedSlide,post?.fontPreset,post?.preset]);
  useEffect(()=>{
   let alive=true,url:string|null=null;
   setAsset(null);
@@ -453,17 +473,25 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {asset?<><p>Локально сохранено: {asset.name}</p><img src={asset.url} alt="Выбранное архивное фото" /></>:
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
-    <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset}
+    <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset+
+      (post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?' personaEditorialPreview--exact':'')}
      data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
-     {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
-     <div className="personaEditorialPreviewOverlay">
-      <span>СЛАЙД {selectedSlide+1} / {post.slides.length}</span>
-      <strong>{slide?.text||'Фото без надписи'}</strong>
-      <small>PERSONA · EDITORIAL</small>
-     </div>
+     {post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
+       baselinePreviewUrl?<img data-testid="baseline-exact-preview" src={baselinePreviewUrl} alt={'Готовый PNG слайда '+(selectedSlide+1)}/>:
+        <span>{baselinePreviewError||'Готовится точный PNG...'}</span>:
+       <>
+        {slide?.visual==='archive-photo'&&asset&&<img src={asset.url} alt=""/>}
+        <div className="personaEditorialPreviewOverlay">
+         <span>СЛАЙД {selectedSlide+1} / {post.slides.length}</span>
+         <strong>{slide?.text||'Фото без надписи'}</strong>
+         <small>PERSONA · EDITORIAL</small>
+        </div>
+       </>}
     </div>
-    <p>Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.</p>
+    <p>{post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
+      'Предпросмотр сделан тем же Canvas-рендером, что и экспортируемый PNG 1080×1350.':
+      'Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.'}</p>
     {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
      data-testid="carousel-acceptance-checklist">
      <legend>Чек-лист приёмки · 7 проверок</legend>

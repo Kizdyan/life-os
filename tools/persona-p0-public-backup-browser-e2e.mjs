@@ -6,6 +6,9 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+const activeBaselineCaption=JSON.parse(await readFile(resolve(
+ 'config/carousel-baseline-pause-captions.json'),'utf8')).variants.medium;
 
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
 const artifacts=resolve('artifacts/persona-p0-brand-backup');
@@ -211,6 +214,15 @@ try{
  const baselineButton=editor.getByRole('button',{name:'Утвердить оформление'});
  assert.equal(await baselineButton.isDisabled(),true);
  await completeCarouselChecklist(editor);
+
+ // Review UI must show EXACT 1080x1350 exported pixels, not a similar HTML mock.
+ const baselineShot=editor.getByTestId('baseline-exact-preview');
+ await baselineShot.waitFor({timeout:18000});
+ const bitmapProof=await baselineShot.evaluate(async image=>{
+  const source=await fetch((image).src).then(r=>r.arrayBuffer());
+  const sum=await crypto.subtle.digest('SHA-256',source);
+  return Array.from(new Uint8Array(sum)).map(x=>x.toString(16).padStart(2,'0')).join('');
+ });
  await baselineButton.click();
  const snapshot=await page.evaluate(()=>{
   const store=JSON.parse(localStorage.getItem('lifeos:persona:editorial-posts:v1')||'{}');
@@ -227,6 +239,8 @@ try{
   'slide-01.png','slide-02.png','slide-03.png','slide-04.png','slide-05.png','slide-06.png','caption.txt'
  ]);
  baseline.slice(0,6).forEach(assertPng);
+ assert.equal(bitmapProof,createHash('sha256').update(baseline[0].bytes).digest('hex'),
+  'Editorial Desk PNG preview must be byte-identical with exported first slide');
  assert.ok(baseline[6].bytes.toString('utf8').includes('Пауза в кадре — это не пустота'));
  await writeFile(join(artifacts,'carousel-baseline-pause-slide-01.png'),baseline[0].bytes);
  await editor.getByRole('button',{name:'Слайд 1'}).click();
@@ -481,8 +495,7 @@ try{
  assert.equal(individualGate.published,false);
  assert.equal(individualGate.checks.length,7);
  assert.ok(individualGate.checks.every(x=>x.pass));
- assert.equal(individual[6].bytes.toString('utf8'),
-  'Пауза в кадре — это не пустота, а решение. Персонаж, который молчит дольше, чем нужно реплике, уже что-то скрывает от собеседника или от себя. Задача актёра — не "держать паузу", а точно знать, что именно происходит внутри неё. Когда это знание есть, зритель читает его без слов. Когда его нет, пауза превращается в ожидание. Разница между ними — не в длительности, а в наличии внутреннего действия.');
+ assert.equal(individual[6].bytes.toString('utf8'),activeBaselineCaption);
  const complete=await downloadZip(page,publicationPage.getByRole('button',
   {name:'Скачать все четыре одним архивом'}),join(artifacts,'persona-four-carousels-publish.zip'));
  assert.equal(complete.length,36);
