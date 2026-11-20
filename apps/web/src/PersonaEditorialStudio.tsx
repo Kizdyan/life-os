@@ -16,6 +16,7 @@ import {
  UNAPPROVED_PUBLICATION_MESSAGE,UNAPPROVED_DESIGN_MESSAGE,type PublicationCarouselId
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
+import {personaWorkerUrl} from './personaWorkerUrl';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -72,6 +73,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const post=posts.find(x=>x.id===targetId)??null;
  const [kind,setKind]=useState<PostKind>('carousel');
  const [researchJson,setResearchJson]=useState('');
+ const [researchTheme,setResearchTheme]=useState('');
+ const [researchBusy,setResearchBusy]=useState(false);
  const [selectedSlide,setSelectedSlide]=useState(0);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
  const [baselinePreviewError,setBaselinePreviewError]=useState('');
@@ -163,6 +166,36 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    const created=importResearchCarousel(id,researchJson);
    onCreate(created);onSelect(id);setError('');setResearchJson('');
   }catch(e){setError('Импорт не выполнен: '+(e as Error).message)}
+ }
+ async function researchWithPerplexity(){
+  if(researchBusy)return;
+  if(researchTheme.trim().length<6||researchTheme.length>250){
+   setError('Укажи конкретную тему для исследования (6–250 символов)');return;
+  }
+  setResearchBusy(true);setError('');
+  try{
+   const healthResponse=await fetch(personaWorkerUrl+'/health',{
+    cache:'no-store',signal:AbortSignal.timeout(4500)
+   });
+   if(!healthResponse.ok)throw Error('Локальный Worker недоступен');
+   const health=await healthResponse.json();
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string'||
+      !health.carouselResearch?.configured)
+    throw Error('Perplexity не подключён к локальному Persona Worker. Доступен ручной импорт JSON.');
+   const response=await fetch(personaWorkerUrl+'/carousel-research',{
+    method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},
+    body:JSON.stringify({theme:researchTheme.trim(),consent:true}),
+    signal:AbortSignal.timeout(115000)
+   });
+   const data=await response.json();
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка исследования');
+   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||!data.packet)
+    throw Error('Worker не вернул исследование с источниками');
+   const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+   const created=importResearchCarousel(id,JSON.stringify(data.packet));
+   onCreate(created);onSelect(id);setResearchTheme('');
+  }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
+  finally{setResearchBusy(false)}
  }
  function reviewSource(slideId:string,url:string,reviewed:boolean){
   if(!post)return;
@@ -340,7 +373,18 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    <details className="personaEditorialNote" data-testid="editorial-research-import">
     <summary><strong>Создать карусель из исследования</strong> · Perplexity / проверяемый JSON</summary>
     <p>Новый проект в существующей редакции Persona. Источники будут помечены как непроверенные:
-     одних ссылок недостаточно для публикации. Встроенного автоматического поиска на этом этапе нет.</p>
+     одних ссылок недостаточно для публикации.</p>
+    <label>Тема для поиска Perplexity
+     <input value={researchTheme} maxLength={250}
+      onChange={e=>setResearchTheme(e.target.value)}
+      placeholder="Например: необычное решение композитора, изменившее известный фильм"/>
+    </label>
+    <button type="button" disabled={researchBusy||researchTheme.trim().length<6}
+     onClick={()=>void researchWithPerplexity()}>
+     {researchBusy?'Исследую…':'Исследовать через Perplexity (платный запрос)'}
+    </button>
+    {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
+    <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
     <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
     <button type="button" onClick={()=>copy(JSON.stringify(RESEARCH_CAROUSEL_EXAMPLE,null,2))}>Скопировать пример JSON</button>
     <label>JSON исследования с фактами, слайдами и ссылками
