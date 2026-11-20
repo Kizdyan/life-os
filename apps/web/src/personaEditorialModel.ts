@@ -179,6 +179,66 @@ export function setEditorialSourceReviewed(
  const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
  validatePost(result);return result;
 }
+/** Changing evidence revokes all dependent content and visual approvals. */
+function changeEditorialEvidence(post:EditorialPost,research:EditorialResearch,now:string):EditorialPost{
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  contentHashAtApproval:'',checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
+export function editorialValidEvidenceUrl(raw:string):boolean{
+ try{
+  const u=new URL(raw),h=u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(!['https:','http:'].includes(u.protocol)||!h||u.username||u.password||
+     raw.length>2048||u.hash.length>512)return false;
+  if(h==='localhost'||h.endsWith('.localhost')||h==='0.0.0.0'||h==='::1'||
+    h.endsWith('.local')||h.startsWith('169.254.')||h.startsWith('192.168.')||
+    h.startsWith('127.')||h.startsWith('10.')||h.startsWith('0.')||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)||h.startsWith('fe80:')||
+    h.startsWith('fc')||h.startsWith('fd'))return false;
+  return true;
+}
+/** Sources are initially unverified; a URL by itself never proves the fact. */
+export function addEditorialSource(
+ post:EditorialPost,slideId:string,title:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(!title.trim()||title.length>160||!editorialValidEvidenceUrl(url))throw Error('Источник: неверное название или URL');
+ if(post.research.interpretationSlides.includes(slideId))
+  throw Error('Сначала сними пометку об авторской интерпретации');
+ if(post.research.sourceItems.filter(x=>x.slideId===slideId).length>=4)
+  throw Error('Не более четырёх источников на слайд');
+ if(post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Этот источник уже добавлен');
+ const research:EditorialResearch={...post.research,sourceItems:[...post.research.sourceItems,
+  {slideId,title:title.trim(),url,reviewed:false}]};
+ return changeEditorialEvidence(post,research,now);
+}
+export function removeEditorialSource(
+ post:EditorialPost,slideId:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден');
+ return changeEditorialEvidence(post,{...post.research,
+  sourceItems:post.research.sourceItems.filter(x=>x.slideId!==slideId||x.url!==url)},now);
+}
+export function setEditorialInterpretationReviewed(
+ post:EditorialPost,slideId:string,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(reviewed&&post.research.sourceItems.some(x=>x.slideId===slideId))
+  throw Error('У слайда есть источники; нельзя маскировать факт авторской трактовкой');
+ const interpretationSlides=reviewed?[...new Set([...post.research.interpretationSlides,slideId])]:
+  post.research.interpretationSlides.filter(id=>id!==slideId);
+ return changeEditorialEvidence(post,{...post.research,interpretationSlides},now);
+}
+export function setEditorialPublicCopyReviewed(
+ post:EditorialPost,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ return changeEditorialEvidence(post,{...post.research,copyReviewed:reviewed},now);
+}
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
