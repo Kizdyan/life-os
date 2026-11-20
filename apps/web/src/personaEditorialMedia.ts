@@ -1,4 +1,4 @@
-import {CAROUSEL_BASELINE_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {CAROUSEL_BASELINE_ID,editorialArchiveProvenancePass,editorialSourcesPass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/inter/400.css';
@@ -245,6 +245,36 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   gradient.addColorStop(1,'rgba(5,8,12,.85)');
   ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
  }
+ // Imported research renders as exact Canvas typography, never rasterized AI letters.
+ // A failed layout aborts export instead of silently cropping the final paragraph.
+ if(post.research){
+  const faces=await document.fonts.load('500 72px "Playfair Display"',slide.text);
+  if(!faces.length)throw Error('Кириллический шрифт не загружен; PNG не создан');
+  ctx.drawImage(baselineGrain(),0,0);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  const width=884,left=96;
+  let lines:string[]=[],size=0;
+  for(let candidate=index===0?82:70;candidate>=40;candidate-=4){
+   ctx.font='500 '+candidate+'px "Playfair Display", Georgia, serif';
+   try{
+    const wrapped=wrapText(ctx,slide.text,width,12);
+    if(wrapped.length*(candidate+20)<=1020){
+     size=candidate;lines=wrapped;break;
+    }
+   }catch{/* Reduce font until the real text fits. */}
+  }
+  if(!size||!lines.length)throw Error('Слайд '+(index+1)+': текст не помещается без обрезки');
+  // Darkened photo backing gives a stable reading surface; no synthetic text or labels.
+  if(usePhoto){
+   ctx.fillStyle='rgba(5,6,8,.78)';ctx.fillRect(55,180,968,1085);
+  }
+  const leading=size+20,top=index===0?300:260;
+  const y0=Math.min(Math.max(top,695-(lines.length*leading)/2),1200-(lines.length-1)*leading);
+  ctx.fillStyle=theme.fg;
+  ctx.font='500 '+size+'px "Playfair Display", Georgia, serif';
+  lines.forEach((line,i)=>ctx.fillText(line,left,y0+i*leading));
+  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
+ }
  // The final public image contains ONLY authored slide text and the chosen
  // photo/background. Internal Persona labels, section numbers and metadata
  // are never burned into publication pixels.
@@ -309,6 +339,7 @@ export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  return new Blob(items,{type:'application/zip'});
 }
 export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
+ if(!editorialSourcesPass(post))throw Error('SOURCE_PASS: не все источники исследования подтверждены');
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
  if(!post.caption.trim())throw Error('Для публикации нужен основной текст поста');
@@ -323,6 +354,14 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
  // The downloadable caption is paste-ready: no theme/status/approval metadata.
  const caption=post.caption.trim();
  files.push({name:'caption.txt',data:new TextEncoder().encode(caption)});
+ if(post.research){
+  const sources={
+   status:'SOURCE_PASS (manual review, not independent automatic verification)',
+   sourceItems:post.research.sourceItems.map(({slideId,title,url,reviewed})=>({slideId,title,url,reviewed})),
+   interpretationSlides:post.research.interpretationSlides
+  };
+  files.push({name:'research-sources.json',data:new TextEncoder().encode(JSON.stringify(sources,null,2))});
+ }
  return zipFileBytes(files);
 }
 export function triggerEditorialDownload(blob:Blob,filename:string){
