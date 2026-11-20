@@ -18,22 +18,21 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, max
   }
   if (current) lines.push(current);
  }
- return lines.slice(0,maxLines);
+ if(lines.length>maxLines)throw Error('Текст не помещается в макет: сократи или разбей абзац');
+ return lines;
 }
 function paint(slide: CarouselSlide, index: number, count: number): HTMLCanvasElement {
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas недоступен');
  ctx.fillStyle='#eae5dc';ctx.fillRect(0,0,1080,1350);
- ctx.fillStyle='#26332c';ctx.fillRect(0,0,1080,16);
- ctx.font='500 31px sans-serif';ctx.fillText(slide.eyebrow.toUpperCase().slice(0,80),84,150);
+ // Public pixels contain only the authored title/body. No PERSONA footer, rubric,
+ // slide index, author name or service label.
  ctx.fillStyle='#1e2924';ctx.font='bold 76px sans-serif';
  let y=310;
  for(const line of wrap(ctx,slide.title,912,5)){ctx.fillText(line,84,y);y+=92}
  ctx.font='42px sans-serif';ctx.fillStyle='#444f49';y=Math.max(y+68,650);
- for(const line of wrap(ctx,slide.body,900,11)){if(y>1190)break;ctx.fillText(line,84,y);y+=62}
- ctx.strokeStyle='#a6aba3';ctx.beginPath();ctx.moveTo(84,1240);ctx.lineTo(996,1240);ctx.stroke();
- ctx.font='30px sans-serif';ctx.fillText('PERSONA',84,1300);
- ctx.textAlign='right';ctx.fillText((index+1)+' / '+count,996,1300);ctx.textAlign='left';
+ for(const line of wrap(ctx,slide.body,900,11)){if(y>1190)throw Error('Текст выходит за нижний край слайда');ctx.fillText(line,84,y);y+=62}
+ // Do not burn technical metadata into exported PNG.
  return canvas;
 }
 export default function PersonaCarouselEditor({initialSlides,title}:Props) {
