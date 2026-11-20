@@ -90,7 +90,7 @@ export function importResearchCarousel(id:string,json:string,now?:string):Editor
   {caption:packet.caption,slides:packet.slides.map(s=>({title:s.text,body:''}))},now);
  const research:EditorialResearch={
   provider:'manual',
-  sourceItems:packet.slides.flatMap((slide,i)=>slide.sources.map(source=>({
+  sourceItems:packet.slides.flatMap((slide,i)=>(slide.sources??[]).map(source=>({
    slideId:seed.slides[i].id,title:source.title,url:source.url,reviewed:false
   }))),
   interpretationSlides:packet.slides.flatMap((slide,i)=>slide.interpretation?[seed.slides[i].id]:[])
