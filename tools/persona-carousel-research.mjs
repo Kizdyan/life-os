@@ -14,18 +14,18 @@ const researchPrompt=`Ты — исследователь и независим�
 ]}
 Требования: 5–7 смысловых слайдов, текст на каждом не больше 260 символов, 5–160 символов в названии. Ранние слайды интригуют, каждый добавляет проверяемую деталь, финал переосмысляет историю без выдуманных фактов. Каждая ссылка должна быть ТОЧНЫМ URL, реально найденным через веб-поиск инструмента. Не выдумывай URL, цитаты, факты и даты; при недостатке источников прямо сообщи об отсутствии доказательств вместо генерации JSON. VisualDirection — кинематографичный кадр, без чужих лиц и без букв внутри изображения. Никаких нумераций и служебного текста на слайдах.`;
 function validUrl(raw){
- try{const u=new URL(raw);return u.protocol==='https:'&&Boolean(u.hostname)&&!u.username&&!u.password&&!/^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.)/i.test(u.hostname)}
+ try{const u=new URL(raw);return u.protocol==='https:'&&Boolean(u.hostname)&&!u.username&&!u.password&&!/^(localhost|127\.|10\.|192\.168\.|169\.254\.)/i.test(u.hostname)}
  catch{return false}
 }
 function normalizeUrl(raw){
  const u=new URL(raw);u.hash='';u.searchParams.delete('utm_source');u.searchParams.delete('utm_medium');
- u.searchParams.delete('utm_campaign');return u.toString().replace(/\\/$/,'');
+ u.searchParams.delete('utm_campaign');return u.toString().replace(/\/$/,'');
 }
 function outputText(data){
  return (Array.isArray(data?.output)?data.output:[]).filter(x=>x?.type==='message')
   .flatMap(x=>Array.isArray(x.content)?x.content:[])
   .filter(x=>x?.type==='output_text'&&typeof x.text==='string')
-  .map(x=>x.text).join('\\n');
+  .map(x=>x.text).join('\n');
 }
 function searchUrls(data){
  const found=new Set();
@@ -79,7 +79,7 @@ export async function generatePersonaCarouselResearch({theme,consent,env=process
  let data,raw;
  try{data=await response.json();const text=outputText(data);
    if(data.status!=='completed'||!text||text.length>33000)throw Error('incomplete');
-   raw=JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\\s*/i,'').replace(/\\s*\x60\x60\x60$/,''));
+   raw=JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,''));
  }catch{throw Error('Perplexity не вернул завершённый структурированный результат. Ничего не импортировано.')}
  const urls=searchUrls(data);
  if(!urls.size)throw Error('В ответе нет поисковых результатов. Исследование заблокировано.');
