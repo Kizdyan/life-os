@@ -3,7 +3,7 @@ import {createResearchedEditorialPost,validatePost,type EditorialPost,type Edito
 /** A research packet is externally supplied evidence, NEVER proof that its claims are true. */
 export type ResearchPacket={
  title:string;angle:string;caption:string;
- slides:{text:string;interpretation?:boolean;sources?:{title:string;url:string}[]}[];
+ slides:{text:string;visualDirection?:string;interpretation?:boolean;sources?:{title:string;url:string}[]}[];
 };
 export const RESEARCH_CAROUSEL_EXAMPLE:ResearchPacket={
  title:'Как звук создаёт напряжение в кино',
@@ -25,7 +25,7 @@ export const RESEARCH_PROMPT=`Исследуй 5–7 проверяемых, н�
  "angle":"Почему эта история интересна зрителю и демонстрирует профессиональный взгляд",
  "caption":"Подпись к публикации",
  "slides":[
-   {"text":"Текст первого слайда, до 170 символов",
+   {"text":"Текст первого слайда, до 260 символов", "visualDirection":"Визуал без чужих лиц, связанный с фактом",
     "sources":[{"title":"Название источника","url":"https://источник"}]},
    {"text":"Второй слайд","sources":[{"title":"Название","url":"https://источник"}]},
    {"text":"Авторский вывод без фактических утверждений","interpretation":true}
@@ -59,7 +59,8 @@ export function parseResearchPacket(json:string):ResearchPacket{
  if(!Array.isArray(p.slides)||p.slides.length<5||p.slides.length>7)
   throw Error('Нужно 5–7 содержательных слайдов (на текущем этапе)');
  const slides=p.slides.map((raw,i)=>{
-  const s=object(raw),text=field(s.text,170,'Слайд '+(i+1));
+  const s=object(raw),text=field(s.text,260,'Слайд '+(i+1));
+  const visualDirection=s.visualDirection===undefined?'':field(s.visualDirection,350,'Визуальное решение '+(i+1));
   if(s.interpretation!==undefined&&typeof s.interpretation!=='boolean')
    throw Error('interpretation должен быть true или false');
   const interpretation=s.interpretation===true;
@@ -77,7 +78,7 @@ export function parseResearchPacket(json:string):ResearchPacket{
    throw Error('Для слайда '+(i+1)+' нужен источник либо явная пометка interpretation:true');
   if(new Set(checked.map(x=>x.url)).size!==checked.length)
    throw Error('Повторяется источник на слайде '+(i+1));
-  return {text,interpretation,sources:checked};
+  return {text,visualDirection,interpretation,sources:checked};
  });
  return {title:field(p.title,160,'Тема'),angle:field(p.angle,500,'Редакционная задача'),
   caption:field(p.caption,4500,'Подпись'),slides};
@@ -94,7 +95,9 @@ export function importResearchCarousel(id:string,json:string,now?:string):Editor
   }))),
   interpretationSlides:packet.slides.flatMap((slide,i)=>slide.interpretation?[seed.slides[i].id]:[])
  };
- const post:EditorialPost={...seed,research,preset:'chocolate-graphite'};
+ const post:EditorialPost={...seed,research,preset:'chocolate-graphite',
+  slides:seed.slides.map((slide,i)=>({...slide,text:packet.slides[i].text,
+   photoDirection:packet.slides[i].visualDirection??''}))};
  validatePost(post);
  return post;
 }
