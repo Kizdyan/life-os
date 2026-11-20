@@ -106,6 +106,9 @@ export function inspectPersonaColorComparisonManifest(
   manifest.status!=='awaiting-author-comparison'||manifest.publicationApproved!==false||
   !object(manifest.source)||!Array.isArray(manifest.variants)||manifest.variants.length!==3)
   fail('COMPARISON.json has unsupported version, state or structure');
+ // Keep the actual array shape narrowed after the manifest compatibility check.
+ if(!Array.isArray(manifest.variants))throw Error('Comparison Studio: variant list missing');
+ const manifestVariants=manifest.variants;
  const selected=new Map<string,ComparisonFileEvidence>();
  for(const file of files){
   if(!file||typeof file.name!=='string'||selected.has(file.name)||!SHA.test(file.sha256)||
@@ -126,7 +129,7 @@ export function inspectPersonaColorComparisonManifest(
  const unique=new Set<string>([source.sha256]);
  const variants:Variant[]=[];
  for(const [index,preset] of COLOR_VARIANT_PRESETS.entries()){
-  const entry=manifest.variants[index];
+  const entry=manifestVariants[index];
   if(!object(entry)||entry.id!==preset.id||entry.label!==preset.label||
     !knownPresetFilter(index,entry.filter)||typeof entry.path!=='string'||
     basename(entry.path)!==preset.fileName||typeof entry.sha256!=='string'||!SHA.test(entry.sha256))
@@ -178,7 +181,7 @@ export function rejectPersonaColorVariants(
  const legacyPrevious:PersonaColorDecisionHistoryEntry[]=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
   ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
  const decisionHistory:PersonaColorDecisionHistoryEntry[]=[
-  ...(current.decisionHistory??legacyPrevious),{rejectedAll:true,comment,decidedAt},
+  ...(current.decisionHistory??legacyPrevious),{rejectedAll:true as const,comment,decidedAt},
  ].slice(-20);
  const {selectedVariantId:_previousChoice,...withoutChoice}=current;
  const next:PersonaColorComparisonRecord={...withoutChoice,rejectedAll:true,comment,decidedAt,decisionHistory};
