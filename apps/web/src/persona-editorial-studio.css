@@ -133,3 +133,16 @@
 .personaEditorialPublishCover--exact img{position:relative;z-index:0;width:100%;height:100%;object-fit:contain}
 .personaEditorialPreview--exact{padding:0;align-items:stretch}
 .personaEditorialPreview--exact img{width:100%;height:100%;object-fit:contain;border-radius:inherit}
+
+/* Research-backed drafts: mobile-first citation review, never rendered into PNG pixels. */
+.personaEditorialPick details[data-testid="editorial-research-import"]{border:1px solid #b9a18e;border-radius:14px;padding:14px;background:#f7f0e7;margin:12px 0}
+.personaEditorialPick details[data-testid="editorial-research-import"] summary{cursor:pointer;font-weight:600}
+.personaEditorialPick details[data-testid="editorial-research-import"] textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;min-height:160px;margin:8px 0;font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+.personaEditorialPick details[data-testid="editorial-research-import"] button{margin:6px 9px 6px 0}
+.personaEditorialResearchReview{border:1px solid #a99074;border-radius:12px;background:#faf6ee;padding:14px;display:grid;gap:12px}
+.personaEditorialResearchReview h4{margin:0}
+.personaEditorialResearchSlide{display:grid;gap:7px;border-top:1px solid #dbceb9;padding:12px 0;min-width:0;overflow-wrap:anywhere}
+.personaEditorialResearchSlide a{color:#54402a;text-decoration:underline}
+.personaEditorialResearchSlide label{display:flex;gap:9px;align-items:center;cursor:pointer}
+.personaEditorialResearchSlide label input{width:19px;height:19px;flex-shrink:0}
+@media(max-width:560px){.personaEditorialResearchReview{padding:11px}.personaEditorialResearchSlide{font-size:14px}}
