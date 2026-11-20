@@ -98,6 +98,30 @@ describe('Persona research-backed carousel importer',()=>{
   expect(()=>addEditorialSource(personal,'slide-1','Статья','https://example.org/new')).toThrow(/Сначала/);
  });
 
+
+ it('preserves a tampered or old researched draft while revoking stale publication approval on reload',()=>{
+  let draft=importResearchCarousel('review-persistence-213',fixture());
+  for(const source of draft.research!.sourceItems)
+   draft=setEditorialSourceReviewed(draft,source.slideId,source.url,true);
+  draft=setEditorialPublicCopyReviewed(draft,true);
+  draft=approveEditorialStep(approveEditorialStep(draft,'topic'),'content');
+  const store=new Map<string,string>();
+  const memory={
+   getItem:(key:string)=>store.get(key)??null,
+   setItem:(key:string,v:string)=>{store.set(key,v)}
+  };
+  saveEditorialPost(memory,draft);
+  const modified=JSON.parse(store.get(EDITORIAL_KEY)!);
+  modified.posts[0].research.copyReviewed=false;
+  store.set(EDITORIAL_KEY,JSON.stringify(modified));
+  const recovered=loadEditorialStore(memory);
+  expect(recovered.posts).toHaveLength(1);
+  expect(recovered.posts[0].id).toBe(draft.id);
+  expect(recovered.posts[0].slides[0].text).toBe(draft.slides[0].text);
+  expect(recovered.posts[0].approvals.topic).toBe(true);
+  expect(recovered.posts[0].approvals.content).toBe(false);
+  expect(editorialSourcesPass(recovered.posts[0])).toBe(false);
+ });
  it('keeps existing legacy carousels and approval hashes unaffected',()=>{
   const old=createBaselinePauseCarousel();
   expect(old.research).toBeUndefined();
