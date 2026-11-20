@@ -21,6 +21,7 @@ import {generateLocalPersonaScriptDraft} from './persona-script-draft.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
+import {generatePersonaCarouselResearch} from './persona-carousel-research.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
 import {subtitlePreset} from './persona-subtitle-burn.mjs';
@@ -303,7 +304,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     const musicStudio=Boolean(config.musicLut&&await exists(config.musicLut));
 
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),carouselResearch:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY),requiresConsent:true,provider:'perplexity'},token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
    const videoToken=req.method==='GET'&&((url.pathname.endsWith('/video')||url.pathname.endsWith('/video-full'))||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/export\/[a-z0-9-]+$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/quality-(?:report|contact-sheet)$/.test(url.pathname))?url.searchParams.get('token'):null;
@@ -528,6 +529,23 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      if(body.consent!==true)fail('Подтвердите платный текстовый запрос');externalCalls.push(now);
      respond(res,200,await generateExternalIdeas({provider:body.provider,theme:body.theme,consent:body.consent,env:config.apiEnv??process.env}));
     }finally{externalBusy=false}return;
+   }
+   if(req.method==='POST'&&url.pathname==='/carousel-research'){
+    const body=await json(req,4000);
+    if(body.consent!==true)fail('Нужно явное согласие на платное исследование');
+    if(typeof body.theme!=='string'||body.theme.trim().length<6||body.theme.length>250)
+     fail('Нужна конкретная тема до 250 символов');
+    const env=config.apiEnv??process.env;
+    if(!env.PERPLEXITY_API_KEY)fail('Perplexity не настроен в локальном Worker');
+    const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
+    if(externalBusy||externalCalls.length>=5)fail('Предел 5 внешних запросов в час или Worker занят');
+    externalBusy=true;externalCalls.push(now);
+    try{
+     respond(res,200,await (config.carouselResearch??generatePersonaCarouselResearch)(
+      {theme:body.theme,consent:true,env}
+     ));
+    }finally{externalBusy=false}
+    return;
    }
    if(req.method==='POST'&&url.pathname==='/script-draft'){
     const body=await json(req,5000);
