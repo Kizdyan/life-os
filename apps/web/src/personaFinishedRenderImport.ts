@@ -56,7 +56,7 @@ export function parsePersonaVideoQuality(value:unknown,expectedSha:string):Perso
   humanReviewCount:findings.filter(finding=>finding.status==='needs_human_review').length,findings,...(visualEvidence?{visualEvidence}:{})};
 }
 /** Validate persisted quality summaries, including derived counts. */
-export function isPersonaVideoQualitySummary(value:unknown,sha:string):boolean{
+export function isPersonaVideoQualitySummary(value:unknown,sha:string):value is PersonaVideoQualitySummary{
  const summary=record(value);
  if(summary.version!==1||summary.videoSha256!==sha||
   !Number.isSafeInteger(summary.warningCount)||!Number.isSafeInteger(summary.humanReviewCount))return false;
@@ -132,6 +132,7 @@ export function inspectPersonaFinishedRenderImport(input:{
 }):PersonaFinishedRenderRecord{
  const {draft,video,importedAt}=input,report=record(input.report),qa=record(input.qa);
  const evidence=record(qa.evidence),handoff=record(qa.handoff),caption=record(report.captions);
+ const reportStages=Array.isArray(report.stages)?report.stages:[];
  const color=record(report.color),music=report.music;
  if(!isSha(video.sha256)||video.name!=='finished-candidate.mp4'||video.size<1024||
    video.size>160*1024*1024||!within(video.durationSec,0.1,900))
@@ -152,13 +153,13 @@ export function inspectPersonaFinishedRenderImport(input:{
   !isSha(report.outputSha256)||report.outputSha256.toLowerCase()!==video.sha256.toLowerCase())
   fail('FINISH-RESULT.json не совпадает с выбранным итоговым MP4.');
  if(!Array.isArray(report.stages)||
-  !report.stages.includes('reviewed-srt-burned-into-new-mp4')||
-  !report.stages.includes('real-ffmpeg-technical-qa-passed-no-publication')||
+  !reportStages.includes('reviewed-srt-burned-into-new-mp4')||
+  !reportStages.includes('real-ffmpeg-technical-qa-passed-no-publication')||
   caption.burnedIn!==true||caption.source!=='explicit-human-reviewed-srt'||
   !isSha(caption.sourceSha256)||!Number.isSafeInteger(caption.cueCount)||
   !within(caption.cueCount,1,80))
   fail('Нет подтверждения этапа проверки и встраивания субтитров.');
- const qualityRequired=report.stages.includes('local-video-quality-analysis-written');
+ const qualityRequired=reportStages.includes('local-video-quality-analysis-written');
  if(input.quality!==undefined&&!qualityRequired)
   fail('Предоставлен video-quality.json, но FINISH-RESULT.json не подтверждает его создание.');
  const quality=qualityRequired?parsePersonaVideoQuality(input.quality,video.sha256.toLowerCase()):null;
