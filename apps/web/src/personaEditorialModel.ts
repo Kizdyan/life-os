@@ -42,7 +42,12 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
 }
 type ChatCarouselApproval={textApproved:boolean;textApprovedAt:string;designApproved:boolean;
  designApprovedAt:string|null;checkedBy:string;checklist:boolean[];checklistScope:'text';contentHashAtApproval:string};
-const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approvedRecords;
+const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=Object.fromEntries(
+ Object.entries(approvedRecords).map(([id,record])=>{
+  if(record.checklistScope!=='text')throw Error('Invalid chat approval scope');
+  return [id,{...record,checklistScope:'text' as const}];
+ })
+);
 
 /** Use chat-approved data INSIDE the existing editorial approvals/gate, not as a parallel status.
  * A locally changed content fingerprint is never reapproved by this import.
@@ -383,7 +388,7 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   title:'Почему пауза сильнее реплики',topic:'Почему пауза сильнее реплики',
   goal:'Авторская мысль · text-only, без фотографий',
   slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
-  caption:baselineCaptions.variants[baselineCaptions.active],preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
+  caption:baselineCaptions.active==='short'||baselineCaptions.active==='medium'||baselineCaptions.active==='long'?baselineCaptions.variants[baselineCaptions.active]:baselineCaptions.variants.medium,preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
