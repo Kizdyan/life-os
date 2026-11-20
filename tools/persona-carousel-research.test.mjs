@@ -27,7 +27,7 @@ test('explicit consent and local API key are required without any paid network r
  let calls=0;
  const mock=async()=>{calls++;throw Error('network should not be called')};
  await assert.rejects(generatePersonaCarouselResearch({theme:'Почему в кино страшно?',env:{},fetchImpl:mock}),/согласие/);
- await assert.rejects(generatePersonaCarouselResearch({theme:'Почему в кино страшно?',consent:true,env:{},fetchImpl:mock}),/ключ/);
+ await assert.rejects(generatePersonaCarouselResearch({theme:'Почему в кино страшно?',consent:true,env:{},fetchImpl:mock}),/PERPLEXITY_API_KEY|ключ/i);
  assert.equal(calls,0);
 });
 test('uses documented Agent API and refuses model-invented citations not in actual web results',async()=>{
