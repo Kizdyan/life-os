@@ -140,6 +140,8 @@ export type EditorialResearch={
  provider:'manual';
  sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
  interpretationSlides:string[];
+ /** Manual review of public title and caption, not machine fact-checking. */
+ copyReviewed?:boolean;
 };
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
@@ -150,14 +152,15 @@ export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:
   designApprovedAt?:string|null;contentHashAtDesignApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
  origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string;research?:EditorialResearch};
-/** SOURCE_PASS is meaningful only for imported researched posts. Other legacy
- * projects keep their existing approval policy unchanged. */
+/** Existing legacy projects keep saved approvals. Every NEW researched project
+ * starts with a source contract that is unverified until reviewed by the author. */
 export function editorialSourcesPass(post:EditorialPost):boolean{
  if(!post.research)return true;
+ if(post.research.copyReviewed!==true)return false;
  return post.slides.every(slide=>{
   const sources=post.research!.sourceItems.filter(item=>item.slideId===slide.id);
-  return sources.length>0?sources.every(item=>item.reviewed):
-   post.research!.interpretationSlides.includes(slide.id);
+  const interpretation=post.research!.interpretationSlides.includes(slide.id);
+  return interpretation?sources.length===0:sources.length>0&&sources.every(item=>item.reviewed);
  });
 }
 /** Explicit human review of a citation; no network request or inferred verification. */
@@ -300,6 +303,7 @@ export function createResearchedEditorialPost(
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
   goal:angle.trim(),slides:steps.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
   caption:draft?.caption?.slice(0,4500)??'',preset:'ink',
+  research:{provider:'manual',sourceItems:[],interpretationSlides:[],copyReviewed:false},
   approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(result);return result;
@@ -433,13 +437,14 @@ export function validatePost(post:EditorialPost):void{
   throw Error('Invalid editorial project');
  if(post.research){
   const r=post.research,ids=new Set(post.slides.map(s=>s.id));
-  if(r.provider!=='manual'||!Array.isArray(r.sourceItems)||r.sourceItems.length>28||
+  if(r.provider!=='manual'||(r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
+    !Array.isArray(r.sourceItems)||r.sourceItems.length>28||
    !Array.isArray(r.interpretationSlides)||
    r.interpretationSlides.some(id=>!ids.has(id))||
    new Set(r.interpretationSlides).size!==r.interpretationSlides.length||
    r.sourceItems.some(x=>!ids.has(x.slideId)||!x.title||x.title.length>160||
-    typeof x.reviewed!=='boolean'||!/^https?:\/\/[^\s]+$/i.test(x.url)||x.url.length>2048||
-    x.url.includes('@'))||
+    typeof x.reviewed!=='boolean'||!editorialValidEvidenceUrl(x.url)||
+    r.interpretationSlides.includes(x.slideId))||
    new Set(r.sourceItems.map(x=>x.slideId+'|'+x.url)).size!==r.sourceItems.length)
    throw Error('Invalid editorial research evidence');
  }
@@ -484,8 +489,12 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    changes.goal!==undefined||changes.caption!==undefined;
   const changed=new Set(changes.slides?.filter((s,i)=>s.text!==post.slides[i]?.text||
    s.id!==post.slides[i]?.id).map(s=>s.id)??[]);
+  const validIds=new Set(result.slides.map(s=>s.id));
   result.research={...result.research,
-   sourceItems:result.research.sourceItems.map(s=>
+   copyReviewed:all?false:result.research.copyReviewed,
+   interpretationSlides:result.research.interpretationSlides.filter(
+    id=>validIds.has(id)&&!changed.has(id)),
+   sourceItems:result.research.sourceItems.filter(s=>validIds.has(s.slideId)).map(s=>
     all||changed.has(s.slideId)?{...s,reviewed:false}:s)};
  }
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
