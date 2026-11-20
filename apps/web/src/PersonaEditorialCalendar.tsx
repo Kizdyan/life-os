@@ -2,7 +2,7 @@ import React, {useMemo,useState} from 'react';
 import {startPersonaProductionPipeline,advancePersonaProductionPipeline} from '../../../packages/core/src/persona-production-pipeline';
 import {buildPersonaEditorialCalendar} from '../../../packages/core/src/persona-editorial-calendar.mjs';
 
-type Slot={slotId:string;date:string;format:string;purpose:string;status:string;contentId:string|null;approved:boolean;platforms:string[];notes?:string;legacySavedDate?:boolean};
+type Slot={slotId:string;date:string;weekIndex?:number;format:'reel'|'photo'|'carousel';purpose:string;status:string;contentId:string|null;approved:boolean;platforms:string[];notes?:string;legacySavedDate?:boolean};
 const KEY='lifeos:persona:editorial-calendar:v1';
 function load():Slot[]{try{const raw=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(raw)?raw.filter(x=>typeof x?.slotId==='string'):[]}catch{return []}}
 function todayUTC(){const now=new Date();return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')}
@@ -11,7 +11,7 @@ export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(
  const [previous,setPrevious]=useState<Slot[]>(load);
  const [startDate,setStartDate]=useState(todayUTC);
  const [expanded,setExpanded]=useState(false);
- const plan=useMemo(()=>buildPersonaEditorialCalendar({startDate,days:90,existing:previous}),[startDate,previous]);
+ const plan=useMemo(()=>buildPersonaEditorialCalendar({startDate,days:90,existing:previous.map(slot=>({...slot,weekIndex:slot.weekIndex??0}))}),[startDate,previous]);
  const upcoming=(plan.slots as Slot[]).slice(0,expanded?plan.slots.length:15);
  const [editing,setEditing]=useState<string|null>(null);
  const [idea,setIdea]=useState('');
