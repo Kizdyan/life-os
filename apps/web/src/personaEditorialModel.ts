@@ -36,7 +36,7 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
 }
 export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),post.research??null]));
+  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),...(post.research?[post.research]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -52,7 +52,7 @@ const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approved
 /** Separate text hash: palette changes cannot undo written approval. */
 export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'> & Partial<Pick<EditorialPost,'research'>>):string{
  return editorialHash(JSON.stringify([post.title,post.topic,post.goal,post.caption,
-  post.slides.map(s=>[s.id,s.text]),post.research??null]));
+  post.slides.map(s=>[s.id,s.text]),...(post.research?[post.research]:[])]));
 }
 function editorialHash(value:string):string{
  let hash=0x811c9dc5;
