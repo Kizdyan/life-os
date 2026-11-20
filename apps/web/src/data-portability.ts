@@ -84,7 +84,7 @@ function readStored(storage:StorageAccess):Portable {
   const basic=raw===null?{schemaVersion:1,items:[],plans:{}}:JSON.parse(raw);
   const ideas=oldHistory===null?[]:JSON.parse(oldHistory);
   const storedProjects=storage.getItem(PERSONA_PROJECTS_KEY);
-  const projects=storedProjects===null?{schemaVersion:1,activeProjectId:null,projects:[]}:personaProjects(JSON.parse(storedProjects));
+  const projects:PersonaProjectCollection=storedProjects===null?{schemaVersion:1,activeProjectId:null,projects:[]}:personaProjects(JSON.parse(storedProjects));
   return {kind:KIND,version:1,exportedAt:new Date().toISOString(),state:state(basic),personaHistory:history(ideas),personaProjects:projects};
 }
 
