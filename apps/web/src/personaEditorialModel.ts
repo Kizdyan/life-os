@@ -183,7 +183,7 @@ export function setEditorialSourceReviewed(
 function changeEditorialEvidence(post:EditorialPost,research:EditorialResearch,now:string):EditorialPost{
  const approvals={...post.approvals,content:false,design:false,designApproved:false,
   designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
-  contentHashAtApproval:'',checklist:emptyChecklist()};
+  contentHashAtApproval:'',checkedAt:'',checkedBy:'',checklist:emptyChecklist()};
  const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
  validatePost(result);return result;
 }
@@ -608,6 +608,12 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
    !Array.isArray((parsed as EditorialStore).posts)||
    (parsed as EditorialStore).posts.length>200)return {version:1,posts:[]};
   const posts=(parsed as EditorialStore).posts.map(post=>{
+   // Revocation on load is safer than hiding all drafts when an old review is stale.
+   if(post.research&&(post.approvals?.content||post.approvals?.design)&&!editorialSourcesPass(post)){
+    return {...post,approvals:{...post.approvals,content:false,design:false,
+     designApproved:false,designApprovedAt:null,contentHashAtDesignApproval:'',
+     textApproved:false,textHashAtApproval:'',checklist:emptyChecklist()}};
+   }
    // Check saved manual approval before importing text approvals from the chat.
    if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
       post.approvals.contentHashAtApproval!==editorialContentHash(post)){
