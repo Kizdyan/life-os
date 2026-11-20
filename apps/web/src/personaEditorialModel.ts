@@ -198,6 +198,7 @@ export function editorialValidEvidenceUrl(raw:string):boolean{
     /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)||h.startsWith('fe80:')||
     h.startsWith('fc')||h.startsWith('fd'))return false;
   return true;
+ }catch{return false}
 }
 /** Sources are initially unverified; a URL by itself never proves the fact. */
 export function addEditorialSource(
