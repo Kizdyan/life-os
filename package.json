@@ -5,6 +5,7 @@
   "scripts": {
     "test": "vitest run --exclude '**/*.test.mjs'",
     "typecheck": "tsc --noEmit",
+    "web:typecheck": "tsc -p tsconfig.web.json --noEmit",
     "api:typecheck": "tsc -p api/tsconfig.json --noEmit",
     "web:dev": "vite apps/web",
     "web:build": "vite build apps/web",
