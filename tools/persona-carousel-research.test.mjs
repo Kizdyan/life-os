@@ -41,6 +41,8 @@ test('uses documented Agent API and refuses model-invented citations not in actu
  });
  assert.equal(request.url,'https://api.perplexity.ai/v1/agent');
  assert.equal(request.body.tools[0].type,'web_search');
+ assert.equal(request.body.max_steps,5);
+ assert.equal('max_tool_calls' in request.body,false);
  assert.equal(request.body.store,false);
  assert.equal(request.headers.Authorization,'Bearer private-test-key');
  assert.doesNotMatch(JSON.stringify(request.body),/private-test-key/);
