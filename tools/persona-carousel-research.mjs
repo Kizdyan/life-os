@@ -49,8 +49,9 @@ function parsePacket(raw,urls){
   const slide={text:string(item.text,260,'слайд '+idx),visualDirection:
    typeof item.visualDirection==='string'?item.visualDirection.slice(0,350):'',
    interpretation:item.interpretation===true,sources:[]};
-  if(!Array.isArray(item.sources)||item.sources.length>4)throw Error('Слайд '+idx+': некорректные ссылки');
-  for(const x of item.sources){
+  const declaredSources=item.sources??[];
+  if(!Array.isArray(declaredSources)||declaredSources.length>4)throw Error('Слайд '+idx+': некорректные ссылки');
+  for(const x of declaredSources){
    if(!x||typeof x!=='object'||!validUrl(x.url)||!urls.has(normalizeUrl(x.url)))
     throw Error('Слайд '+idx+': источник не найден в реальных результатах поиска');
    slide.sources.push({title:string(x.title,160,'источник'),url:x.url});
