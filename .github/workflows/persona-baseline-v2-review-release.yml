@@ -1,0 +1,53 @@
+name: Persona Baseline v2 Review Release
+on:
+  pull_request:
+    paths:
+      - 'tools/persona-baseline-v2-review-release.mjs'
+      - '.github/workflows/persona-baseline-v2-review-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/persona-baseline-v2-review-release.mjs'
+      - '.github/workflows/persona-baseline-v2-review-release.yml'
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Start existing Vite app
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 >/tmp/persona-vite.log 2>&1 &
+          for i in {1..50}; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/persona-vite.log
+          exit 1
+      - run: node tools/persona-baseline-v2-review-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: persona-baseline-v2-review
+          path: dist/carousels-v2-baseline/
+      - name: Publish review-only Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=carousels-v2-baseline
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite"
+            exit 1
+          fi
+          printf '%s\n' 'v2: переработанный дизайн карусели №1 по артистическому арт-дирекшну.' 'Оформление ждёт визуального подтверждения автора. Три варианта caption — на выбор.' 'Review-only: файлы не разрешены к публикации до утверждения оформления.' >/tmp/notes.md
+          gh release create "$TAG" dist/carousels-v2-baseline/*.png dist/carousels-v2-baseline/*.zip --title "Persona Carousels v2 — baseline review" --notes-file /tmp/notes.md --target "$GITHUB_SHA"
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 8
