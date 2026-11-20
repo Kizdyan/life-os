@@ -71,7 +71,7 @@ export async function generatePersonaCarouselResearch({theme,consent,env=process
  const model=env.PERSONA_CAROUSEL_RESEARCH_MODEL||MODEL_DEFAULT;
  if(!/^[A-Za-z0-9._/-]{3,90}$/.test(model))throw Error('Неверное имя модели');
  const body={model,input:'Тема пользователя: '+theme.trim(),instructions:researchPrompt,
-  tools:[{type:'web_search'}],max_tool_calls:5,max_output_tokens:4200,store:false};
+  tools:[{type:'web_search',search_context_size:'medium'}],max_steps:5,max_output_tokens:4200,store:false};
  let response;
  try{response=await fetchImpl(API_URL,{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
   body:JSON.stringify(body),signal:AbortSignal.timeout(110000)})}
