@@ -1,0 +1,84 @@
+import {createResearchedEditorialPost,validatePost,type EditorialPost,type EditorialResearch} from './personaEditorialModel';
+
+/** A research packet is externally supplied evidence, NEVER proof that its claims are true. */
+export type ResearchPacket={
+ title:string;angle:string;caption:string;
+ slides:{text:string;interpretation?:boolean;sources?:{title:string;url:string}[]}[];
+};
+export const RESEARCH_CAROUSEL_EXAMPLE:ResearchPacket={
+ title:'Как звук создаёт напряжение в кино',
+ angle:'Показать неожиданную проверяемую историю и профессиональный принцип',
+ caption:'Источники и проверка фактов — до публикации.',
+ slides:[
+  {text:'Обложка: проверяемый факт',sources:[{title:'Первоисточник',url:'https://example.org/source'}]},
+  {text:'Что произошло?',sources:[{title:'Первоисточник',url:'https://example.org/source'}]},
+  {text:'Что удивило создателей?',sources:[{title:'Первоисточник',url:'https://example.org/source'}]},
+  {text:'Как это работает?',sources:[{title:'Профессиональная публикация',url:'https://example.org/details'}]},
+  {text:'Наш вывод — интерпретация, а не цитата',interpretation:true}
+ ]
+};
+function object(input:unknown):Record<string,unknown>{
+ if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Нужен JSON-объект исследования');
+ return input as Record<string,unknown>;
+}
+function field(value:unknown,max:number,name:string):string{
+ if(typeof value!=='string'||!value.trim()||value.length>max)
+  throw Error(name+': обязательный текст, максимум '+max+' символов');
+ return value.trim();
+}
+function validSourceUrl(raw:string):boolean{
+ try{
+  const url=new URL(raw);
+  return (url.protocol==='https:'||url.protocol==='http:')&&Boolean(url.hostname)&&
+   !url.username&&!url.password&&url.hostname!=='localhost'&&
+   !/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(url.hostname);
+ }catch{return false}
+}
+/** Strictly parse research. No model/network call and no fabricated sources. */
+export function parseResearchPacket(json:string):ResearchPacket{
+ if(json.length>32000)throw Error('Исследование слишком большое (максимум 32 КБ)');
+ let parsed:unknown;
+ try{parsed=JSON.parse(json)}catch{throw Error('Неверный JSON исследования')}
+ const p=object(parsed);
+ if(!Array.isArray(p.slides)||p.slides.length<5||p.slides.length>7)
+  throw Error('Нужно 5–7 содержательных слайдов (на текущем этапе)');
+ const slides=p.slides.map((raw,i)=>{
+  const s=object(raw),text=field(s.text,170,'Слайд '+(i+1));
+  if(s.interpretation!==undefined&&typeof s.interpretation!=='boolean')
+   throw Error('interpretation должен быть true или false');
+  const interpretation=s.interpretation===true;
+  const sources=s.sources===undefined?[]:s.sources;
+  if(!Array.isArray(sources)||sources.length>4)
+   throw Error('Для каждого слайда максимум 4 источника');
+  const checked=sources.map((rawSource,j)=>{
+   const x=object(rawSource);
+   const title=field(x.title,160,'Название источника '+(j+1));
+   const url=field(x.url,2048,'URL источника '+(j+1));
+   if(!validSourceUrl(url))throw Error('Недопустимый URL источника на слайде '+(i+1));
+   return {title,url};
+  });
+  if(!interpretation&&checked.length===0)
+   throw Error('Для слайда '+(i+1)+' нужен источник либо явная пометка interpretation:true');
+  if(new Set(checked.map(x=>x.url)).size!==checked.length)
+   throw Error('Повторяется источник на слайде '+(i+1));
+  return {text,interpretation,sources:checked};
+ });
+ return {title:field(p.title,160,'Тема'),angle:field(p.angle,500,'Редакционная задача'),
+  caption:field(p.caption,4500,'Подпись'),slides};
+}
+/** Creates an UNAPPROVED editorial project inside the pre-existing approval flow. */
+export function importResearchCarousel(id:string,json:string,now?:string):EditorialPost{
+ const packet=parseResearchPacket(json);
+ const seed=createResearchedEditorialPost(id,packet.title,packet.angle,
+  {caption:packet.caption,slides:packet.slides.map(s=>({title:s.text,body:''}))},now);
+ const research:EditorialResearch={
+  provider:'manual',
+  sourceItems:packet.slides.flatMap((slide,i)=>slide.sources.map(source=>({
+   slideId:seed.slides[i].id,title:source.title,url:source.url,reviewed:false
+  }))),
+  interpretationSlides:packet.slides.flatMap((slide,i)=>slide.interpretation?[seed.slides[i].id]:[])
+ };
+ const post:EditorialPost={...seed,research,preset:'chocolate-graphite'};
+ validatePost(post);
+ return post;
+}
