@@ -63,6 +63,27 @@ try{
  await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(1).check();
  assert.equal(await approve.isEnabled(),true);
  await approve.click();
+ // The sourced carousel can attach one local photograph and REUSE the same source
+ // on another slide without copying image bytes or losing research provenance.
+ await editor.getByRole('button',{name:'Слайд 3'}).first().click();
+ await editor.getByLabel('Фото из архива + текст').check();
+ const imageBuffer=Buffer.from(await page.evaluate(()=>{
+  const c=document.createElement('canvas');c.width=1080;c.height=1350;
+  const ctx=c.getContext('2d');if(!ctx)throw Error('Fixture Canvas unavailable');
+  const gradient=ctx.createLinearGradient(0,0,1080,1350);
+  gradient.addColorStop(0,'#2c1d16');gradient.addColorStop(1,'#0c161c');
+  ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+  ctx.fillStyle='#ad8e66';ctx.fillRect(630,150,16,720);
+  return c.toDataURL('image/png').split(',')[1];
+ }), 'base64');
+ await editor.locator('.personaEditorialFile input[type=file]').setInputFiles({
+  name:'original-scene-fixture.png',mimeType:'image/png',buffer:imageBuffer});
+ await editor.getByRole('button',{name:'Обновить архив'}).click();
+ const archive=editor.getByTestId('editorial-archive-picker');
+ await archive.locator('[data-archive-key]').first().waitFor({timeout:20000});
+ await editor.getByRole('button',{name:'Слайд 4'}).first().click();
+ await archive.locator('[data-archive-key]').first().click();
+ assert.equal(await editor.getByTestId('editorial-selected-photo').count(),1,'Reused source key is visible');
  const preview=editor.getByTestId('research-exact-preview');
  await preview.waitFor({timeout:20000});
  const dimensions=await preview.evaluate(async img=>{
