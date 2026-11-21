@@ -88,7 +88,9 @@ function editorialHash(value:string):string{
 export function editorialDesignHash(post:EditorialPost):string{
  return editorialHash(JSON.stringify([editorialContentHash(post),
   post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
-   'persona-baseline-artist-layout-v2':'persona-editorial-fonts-v1',
+   'persona-baseline-artist-layout-v3-no-page-numbers':
+   post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter'?
+   'persona-quiet-horror-v2-no-page-numbers':'persona-editorial-fonts-v1',
   post.fontPreset??'legacy']));
 }
 export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
