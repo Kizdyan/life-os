@@ -2,6 +2,8 @@ import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
+import {hierarchyCopy,type EditorialHierarchy} from './personaEditorialTypography';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
@@ -39,7 +41,11 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
 }
 export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection])]));
+  post.caption,post.preset,post.slides.map(s=>{
+   const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
+   const design=s.background?[...values,s.background]:values;
+   return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
+  })]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -137,7 +143,7 @@ export function setEditorialChecklistItem(post:EditorialPost,index:number,checke
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
-export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
+export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
   fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
@@ -296,7 +302,7 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
 export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
  const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
   title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
-  slides:quietHorror.texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  slides:quietHorror.slides.map((copy,i)=>({...copy,id:'slide-'+(i+1),text:hierarchyCopy(copy),visual:'background',photoDirection:'',background:libraryBackground(i)})),
   caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
   preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
   origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
@@ -406,7 +412,10 @@ export function validatePost(post:EditorialPost):void{
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
   post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?(post.id===CAROUSEL_QUIET_HORROR_ID?8:7):1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(s.headline===undefined?170:600)||
+   (s.headline!==undefined&&(typeof s.kicker!=='string'||s.kicker.length>60||typeof s.headline!=='string'||!s.headline.trim()||s.headline.length>170||typeof s.body!=='string'||s.body.length>350||
+    (s.highlight!==undefined&&(typeof s.highlight!=='string'||s.highlight.length>170))||s.text!==hierarchyCopy(s as EditorialHierarchy)))||
+   (s.background!==undefined&&!validCinematicBackground(s.background))||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
@@ -433,6 +442,12 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
 export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+ if(changes.slides)changes={...changes,slides:changes.slides.map(s=>{
+  if(s.headline===undefined)return s;
+  const previous=post.slides.find(p=>p.id===s.id);
+  const copyChanged=!previous||(['kicker','headline','body','highlight'] as const).some(k=>s[k]!==previous[k]);
+  return copyChanged?{...s,text:hierarchyCopy(s as EditorialHierarchy)}:s;
+ })};
  const result:EditorialPost={...post,...changes,updatedAt:now,revision:post.revision+1,approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
   result.approvals={...result.approvals,topic:false,content:false,design:false};

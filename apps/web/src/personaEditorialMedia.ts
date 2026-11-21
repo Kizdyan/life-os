@@ -1,7 +1,12 @@
 import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
+import '@fontsource/playfair-display/500-italic.css';
 import '@fontsource/inter/400.css';
+import './persona-editorial-fonts.css';
+import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
+import {backgroundAssetUrl,libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
+import {personaWorkerUrl} from './personaWorkerUrl';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -221,6 +226,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if((slide.background||slide.headline!==undefined)&&slide.visual==='background')return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -400,7 +406,7 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
 
 export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  if(images.length!==8)throw Error('Нужны восемь слайдов');
- await document.fonts.load('400 24px "Inter"','01');
+ await document.fonts.load('400 24px "Persona Carousel Inter"','01');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
  c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
@@ -408,8 +414,95 @@ export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  for(let i=0;i<8;i++){
   const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
   c.drawImage(image,x,y,400,500);image.close();
-  c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
+  c.font='400 24px "Persona Carousel Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
  }
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
+}
+
+/** Explicit generation only; browser never receives a provider credential. */
+export async function requestEditorialBackground(post:EditorialPost,index:number):Promise<{background:CinematicBackground;message:string}>{
+ const fallback={background:libraryBackground(index),message:'Используется локальная библиотека кинофонов.'};
+ try{
+  const health=await fetch(personaWorkerUrl+'/health',{signal:AbortSignal.timeout(3000)});
+  if(!health.ok)return {...fallback,message:'Worker недоступен. '+fallback.message};
+  const {token}=await health.json();
+  if(typeof token!=='string')return fallback;
+  const response=await fetch(personaWorkerUrl+'/carousel-background',{method:'POST',
+   headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},
+   body:JSON.stringify({theme:post.topic,index}),signal:AbortSignal.timeout(125000)});
+  if(!response.ok)return {...fallback,message:'Генерация недоступна. '+fallback.message};
+  const result=await response.json();
+  if(result.source!=='openai')return {...fallback,message:result.warning||fallback.message};
+  if(typeof result.pngBase64!=='string'||result.pngBase64.length>20*1024*1024)throw Error('Invalid generated image');
+  const bytes=Uint8Array.from(atob(result.pngBase64),c=>c.charCodeAt(0));
+  const id='bg-'+crypto.randomUUID();
+  await saveEditorialImage(post.id,id,new File([bytes],'cinematic-background.png',{type:'image/png'}));
+  const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  return {background:{...libraryBackground(index),generatedRef:key(post.id,id),sha256},message:'Фон создан OpenAI и сохранён локально. Оформление требует вашего утверждения.'};
+ }catch{
+  return {...fallback,message:'Генерация недоступна. '+fallback.message};
+ }
+}
+
+/** Photo-backed editorial composition; the older flat layouts remain byte-compatible. */
+async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ const background=slide.background;
+ if(background&&!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ const fonts=await Promise.all([
+  ...(slide.headline!==undefined?[
+   document.fonts.load('600 88px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('700 90px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('italic 600 48px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('300 32px "Persona Carousel Inter"',slide.text),
+   document.fonts.load('400 24px "Persona Carousel Inter"',slide.text+' 01 / 08')
+  ]:[document.fonts.load('500 80px "Playfair Display"',slide.text),document.fonts.load('italic 500 80px "Playfair Display"',slide.text)]),
+  ...(slide.headline!==undefined?[]:[document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')])
+ ]);
+ if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
+ let blob:Blob|undefined;
+ if(background?.generatedRef){
+  const stored=await readEditorialImageByRef(background.generatedRef);
+  if(!stored)throw Error('Созданный фон не найден в локальном архиве. Выберите локальный кинофон.');
+  blob=stored.blob;
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  if(hash!==background.sha256)throw Error('Созданный фон изменился; экспорт остановлен');
+ }else if(background){
+  const response=await fetch(backgroundAssetUrl(background));
+  if(!response.ok)throw Error('Локальный кинофон не найден');
+  blob=await response.blob();
+ }
+ const canvas=document.createElement('canvas');
+ canvas.width=1080;canvas.height=1350;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ if(blob){
+  const image=await createImageBitmap(blob);
+  const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
+  c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);image.close();
+ }
+ // Keep meaningful objects on the right and reserve a genuinely dark text area.
+ const bottom=[0,2,3,6,7].includes(index);
+ const gradient=bottom?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
+ gradient.addColorStop(0,bottom?'rgba(0,0,0,0)':'rgba(0,0,0,.6)');
+ gradient.addColorStop(bottom?.48:.84,'rgba(0,0,0,.6)');
+ gradient.addColorStop(1,bottom?'rgba(0,0,0,.6)':'rgba(0,0,0,0)');
+ c.fillStyle=gradient;c.fillRect(0,0,1080,1350);
+ if(slide.headline!==undefined){
+  paintEditorialHierarchy(c,slide as EditorialHierarchy,index);
+ }else{
+ c.fillStyle=BASELINE_CREAM;c.textBaseline='top';
+ const margin=90,maxWidth=index===0?810:860;
+ const size=index===0?88:index===6?74:index===7?60:index===5?58:54;
+ // Each phrase remains a whole authored paragraph; no AI-rendered glyphs.
+ const italic=[3,5,6,7].includes(index);
+ c.font=(italic?'italic ':'')+'500 '+size+'px "Playfair Display"';
+ const lines=wrapText(c,slide.text,maxWidth,12),leading=size*1.25;
+ if(lines.length*leading>860)throw Error('Текст слишком длинный для кинофона');
+ const y=bottom?Math.max(610,1190-lines.length*leading):index===5?260:150;
+ c.textAlign='left';
+ lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
+ }
+ // Publication artwork contains no slide numbers; labels belong to the contact sheet.
+ return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }
