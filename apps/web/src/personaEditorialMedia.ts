@@ -1,6 +1,7 @@
 import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
+import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
 
 const DB='persona-editorial-assets-v1';
@@ -250,6 +251,57 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   const faces=await document.fonts.load('500 72px "Playfair Display"',slide.text);
   if(!faces.length)throw Error('Кириллический шрифт не загружен; PNG не создан');
   ctx.drawImage(baselineGrain(),0,0);
+  // An author can compose headline / body / optional italic coda with blank lines.
+  // This keeps all letters in real browser Canvas instead of asking image AI to draw Cyrillic.
+  const editorialBlocks=slide.text.trim().split(/\n\s*\n/u).map(v=>v.trim()).filter(Boolean);
+  if(editorialBlocks.length>1){
+   if(editorialBlocks.length>3)throw Error('Слайд '+(index+1)+': допускаются три текстовых уровня');
+   const fontReady=await Promise.all([
+    document.fonts.load('500 82px "Playfair Display"',editorialBlocks[0]),
+    document.fonts.load('400 46px "Playfair Display"',editorialBlocks[1]),
+    ...(editorialBlocks[2]?[document.fonts.load('italic 400 42px "Playfair Display"',editorialBlocks[2])]:[])
+   ]);
+   if(fontReady.some(v=>v.length===0))throw Error('Кириллические шрифты не загружены');
+   if(usePhoto){
+    const shade=ctx.createLinearGradient(0,0,1080,0);
+    shade.addColorStop(0,'rgba(5,6,9,.68)');shade.addColorStop(.78,'rgba(5,6,9,.26)');
+    shade.addColorStop(1,'rgba(5,6,9,.1)');
+    ctx.fillStyle=shade;ctx.fillRect(0,0,1080,1350);
+   }
+   const left=94,width=880;
+   function fit(value:string,weight:400|500,italic:boolean,maxSize:number,minSize:number,height:number,maxLines:number){
+    for(let size=maxSize;size>=minSize;size-=2){
+     ctx.font=(italic?'italic ':'')+weight+' '+size+'px "Playfair Display", Georgia, serif';
+     try{
+      const lines=wrapText(ctx,value,width,maxLines);
+      const step=Math.round(size*1.33);
+      if(lines.length&&lines.length*step<=height&&lines.every(line=>ctx.measureText(line).width<=width))
+       return {lines,step,size};
+     }catch{/* Try a smaller font; never truncate a line. */}
+    }
+    throw Error('Слайд '+(index+1)+': текст не помещается в выбранную типографику');
+   }
+   const headline=fit(editorialBlocks[0],500,false,index===0?88:82,60,335,4);
+   const body=fit(editorialBlocks[1],400,false,52,38,editorialBlocks[2]?385:500,9);
+   const coda=editorialBlocks[2]?fit(editorialBlocks[2],400,true,46,36,155,3):null;
+   ctx.textAlign='left';ctx.textBaseline='top';
+   ctx.fillStyle=theme.fg;
+   let y=195;
+   ctx.font='500 '+headline.size+'px "Playfair Display", Georgia, serif';
+   for(const line of headline.lines){ctx.fillText(line,left,y);y+=headline.step}
+   if(y>550)throw Error('Слайд '+(index+1)+': заголовок перекрывает основной текст');
+   ctx.strokeStyle=theme.accent;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(left,590);ctx.lineTo(left+330,590);ctx.stroke();
+   y=625;ctx.font='400 '+body.size+'px "Playfair Display", Georgia, serif';
+   for(const line of body.lines){ctx.fillText(line,left,y);y+=body.step}
+   if(coda){
+    if(y>1090)throw Error('Слайд '+(index+1)+': абзац перекрывает курсивный акцент');
+    y=1110;ctx.fillStyle=theme.accent;
+    ctx.font='italic 400 '+coda.size+'px "Playfair Display", Georgia, serif';
+    for(const line of coda.lines){ctx.fillText(line,left,y);y+=coda.step}
+    if(y>1290)throw Error('Слайд '+(index+1)+': курсив выходит за границы');
+   }else if(y>1245)throw Error('Слайд '+(index+1)+': текст выходит за границы');
+   return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
+  }
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
   const width=884,left=96;
   let lines:string[]=[],size=0;
