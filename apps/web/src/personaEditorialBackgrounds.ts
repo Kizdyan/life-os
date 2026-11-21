@@ -1,4 +1,6 @@
 import config from '../../../config/carousel-backgrounds.json';
+/** Generated images have their own immutable namespace, never an author's archive label. */
+export function isGeneratedBackgroundRef(ref:string):boolean{return /\/bg-[A-Za-z0-9-]+$/.test(ref)}
 export type CinematicBackground={libraryId:keyof typeof config.library;generatedRef?:string;sha256?:string;provenance?:{provider:'openai';model:string;prompt:string;createdAt:string}};
 export function libraryBackground(index:number):CinematicBackground{
  return {libraryId:config.sequence[index%config.sequence.length] as CinematicBackground['libraryId']};

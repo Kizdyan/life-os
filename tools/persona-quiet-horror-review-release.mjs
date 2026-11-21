@@ -49,6 +49,17 @@ try{
   const backgroundHashes=await Promise.all(draft.slides.map(async s=>digest(await(await fetch(backgrounds.backgroundAssetUrl(s.background))).blob())));
   if(new Set(backgroundHashes).size!==8)throw Error('Background images repeat');
   if(await digest(second)!==await digest(images[0]))throw Error('Nondeterministic rendering');
+  // A real archive choice must replace the cinematic background, including in
+  // headline-only compositions. This procedural image is a test fixture only.
+  const photo=document.createElement('canvas');photo.width=1080;photo.height=1350;
+  const pc=photo.getContext('2d');if(!pc)throw Error('Fixture Canvas unavailable');
+  pc.fillStyle='#244c64';pc.fillRect(0,0,1080,1350);
+  const imageFile=await new Promise(ok=>photo.toBlob(b=>ok(new File([b],'archive-fixture.png',{type:'image/png'}))));
+  await media.saveEditorialImage(draft.id,'photo-test-fixture',imageFile);
+  const archiveSlide={...draft.slides[0],visual:'archive-photo',photoRef:draft.id+'/photo-test-fixture'};
+  const archiveWithStale=await media.renderEditorialSlide(draft,archiveSlide,0);
+  const archiveClean=await media.renderEditorialSlide(draft,{...archiveSlide,background:undefined},0);
+  if(await digest(archiveWithStale)!==await digest(archiveClean)||await digest(archiveClean)===await digest(images[0]))throw Error('Archive photo did not replace cinematic background');
   let checked=m.approveEditorialStep(m.approveEditorialStep(draft,'topic'),'content');
   for(let i=0;i<6;i++)checked=m.setEditorialChecklistItem(checked,i,true);
   if(!m.editorialChecklistReady(checked))throw Error('Gate failed');

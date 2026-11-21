@@ -52,6 +52,13 @@ checks then passed. No renderer or approval rule was weakened.
   load; old image-free publication ZIP entries are unchanged.
 - A response for an edited draft is not applied to its new revision. Generated
   bytes are checked against their saved SHA-256 before rendering/export.
+- Archive uploads get immutable UUID keys. Switching to a real photograph clears
+  the previous background; even stale dual-field records render the explicitly
+  selected archive photo. Generated `bg-*` assets are excluded from the author
+  archive picker, and stale attempts to label one as an original fail closed.
+- Visual directions can be edited per research slide without recreating its
+  evidence record. Unsupported nonempty typography roles fail export explicitly;
+  the Quiet Horror headline-only compositions do not offer a body editor.
 
 ## Reproduction and fixes
 
@@ -61,6 +68,10 @@ checks then passed. No renderer or approval rule was weakened.
 | MAJOR, fixed | After resolving #218 conflicts, import research JSON, approve topic; source review panel was missing and content could not be approved | Restored #220 panel unchanged; SSR regression plus real mobile Chromium source-review/export pass |
 | MAJOR, fixed | A configured key previously allowed a generation click without a separate spending opt-in | UI one-shot consent and server guard; tests prove zero fetch calls without consent |
 | MAJOR, fixed | Research image prompts used a generic theater scene; renderer could use Quiet Horror's layout | Pass authored per-slide direction; retain research renderer; prompt and browser export tests |
+| MAJOR, fixed (independent review) | Select archive mode/upload after a generated background; previous background could still render | Clear background on mode/upload, immutable upload references, explicit archive render precedence; real browser PNG equality regression |
+| MAJOR, fixed (independent review) | Refresh archive after a generated image; it could be relabelled as author-original and lose provenance | Exclude generated namespace from picker; refuse forged archive reference in renderer/export; browser regression |
+| MAJOR, fixed (independent review) | Enter body copy into a headline-only composition; renderer silently skipped it | Hide unsupported editor slot and reject nonempty unsupported roles before rendering; unit regression |
+| MINOR, fixed (independent review) | Missing visual direction could not be supplied from existing editor | Editable per-slide direction, preserving existing source-review state |
 | BLOCKER, open | Original seven-slide Jaws V14 ZIP/reference/copy not found | NEEDS_INPUT: actual path/link to the package, then source review, real export and per-slide comparison |
 | BLOCKER for live image acceptance | Paid image calls are not authorized in this task | No paid calls; provider/mock contract tests are not live provider proof |
 | MAJOR, environment | Local `media:test`: 264 PASS, 2 FAIL, 68 SKIP because FFmpeg/FFprobe are absent from this shell | Do not weaken tests; use exact-head Actions with real FFmpeg/Windows E2E for the integration verdict |
@@ -81,7 +92,18 @@ This path is a test-output location, not a hard-coded runtime dependency.
   sheet and ZIP. **Synthetic regression fixture** with example.org citations
   and a procedural archive image. Test-only checkbox actions are not human
   fact verification. It is neither Jaws V14 nor live generated artwork.
+  `research-unverified-mobile.png` records the actual locked state before the
+  test simulates manual checks; `QA.json` labels this evidence as synthetic.
 - `baseline-*.log`, `windows-fixed-*.log`, `final-*.log`: exact local check logs.
+
+Draft integration PR: [#221](https://github.com/Kizdyan/life-os/pull/221).
+First integration head `ee7e3bf` completed all ten Actions runs successfully,
+including [core with real FFmpeg](https://github.com/Kizdyan/life-os/actions/runs/44926051658),
+[Windows MP4](https://github.com/Kizdyan/life-os/actions/runs/44926051623),
+[research/Quick Render browser QA](https://github.com/Kizdyan/life-os/actions/runs/44926051668)
+and [Quiet Horror actual PNG export](https://github.com/Kizdyan/life-os/actions/runs/44926051649).
+Follow-up independent-review fixes require their own exact-head CI result;
+the earlier green result must not be attributed to a later SHA.
 
 The V14 package was searched for in repository/project artifacts, read-only
 synced source filenames, Downloads ZIPs, the Persona document folder,

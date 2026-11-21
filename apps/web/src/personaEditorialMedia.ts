@@ -5,7 +5,7 @@ import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
 import './persona-editorial-fonts.css';
 import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
-import {backgroundAssetUrl,libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
+import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 
 const DB='persona-editorial-assets-v1';
@@ -223,7 +223,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
- if(!post.research&&(slide.background||slide.headline!==undefined)&&slide.visual==='background')return renderCinematicSlide(post,slide,index);
+ if(!post.research&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -237,13 +237,13 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  const usePhoto=slide.visual==='archive-photo'||Boolean(slide.background);
  if(usePhoto){
   let imageBlob:Blob;
-  if(slide.background)imageBlob=await readCinematicBackground(slide.background);
-  else{
+  if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance. Выберите его как фон.');
   const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):
    await readEditorialImage(post.id,slide.id);
   if(!stored)throw Error('Нет фото для слайда №'+(index+1)+'. Выбери изображение из архива.');
    imageBlob=stored.blob;
-  }
+  }else imageBlob=await readCinematicBackground(slide.background!);
   let image:ImageBitmap;
   try{image=await createImageBitmap(imageBlob)}catch{throw Error('Повреждено изображение для слайда №'+(index+1))}
   const scale=Math.max(1080/image.width,1350/image.height),w=image.width*scale,h=image.height*scale;
@@ -437,6 +437,12 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
 export async function editorialImageProvenance(post:EditorialPost){
  const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
  return Promise.all(post.slides.map(async s=>{
+  if(s.visual==='archive-photo'){
+   if(s.photoRef&&isGeneratedBackgroundRef(s.photoRef))throw Error('Созданный фон потерял provenance; выберите его как фон, а не авторский архив');
+   const stored=s.photoRef?await readEditorialImageByRef(s.photoRef):await readEditorialImage(post.id,s.id);
+   if(!stored)throw Error('Отсутствует оригинал фото из архива');
+   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false};
+  }
   if(s.background?.generatedRef){
    const stored=await readEditorialImageByRef(s.background.generatedRef);
    if(!stored)throw Error('Отсутствует оригинал созданного фона');
@@ -446,11 +452,6 @@ export async function editorialImageProvenance(post:EditorialPost){
   if(s.background){
    const response=await fetch(backgroundAssetUrl(s.background));if(!response.ok)throw Error('Нет библиотечного фона');
    return {slideId:s.id,source:'pre-generated-library',libraryId:s.background.libraryId,sha256:await sha(await response.blob()),liveGeneration:false};
-  }
-  if(s.visual==='archive-photo'){
-   const stored=s.photoRef?await readEditorialImageByRef(s.photoRef):await readEditorialImage(post.id,s.id);
-   if(!stored)throw Error('Отсутствует оригинал фото из архива');
-   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false};
   }
   return {slideId:s.id,source:'image-free-canvas',liveGeneration:false};
  }));
@@ -599,7 +600,13 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
   ...(slide.headline!==undefined?[]:[document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')])
  ]);
  if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
- const blob=background?await readCinematicBackground(background):undefined;
+ let blob:Blob|undefined;
+ if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance');
+  const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):await readEditorialImage(post.id,slide.id);
+  if(!stored)throw Error('Нет оригинального фото для слайда '+(index+1));
+  blob=stored.blob;
+ }else blob=background?await readCinematicBackground(background):undefined;
  const canvas=document.createElement('canvas');
  canvas.width=1080;canvas.height=1350;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');

@@ -1,6 +1,11 @@
 import {it,expect} from 'vitest';
 import {createQuietHorrorCarousel,approveEditorialStep,setEditorialChecklistItem,reviseEditorialPost,editorialContentHash} from './personaEditorialModel';
-import {wrapEditorialText,HIERARCHY_LAYOUTS} from './personaEditorialTypography';
+import {wrapEditorialText,HIERARCHY_LAYOUTS,paintEditorialHierarchy} from './personaEditorialTypography';
+it('refuses nonempty text without a layout zone instead of silently omitting it',()=>{
+ const canvas={} as CanvasRenderingContext2D;
+ expect(()=>paintEditorialHierarchy(canvas,{kicker:'',headline:'Заголовок',body:'Нельзя скрыть этот текст'},0)).toThrow(/нет зоны body/);
+ expect(()=>paintEditorialHierarchy(canvas,{kicker:'',headline:'Заголовок',body:'Нельзя скрыть этот текст'},5)).toThrow(/нет зоны body/);
+});
 it('keeps Russian prepositions attached without changing copy',()=>{
  const text='Музыка в кадре и пауза на сцене';
  const lines=wrapEditorialText(text,120,s=>s.length*10);

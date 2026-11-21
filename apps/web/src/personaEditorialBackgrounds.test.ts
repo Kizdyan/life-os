@@ -1,6 +1,11 @@
 import {describe,it,expect} from 'vitest';
 import {createQuietHorrorCarousel,createBaselinePauseCarousel,editorialContentHash,reviseEditorialPost,approveEditorialStep,setEditorialChecklistItem,loadEditorialStore,EDITORIAL_KEY} from './personaEditorialModel';
-import {libraryBackground,validCinematicBackground,backgroundAssetUrl} from './personaEditorialBackgrounds';
+import {libraryBackground,validCinematicBackground,backgroundAssetUrl,isGeneratedBackgroundRef} from './personaEditorialBackgrounds';
+it('keeps generated background references outside the author-photo namespace',()=>{
+ expect(isGeneratedBackgroundRef('research-test/bg-123-abc')).toBe(true);
+ expect(isGeneratedBackgroundRef('research-test/photo-123-abc')).toBe(false);
+ expect(isGeneratedBackgroundRef('research-test/slide-1')).toBe(false);
+});
 describe('cinematic backgrounds in existing editorial posts',()=>{
  it('adds eight deterministic local backgrounds without changing older fixtures',()=>{
   const p=createQuietHorrorCarousel();

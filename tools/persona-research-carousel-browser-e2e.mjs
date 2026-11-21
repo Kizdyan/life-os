@@ -52,6 +52,7 @@ try{
  const approve=editor.getByRole('button',{name:'Утвердить тексты и подпись'});
  const reviews=editor.getByTestId('editorial-source-review');
  assert.equal(await approve.isDisabled(),true,'No citation is automatically reviewed');
+ await page.screenshot({path:join(artifacts,'research-unverified-mobile.png'),fullPage:true,animations:'disabled'});
  for(let i=0;i<7;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
  assert.equal(await approve.isDisabled(),true,'Public title/caption not reviewed');
  await reviews.getByTestId('research-public-copy-review').check();
@@ -80,9 +81,30 @@ try{
  }), 'base64');
  await editor.locator('.personaEditorialFile input[type=file]').setInputFiles({
   name:'original-scene-fixture.png',mimeType:'image/png',buffer:imageBuffer});
+ await editor.getByTestId('editorial-selected-photo').waitFor();
+ const archiveChecks=await page.evaluate(async b64=>{
+  const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
+  const bg=await import('/src/personaEditorialBackgrounds.ts');
+  const p=m.loadEditorialStore(localStorage).posts.find(p=>p.research);
+  if(!p)throw Error('Missing regression draft');
+  const s=p.slides[2];if(!s.photoRef?.includes('/photo-'))throw Error('Upload did not get an immutable photo key');
+  const clean=await media.renderEditorialSlide(p,s,2);
+  const stale=await media.renderEditorialSlide(p,{...s,background:bg.libraryBackground(0)},2);
+  const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+  const matching=equal(new Uint8Array(await clean.arrayBuffer()),new Uint8Array(await stale.arrayBuffer()));
+  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  await media.saveEditorialImage(p.id,'bg-test-fixture',new File([bytes],'cinematic-background.png',{type:'image/png'}));
+  const forged={...s,photoRef:p.id+'/bg-test-fixture'};
+  let refusedRender=false,refusedEvidence=false;
+  try{await media.renderEditorialSlide(p,forged,2)}catch(e){refusedRender=/provenance/.test(String(e))}
+  try{await media.editorialImageProvenance({...p,slides:p.slides.map((v,i)=>i===2?forged:v)})}catch(e){refusedEvidence=/provenance/.test(String(e))}
+  return {matching,refusedRender,refusedEvidence};
+ },imageBuffer.toString('base64'));
+ assert.deepEqual(archiveChecks,{matching:true,refusedRender:true,refusedEvidence:true},'Archive precedence and generated-image provenance cannot be bypassed');
  await editor.getByRole('button',{name:'Обновить архив'}).click();
  const archive=editor.getByTestId('editorial-archive-picker');
  await archive.locator('[data-archive-key]').first().waitFor({timeout:20000});
+ assert.equal(await archive.locator('[data-archive-key]').count(),1,'Generated backgrounds are not offered as author originals');
  await editor.getByRole('button',{name:'Слайд 4'}).first().click();
  await archive.locator('[data-archive-key]').first().click();
  assert.equal(await editor.getByTestId('editorial-selected-photo').count(),1,'Reused source key is visible');
@@ -135,5 +157,6 @@ try{
  assert.equal(overflow,false,'390px viewport must not overflow horizontally');
  assert.deepEqual(errors,[],'No browser runtime errors');
  await page.screenshot({path:join(artifacts,'reviewed-research-mobile.png'),fullPage:true,animations:'disabled'});
+ await writeFile(join(artifacts,'QA.json'),JSON.stringify({syntheticFixture:true,sourceVerification:'simulated only; example.org is not a verified factual source',paidApiCalls:0,slides:8,archiveChecks,mobileOverflow:false,pngSize:'1080x1350'},null,2)+'\n');
  console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:8,pngSize:'1080x1350',sources:7,viewport:390}));
 }finally{await browser.close()}

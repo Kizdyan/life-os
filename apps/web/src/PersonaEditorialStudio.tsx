@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {libraryBackground} from './personaEditorialBackgrounds';
+import {libraryBackground,isGeneratedBackgroundRef} from './personaEditorialBackgrounds';
+import {HIERARCHY_LAYOUTS} from './personaEditorialTypography';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
@@ -154,7 +155,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   setArchiveLoading(true);setArchiveError('');
   listEditorialImages().then(images=>{
    if(!alive)return;
-   const options=images.filter(img=>img.blob instanceof Blob&&img.blob.size===img.bytes&&
+   const options=images.filter(img=>!isGeneratedBackgroundRef(img.key)&&img.blob instanceof Blob&&img.blob.size===img.bytes&&
     ['image/jpeg','image/png'].includes(img.mime)).map(img=>{
      const url=URL.createObjectURL(img.blob);urls.push(url);
      return {key:img.key,name:img.name,url};
@@ -326,11 +327,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
 
  async function upload(file:File|null){
   if(!post||!slide||!file)return;
+  const id=post.id,revision=post.revision,slideId=slide.id,assetId='photo-'+crypto.randomUUID();
   setBusy(true);setError('');
   try{
-   await saveEditorialImage(post.id,slide.id,file);
-   // Changing an asset invalidates visual approval. No external uploads.
-   onChange(reviseEditorialPost(post,{preset:post.preset}));
+   await saveEditorialImage(id,assetId,file);
+   const current=livePost.current;
+   if(current?.id!==id||current.revision!==revision){setError('Карусель изменилась. Фото сохранено в архиве, но не применено к новой редакции.');return}
+   // Immutable upload: never overwrite a photograph reused by another slide.
+   onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?
+    {...s,visual:'archive-photo',photoRef:id+'/'+assetId,background:undefined}:s)}));
+   setArchiveRefresh(n=>n+1);
    setAsset(old=>{if(old?.url)URL.revokeObjectURL(old.url);return null});
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
@@ -518,7 +524,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     {slide?.headline!==undefined?<div aria-label="Иерархия текста слайда">
      {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Кикер<input value={slide.kicker??''} maxLength={60} onChange={e=>modifySlide({kicker:e.target.value})}/></label>}
      <label>Заголовок<textarea aria-label="Заголовок слайда" value={slide.headline} maxLength={170} onChange={e=>modifySlide({headline:e.target.value})}/></label>
-     <label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>
+     {(post.id!==CAROUSEL_QUIET_HORROR_ID||HIERARCHY_LAYOUTS[selectedSlide]?.body)&&<label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>}
      {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>}
     </div>:<label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
      <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
@@ -600,7 +606,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       aria-pressed={post.preset===x.id} onClick={()=>persist({preset:x.id})}>{x.name}</button>)}
     </div>
     <p>Каждый слайд отдельно: спокойный фон с типографикой либо реальная фотография из твоего архива. Смешивать можно свободно.</p>
-    {post.research&&slide?.photoDirection&&<p className="personaEditorialNote"><strong>Замысел визуала:</strong> {slide.photoDirection}</p>}
+    {post.research&&slide&&<label>Визуальное решение выбранного слайда
+     <textarea value={slide.photoDirection} maxLength={350} onChange={e=>modifySlide({photoDirection:e.target.value})}/>
+    </label>}
     <div className="personaEditorialSlides">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
@@ -619,9 +627,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </div>}
     <fieldset className="personaEditorialMediaChoices">
      <legend>Оформление слайда {selectedSlide+1}</legend>
-     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
+     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat||post.research?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
      <label><input type="radio" checked={slide?.visual==='archive-photo'}
-      disabled={Boolean(post.carouselFormat)} onChange={()=>modifySlide({visual:'archive-photo'})}/>Фото из архива + текст</label>
+      disabled={Boolean(post.carouselFormat)} onChange={()=>modifySlide({visual:'archive-photo',background:undefined})}/>Фото из архива + текст</label>
     </fieldset>
     {archiveFixture&&<section className="personaEditorialArchivePicker" data-testid="editorial-archive-picker"
      aria-label="Выбор фотографий из архива IndexedDB">

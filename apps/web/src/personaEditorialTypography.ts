@@ -39,6 +39,8 @@ export const HIERARCHY_LAYOUTS:readonly HierarchyLayout[]=[
 
 export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number){
  const layout=HIERARCHY_LAYOUTS[index];if(!layout)throw Error('Неизвестная композиция');
+ for(const role of ['kicker','headline','highlight','body'] as const)
+  if(slide[role]?.trim()&&!layout[role])throw Error('В композиции слайда '+(index+1)+' нет зоны '+role+'; текст не будет скрыт при экспорте');
  const result:{role:string;size:number;lines:string[];x:number;y:number;width:number;height:number}[]=[];
  c.save();
  for(const role of ['kicker','headline','highlight','body'] as const){
