@@ -390,7 +390,7 @@ export function createResearchedEditorialPost(
 ):EditorialPost{
  if(!/^[A-Za-z0-9-]{3,75}$/.test(id)||!title.trim()||title.length>160||
   !angle.trim()||angle.length>500)throw Error('Нужна конкретная тема и задача');
- const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=7
+ const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=8
   ?draft.slides.map(s=>s.title.trim().slice(0,170))
   :['Зацепка и вопрос зрителю','Конфликт или контраст','Новая деталь','Поворот в смысле','Незавершённый вывод'];
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
@@ -540,7 +540,7 @@ export function validatePost(post:EditorialPost):void{
  if(post.research){
   const r=post.research,ids=new Set(post.slides.map(s=>s.id));
   if(r.provider!=='manual'||(r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
-    !Array.isArray(r.sourceItems)||r.sourceItems.length>28||
+    !Array.isArray(r.sourceItems)||r.sourceItems.length>32||
    !Array.isArray(r.interpretationSlides)||
    r.interpretationSlides.some(id=>!ids.has(id))||
    new Set(r.interpretationSlides).size!==r.interpretationSlides.length||
