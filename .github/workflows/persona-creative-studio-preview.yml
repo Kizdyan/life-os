@@ -68,6 +68,16 @@ jobs:
           name: persona-research-carousel-mobile-evidence
           path: artifacts/persona-research-browser/
           if-no-files-found: warn
+      - name: Produce the real sourced fridge-hum draft without author approval
+        run: node tools/persona-production-carousel-browser-e2e.mjs
+      - name: Upload seven-slide production draft for author review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-fridge-hum-production-draft
+          path: artifacts/persona-production-carousel/
+          retention-days: 30
+          if-no-files-found: error
       - name: Verify unified content calendar opens real Reels and photo jobs in Chromium
         run: node tools/persona-weekly-calendar-browser-e2e.mjs
       - name: Verify real one-click browser-to-MP4 workflow

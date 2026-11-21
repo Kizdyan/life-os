@@ -1,4 +1,4 @@
-import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,validatePost,editorialContentHash,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/playfair-display/400-italic.css';
@@ -223,7 +223,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
- if(!post.research&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
+ if((!post.research||post.fontPreset==='cormorant-inter')&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -433,6 +433,24 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
  if(post.research||post.slides.some(s=>s.background))files.push({name:'image-provenance.json',data:new TextEncoder().encode(JSON.stringify(await editorialImageProvenance(post),null,2))});
  return zipFileBytes(files);
 }
+
+/** Review-only delivery reuses the production renderer; it grants NO approvals.
+ * The publication export above keeps all existing source/content/design gates. */
+export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvidence}:{sourceEvidence?:unknown}={}):Promise<Blob>{
+ validatePost(post);
+ const images=await Promise.all(post.slides.map((s,i)=>renderSlide(post,s,i)));
+ const enc=new TextEncoder(),json=(value:unknown)=>enc.encode(JSON.stringify(value,null,2)+'\n');
+ const files=await Promise.all(images.map(async(blob,i)=>({name:'slide-'+String(i+1).padStart(2,'0')+'.png',data:new Uint8Array(await blob.arrayBuffer())})));
+ files.push({name:'contact-sheet.png',data:new Uint8Array(await(await editorialContactSheet(images)).arrayBuffer())});
+ files.push({name:'caption.txt',data:enc.encode(post.caption.trim())},{name:'draft.json',data:json(post)},
+  {name:'review-manifest.json',data:json({purpose:'author-review-only',publicationAllowed:false,contentHash:editorialContentHash(post),
+   gates:{CONTENT_PASS:post.approvals.content?'AUTHOR_CONFIRMED':'AWAITING_AUTHOR',SOURCE_PASS:editorialSourcesPass(post)?'AUTHOR_CONFIRMED':'UNVERIFIED_AUTHOR',VISUAL_PASS:post.approvals.design?'AUTHOR_CONFIRMED':'AWAITING_AUTHOR'},
+   authorApprovals:post.approvals,slides:images.length,width:1080,height:1350})},
+  {name:'research-sources.json',data:json(post.research??null)},
+  {name:'image-provenance.json',data:json(await editorialImageProvenance(post))});
+ if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
+ return zipFileBytes(files);
+}
 /** Evidence labels describe actual inputs; bundled photographs are never called live generation. */
 export async function editorialImageProvenance(post:EditorialPost){
  const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
@@ -447,7 +465,8 @@ export async function editorialImageProvenance(post:EditorialPost){
    const stored=await readEditorialImageByRef(s.background.generatedRef);
    if(!stored)throw Error('Отсутствует оригинал созданного фона');
    const digest=await sha(stored.blob);if(digest!==s.background.sha256)throw Error('SHA-256 фона изменился');
-   return {slideId:s.id,source:'provider-generated',sha256:digest,originalRef:s.background.generatedRef,...s.background.provenance};
+   return {slideId:s.id,source:'provider-generated',sha256:digest,originalRef:s.background.generatedRef,...s.background.provenance,
+    generationMode:s.background.provenance?.provider==='codex-imagegen'?'external-tool-import':s.background.provenance?'worker-api':'legacy-metadata-incomplete'};
   }
   if(s.background){
    const response=await fetch(backgroundAssetUrl(s.background));if(!response.ok)throw Error('Нет библиотечного фона');
@@ -528,12 +547,16 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
 
 export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  if(images.length!==8)throw Error('Нужны восемь слайдов');
+ return editorialContactSheet(images);
+}
+export async function editorialContactSheet(images:Blob[]):Promise<Blob>{
+ if(images.length<3||images.length>8)throw Error('Для контактного листа нужны 3–8 слайдов');
  await document.fonts.load('400 24px "Inter"','01');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
  c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
  // 4 × (600 + labels) exceeds the requested sheet height. Keep 4:5 thumbnails.
- for(let i=0;i<8;i++){
+ for(let i=0;i<images.length;i++){
   const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
   c.drawImage(image,x,y,400,500);image.close();
   c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;

@@ -128,6 +128,18 @@ export function runBounded(command,args,{env=process.env,timeoutMs=60000,maxStdo
   child.on('close',code=>code===0?finish(null,Buffer.concat(out)):finish(Error('Media processor failed (code '+code+'): '+errorText.slice(-300))));
  });
 }
+/** FFmpeg autorotates right-angle display matrices before scale/pad. Keep the
+ * original encoded bytes; report their displayed geometry without cropping. */
+export function quickVideoGeometry(video){
+ if(!Number.isInteger(video.width)||!Number.isInteger(video.height)||video.width<16||video.height<16)
+  throw Error('Некорректные размеры видеокадра');
+ const rotation=Number(video.side_data_list?.find(x=>x.rotation!==undefined)?.rotation??video.tags?.rotate??0);
+ if(!Number.isFinite(rotation)||Math.abs(rotation)>3600||Math.abs(rotation/90-Math.round(rotation/90))>.0001)
+  throw Error('Неподдерживаемый поворот: допустимы только 0, 90, 180 и 270 градусов');
+ const rotationDeg=((Math.round(rotation/90)*90%360)+360)%360,swap=rotationDeg%180!==0;
+ return {width:swap?video.height:video.width,height:swap?video.width:video.height,
+  codedWidth:video.width,codedHeight:video.height,rotationDeg};
+}
 async function probe(file,config,{audioOnly=false,rendered=false}={}){
  const raw=await runBounded(mediaBin('ffprobe',config),['-v','error','-show_entries',
   'format=duration:stream=codec_type,width,height,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation',
@@ -140,9 +152,7 @@ async function probe(file,config,{audioOnly=false,rendered=false}={}){
  if(!video||!Number.isInteger(video.width)||!Number.isInteger(video.height))throw Error('Video stream is missing');
  if(['smpte2084','arib-std-b67'].includes(video.color_transfer)||
   String(video.color_primaries??'').startsWith('bt2020'))throw Error('Это видео в HDR/Dolby Vision. Для безопасной цветокоррекции сначала экспортируйте его копию в SDR (Rec.709), оригинал сохраните.');
- if(Number(video.tags?.rotate??0)!==0||video.side_data_list?.some(x=>Number(x.rotation??0)!==0))
-  throw Error('У видео есть метаданные поворота. Сначала экспортируйте копию с правильной ориентацией кадра, чтобы автоматический монтаж не обрезал лицо.');
- return {durationSec,width:video.width,height:video.height,hasAudio:data.streams.some(x=>x.codec_type==='audio')};
+ return {durationSec,...quickVideoGeometry(video),hasAudio:data.streams.some(x=>x.codec_type==='audio')};
 }
 async function jpegFrame(path,second,config){
  const raw=await runBounded(mediaBin('ffmpeg',config),
@@ -209,10 +219,12 @@ export function createPersonaQuickRenderService(config={}){
  }
  async function save(job){
   const view={...job};delete view.child;delete view.promise;
-  jobs.set(job.id,view);
   // quick-state.json retains upload/UX metadata only. job.json owns lifecycle and failure.
   const disk={...view};delete disk.state;delete disk.error;delete disk.fullRender;
-  await atomicFile(metaFile(job.id),disk);return view;
+  await atomicFile(metaFile(job.id),disk);
+  // A completed card is observable only after its atomic disk commit. Otherwise
+  // polling clients can back up/restart/clean up while the writer is still active.
+  jobs.set(job.id,view);return view;
  }
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
@@ -501,6 +513,8 @@ export function createPersonaQuickRenderService(config={}){
       accentAudio.push({status:'whisper-failed',segments:[],reason:String(error.message||error).slice(0,140)});
      }
     }
+    await writeFile(join(out,'asr-evidence.json'),JSON.stringify({version:1,sourceShas:vids.map(f=>f.sha256),
+     audio:accentAudio,warning:'Unverified local Whisper hypotheses, not author-approved dialogue',authorReviewRequired:true},null,2)+'\n',{flag:'wx'});
    }
    // One shared Fast Draft Vision deadline: 3–5 mood frames + sparse moment detection.
    // This prevents automatic styling from silently extending the cloud time budget.
@@ -675,6 +689,7 @@ export function createPersonaQuickRenderService(config={}){
      }
     }else if(assessment.mode==='quote'&&CONTINUITY_FORMATS.has(job.videoFormat??'auto')){
      job.captionDecision.mode='speech-unavailable';
+     job.captionDecision.needsManualTranscriptReview=true;
      job.captionDecision.reason='В этом формате нельзя подменять речь выдуманной ИИ цитатой.';
     }else if(assessment.mode==='quote'){
      job.stage='AI Quote Generator: короткая оригинальная фраза';await save(job);

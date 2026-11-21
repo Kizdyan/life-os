@@ -183,7 +183,7 @@ export type EditorialResearch={
 };
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
-  fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
+  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter';carouselFormat?:'photo-led'|'mixed';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -531,7 +531,7 @@ export function validatePost(post:EditorialPost):void{
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
-  (post.fontPreset!==undefined&&!['legacy','playfair-inter'].includes(post.fontPreset))||
+  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter'].includes(post.fontPreset))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
