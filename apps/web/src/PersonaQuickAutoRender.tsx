@@ -15,7 +15,7 @@ type QuickRenderJob={id:string;title:string;state:'waiting_for_footage'|'uploadi
  finalQuality?:{status:'REVIEW_REQUIRED'|'UNAVAILABLE';videoSha256:string;reason?:string;
   warnings?:{id:string;title:string;timecodes:string[]}[];notMeasuredCount?:number;
   reportSha256?:string;contactSheetSha256?:string|null}|null;
- contentType?:'video'|'photo-carousel'|'photo-slideshow';carouselAspect?:'4:5'|'1:1';
+ contentType?:'video'|'photo-carousel'|'photo-slideshow';videoFormat?:VideoFormat;carouselAspect?:'4:5'|'1:1';
  carouselFiles?:{id:string;width:number;height:number;textOverlay:boolean}[];
  exportStatus?:'RENDERING'|'COMPLETED'|'FAILED'|null;exportError?:string|null;
  exportItems?:{id:string;filename:string;kind:string;width?:number;height?:number}[];};
@@ -26,6 +26,8 @@ const photo=new Set(['jpg','jpeg','png']);
 type ContentType='video'|'photo-carousel'|'photo-slideshow';
 type QuickStyle='cinematic'|'dynamic'|'signature-gold';
 type QuickColor='SoftCinematic'|'DetailCinematic';
+type VideoFormat='auto'|'explainer'|'personal'|'dialogue'|'acting'|'music'|'cinematic'|'backstage'|'voiceover';
+const CONTINUITY_VIDEO_FORMATS=new Set<VideoFormat>(['explainer','personal','dialogue','acting','music','voiceover']);
 const DEFAULT_PROMPT='Собери короткий ролик из моих видео; если Vision доступен, выбери выразительные моменты.';
 const moodLabels:Record<string,string>={dramatic:'драматичное',calm:'спокойное',funny:'весёлое',dynamic:'динамичное',premium:'премиальное'};
 export function checkQuickRenderFiles(files:File[],contentType:ContentType='video'){
@@ -53,6 +55,7 @@ const statusLabel=(job:QuickRenderJob)=>job.state==='waiting_for_footage'?'Пр�
 export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:{focusJobId?:string|null;focusRequest?:number}={}){
  const [files,setFiles]=useState<File[]>([]);
  const [contentType,setContentType]=useState<ContentType>('video');
+ const [videoFormat,setVideoFormat]=useState<VideoFormat>('auto');
  const [carouselAspect,setCarouselAspect]=useState<'4:5'|'1:1'>('4:5');
  const [coverTitle,setCoverTitle]=useState('');
  const [slideTexts,setSlideTexts]=useState<string[]>([]);
@@ -132,7 +135,7 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
    const response=await workerFetch('/quick-render',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt:prompt.trim(),files:selected,consent:true,fastDraft,autoStyle,textAccents,
-     contentType,carouselAspect,coverTitle,...(slides?{slides}:{}),
+     contentType,videoFormat:contentType==='video'?videoFormat:'auto',carouselAspect,coverTitle,...(slides?{slides}:{}),
      ...(!autoStyle?{styleChoice,colorPreset}:{})})});
    const created=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(created.error||'Не удалось создать проект автомонтажа.');
@@ -225,7 +228,21 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
       value={value} checked={contentType===value}
       onChange={()=>{setContentType(value);setFiles([]);setSlideTexts([]);setError('');if(fileRef.current)fileRef.current.value=''}}/>{label}</label>)}
    </fieldset>
-   {contentType==='photo-carousel'&&<fieldset className="personaQuickMode" aria-label="Формат фотографий">
+   {contentType==='video'&&<label className="personaQuickPrompt" htmlFor="persona-quick-video-format">Формат и логика монтажа
+      <select id="persona-quick-video-format" value={videoFormat} onChange={event=>setVideoFormat(event.target.value as VideoFormat)}>
+       <option value="auto">Автоматический · выбор моментов</option>
+       <option value="explainer">Разговорный · экспертный</option>
+       <option value="personal">Разговорный · личная история</option>
+       <option value="dialogue">Диалог / интервью</option>
+       <option value="acting">Актёрская сцена / этюд</option>
+       <option value="music">Музыкальное исполнение</option>
+       <option value="cinematic">Кинематографическая история</option>
+       <option value="backstage">Закулисье / процесс</option>
+       <option value="voiceover">Закадровый рассказ</option>
+      </select>
+      <small>{CONTINUITY_VIDEO_FORMATS.has(videoFormat)?'Бережный черновик: все фразы и паузы сохраняются, до 75 секунд суммарно. Склейки требуют просмотра.':'Автоплан выбирает короткие интервалы. Смысл речи нужно проверить вручную.'}</small>
+     </label>}
+    {contentType==='photo-carousel'&&<fieldset className="personaQuickMode" aria-label="Формат фотографий">
     <legend>Соотношение сторон</legend>
     {(['4:5','1:1'] as const).map(ratio=><label key={ratio}><input type="radio"
      name="persona-carousel-aspect" value={ratio} checked={carouselAspect===ratio}
@@ -368,7 +385,8 @@ export default function PersonaQuickAutoRender({focusJobId=null,focusRequest=0}:
        </>}
       </details>}
      {job.fullRenderStatus==='FAILED'&&<p role="alert" className="personaQuickCardError">1080p: {job.fullRenderError}. Черновик доступен.</p>}
-     {job.ready&&<p>MP4 создан и прошёл базовую проверку файла. Качество игры, цвета, звука и субтитров требует твоего просмотра перед публикацией.</p>}
+     {job.ready&&CONTINUITY_VIDEO_FORMATS.has(job.videoFormat??'auto')&&<p>Монтаж сохранил дубли целиком: смысловые сокращения не выполнялись. Проверь актёрские паузы и переходы.</p>}
+      {job.ready&&<p>MP4 создан и прошёл базовую проверку файла. Качество игры, цвета, звука и субтитров требует твоего просмотра перед публикацией.</p>}
     </div>
     <div className="personaQuickCardActions">
      {job.seedKey&&job.state!=='completed'&&job.state!=='running'&&job.state!=='failed'&&

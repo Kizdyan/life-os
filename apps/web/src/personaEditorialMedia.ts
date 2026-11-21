@@ -1,6 +1,7 @@
-import {CAROUSEL_BASELINE_ID,editorialArchiveProvenancePass,editorialSourcesPass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
+import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
 
 const DB='persona-editorial-assets-v1';
@@ -157,7 +158,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
   throw Error('Неподдерживаемый вариант эталонной карусели');
  const fonts=await Promise.all([
   document.fonts.load('500 100px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 06')
+  document.fonts.load('400 24px "Inter"','А')
  ]);
  if(fonts.some(faces=>faces.length===0))
   throw Error('Локальные шрифты Playfair Display / Inter не загрузились; экспорт остановлен');
@@ -213,14 +214,13 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
    baselineLine(ctx,'действием.',150,870);
    break;
  }
- ctx.save();ctx.textAlign='right';ctx.fillStyle=BASELINE_BEIGE;
- ctx.font='400 24px "Inter", sans-serif';ctx.textBaseline='alphabetic';
- ctx.fillText(String(index+1).padStart(2,'0')+' / 06',990,1260);
- ctx.restore();
+ // Internal page numbering is forbidden on exported PNG.
  return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
+  return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
   return renderBaselineArtistSlide(post,slide,index);
  const c=document.createElement('canvas');c.width=1080;c.height=1350;
@@ -251,6 +251,58 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   const faces=await document.fonts.load('500 72px "Playfair Display"',slide.text);
   if(!faces.length)throw Error('Кириллический шрифт не загружен; PNG не создан');
   ctx.drawImage(baselineGrain(),0,0);
+  // An author can compose headline / body / optional italic coda with blank lines.
+  // This keeps all letters in real browser Canvas instead of asking image AI to draw Cyrillic.
+  const editorialBlocks=slide.text.trim().split(/\n\s*\n/u).map(v=>v.trim()).filter(Boolean);
+  if(editorialBlocks.length>1){
+   if(editorialBlocks.length>3)throw Error('Слайд '+(index+1)+': допускаются три текстовых уровня');
+   const fontReady=await Promise.all([
+    document.fonts.load('500 82px "Playfair Display"',editorialBlocks[0]),
+    document.fonts.load('400 46px "Playfair Display"',editorialBlocks[1]),
+    ...(editorialBlocks[2]?[document.fonts.load('italic 400 42px "Playfair Display"',editorialBlocks[2])]:[])
+   ]);
+   if(fontReady.some(v=>v.length===0))throw Error('Кириллические шрифты не загружены');
+   if(usePhoto){
+    const shade=ctx.createLinearGradient(0,0,1080,0);
+    shade.addColorStop(0,'rgba(5,6,9,.68)');shade.addColorStop(.78,'rgba(5,6,9,.26)');
+    shade.addColorStop(1,'rgba(5,6,9,.1)');
+    ctx.fillStyle=shade;ctx.fillRect(0,0,1080,1350);
+   }
+   const left=94,width=880;
+   const fitCtx:CanvasRenderingContext2D=ctx; // Narrowed context captured by the nested helper.
+   function fit(value:string,weight:400|500,italic:boolean,maxSize:number,minSize:number,height:number,maxLines:number){
+    for(let size=maxSize;size>=minSize;size-=2){
+     fitCtx.font=(italic?'italic ':'')+weight+' '+size+'px "Playfair Display", Georgia, serif';
+     try{
+      const lines=wrapText(fitCtx,value,width,maxLines);
+      const step=Math.round(size*1.33);
+      if(lines.length&&lines.length*step<=height&&lines.every(line=>fitCtx.measureText(line).width<=width))
+       return {lines,step,size};
+     }catch{/* Try a smaller font; never truncate a line. */}
+    }
+    throw Error('Слайд '+(index+1)+': текст не помещается в выбранную типографику');
+   }
+   const headline=fit(editorialBlocks[0],500,false,index===0?88:82,60,335,4);
+   const body=fit(editorialBlocks[1],400,false,52,38,editorialBlocks[2]?385:500,9);
+   const coda=editorialBlocks[2]?fit(editorialBlocks[2],400,true,46,36,155,3):null;
+   ctx.textAlign='left';ctx.textBaseline='top';
+   ctx.fillStyle=theme.fg;
+   let y=195;
+   ctx.font='500 '+headline.size+'px "Playfair Display", Georgia, serif';
+   for(const line of headline.lines){ctx.fillText(line,left,y);y+=headline.step}
+   if(y>550)throw Error('Слайд '+(index+1)+': заголовок перекрывает основной текст');
+   ctx.strokeStyle=theme.accent;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(left,590);ctx.lineTo(left+330,590);ctx.stroke();
+   y=625;ctx.font='400 '+body.size+'px "Playfair Display", Georgia, serif';
+   for(const line of body.lines){ctx.fillText(line,left,y);y+=body.step}
+   if(coda){
+    if(y>1090)throw Error('Слайд '+(index+1)+': абзац перекрывает курсивный акцент');
+    y=1110;ctx.fillStyle=theme.accent;
+    ctx.font='italic 400 '+coda.size+'px "Playfair Display", Georgia, serif';
+    for(const line of coda.lines){ctx.fillText(line,left,y);y+=coda.step}
+    if(y>1290)throw Error('Слайд '+(index+1)+': курсив выходит за границы');
+   }else if(y>1245)throw Error('Слайд '+(index+1)+': текст выходит за границы');
+   return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
+  }
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
   const width=884,left=96;
   let lines:string[]=[],size=0;
@@ -266,7 +318,13 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   if(!size||!lines.length)throw Error('Слайд '+(index+1)+': текст не помещается без обрезки');
   // Darkened photo backing gives a stable reading surface; no synthetic text or labels.
   if(usePhoto){
-   ctx.fillStyle='rgba(5,6,8,.78)';ctx.fillRect(55,180,968,1085);
+   // Avoid the opaque black rectangle that erased actual cinematic photographs.
+   // Keep the left-side text readable while revealing the background on the right.
+   const sideVeil=ctx.createLinearGradient(0,0,1080,0);
+   sideVeil.addColorStop(0,'rgba(5,6,8,.52)');
+   sideVeil.addColorStop(.52,'rgba(5,6,8,.26)');
+   sideVeil.addColorStop(1,'rgba(5,6,8,.03)');
+   ctx.fillStyle=sideVeil;ctx.fillRect(0,0,1080,1350);
   }
   const leading=size+20,top=index===0?300:260;
   const y0=Math.min(Math.max(top,695-(lines.length*leading)/2),1200-(lines.length-1)*leading);
@@ -369,4 +427,83 @@ export function triggerEditorialDownload(blob:Blob,filename:string){
  a.href=url;a.download=filename;a.style.display='none';
  document.body.appendChild(a);a.click();a.remove();
  window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.slides.length!==8||index<0||index>7||slide.visual!=='background'||post.preset!=='chocolate-graphite')
+  throw Error('Неподдерживаемый вариант карусели');
+ const fonts=await Promise.all([document.fonts.load('500 88px "Playfair Display"',slide.text),
+  document.fonts.load('400 24px "Inter"','А')]);
+ if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
+ const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ const paintCtx:CanvasRenderingContext2D=c; // Narrowed context captured by both nested helpers.
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ c.drawImage(baselineGrain(),0,0);
+ c.fillStyle=BASELINE_CREAM;c.strokeStyle=BASELINE_BEIGE;
+ function line(x1:number,y1:number,x2:number,y2:number,width=1){
+  paintCtx.lineWidth=width;paintCtx.beginPath();paintCtx.moveTo(x1,y1);paintCtx.lineTo(x2,y2);paintCtx.stroke();
+ }
+ function block(text:string,x:number,y:number,width:number,height:number,size:number,
+  align:CanvasTextAlign='left',color=BASELINE_CREAM,leading=1.35,exactLines?:string[]){
+  let lines:string[]=[],used=size;
+  for(;used>=28;used--){
+   paintCtx.font='500 '+used+'px "Playfair Display"';
+   lines=exactLines??wrapText(paintCtx,text,width,40);
+   if(lines.every(value=>paintCtx.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
+  }
+  if(used<28)throw Error('Текст не помещается в композицию');
+  paintCtx.fillStyle=color;paintCtx.textAlign=align;paintCtx.textBaseline='top';
+  const tx=align==='center'?x+width/2:align==='right'?x+width:x;
+  lines.forEach((value,i)=>paintCtx.fillText(value,tx,y+i*used*leading));
+ }
+ switch(index){
+  case 0:
+   line(90,160.5,522,160.5);
+   block(slide.text,90,790,900,390,88,'left',BASELINE_CREAM,1.5,
+    slide.text==='Самые страшные сцены в кино часто почти беззвучны.'?
+     ['Самые страшные сцены','в кино часто почти беззвучны.']:undefined);
+   break;
+  case 1:block(slide.text,90,130,900,490,52,'left',BASELINE_CREAM,1.5);break;
+  case 2:{
+   const parts=slide.text.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.map(s=>s.trim())??[slide.text];
+   parts.forEach((text,i)=>block(text,90,290+i*250,900,190,56,'center'));break;
+  }
+  case 3:
+   line(91,230,91,350,2);block(slide.text,90,710,900,480,52);break;
+  case 4:{
+   line(90,1180,990,742.5);
+   const split=slide.text.indexOf('Когда');
+   block(split>0?slide.text.slice(0,split).trim():slide.text,90,140,790,390,56);
+   if(split>0)block(slide.text.slice(split),200,830,790,350,56,'right',BASELINE_BEIGE);
+   break;
+  }
+  case 5:
+   c.fillStyle=BASELINE_BEIGE;c.beginPath();c.arc(94,94,4,0,Math.PI*2);c.fill();
+   block(slide.text,110,330,860,740,64,'center');break;
+  case 6:block(slide.text,150,430,780,530,72,'center');break;
+  case 7:
+   line(90,910.5,414,910.5);
+   block(slide.text,90,950,900,240,44,'left',BASELINE_CREAM,1.5,
+    slide.text==='Следующий разбор — про одну ноту, которая меняет финал. Сохраните, если интересно.'?
+     ['Следующий разбор — про одну ноту, которая меняет финал.','Сохраните, если интересно.']:undefined);
+ }
+ // No page numbering inside individual slide PNG.
+ return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('PNG export failed')),'image/png'));
+}
+
+export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
+ if(images.length!==8)throw Error('Нужны восемь слайдов');
+ await document.fonts.load('400 24px "Inter"','01');
+ const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
+ // 4 × (600 + labels) exceeds the requested sheet height. Keep 4:5 thumbnails.
+ for(let i=0;i<8;i++){
+  const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
+  c.drawImage(image,x,y,400,500);image.close();
+  c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
+  c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
+ }
+ return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
 }

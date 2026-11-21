@@ -12,7 +12,7 @@ const researchPrompt=`Ты — исследователь и независим�
 {"text":"...","visualDirection":"...","sources":[{"title":"...","url":"https://..."}]},
 {"text":"...","visualDirection":"...","interpretation":true}
 ]}
-Требования: 5–7 смысловых слайдов, текст на каждом не больше 260 символов, 5–160 символов в названии. Ранние слайды интригуют, каждый добавляет проверяемую деталь, финал переосмысляет историю без выдуманных фактов. Каждая ссылка должна быть ТОЧНЫМ URL, реально найденным через веб-поиск инструмента. Не выдумывай URL, цитаты, факты и даты; при недостатке источников прямо сообщи об отсутствии доказательств вместо генерации JSON. VisualDirection — кинематографичный кадр, без чужих лиц и без букв внутри изображения. Никаких нумераций и служебного текста на слайдах.`;
+Требования: 5–8 смысловых слайдов, текст на каждом не больше 260 символов, 5–160 символов в названии. Ранние слайды интригуют, каждый добавляет проверяемую деталь, финал переосмысляет историю без выдуманных фактов. Каждая ссылка должна быть ТОЧНЫМ URL, реально найденным через веб-поиск инструмента. Не выдумывай URL, цитаты, факты и даты; при недостатке источников прямо сообщи об отсутствии доказательств вместо генерации JSON. VisualDirection — кинематографичный кадр, без чужих лиц и без букв внутри изображения. Поле text можно разделить пустой строкой на headline, body и короткий курсивный акцент (до 3 блоков, всего до 260 символов) для настоящей типографики Canvas. Никаких нумераций и служебного текста на слайдах.`;
 function validUrl(raw){
  try{const u=new URL(raw);return u.protocol==='https:'&&Boolean(u.hostname)&&!u.username&&!u.password&&!/^(localhost|127\.|10\.|192\.168\.|169\.254\.)/i.test(u.hostname)}
  catch{return false}
@@ -40,7 +40,7 @@ function searchUrls(data){
 function string(s,max,label){if(typeof s!=='string'||!s.trim()||s.length>max)throw Error('Неполный текст: '+label);return s.trim()}
 function parsePacket(raw,urls){
  if(!raw||typeof raw!=='object'||Array.isArray(raw)||!Array.isArray(raw.slides)||
-    raw.slides.length<5||raw.slides.length>7)throw Error('Исследование не содержит 5–7 слайдов');
+    raw.slides.length<5||raw.slides.length>8)throw Error('Исследование не содержит 5–8 слайдов');
  const packet={title:string(raw.title,160,'название'),angle:string(raw.angle,500,'задача'),
   caption:string(raw.caption,4500,'подпись'),slides:[]};
  for(const [i,item] of raw.slides.entries()){

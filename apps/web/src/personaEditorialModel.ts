@@ -1,5 +1,8 @@
 import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
+import quietHorror from '../../../config/carousel-quiet-horror.json';
+import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
  * This is a companion to existing PHOTO-001…010 ProductionJobs, not a second media job.
@@ -34,6 +37,28 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
  const c=PALETTE_CONTRAST[post.preset];
  return c.bg.every(bg=>editorialContrastRatio(c.main,bg)>=4.5&&editorialContrastRatio(c.heading,bg)>=3);
 }
+/** Advisory only: deterministic editorial preflight, not fact checking or visual approval. */
+export function carouselEditorialWarnings(post:Pick<EditorialPost,'kind'|'slides'|'caption'>):string[]{
+ if(post.kind!=='carousel')return [];
+ const warnings:string[]=[];
+ const count=(s:string)=>s.trim()?s.trim().split(/\s+/u).length:0;
+ if(!post.slides.length)return ['В карусели нет слайдов.'];
+ if(count(post.slides[0].text)>12)
+  warnings.push('Обложка перегружена: больше 12 слов. Проверь силу хука на телефоне.');
+ post.slides.forEach((slide,i)=>{
+  if(count(slide.text)>26)
+   warnings.push('Слайд '+(i+1)+': больше 26 слов. Перенеси подробности в подпись.');
+ });
+ const normalized=post.slides.map(s=>s.text.toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}]+/gu,' ').trim());
+ if(new Set(normalized.filter(Boolean)).size<normalized.filter(Boolean).length)
+  warnings.push('Повторяется одинаковый текст на нескольких слайдах.');
+ const last=post.slides[post.slides.length-1].text;
+ if(/(?:сохраните|подпишитесь|ставьте лайк)/iu.test(last))
+  warnings.push('Последний слайд заканчивается шаблонным призывом вместо нового смысла.');
+ if(!post.caption.trim())warnings.push('Нет полноценного текста под публикацией.');
+ return warnings;
+}
+
 export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
   post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),...(post.research?[post.research]:[])]));
@@ -68,7 +93,9 @@ function editorialHash(value:string):string{
 export function editorialDesignHash(post:EditorialPost):string{
  return editorialHash(JSON.stringify([editorialContentHash(post),
   post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
-   'persona-baseline-artist-layout-v2':'persona-editorial-fonts-v1',
+   'persona-baseline-artist-layout-v3-no-page-numbers':
+   post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter'?
+    'persona-quiet-horror-v2-no-page-numbers':'persona-editorial-fonts-v1',
   post.fontPreset??'legacy']));
 }
 export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
@@ -363,7 +390,7 @@ export function createResearchedEditorialPost(
 ):EditorialPost{
  if(!/^[A-Za-z0-9-]{3,75}$/.test(id)||!title.trim()||title.length>160||
   !angle.trim()||angle.length>500)throw Error('Нужна конкретная тема и задача');
- const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=7
+ const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=8
   ?draft.slides.map(s=>s.title.trim().slice(0,170))
   :['Зацепка и вопрос зрителю','Конфликт или контраст','Новая деталь','Поворот в смысле','Незавершённый вывод'];
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
@@ -373,6 +400,15 @@ export function createResearchedEditorialPost(
   approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(result);return result;
+}
+export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
+ const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
+  title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
+  slides:quietHorror.texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
+  preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
+  origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
 }
 /** Opt-in Editorial Desk seed. Never overwrites PHOTO-001…010. */
 export function createBaselinePauseCarousel(now=new Date().toISOString()):EditorialPost{
@@ -494,7 +530,7 @@ export function validatePost(post:EditorialPost):void{
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
-  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?7:1)||
+  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?8:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
   post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(post.research?260:170)||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
@@ -504,7 +540,7 @@ export function validatePost(post:EditorialPost):void{
  if(post.research){
   const r=post.research,ids=new Set(post.slides.map(s=>s.id));
   if(r.provider!=='manual'||(r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
-    !Array.isArray(r.sourceItems)||r.sourceItems.length>28||
+    !Array.isArray(r.sourceItems)||r.sourceItems.length>32||
    !Array.isArray(r.interpretationSlides)||
    r.interpretationSlides.some(id=>!ids.has(id))||
    new Set(r.interpretationSlides).size!==r.interpretationSlides.length||

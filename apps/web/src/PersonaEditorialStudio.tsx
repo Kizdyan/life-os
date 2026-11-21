@@ -1,11 +1,12 @@
 import React,{useEffect,useState} from 'react';
+import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
+ CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
- editorialChecklistState,editorialChecklistReady,editorialSourcesPass,setEditorialSourceReviewed,
+ editorialChecklistState,editorialChecklistReady,carouselEditorialWarnings,editorialSourcesPass,setEditorialSourceReviewed,
  addEditorialSource,removeEditorialSource,setEditorialInterpretationReviewed,setEditorialPublicCopyReviewed,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
@@ -48,7 +49,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'){
+  if([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -62,7 +63,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter';
+ const exact=[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter';
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -95,12 +96,15 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   posts.find(p=>p.id===id)??applyChatCarouselApproval(publicationCarouselDraft(id)));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
- const archiveFixture=Boolean(post?.carouselFormat);
+ const archiveFixture=Boolean(post?.carouselFormat||post?.research);
  const sourcePass=post?editorialSourcesPass(post):false;
- const exactCanvasPreview=Boolean(post?.research||(post?.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'));
- const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
-  (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
-   archiveChoices.map(x=>x.key)));
+ const exactCanvasPreview=Boolean(post?.research||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
+ const archiveRefsReady=post===null||
+  (!post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'&&s.photoRef))||
+  !post.slides.some(s=>s.visual==='archive-photo')||
+  (!archiveLoading&&!archiveError&&
+   (post.carouselFormat?editorialArchiveProvenancePass(post,archiveChoices.map(x=>x.key)):
+    post.slides.every(s=>!s.photoRef||archiveChoices.some(x=>x.key===s.photoRef))));
  const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post)&&archiveRefsReady:true;
  const photoSequence=post?.slides.map((s,i)=>({s,i})).filter(x=>x.s.visual==='archive-photo'&&x.s.photoRef)??[];
  const selectedPhotoPosition=photoSequence.findIndex(x=>x.i===selectedSlide);
@@ -127,7 +131,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   return()=>{alive=false;if(url)URL.revokeObjectURL(url)};
  },[post?.id,slide?.id,slide?.visual,slide?.photoRef,post?.revision]);
  useEffect(()=>{
-  if(!post?.carouselFormat){setArchiveChoices([]);setArchiveError('');return}
+  if(!post?.carouselFormat&&!post?.research){setArchiveChoices([]);setArchiveError('');return}
   let alive=true;const urls:string[]=[];
   setArchiveLoading(true);setArchiveError('');
   listEditorialImages().then(images=>{
@@ -140,7 +144,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    setArchiveChoices(options);setArchiveLoading(false);
   }).catch(e=>{if(alive){setArchiveLoading(false);setArchiveChoices([]);setArchiveError((e as Error).message)}});
   return()=>{alive=false;urls.forEach(url=>URL.revokeObjectURL(url))};
- },[post?.id,post?.carouselFormat,archiveRefresh]);
+ },[post?.id,post?.carouselFormat,Boolean(post?.research),archiveRefresh]);
  function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>){
   if(!post)return;
   try{onChange(reviseEditorialPost(post,changes));setError('')}
@@ -153,7 +157,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  async function approve(step:'topic'|'content'|'design'){
   if(!post)return;
   try{
-   if(step==='design'&&post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
+   if(step==='design'&&post.research&&!archiveRefsReady)throw Error('В выбранном источнике фотографии нет файла в локальном архиве');
+    if(step==='design'&&post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
     throw Error('Пункт 6: выбранные фотографии не подтверждены архивом IndexedDB');
    onChange(approveEditorialStep(post,step));setError('');
   }catch(e){setError((e as Error).message)}
@@ -241,12 +246,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
  }
  function chooseArchivePhoto(photoRef:string){
-  if(!post||!slide||!post.carouselFormat)return;
+  if(!post||!slide||!(post.carouselFormat||post.research))return;
   if(post.carouselFormat==='mixed'&&selectedSlide%2===1)return;
   modifySlide({visual:'archive-photo',photoRef});
  }
  function clearArchivePhoto(){
-  if(!post||!slide||!post.carouselFormat)return;
+  if(!post||!slide||!(post.carouselFormat||post.research))return;
   modifySlide({visual:'background',photoRef:undefined});
  }
  function moveArchivePhoto(delta:-1|1){
@@ -413,6 +418,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
    </p>}
+   <p className="personaEditorialNote">Факт + мнение · 8 слайдов.
+    <button type="button" data-testid="open-carousel-quiet-horror" onClick={()=>{
+     if(!posts.some(p=>p.id===CAROUSEL_QUIET_HORROR_ID))onCreate(createQuietHorrorCarousel());
+     onSelect(CAROUSEL_QUIET_HORROR_ID);setError('');
+    }}>Почему самая страшная сцена часто тише всех</button>
+   </p>
    <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
     <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
      {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
@@ -476,7 +487,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    </section>
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
-    <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии.</p>
+    <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии. В исследовательской карусели пустая строка разделяет заголовок, абзац и необязательный курсивный акцент (до трёх блоков).</p>
+    {post.kind==='carousel'&&<div className="personaEditorialNote" data-testid="persona-carousel-editorial-preflight">
+     <strong>Структура:</strong> {post.slides.length===8?'8 слайдов: хук → контекст → препятствие → факт → поворот → авторская позиция → вопрос → финал.':'У каждого слайда должен быть собственный смысловой ход; допустимо 3–8 слайдов.'}
+     {carouselEditorialWarnings(post).map((warning,i)=><p key={i} role="status">Редакторское замечание: {warning}</p>)}
+     {carouselEditorialWarnings(post).length===0&&<p>Замечаний по длине текста нет; это не означает, что факты и оформление утверждены.</p>}
+    </div>}
     <div className="personaEditorialSlides" role="group" aria-label="Выбор слайда">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       Слайд {i+1}</button>)}
@@ -527,13 +543,18 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>}
     </section>}
     {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
-     {post.slides.length<7&&<button type="button" onClick={()=>{
+     {post.slides.length<8&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
       setSelectedSlide(post.slides.length);
      }}>+ Слайд</button>}
      {post.slides.length>3&&<button type="button" onClick={()=>{
       persist({slides:post.slides.filter(x=>x.id!==slide?.id)});setSelectedSlide(Math.max(0,selectedSlide-1));
      }}>Убрать слайд</button>}
+    </div>}
+    {post.id===CAROUSEL_QUIET_HORROR_ID&&<div role="group" aria-label="Вариант подписи">
+     {(['1','2'] as const).map(id=><button key={id} type="button"
+      aria-pressed={post.caption===quietHorrorCaptions.variants[id]}
+      onClick={()=>persist({caption:quietHorrorCaptions.variants[id]})}>Вариант {id}</button>)}
     </div>}
     <label>Основной текст публикации (Instagram / VK)
      <textarea className="personaEditorialCaption" value={post.caption} maxLength={4500}
@@ -566,7 +587,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      aria-label="Выбор фотографий из архива IndexedDB">
      <div className="personaEditorialArchiveHead"><strong>Фотографии из архива Persona</strong>
       <button type="button" onClick={()=>setArchiveRefresh(n=>n+1)}>Обновить архив</button></div>
-     <p>Выбирай фотографии для слайдов. Их оригиналы остаются в IndexedDB; в плане сохраняется лишь ключ и порядок. Для смешанной карусели фото ставятся на слайды 1, 3 и 5.</p>
+     <p>Выбирай фотографии для слайдов. Их оригиналы остаются в IndexedDB; в плане сохраняется лишь ключ и порядок. {post.carouselFormat==='mixed'?'Для смешанной карусели фото ставятся на слайды 1, 3 и 5.':'Для исследовательской карусели можно использовать разные настоящие фотографии на разных слайдах.'}</p>
      {archiveLoading&&<p role="status">Читаю архив фотографий…</p>}
      {archiveError&&<p role="alert">{archiveError}. Можно сохранить текстовый вариант.</p>}
      {!archiveLoading&&!archiveError&&archiveChoices.length===0&&<p data-testid="editorial-archive-empty">В архиве нет фотографий. Добавьте фотографии в архив Persona, чтобы использовать их в карусели</p>}
@@ -595,7 +616,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>}
      <p>Пункт 6: {archiveRefsReady?'архивные ссылки подтверждены / text-only':'ссылка не найдена в архиве, утверждение заблокировано'}.</p>
     </section>}
-    {!archiveFixture&&slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
+    {!post.carouselFormat&&slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
      <label>Фотография из локального архива (JPEG/PNG, до 25 МБ)
       <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{
        void upload(e.target.files?.[0]??null);e.target.value='';
@@ -630,11 +651,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <legend>Чек-лист приёмки · 7 проверок</legend>
      {CHECKLIST_TEXT.map((description,index)=><label key={index}>
       <input type="checkbox" checked={Boolean(checklist[index])}
-       disabled={index===6||(index===5&&archiveFixture)} aria-label={'Пункт '+(index+1)}
+       disabled={index===6||(index===5&&Boolean(post.carouselFormat))} aria-label={'Пункт '+(index+1)}
        onChange={e=>setChecklist(index,e.target.checked)}/>
       <span><strong>{index+1}.</strong> {description}</span>
      </label>)}
-     {archiveFixture&&<p>Пункт 6: {archiveRefsReady?'PASS — все выбранные фото найдены в существующем архиве или карусель text-only':'FAIL — отсутствует оригинал по ключу IndexedDB'}.</p>}
+     {archiveFixture&&<p>{post.carouselFormat?'Пункт 6: ': 'Фотоархив: '}{archiveRefsReady?'проверяемые ключи исходников найдены / text-only':'не найдено выбранное исходное изображение'}. {post.research?'Для исследовательской карусели отдельно отметь пункт 6 после визуальной проверки.':''}</p>}
      <p>Пункт 7: {editorialContrastPass(post)?'PASS — цвета пресета удовлетворяют WCAG':'FAIL — контраст пресета ниже порога'}.
       Для фото поверх фона нужна дополнительная визуальная проверка.</p>
     </fieldset>}

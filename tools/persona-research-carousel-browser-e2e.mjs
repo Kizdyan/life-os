@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /** Browser E2E: sourced Persona carousel draft → author evidence review → real PNG ZIP.
- * No paid provider, user media or live publication. This is a synthetic fixture only. */
+ * No paid provider, user media or live publication. This is an eight-slide synthetic fixture only. It must not be reported as verified real-world sources or approved artwork. */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-import {mkdir,readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
 const artifacts=resolve('artifacts/persona-research-browser');
@@ -13,11 +13,14 @@ const packet={
  angle:'Редакторский тест работы с фактами и источниками',
  caption:'Тестовая подпись без настоящей публикации.',
  slides:[
-  {text:'Первый проверяемый тезис',sources:[{title:'Источник A',url:'https://example.org/a'}]},
+  {text:'Первый проверяемый тезис\n\nПодробность объясняет, почему это важно зрителю.\n\nНебольшой авторский акцент.',sources:[{title:'Источник A',url:'https://example.org/a'}]},
   {text:'Второе проверяемое утверждение',sources:[{title:'Источник B',url:'https://example.org/b'}]},
   {text:'Третий новый факт',sources:[{title:'Источник C',url:'https://example.org/c'}]},
   {text:'Четвёртый факт',sources:[{title:'Источник D',url:'https://example.org/d'}]},
-  {text:'Авторский вывод без фактических утверждений',interpretation:true}
+  {text:'Авторский вывод без фактических утверждений',interpretation:true},
+  {text:'Пятая независимая деталь',sources:[{title:'Источник E',url:'https://example.org/e'}]},
+  {text:'Шестая независимая деталь',sources:[{title:'Источник F',url:'https://example.org/f'}]},
+  {text:'Неожиданное заключительное наблюдение',sources:[{title:'Источник G',url:'https://example.org/g'}]}
  ]
 };
 function unzipEntries(buf){
@@ -49,7 +52,7 @@ try{
  const approve=editor.getByRole('button',{name:'Утвердить тексты и подпись'});
  const reviews=editor.getByTestId('editorial-source-review');
  assert.equal(await approve.isDisabled(),true,'No citation is automatically reviewed');
- for(let i=0;i<4;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
+ for(let i=0;i<7;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
  assert.equal(await approve.isDisabled(),true,'Public title/caption not reviewed');
  await reviews.getByTestId('research-public-copy-review').check();
  assert.equal(await approve.isEnabled(),true,'All evidence is now manually reviewed');
@@ -60,6 +63,27 @@ try{
  await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(1).check();
  assert.equal(await approve.isEnabled(),true);
  await approve.click();
+ // The sourced carousel can attach one local photograph and REUSE the same source
+ // on another slide without copying image bytes or losing research provenance.
+ await editor.getByRole('button',{name:'Слайд 3'}).first().click();
+ await editor.getByLabel('Фото из архива + текст').check();
+ const imageBuffer=Buffer.from(await page.evaluate(()=>{
+  const c=document.createElement('canvas');c.width=1080;c.height=1350;
+  const ctx=c.getContext('2d');if(!ctx)throw Error('Fixture Canvas unavailable');
+  const gradient=ctx.createLinearGradient(0,0,1080,1350);
+  gradient.addColorStop(0,'#2c1d16');gradient.addColorStop(1,'#0c161c');
+  ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+  ctx.fillStyle='#ad8e66';ctx.fillRect(630,150,16,720);
+  return c.toDataURL('image/png').split(',')[1];
+ }), 'base64');
+ await editor.locator('.personaEditorialFile input[type=file]').setInputFiles({
+  name:'original-scene-fixture.png',mimeType:'image/png',buffer:imageBuffer});
+ await editor.getByRole('button',{name:'Обновить архив'}).click();
+ const archive=editor.getByTestId('editorial-archive-picker');
+ await archive.locator('[data-archive-key]').first().waitFor({timeout:20000});
+ await editor.getByRole('button',{name:'Слайд 4'}).first().click();
+ await archive.locator('[data-archive-key]').first().click();
+ assert.equal(await editor.getByTestId('editorial-selected-photo').count(),1,'Reused source key is visible');
  const preview=editor.getByTestId('research-exact-preview');
  await preview.waitFor({timeout:20000});
  const dimensions=await preview.evaluate(async img=>{
@@ -75,7 +99,7 @@ try{
  await editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
  const download=await pending;await download.saveAs(file);
  const entries=unzipEntries(await readFile(file));
- assert.equal(entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).length,5);
+ assert.equal(entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).length,8);
  assert.ok(entries.some(e=>e.name==='research-sources.json'));
  const caption=entries.find(e=>e.name==='caption.txt');
  assert.equal(caption?.bytes.toString('utf8'),packet.caption);
@@ -84,9 +108,26 @@ try{
   assert.equal(entry.bytes.readUInt32BE(16),1080);
   assert.equal(entry.bytes.readUInt32BE(20),1350);
  }
+ // Real 8-slide contact sheet from exported Persona PNG bytes (not a CSS mock).
+ const thumbs=entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).sort((a,b)=>a.name.localeCompare(b.name))
+  .map(e=>e.bytes.toString('base64'));
+ const sheet=await page.evaluate(async pngs=>{
+  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
+  const c=canvas.getContext('2d');if(!c)throw Error('Contact sheet Canvas unavailable');
+  c.fillStyle='#121417';c.fillRect(0,0,1080,2160);
+  await Promise.all(pngs.map(async(b64,i)=>{
+   const image=new Image();image.src='data:image/png;base64,'+b64;await image.decode();
+   const x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
+   c.drawImage(image,x,y,400,500);
+   c.font='24px sans-serif';c.textAlign='center';c.fillStyle='#e9e2d5';
+   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
+  }));
+  return canvas.toDataURL('image/png').split(',')[1];
+ },thumbs);
+ await writeFile(join(artifacts,'persona-research-eight-contact-sheet.png'),Buffer.from(sheet,'base64'));
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+2);
  assert.equal(overflow,false,'390px viewport must not overflow horizontally');
  assert.deepEqual(errors,[],'No browser runtime errors');
  await page.screenshot({path:join(artifacts,'reviewed-research-mobile.png'),fullPage:true,animations:'disabled'});
- console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:5,pngSize:'1080x1350',sources:4,viewport:390}));
+ console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:8,pngSize:'1080x1350',sources:7,viewport:390}));
 }finally{await browser.close()}

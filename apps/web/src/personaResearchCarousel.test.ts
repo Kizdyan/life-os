@@ -19,6 +19,18 @@ describe('Persona research-backed carousel importer',()=>{
   expect(()=>parseResearchPacket(JSON.stringify(protocol))).toThrow(/URL/);
   expect(()=>parseResearchPacket('{bad json')).toThrow(/JSON/);
  });
+ it('accepts eight sourced slides without auto-approving any facts or visuals',()=>{
+  const p=structuredClone(RESEARCH_CAROUSEL_EXAMPLE);
+  p.slides.push(...[0,1,2].map(i=>({text:'Дополнительная проверяемая мысль '+(i+1),sources:[{title:'Тестовый источник',url:'https://example.org/source-'+i}]})));
+  const eight=importResearchCarousel('research-eight-slides',JSON.stringify(p));
+  expect(eight.slides).toHaveLength(8);
+  expect(eight.research?.sourceItems).toHaveLength(7);
+  expect(editorialSourcesPass(eight)).toBe(false);
+  expect(eight.approvals.design).toBe(false);
+  expect(eight.approvals.content).toBe(false);
+  p.slides.push({text:'Недопустимый девятый',sources:[{title:'Тест',url:'https://example.org/nine'}]});
+  expect(()=>parseResearchPacket(JSON.stringify(p))).toThrow(/5.?8/);
+ });
  it('imports 5 unapproved slide texts and preserves per-slide source evidence',()=>{
   const post=importResearchCarousel('editorial-test-212',fixture(),'2026-11-20T15:00:00Z');
   expect(post.slides).toHaveLength(5);
