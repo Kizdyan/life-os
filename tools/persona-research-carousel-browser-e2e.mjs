@@ -57,7 +57,7 @@ try{
  assert.equal(await approve.isDisabled(),true,'Public title/caption not reviewed');
  await reviews.getByTestId('research-public-copy-review').check();
  assert.equal(await approve.isEnabled(),true,'All evidence is now manually reviewed');
- await editor.getByRole('button',{name:'Слайд 2'}).click();
+ await editor.getByRole('button',{name:'Слайд 2',exact:true}).click();
  await editor.getByLabel('Текст выбранного слайда').fill('Изменённый текст — требуется повторная проверка');
  assert.equal(await approve.isDisabled(),true,'Changing a claim invalidates its earlier approval');
  assert.equal(await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(1).isChecked(),false);

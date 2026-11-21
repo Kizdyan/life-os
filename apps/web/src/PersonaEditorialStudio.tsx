@@ -13,7 +13,8 @@ import {
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
-import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide,requestEditorialBackground} from './personaEditorialMedia';
+import {buildEditorialExport,buildEditorialReviewExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide,requestEditorialBackground} from './personaEditorialMedia';
+import {FRIDGE_HUM_ID,prepareFridgeHumCarousel,fridgeHumSourceEvidence} from './personaProductionCarousel';
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
@@ -351,6 +352,18 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
  }
+ async function exportReview(){
+  if(!post||busy)return;
+  setBusy(true);setError('');
+  try{triggerEditorialDownload(await buildEditorialReviewExport(post,{sourceEvidence:post.id===FRIDGE_HUM_ID?fridgeHumSourceEvidence(post):undefined}),post.id+'-DRAFT.zip')}
+  catch(e){setError((e as Error).message)}finally{setBusy(false)}
+ }
+ async function openFridgeHum(){
+  if(posts.some(p=>p.id===FRIDGE_HUM_ID)){onSelect(FRIDGE_HUM_ID);return}
+  setBusy(true);setError('');
+  try{const created=await prepareFridgeHumCarousel();onCreate(created);onSelect(created.id)}
+  catch(e){setError((e as Error).message)}finally{setBusy(false)}
+ }
  return <section className="personaEditorialStudio" data-testid="persona-editorial-studio"
   aria-label="Редакция каруселей и фото">
   <header className="personaEditorialHead">
@@ -405,6 +418,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    <p className="personaEditorialNote">Четыре карусели можно собрать в один архив для ручной публикации.
     <button type="button" data-testid="open-publication-package" onClick={()=>{setShowPublish(true);setPublishError('')}}>Пакет для публикации</button>
    </p>
+   <button type="button" data-testid="open-carousel-fridge-hum" disabled={busy} onClick={()=>void openFridgeHum()}>
+    Гул холодильника · производственный черновик
+   </button>
    <div className="personaEditorialSplit">
     <div>
      <h3>Темы от Persona</h3>
@@ -502,6 +518,15 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
        {label} {stage==='topic'&&post.approvals.topic?'✓':stage==='content'&&post.approvals.content?'✓':stage==='design'&&post.approvals.design?'✓':''}
       </span>)}
    </nav>
+   {post.research&&<section aria-label="Черновик для авторской проверки">
+    <p>Изображения и текст можно проверить до утверждения. Этот ZIP — черновик; разрешение на публикацию он не даёт.</p>
+    {post.id===FRIDGE_HUM_ID&&<p>Новые иллюстрации созданы встроенным генератором Codex и импортированы в Persona. Это не кадры фильма, не копия V14 и не выполненная генерация через Worker. Источники и авторские решения требуют вашего отдельного подтверждения.</p>}
+    <button type="button" disabled={busy} onClick={()=>void exportReview()}>Скачать черновик для проверки</button>
+    {!post.approvals.content&&<>
+     <div className="personaEditorialSlides">{post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>Проверить слайд {i+1}</button>)}</div>
+     {baselinePreviewUrl?<img data-testid="research-draft-preview" src={baselinePreviewUrl} alt={'Черновой PNG слайда '+(selectedSlide+1)} style={{width:'100%',maxWidth:432,height:'auto'}}/>:<p>{baselinePreviewError||'Готовится PNG…'}</p>}
+    </>}
+   </section>}
    <section aria-label="Шаг 1. Утверждение темы">
     <h4>1. Утверждаем тему</h4>
     <label>Тема<input value={post.topic} maxLength={160} onChange={e=>persist({topic:e.target.value,title:e.target.value})}/></label>
@@ -523,10 +548,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       Слайд {i+1}</button>)}
     </div>
     {slide?.headline!==undefined?<div aria-label="Иерархия текста слайда">
-     {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Кикер<input value={slide.kicker??''} maxLength={60} onChange={e=>modifySlide({kicker:e.target.value})}/></label>}
+     {(post.id!==CAROUSEL_QUIET_HORROR_ID&&post.fontPreset!=='cormorant-inter')&&<label>Кикер<input value={slide.kicker??''} maxLength={60} onChange={e=>modifySlide({kicker:e.target.value})}/></label>}
      <label>Заголовок<textarea aria-label="Заголовок слайда" value={slide.headline} maxLength={170} onChange={e=>modifySlide({headline:e.target.value})}/></label>
-     {(post.id!==CAROUSEL_QUIET_HORROR_ID||HIERARCHY_LAYOUTS[selectedSlide]?.body)&&<label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>}
-     {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>}
+     {((post.id!==CAROUSEL_QUIET_HORROR_ID&&post.fontPreset!=='cormorant-inter')||HIERARCHY_LAYOUTS[selectedSlide]?.body)&&<label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>}
+     {(post.id!==CAROUSEL_QUIET_HORROR_ID&&post.fontPreset!=='cormorant-inter')&&<label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>}
     </div>:<label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
      <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
     </label>}

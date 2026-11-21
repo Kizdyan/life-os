@@ -61,3 +61,9 @@ test('no OpenRouter, invalid mood and out-of-policy LLM phrase are fail-closed',
   fetchImpl:async()=>({ok:true,text:async()=>JSON.stringify({choices:[{message:{
    content:'{"quote":"Следуй за мечтой"}'}}]})})}),/cliché/);
 });
+test('real quiet-iPhone ASR artifacts never become dialogue or a license to invent a quote',()=>{
+ const audio=[{status:'whisper-transcribed',segments:[{startSec:0,endSec:2,text:'ლლლლლ ლლლ'}]},
+  {status:'whisper-transcribed',segments:[{startSec:0,endSec:26,text:'[Subscribe]'}]}];
+ assert.equal(classifyQuoteSpeech(audio).mode,'unverified');
+ assert.deepEqual(cueFromWhisper({audio,choices:[{fileIndex:0,startSec:0,durationSec:8},{fileIndex:1,startSec:0,durationSec:26}]}),[]);
+});
