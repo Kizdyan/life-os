@@ -3,6 +3,11 @@ import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/playfair-display/500-italic.css';
 import '@fontsource/inter/400.css';
+import '@fontsource/inter/300.css';
+import '@fontsource/cormorant-garamond/600.css';
+import '@fontsource/cormorant-garamond/700.css';
+import '@fontsource/cormorant-garamond/600-italic.css';
+import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 
@@ -224,7 +229,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
- if(slide.background&&slide.visual==='background')return renderCinematicSlide(post,slide,index);
+ if((slide.background||slide.headline!==undefined)&&slide.visual==='background')return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -446,37 +451,48 @@ export async function requestEditorialBackground(post:EditorialPost,index:number
 /** Photo-backed editorial composition; the older flat layouts remain byte-compatible. */
 async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
  const background=slide.background;
- if(!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ if(background&&!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
  const fonts=await Promise.all([
-  document.fonts.load('500 80px "Playfair Display"',slide.text),
-  document.fonts.load('italic 500 80px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 08')
+  ...(slide.headline!==undefined?[
+   document.fonts.load('600 88px "Cormorant Garamond"',slide.text),
+   document.fonts.load('700 90px "Cormorant Garamond"',slide.text),
+   document.fonts.load('italic 600 48px "Cormorant Garamond"',slide.text),
+   document.fonts.load('300 32px "Inter"',slide.text)
+  ]:[document.fonts.load('500 80px "Playfair Display"',slide.text),document.fonts.load('italic 500 80px "Playfair Display"',slide.text)]),
+  document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')
  ]);
- if(fonts.some(f=>!f.length))throw Error('Playfair Display / Italic / Inter не загрузились');
- let blob:Blob;
- if(background.generatedRef){
+ if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
+ let blob:Blob|undefined;
+ if(background?.generatedRef){
   const stored=await readEditorialImageByRef(background.generatedRef);
   if(!stored)throw Error('Созданный фон не найден в локальном архиве. Выберите локальный кинофон.');
   blob=stored.blob;
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
   if(hash!==background.sha256)throw Error('Созданный фон изменился; экспорт остановлен');
- }else{
+ }else if(background){
   const response=await fetch(backgroundAssetUrl(background));
   if(!response.ok)throw Error('Локальный кинофон не найден');
   blob=await response.blob();
  }
- const image=await createImageBitmap(blob),canvas=document.createElement('canvas');
+ const canvas=document.createElement('canvas');
  canvas.width=1080;canvas.height=1350;
- const c=canvas.getContext('2d');if(!c){image.close();throw Error('Canvas недоступен')}
- const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
- c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);image.close();
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ if(blob){
+  const image=await createImageBitmap(blob);
+  const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
+  c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);image.close();
+ }
  // Keep meaningful objects on the right and reserve a genuinely dark text area.
- const bottom=[2,3,6,7].includes(index);
+ const bottom=[0,2,3,6,7].includes(index);
  const gradient=bottom?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
  gradient.addColorStop(0,bottom?'rgba(0,0,0,0)':'rgba(0,0,0,.6)');
  gradient.addColorStop(bottom?.48:.84,'rgba(0,0,0,.6)');
  gradient.addColorStop(1,bottom?'rgba(0,0,0,.6)':'rgba(0,0,0,0)');
  c.fillStyle=gradient;c.fillRect(0,0,1080,1350);
+ if(slide.headline!==undefined){
+  paintEditorialHierarchy(c,slide as EditorialHierarchy,index);
+ }else{
  c.fillStyle=BASELINE_CREAM;c.textBaseline='top';
  const margin=90,maxWidth=index===0?810:860;
  const size=index===0?88:index===6?74:index===7?60:index===5?58:54;
@@ -488,8 +504,9 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
  const y=bottom?Math.max(610,1190-lines.length*leading):index===5?260:150;
  c.textAlign='left';
  lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
+ }
  // Decoration lines and dots are intentionally absent on photographs.
  c.font='400 24px "Inter"';c.fillStyle=BASELINE_BEIGE;c.textAlign='right';
- c.fillText(String(index+1).padStart(2,'0')+' / '+String(post.slides.length).padStart(2,'0'),990,1240);
+ c.fillText(String(index+1).padStart(2,'0')+' / '+String(post.slides.length).padStart(2,'0'),980,1226);
  return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }

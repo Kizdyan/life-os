@@ -415,9 +415,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       Слайд {i+1}</button>)}
     </div>
-    <label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
+    {slide?.headline!==undefined?<div aria-label="Иерархия текста слайда">
+     <label>Кикер<input value={slide.kicker??''} maxLength={60} onChange={e=>modifySlide({kicker:e.target.value})}/></label>
+     <label>Заголовок<textarea aria-label="Заголовок слайда" value={slide.headline} maxLength={170} onChange={e=>modifySlide({headline:e.target.value})}/></label>
+     <label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>
+     <label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>
+    </div>:<label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
      <textarea value={slide?.text??''} maxLength={170} onChange={e=>modifySlide({text:e.target.value})}/>
-    </label>
+    </label>}
     {post.kind==='carousel'&&<div className="personaEditorialSlideActions">
      {post.slides.length<7&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
@@ -427,6 +432,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       persist({slides:post.slides.filter(x=>x.id!==slide?.id)});setSelectedSlide(Math.max(0,selectedSlide-1));
      }}>Убрать слайд</button>}
     </div>}
+    {post.id===CAROUSEL_QUIET_HORROR_ID&&<button type="button" onClick={()=>{
+     const draft=createQuietHorrorCarousel();
+     persist({slides:draft.slides.map((s,i)=>({...s,background:post.slides[i]?.background??s.background}))});
+    }}>Применить текст и типографику v3</button>}
     {post.id===CAROUSEL_QUIET_HORROR_ID&&<div role="group" aria-label="Вариант подписи">
      {(['1','2'] as const).map(id=><button key={id} type="button"
       aria-pressed={post.caption===quietHorrorCaptions.variants[id]}

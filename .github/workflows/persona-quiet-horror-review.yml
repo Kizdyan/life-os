@@ -11,6 +11,9 @@ on:
       - 'config/carousel-quiet-horror*.json'
       - 'apps/web/src/personaQuietHorror.test.ts'
       - 'apps/web/src/personaEditorialBackgrounds*'
+      - 'apps/web/src/personaEditorialTypography*'
+      - 'package.json'
+      - 'package-lock.json'
       - 'apps/web/public/carousel-backgrounds/**'
       - 'config/carousel-backgrounds.json'
       - 'tools/persona-carousel-backgrounds*'
@@ -40,7 +43,7 @@ jobs:
       - name: Unit and typecheck
         run: |
           node --test tools/persona-carousel-backgrounds.test.mjs
-          npx vitest run apps/web/src/personaQuietHorror.test.ts apps/web/src/personaEditorialModel.test.ts apps/web/src/personaEditorialBackgrounds.test.ts
+          npx vitest run apps/web/src/personaQuietHorror.test.ts apps/web/src/personaEditorialModel.test.ts apps/web/src/personaEditorialBackgrounds.test.ts apps/web/src/personaEditorialTypography.test.ts
           npm run typecheck
       - name: Start existing Persona
         run: |
@@ -69,8 +72,16 @@ jobs:
             DIR=dist/carousels-v4-cinematic-preview
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Refusing to overwrite existing release"
-            exit 1
+            if [ "$TAG" != carousels-v4-cinematic-preview ]; then
+              echo "Refusing to overwrite a historical release"
+              exit 1
+            fi
+            gh release upload "$TAG" "$DIR"/*.png "$DIR"/*.zip --clobber
+            gh release delete-asset "$TAG" contact-sheet-quiet-horror-v2.png --yes || true
+            gh release edit "$TAG" --notes "Типографика v3: Cormorant Garamond + Inter Light, иерархия текста. Черновик для визуального подтверждения автора; textApproved=false, designApproved=false."
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
+            test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 10
+            exit 0
           fi
           printf '%s\n' "$TAG: quiet horror — черновик для просмотра." 'Оформление ждёт визуального подтверждения автора.' 'Текст и дизайн — черновик, публикация не разрешена.' >/tmp/quiet-notes.md
           gh release create "$TAG" "$DIR"/*.png "$DIR"/*.zip --prerelease --title "Persona $TAG — quiet horror" --notes-file /tmp/quiet-notes.md --target "$GITHUB_SHA"
