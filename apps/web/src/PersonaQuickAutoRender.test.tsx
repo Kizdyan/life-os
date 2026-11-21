@@ -25,7 +25,8 @@ describe('one-click dashboard intake',()=>{
   expect(html).not.toContain('aria-label="Стиль и цвет"');
   expect(html).not.toContain('id="persona-quick-style"');
   expect(html).not.toContain('id="persona-quick-color"');
-  expect((html.match(/<select/g)||[])).toHaveLength(0);
+  expect((html.match(/<select/g)||[])).toHaveLength(1);
+  expect(html).toContain('id="persona-quick-video-format"');
   expect(html).toContain('Добавлять текстовые акценты (ИИ)');
   expect(html).toContain('id="persona-quick-text-accents"');
   expect((html.match(/type="checkbox" checked=""/g)||[])).toHaveLength(3);

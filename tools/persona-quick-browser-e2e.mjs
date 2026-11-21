@@ -61,7 +61,8 @@ try{
  await block.waitFor({timeout:20000});
  assert.equal(await block.locator('textarea').count(),1);
  assert.equal(await block.locator('input[type=file]').count(),1);
- assert.equal(await block.locator('select').count(),0,'manual style is hidden by default');
+ assert.equal(await block.locator('select').count(),1,'genre selector remains visible; manual styles are hidden');
+  assert.equal(await block.locator('#persona-quick-video-format').inputValue(),'auto');
  assert.equal(await block.locator('#persona-quick-auto-style').isChecked(),true,'AI Auto Style defaults on');
  assert.equal(await block.locator('#persona-quick-text-accents').isChecked(),true,'AI Text Accents defaults on');
  await block.locator('#persona-quick-text-accents').uncheck();
@@ -69,11 +70,11 @@ try{
  await block.locator('#persona-quick-text-accents').check();
  assert.equal(await block.locator('#persona-quick-fast-draft').isChecked(),true,'Fast Draft defaults on');
  await block.locator('#persona-quick-auto-style').uncheck();
- assert.equal(await block.locator('select').count(),2,'manual color and title selects appear when AI is disabled');
+ assert.equal(await block.locator('select').count(),3,'genre plus manual style and color appear when AI is disabled');
  await page.locator('#persona-quick-style').selectOption('signature-gold');
  await page.locator('#persona-quick-color').selectOption('SoftCinematic');
  await block.locator('#persona-quick-auto-style').check();
- assert.equal(await block.locator('select').count(),0,'manual selectors disappear when AI re-enabled');
+ assert.equal(await block.locator('select').count(),1,'manual style/color disappear but genre remains selectable');
  await page.screenshot({path:join(output,'before-1440.png'),fullPage:true,animations:'disabled'});
  await page.locator('#persona-quick-files').setInputFiles([source,second]);
  assert.match(await page.locator('#persona-quick-prompt').inputValue(),/если Vision доступен/,'one click must work without typing a brief');

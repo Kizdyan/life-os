@@ -6,7 +6,7 @@ import {
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
- editorialChecklistState,editorialChecklistReady,
+ editorialChecklistState,editorialChecklistReady,carouselEditorialWarnings,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
@@ -395,6 +395,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
     <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии.</p>
+     {post.kind==='carousel'&&<div className="personaEditorialNote" data-testid="persona-carousel-editorial-preflight">
+      <strong>Режиссёрская структура:</strong> {post.slides.length===8?'8 слайдов: хук → контекст → препятствие → факт → поворот → позиция автора → вопрос → следующий разбор.':'Укажи роль каждого слайда: интрига, новый факт, поворот и сильный финал. 3–8 слайдов.'}
+      {carouselEditorialWarnings(post).map((warning,i)=><p key={i} role="status">Редакторское замечание: {warning}</p>)}
+      {!carouselEditorialWarnings(post).length&&<p>Автоматических предупреждений по длине текста нет. Это не проверка фактов и не утверждение дизайна.</p>}
+     </div>}
     <div className="personaEditorialSlides" role="group" aria-label="Выбор слайда">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       Слайд {i+1}</button>)}
@@ -403,7 +408,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <textarea value={slide?.text??''} maxLength={170} onChange={e=>modifySlide({text:e.target.value})}/>
     </label>
     {post.kind==='carousel'&&<div className="personaEditorialSlideActions">
-     {post.slides.length<7&&<button type="button" onClick={()=>{
+     {post.slides.length<8&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
       setSelectedSlide(post.slides.length);
      }}>+ Слайд</button>}
