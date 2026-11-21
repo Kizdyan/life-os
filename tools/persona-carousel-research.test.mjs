@@ -56,6 +56,17 @@ test('uses documented Agent API and refuses model-invented citations not in actu
   fetchImpl:async()=>({ok:true,json:async()=>result(invented)})
  }),/не найден в реальных результатах/);
 });
+test('research allows 8 sourced slides, never treating search citations as author approval',async()=>{
+ const eight=structuredClone(packet);
+ eight.slides.push(...[1,2,3].map(i=>({text:'Дополнительная проверяемая деталь '+i,sources:[{title:'Публикация',url:u1}]})));
+ const response=await generatePersonaCarouselResearch({theme:'Музыкальная драматургия',consent:true,
+  env:{PERPLEXITY_API_KEY:'test-only'},fetchImpl:async()=>({ok:true,json:async()=>result(eight)})});
+ assert.equal(response.packet.slides.length,8);
+ assert.equal(response.status,'UNVERIFIED');
+ assert.equal(response.approved,false);
+ await assert.rejects(generatePersonaCarouselResearch({theme:'Музыкальная драматургия',consent:true,
+  env:{PERPLEXITY_API_KEY:'test-only'},fetchImpl:async()=>({ok:true,json:async()=>result({...eight,slides:[...eight.slides,eight.slides[0]]})})}),/5.?8/);
+});
 test('a message without web-search results is never accepted as researched',async()=>{
  await assert.rejects(generatePersonaCarouselResearch({
   theme:'История киномузыки',consent:true,env:{PERPLEXITY_API_KEY:'secret'},
