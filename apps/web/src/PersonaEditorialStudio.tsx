@@ -99,9 +99,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const archiveFixture=Boolean(post?.carouselFormat||post?.research);
  const sourcePass=post?editorialSourcesPass(post):false;
  const exactCanvasPreview=Boolean(post?.research||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
- const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
-  (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
-   archiveChoices.map(x=>x.key)));
+ const archiveRefsReady=post===null||
+  (!post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'&&s.photoRef))||
+  !post.slides.some(s=>s.visual==='archive-photo')||
+  (!archiveLoading&&!archiveError&&
+   (post.carouselFormat?editorialArchiveProvenancePass(post,archiveChoices.map(x=>x.key)):
+    post.slides.every(s=>!s.photoRef||archiveChoices.some(x=>x.key===s.photoRef))));
  const checklistReady=post?.kind==='carousel'?editorialChecklistReady(post)&&archiveRefsReady:true;
  const photoSequence=post?.slides.map((s,i)=>({s,i})).filter(x=>x.s.visual==='archive-photo'&&x.s.photoRef)??[];
  const selectedPhotoPosition=photoSequence.findIndex(x=>x.i===selectedSlide);
@@ -154,7 +157,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  async function approve(step:'topic'|'content'|'design'){
   if(!post)return;
   try{
-   if(step==='design'&&post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
+   if(step==='design'&&post.research&&!archiveRefsReady)throw Error('В выбранном источнике фотографии нет файла в локальном архиве');
+    if(step==='design'&&post.carouselFormat&&!(await verifyEditorialArchivePhotos(post)))
     throw Error('Пункт 6: выбранные фотографии не подтверждены архивом IndexedDB');
    onChange(approveEditorialStep(post,step));setError('');
   }catch(e){setError((e as Error).message)}
