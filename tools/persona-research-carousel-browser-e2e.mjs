@@ -13,7 +13,7 @@ const packet={
  angle:'Редакторский тест работы с фактами и источниками',
  caption:'Тестовая подпись без настоящей публикации.',
  slides:[
-  {text:'Первый проверяемый тезис',sources:[{title:'Источник A',url:'https://example.org/a'}]},
+  {text:'Первый проверяемый тезис\n\nПодробность объясняет, почему это важно зрителю.\n\nНебольшой авторский акцент.',sources:[{title:'Источник A',url:'https://example.org/a'}]},
   {text:'Второе проверяемое утверждение',sources:[{title:'Источник B',url:'https://example.org/b'}]},
   {text:'Третий новый факт',sources:[{title:'Источник C',url:'https://example.org/c'}]},
   {text:'Четвёртый факт',sources:[{title:'Источник D',url:'https://example.org/d'}]},
