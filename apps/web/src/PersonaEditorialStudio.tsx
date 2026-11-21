@@ -96,7 +96,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   posts.find(p=>p.id===id)??applyChatCarouselApproval(publicationCarouselDraft(id)));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
- const archiveFixture=Boolean(post?.carouselFormat);
+ const archiveFixture=Boolean(post?.carouselFormat||post?.research);
  const sourcePass=post?editorialSourcesPass(post):false;
  const exactCanvasPreview=Boolean(post?.research||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
  const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
@@ -128,7 +128,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   return()=>{alive=false;if(url)URL.revokeObjectURL(url)};
  },[post?.id,slide?.id,slide?.visual,slide?.photoRef,post?.revision]);
  useEffect(()=>{
-  if(!post?.carouselFormat){setArchiveChoices([]);setArchiveError('');return}
+  if(!post?.carouselFormat&&!post?.research){setArchiveChoices([]);setArchiveError('');return}
   let alive=true;const urls:string[]=[];
   setArchiveLoading(true);setArchiveError('');
   listEditorialImages().then(images=>{
@@ -141,7 +141,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    setArchiveChoices(options);setArchiveLoading(false);
   }).catch(e=>{if(alive){setArchiveLoading(false);setArchiveChoices([]);setArchiveError((e as Error).message)}});
   return()=>{alive=false;urls.forEach(url=>URL.revokeObjectURL(url))};
- },[post?.id,post?.carouselFormat,archiveRefresh]);
+ },[post?.id,post?.carouselFormat,Boolean(post?.research),archiveRefresh]);
  function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>){
   if(!post)return;
   try{onChange(reviseEditorialPost(post,changes));setError('')}
@@ -242,12 +242,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
  }
  function chooseArchivePhoto(photoRef:string){
-  if(!post||!slide||!post.carouselFormat)return;
+  if(!post||!slide||!(post.carouselFormat||post.research))return;
   if(post.carouselFormat==='mixed'&&selectedSlide%2===1)return;
   modifySlide({visual:'archive-photo',photoRef});
  }
  function clearArchivePhoto(){
-  if(!post||!slide||!post.carouselFormat)return;
+  if(!post||!slide||!(post.carouselFormat||post.research))return;
   modifySlide({visual:'background',photoRef:undefined});
  }
  function moveArchivePhoto(delta:-1|1){
@@ -583,7 +583,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      aria-label="Выбор фотографий из архива IndexedDB">
      <div className="personaEditorialArchiveHead"><strong>Фотографии из архива Persona</strong>
       <button type="button" onClick={()=>setArchiveRefresh(n=>n+1)}>Обновить архив</button></div>
-     <p>Выбирай фотографии для слайдов. Их оригиналы остаются в IndexedDB; в плане сохраняется лишь ключ и порядок. Для смешанной карусели фото ставятся на слайды 1, 3 и 5.</p>
+     <p>Выбирай фотографии для слайдов. Их оригиналы остаются в IndexedDB; в плане сохраняется лишь ключ и порядок. {post.carouselFormat==='mixed'?'Для смешанной карусели фото ставятся на слайды 1, 3 и 5.':'Для исследовательской карусели можно использовать разные настоящие фотографии на разных слайдах.'}</p>
      {archiveLoading&&<p role="status">Читаю архив фотографий…</p>}
      {archiveError&&<p role="alert">{archiveError}. Можно сохранить текстовый вариант.</p>}
      {!archiveLoading&&!archiveError&&archiveChoices.length===0&&<p data-testid="editorial-archive-empty">В архиве нет фотографий. Добавьте фотографии в архив Persona, чтобы использовать их в карусели</p>}
@@ -612,7 +612,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>}
      <p>Пункт 6: {archiveRefsReady?'архивные ссылки подтверждены / text-only':'ссылка не найдена в архиве, утверждение заблокировано'}.</p>
     </section>}
-    {!archiveFixture&&slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
+    {!post.carouselFormat&&slide?.visual==='archive-photo'&&<div className="personaEditorialFile">
      <label>Фотография из локального архива (JPEG/PNG, до 25 МБ)
       <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>{
        void upload(e.target.files?.[0]??null);e.target.value='';
