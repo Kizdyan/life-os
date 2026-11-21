@@ -33,6 +33,13 @@ jobs:
           else
             echo "Using FFmpeg and FFprobe already installed on the GitHub runner"
           fi
+      - name: Assign per-run Worker port for isolated Chromium tests
+        run: |
+          # Do not reuse 47832 across concurrently scheduled Persona workflows.
+          # Both browser UI and local test Worker must receive the identical port.
+          worker_port=$(( 50000 + (GITHUB_RUN_ID % 10000) ))
+          echo "PERSONA_CI_WORKER_PORT=$worker_port" >> "$GITHUB_ENV"
+          echo "VITE_PERSONA_WORKER_PORT=$worker_port" >> "$GITHUB_ENV"
       - name: Start isolated localhost Vite server
         run: |
           nohup npm run web:dev -- --host 127.0.0.1 --port 4173 > /tmp/persona-creative-vite.log 2>&1 &
