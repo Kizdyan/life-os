@@ -30,6 +30,36 @@ export function offlineEditPlan(videos){
  return {...plan,mediaEvidence:'ffprobe-verified-offline-intervals',audioUnderstanding:'not_transcribed'};
 }
 
+/** Explicit author-selected format: protect speech and performance continuity. */
+export const PERSONA_VIDEO_FORMATS=Object.freeze({
+ auto:'Автоматический',explainer:'Экспертный',personal:'Личная история',
+ dialogue:'Диалог / интервью',acting:'Актёрская сцена',music:'Музыкальный',
+ cinematic:'Кинематографическая история',backstage:'Закулисье',voiceover:'Закадровый рассказ'
+});
+const CONTINUITY_FORMATS=new Set(['explainer','personal','dialogue','acting','music','voiceover']);
+/** Keep complete, verified footage; never guess where a sentence can be cut. */
+export function continuityEditPlan(videos,format){
+ if(!CONTINUITY_FORMATS.has(format)||!Array.isArray(videos)||videos.length<1||videos.length>4)
+  throw Error('Некорректный формат или количество исходников');
+ if(videos.some(v=>!Number.isFinite(v.durationSec)||v.durationSec<8||v.durationSec>1200||
+  typeof v.sha256!=='string'||!/^[a-f0-9]{64}$/.test(v.sha256)))
+  throw Error('Нужны проверенные длительность и SHA-256 исходников');
+ if(videos.reduce((n,v)=>n+v.durationSec,0)>75)
+  throw Error('Бережный монтаж: суммарно больше 75 секунд. Выберите короткие дубли; речь обрезать автоматически нельзя.');
+ const candidates=videos.length>1?videos.map((v,i)=>({
+  id:'complete-'+i,fileIndex:i,startSec:0,durationSec:v.durationSec,stillSec:v.durationSec/2,sourceSha256:v.sha256
+ })):[{id:'complete-0a',fileIndex:0,startSec:0,durationSec:videos[0].durationSec/2,
+  stillSec:videos[0].durationSec/4,sourceSha256:videos[0].sha256},
+  {id:'complete-0b',fileIndex:0,startSec:videos[0].durationSec/2,
+   durationSec:videos[0].durationSec/2,stillSec:videos[0].durationSec*3/4,
+   sourceSha256:videos[0].sha256}];
+ const plan=validateEditPlan({stylePack:'Cinematic',
+  creativeIntent:'Бережный монтаж: исходные фразы, паузы и музыка сохранены. Авторский просмотр обязателен.',
+  choices:candidates.map(c=>({candidateId:c.id,role:'actor',caption:''}))},candidates);
+ return {...plan,videoFormat:format,mediaEvidence:'ffprobe-verified-continuous-takes',
+  audioUnderstanding:'not_transcribed',requiresHumanReview:true};
+}
+
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
@@ -197,7 +227,7 @@ export function createPersonaQuickRenderService(config={}){
   moments:job.moments??[],
   autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
-  contentType:job.contentType??'video',carouselAspect:job.carouselAspect??'4:5',
+  contentType:job.contentType??'video',videoFormat:job.videoFormat??'auto',carouselAspect:job.carouselAspect??'4:5',
   carouselFiles:job.carouselFiles??[],exportStatus:job.exportStatus??null,
   exportError:job.exportError??null,exportItems:job.exportItems??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
@@ -212,6 +242,9 @@ export function createPersonaQuickRenderService(config={}){
    body.consent!==true||!Array.isArray(body.files)||body.files.length<1||body.files.length>13)
    throw Error('Provide a short prompt, files and explicit vision processing consent');
   const contentType=body.contentType??'video';
+  const videoFormat=body.videoFormat??'auto';
+  if(typeof videoFormat!=='string'||!Object.hasOwn(PERSONA_VIDEO_FORMATS,videoFormat)||
+    (contentType!=='video'&&videoFormat!=='auto'))throw Error('Неподдерживаемый формат монтажа');
   if(!['video','photo-carousel','photo-slideshow'].includes(contentType))throw Error('Unknown content type');
   const nv=body.files.filter(x=>x.kind==='video').length,np=body.files.filter(x=>x.kind==='photo').length,
    na=body.files.filter(x=>x.kind==='audio').length;
@@ -245,7 +278,7 @@ export function createPersonaQuickRenderService(config={}){
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
-   contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',slides,
+   contentType,videoFormat,carouselAspect,coverTitle:body.coverTitle?.trim()??'',slides,
    fastDraft:contentType==='video'&&body.fastDraft===true,
    directFull:contentType!=='video'||body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
@@ -523,7 +556,13 @@ export function createPersonaQuickRenderService(config={}){
    await writeFile(join(out,'style-decision.json'),JSON.stringify(job.styleDecision,null,2)+'\n',{flag:'wx'});
    await save(job);
    let plan,provenance;
-   if(config.quickPlanner){
+   if(CONTINUITY_FORMATS.has(job.videoFormat??'auto')&&!config.quickPlanner&&!config.quickVisionBatch){
+    job.stage='Бережный монтаж: сохраняю полные дубли';await save(job);
+    plan=continuityEditPlan(candidateInput,job.videoFormat);
+    provenance={version:1,kind:'author-selected-continuity',provider:'none',visionAvailable:false,
+     visionAttempted:false,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false,
+     reason:'Формат указан автором; сохранены все интервалы источников.'};
+   }else if(config.quickPlanner){
     // Legacy unit-test seam only: production selects via full 2fps Vision instead.
     job.stage='Тестовый редакторский план';await save(job);
     const candidates=frameCandidates(candidateInput),frames=[];
@@ -634,6 +673,9 @@ export function createPersonaQuickRenderService(config={}){
       job.captionDecision.mode='speech-not-in-cut';
       job.captionDecision.reason='Whisper detected words, but no recognized phrase overlaps chosen edit windows';
      }
+    }else if(assessment.mode==='quote'&&CONTINUITY_FORMATS.has(job.videoFormat??'auto')){
+     job.captionDecision.mode='speech-unavailable';
+     job.captionDecision.reason='В этом формате нельзя подменять речь выдуманной ИИ цитатой.';
     }else if(assessment.mode==='quote'){
      job.stage='AI Quote Generator: короткая оригинальная фраза';await save(job);
      if(config.quickQuoteGenerator||env.OPENROUTER_API_KEY?.trim()){
@@ -726,7 +768,7 @@ export function createPersonaQuickRenderService(config={}){
     fastDraft:job.fastDraft===true,renderProfile:job.fastDraft?'fast-draft':job.directFull?'full-quality':'standard',
     width:details.width,height:details.height,editPlanSha256,timelineSha256,
     strategy:{status:audit.status,recommendation:audit.recommendation},
-    stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
+    stylePack:plan.stylePack,videoFormat:job.videoFormat??'auto',visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
     autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,
     textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
