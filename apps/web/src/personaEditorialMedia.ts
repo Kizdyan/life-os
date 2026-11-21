@@ -317,7 +317,13 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   if(!size||!lines.length)throw Error('Слайд '+(index+1)+': текст не помещается без обрезки');
   // Darkened photo backing gives a stable reading surface; no synthetic text or labels.
   if(usePhoto){
-   ctx.fillStyle='rgba(5,6,8,.78)';ctx.fillRect(55,180,968,1085);
+   // Avoid the opaque black rectangle that erased actual cinematic photographs.
+   // Keep the left-side text readable while revealing the background on the right.
+   const sideVeil=ctx.createLinearGradient(0,0,1080,0);
+   sideVeil.addColorStop(0,'rgba(5,6,8,.52)');
+   sideVeil.addColorStop(.52,'rgba(5,6,8,.26)');
+   sideVeil.addColorStop(1,'rgba(5,6,8,.03)');
+   ctx.fillStyle=sideVeil;ctx.fillRect(0,0,1080,1350);
   }
   const leading=size+20,top=index===0?300:260;
   const y0=Math.min(Math.max(top,695-(lines.length*leading)/2),1200-(lines.length-1)*leading);
