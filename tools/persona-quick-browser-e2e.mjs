@@ -11,6 +11,9 @@ import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 
+const ciWorkerPort=Number(process.env.PERSONA_CI_WORKER_PORT??47832);
+if(!Number.isInteger(ciWorkerPort)||ciWorkerPort<1024||ciWorkerPort>65535)throw Error('Invalid CI Worker port');
+
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
 const output=resolve(process.env.PERSONA_QUICK_SCREENSHOT_DIR||'artifacts/persona-one-click');
 await mkdir(output,{recursive:true});
@@ -27,7 +30,7 @@ const second=join(temp,'IMG_8303.mp4');
 await copyFile(source,second); // a second distinct named input, synthetic bytes only
 let plannerCalls=0,styleDirectorCalls=0,quoteCalls=0;
 const worker=createPersonaMediaWorker({
- port:47832,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
+ port:ciWorkerPort,outputRoot:join(temp,'media-worker'),quickRenderRoot:join(temp,'jobs'),
  quickAudioOverride:async()=>({status:'no-speech-detected',segments:[]}),
  quickQuoteGenerator:async({mood})=>{quoteCalls++;assert.equal(mood,'funny');
   return {quote:'Улыбка меняет направление'};},
@@ -51,7 +54,7 @@ const worker=createPersonaMediaWorker({
  quickLighting:async()=>({style:'Quiet Luxury',key:'45°',fill:'по необходимости',back:'контровой при драме'}),
  ollamaModel:'none-for-this-integration-test'
 });
-const port=await worker.start();assert.equal(port,47832);
+const port=await worker.start();assert.equal(port,ciWorkerPort);
 const browser=await chromium.launch({headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1440,height:900}});
