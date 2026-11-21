@@ -32,6 +32,42 @@
       "sha256": "5a0c8ba78e06aa9f2a9b0136d56519eee4857333b32e85266897e8e7c0bc3395",
       "scene": "Dark walnut desk in an empty rehearsal room, blank score and pencil on the right",
       "prompt": "cinematic still, low-key lighting, moody, quiet luxury, shallow depth of field, dark brown and beige tones, highly detailed, empty space for text on the left, photographic realism, portrait 4:5. Warm practical light, rich shadows. NO TEXT, no letters, no numbers, no logos, no people, no faces. No recreation of movie stills. Scene: Dark walnut desk in an empty rehearsal room, blank score and pencil on the right"
+    },
+    {
+      "file": "door-handle.jpg",
+      "sha256": "de1edb17241994a0cf74f2c247f6e10891b2959b3e5c0aa95b37aacc49e79699",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. Extreme close-up of a worn bronze door handle on a dark walnut theatre door, single narrow amber glint on the metal in the upper right, shallow depth of field, rich chocolate shadows, wide dark quiet areas at left and below for typography. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
+    },
+    {
+      "file": "empty-auditorium.jpg",
+      "sha256": "d2e1efd8bf7b2aacd1c334ec50a1b1a766a65fd4a3e17b88e1d6bf4893647ce9",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. An empty dark theatre auditorium, rows of deep brown upholstered seats disappearing into darkness, a tiny warm practical light on a wall far right, viewed from stage level, upper-left and lower half subdued dark negative space for text. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
+    },
+    {
+      "file": "soft-spotlight.jpg",
+      "sha256": "380ff20e9d94abeb326ff88652fb807bae0e9bd834dc06c61e1a1ae62160cbfd",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. A defocused warm amber stage spotlight seen through darkness, an abstract soft elliptical bloom of light in the upper right with delicate haze and graphite-brown shadows, no crisp objects, lower half dark and calm for text. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
+    },
+    {
+      "file": "piano-key.jpg",
+      "sha256": "762cd13fdf472dfecb576535a68b885c6d91f616518527b4b82ded4426498b2b",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. An intimate close-up of ivory and ebony piano keys emerging from deep shadow, one slim amber reflection across keys in lower right, shallow depth of field, old polished wood, middle left mostly darkness for typography. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
+    },
+    {
+      "file": "black-contour.jpg",
+      "sha256": "ca8ba5da73ef7928e03fb6b4f74e75a022c5905d11b96bf2e879e498ac9a14ae",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. An almost absolutely black cinematic frame, only a barely visible graphite contour of a theatre doorway at far right and a faint warm reflected edge, profoundly restrained, no recognizable objects in center, no bright light, expansive black negative space for text. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
+    },
+    {
+      "file": "final-light.jpg",
+      "sha256": "a249aefac3a336ab1fa11644ea1585b45bdcc5d76043c7c7b4f2ff57c200e3ff",
+      "prompt": "Use case: photorealistic-natural. Asset: portrait 4:5 cinematic editorial background photograph. A cinematic abstract final chord of light: a restrained diagonal amber beam entering from the upper right through soft atmospheric haze, dark chocolate and graphite shadows, faint reflections like on an empty stage floor, bottom left dark for typography, elegant quiet closure. Low-key lighting, quiet luxury, nuanced natural texture, warm practical light and deep shadows, dark chocolate / graphite / muted amber palette. High-end art-house movie poster photography, not a flat graphic poster. Empty environment, no people, no faces, NO TEXT, NO LETTERS, NO NUMBERS, no typography, no logos, no watermark, no borders. One single image, not a collage.",
+      "source": "built-in image_gen"
     }
   ]
 }

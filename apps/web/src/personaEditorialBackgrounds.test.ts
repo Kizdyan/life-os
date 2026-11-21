@@ -5,7 +5,7 @@ describe('cinematic backgrounds in existing editorial posts',()=>{
  it('adds eight deterministic local backgrounds without changing older fixtures',()=>{
   const p=createQuietHorrorCarousel();
   expect(p.slides.every(s=>validCinematicBackground(s.background))).toBe(true);
-  expect(new Set(p.slides.map(s=>s.background?.libraryId)).size).toBe(5);
+  expect(new Set(p.slides.map(s=>s.background?.libraryId)).size).toBe(8);
   expect(createBaselinePauseCarousel().slides.every(s=>s.background===undefined)).toBe(true);
   expect(backgroundAssetUrl(libraryBackground(0))).toBe('/carousel-backgrounds/v1/empty-stage.jpg');
  });

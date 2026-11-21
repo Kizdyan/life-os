@@ -79,7 +79,8 @@ jobs:
             fi
             gh release upload "$TAG" "$DIR"/*.png "$DIR"/*.zip --clobber
             gh release delete-asset "$TAG" contact-sheet-quiet-horror-v2.png --yes || true
-            gh release edit "$TAG" --notes "Типографика v3: Cormorant Garamond + Inter Light, иерархия текста. Черновик для визуального подтверждения автора; textApproved=false, designApproved=false."
+            gh release delete-asset "$TAG" contact-sheet-quiet-horror-v3.png --yes || true
+            gh release edit "$TAG" --notes "Арт-правки v4: восемь разных фонов, Body 44–48px, без нумерации и декора в PNG, новые тексты и обе подписи. Черновик для визуального подтверждения автора; textApproved=false, designApproved=false."
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
             test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 10
             exit 0

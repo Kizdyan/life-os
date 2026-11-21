@@ -25,25 +25,22 @@ export function wrapEditorialText(text:string,width:number,measure:(s:string)=>n
 }
 
 type Zone={x:number;y:number;width:number;height:number;size:number;align?:CanvasTextAlign};
-export type HierarchyLayout={headline:Zone;kicker?:Zone;body?:Zone;highlight?:Zone;diagonal?:boolean};
+export type HierarchyLayout={headline:Zone;kicker?:Zone;body?:Zone;highlight?:Zone};
 export const HIERARCHY_LAYOUTS:readonly HierarchyLayout[]=[
- {kicker:{x:100,y:830,width:880,height:40,size:20},headline:{x:100,y:890,width:880,height:350,size:90}},
- {headline:{x:100,y:150,width:820,height:450,size:88},highlight:{x:100,y:890,width:730,height:250,size:48}},
- {kicker:{x:100,y:130,width:880,height:40,size:20},headline:{x:100,y:200,width:760,height:260,size:90},body:{x:540,y:810,width:440,height:390,size:32}},
- {headline:{x:100,y:150,width:820,height:300,size:88},highlight:{x:100,y:600,width:740,height:210,size:48},body:{x:100,y:1000,width:710,height:230,size:32}},
- {headline:{x:100,y:150,width:800,height:370,size:88},body:{x:410,y:900,width:570,height:320,size:32},diagonal:true},
- {kicker:{x:100,y:270,width:880,height:40,size:20,align:'center'},headline:{x:100,y:350,width:880,height:340,size:88,align:'center'},body:{x:240,y:810,width:600,height:390,size:32,align:'center'}},
- {headline:{x:100,y:350,width:880,height:370,size:88,align:'center'},highlight:{x:100,y:850,width:880,height:180,size:48,align:'center'}},
- {headline:{x:100,y:900,width:820,height:240,size:88},body:{x:100,y:1180,width:700,height:60,size:32}}
+ {headline:{x:100,y:900,width:880,height:350,size:90}},
+ {headline:{x:100,y:150,width:820,height:450,size:88},body:{x:100,y:900,width:740,height:310,size:48}},
+ {headline:{x:100,y:170,width:820,height:280,size:90},body:{x:100,y:720,width:740,height:520,size:48}},
+ {headline:{x:100,y:150,width:820,height:300,size:88},body:{x:100,y:780,width:740,height:460,size:48}},
+ {headline:{x:100,y:150,width:800,height:370,size:88},body:{x:100,y:870,width:740,height:380,size:44}},
+ {headline:{x:100,y:520,width:880,height:340,size:88,align:'center'}},
+ {headline:{x:100,y:350,width:880,height:370,size:88,align:'center'},body:{x:170,y:850,width:740,height:180,size:48,align:'center'}},
+ {headline:{x:100,y:800,width:840,height:260,size:88},body:{x:100,y:1080,width:740,height:170,size:48}}
 ];
 
 export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number){
  const layout=HIERARCHY_LAYOUTS[index];if(!layout)throw Error('Неизвестная композиция');
  const result:{role:string;size:number;lines:string[];x:number;y:number;width:number;height:number}[]=[];
  c.save();
- if(layout.diagonal){
-  c.strokeStyle='#C9A882';c.lineWidth=1;c.beginPath();c.moveTo(100,900);c.lineTo(980,660);c.stroke();
- }
  for(const role of ['kicker','headline','highlight','body'] as const){
   const zone=layout[role],text=slide[role];if(!zone||!text)continue;
   const align=zone.align??'left';let lines:string[]=[],size=zone.size;
@@ -51,7 +48,7 @@ export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:Editori
    role==='highlight'?`italic 600 ${s}px "Persona Carousel Cormorant"`:
    `${role==='body'?300:400} ${s}px "Persona Carousel Inter"`;
   const leading=role==='body'?1.6:role==='headline'?1.08:1.25;
-  const min=role==='headline'?64:role==='body'?28:role==='highlight'?40:20;
+  const min=role==='headline'?64:role==='body'?44:role==='highlight'?40:20;
   for(;size>=min;size-=4){
    c.font=font(size);
    try{lines=wrapEditorialText(text,zone.width,t=>c.measureText(t).width)}catch{continue}

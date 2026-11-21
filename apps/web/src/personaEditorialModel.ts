@@ -44,7 +44,7 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
   post.caption,post.preset,post.slides.map(s=>{
    const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
    const design=s.background?[...values,s.background]:values;
-   return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-hierarchy-v1']:design;
+   return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
   })]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');

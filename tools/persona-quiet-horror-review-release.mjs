@@ -19,13 +19,21 @@ try{
   const draft=m.createQuietHorrorCarousel('2026-11-21T00:00:00.000Z');
   if(!draft.slides.every(s=>s.background))throw Error('Cinematic backgrounds missing');
   if(draft.approvals.textApproved||draft.approvals.designApproved)throw Error('Draft is already approved');
-  const images=await Promise.all(draft.slides.map((s,i)=>media.renderEditorialSlide(draft,s,i)));
+  const artworkTexts=[],originalFill=CanvasRenderingContext2D.prototype.fillText,originalStroke=CanvasRenderingContext2D.prototype.stroke;
+  let strokes=0,images;
+  CanvasRenderingContext2D.prototype.fillText=function(text,...args){artworkTexts.push(String(text));return originalFill.call(this,text,...args)};
+  CanvasRenderingContext2D.prototype.stroke=function(...args){strokes++;return originalStroke.apply(this,args)};
+  try{images=await Promise.all(draft.slides.map((s,i)=>media.renderEditorialSlide(draft,s,i)))}
+  finally{CanvasRenderingContext2D.prototype.fillText=originalFill;CanvasRenderingContext2D.prototype.stroke=originalStroke}
+  if(artworkTexts.some(t=>/^\d{2}\s*\/\s*\d{2}$/.test(t)))throw Error('Slide numbering leaked into artwork');
+  if(strokes!==0)throw Error('Decorative lines leaked into artwork');
   const typography=await import('/src/personaEditorialTypography.ts');
   const ctx=document.createElement('canvas').getContext('2d');
   const layouts=draft.slides.map((s,i)=>typography.paintEditorialHierarchy(ctx,s,i));
   for(const layout of layouts)for(const zone of layout){
    if(zone.x<100||zone.y<100||zone.x+zone.width>980||zone.y+zone.height>1250)throw Error('Typography escaped safe margins');
-   if(zone.role==='body'&&(zone.size!==32||zone.width>756))throw Error('Body scale/column changed');
+   if(zone.role==='body'&&(zone.size<44||zone.size>48||zone.width>756))throw Error('Body scale/column changed');
+   if(zone.role==='kicker'||zone.role==='highlight')throw Error('Unexpected small caption');
   }
   for(const b of images){const im=await createImageBitmap(b);if(im.width!==1080||im.height!==1350)throw Error('Invalid PNG dimensions');im.close();}
   // Simulate the app's delayed Google Fonts face replacing a global family.
@@ -37,6 +45,9 @@ try{
   const second=await media.renderEditorialSlide(draft,draft.slides[0],0);
   document.fonts.delete(competing);
   const digest=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  const backgrounds=await import('/src/personaEditorialBackgrounds.ts');
+  const backgroundHashes=await Promise.all(draft.slides.map(async s=>digest(await(await fetch(backgrounds.backgroundAssetUrl(s.background))).blob())));
+  if(new Set(backgroundHashes).size!==8)throw Error('Background images repeat');
   if(await digest(second)!==await digest(images[0]))throw Error('Nondeterministic rendering');
   let checked=m.approveEditorialStep(m.approveEditorialStep(draft,'topic'),'content');
   for(let i=0;i<6;i++)checked=m.setEditorialChecklistItem(checked,i,true);
@@ -56,7 +67,7 @@ try{
   const reviewZip=await media.zipFileBytes(entries);
   const b64=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(b)});
   return {slides:await Promise.all(images.map(b64)),sheet:await b64(sheet),zip:await b64(reviewZip),draft,
-   sha256:await Promise.all(images.map(digest)),gateZipBytes:zip.size,layouts};
+   sha256:await Promise.all(images.map(digest)),gateZipBytes:zip.size,layouts,backgroundHashes,artworkTexts};
  });
  // Real UI preview uses precisely the same PNG bytes as export.
  await page.getByRole('button',{name:'Утвердить тему',exact:true}).click();
@@ -97,12 +108,13 @@ try{
   localStorage.setItem(m.EDITORIAL_KEY,JSON.stringify(saved));
  },data.draft);
  for(let i=0;i<8;i++)await writeFile(join(out,'quiet-horror-slide-'+String(i+1).padStart(2,'0')+'.png'),Buffer.from(data.slides[i],'base64'));
- await writeFile(join(out,cinematic?'contact-sheet-quiet-horror-v3.png':'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
+ await writeFile(join(out,cinematic?'contact-sheet-quiet-horror-v4.png':'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
  await writeFile(join(out,'carousel-quiet-horror-'+(cinematic?'cinematic-preview-':'publish-')+new Date().toISOString().slice(0,10)+'.zip'),Buffer.from(data.zip,'base64'));
  await writeFile(join(out,'draft.json'),JSON.stringify(data.draft,null,2)+'\n');
  await writeFile(join(out,'caption.txt'),data.draft.caption);
  await writeFile(join(out,'QA.json'),JSON.stringify({sha256:data.sha256,previewMatchesPng:true,gatePassedInIsolatedTest:true,
   typography:data.layouts,
+  uniqueBackgrounds:new Set(data.backgroundHashes).size,backgroundHashes:data.backgroundHashes,artworkNumbering:false,decorativeLines:false,
   textApproved:false,designApproved:false,publicationAllowed:false,sheet:{width:1080,height:2160,thumbnailWidth:400,thumbnailHeight:500}},null,2));
  assert.deepEqual(errors,[]);
  console.log('QUIET_HORROR_PASS eight PNGs, deterministic preview, approval gate, caption, contact sheet, edit invalidation');

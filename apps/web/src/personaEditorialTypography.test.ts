@@ -7,20 +7,21 @@ it('keeps Russian prepositions attached without changing copy',()=>{
  expect(lines.join(' ')).toBe(text);
  for(const line of lines)expect(line).not.toMatch(/(?:^|\s)(в|и|на)$/u);
 });
-it('all zones honor 100px margins, body width and the 32px/1.6 scale',()=>{
+it('all zones honor 100px margins, body width and the larger 44–48px scale',()=>{
  for(const layout of HIERARCHY_LAYOUTS)for(const role of ['kicker','headline','highlight','body'] as const){
   const z=layout[role];if(!z)continue;
   expect(z.x).toBeGreaterThanOrEqual(100);expect(z.x+z.width).toBeLessThanOrEqual(980);
   expect(z.y).toBeGreaterThanOrEqual(100);expect(z.y+z.height).toBeLessThanOrEqual(1250);
-  if(role==='body'){expect(z.size).toBe(32);expect(z.width).toBeLessThanOrEqual(1080*.7)}
+  if(role==='body'){expect(z.size).toBeGreaterThanOrEqual(44);expect(z.size).toBeLessThanOrEqual(48);expect(z.width).toBeLessThanOrEqual(1080*.7)}
  }
 });
 it('quiet horror has the requested hierarchy and exact hook',()=>{
  const p=createQuietHorrorCarousel();
- expect(p.slides[0]).toMatchObject({kicker:'КИНО И ЗВУК',headline:'Почему самая страшная сцена часто тише всех',body:''});
- expect(p.slides[2]).toMatchObject({kicker:'ФАКТ',headline:'Меньше пяти минут.'});
- expect(p.slides[5].kicker).toBe('МОЙ ОПЫТ');
- expect(p.slides[7]).toMatchObject({headline:'Следующий разбор — про одну ноту.',body:'Сохраните, если интересно.'});
+ expect(p.slides[0]).toMatchObject({kicker:'',headline:'Самый сильный страх в кино звучит тише всего.',body:''});
+ expect(p.slides[2]).toMatchObject({kicker:'',headline:'Меньше пяти минут.'});
+ expect(p.slides[5]).toMatchObject({kicker:'',body:'',headline:'Иногда моя работа — вовремя замолчать.'});
+ expect(p.slides[7]).toMatchObject({headline:'Тишина в кадре — это не пустота.',body:'Это решение. В следующем разборе — про одну ноту.'});
+ expect(p.slides.every(s=>!s.kicker&&!s.highlight)).toBe(true);
 });
 it('editing a hierarchy field changes the fingerprint and clears approval',()=>{
  let p=approveEditorialStep(approveEditorialStep(createQuietHorrorCarousel(),'topic'),'content');

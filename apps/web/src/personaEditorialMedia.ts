@@ -503,8 +503,6 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
  c.textAlign='left';
  lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
  }
- // Decoration lines and dots are intentionally absent on photographs.
- c.font='400 24px "'+(slide.headline!==undefined?'Persona Carousel Inter':'Inter')+'"';c.fillStyle=BASELINE_BEIGE;c.textAlign='right';
- c.fillText(String(index+1).padStart(2,'0')+' / '+String(post.slides.length).padStart(2,'0'),980,1226);
+ // Publication artwork contains no slide numbers; labels belong to the contact sheet.
  return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }

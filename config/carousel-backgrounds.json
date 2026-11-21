@@ -2,12 +2,18 @@
   "version": 1,
   "model": "gpt-image-1",
   "basePrompt": "cinematic still, low-key lighting, moody, quiet luxury, shallow depth of field, dark brown and beige tones, highly detailed, empty space for text on the left, photographic realism, portrait 4:5. Warm practical light, rich shadows. NO TEXT, no letters, no numbers, no logos, no people, no faces. No recreation of movie stills.",
-  "sequence": ["empty-stage", "door-light", "wooden-table", "velvet-curtain", "door-light", "wooden-table", "window-chair", "empty-stage"],
+  "sequence": ["empty-stage", "door-handle", "empty-auditorium", "soft-spotlight", "velvet-curtain", "piano-key", "black-contour", "final-light"],
   "library": {
     "empty-stage": {"file": "empty-stage.jpg", "scene": "Empty theatre stage with a solitary chair on the right and an amber spotlight, dark velvet curtains"},
     "velvet-curtain": {"file": "velvet-curtain.jpg", "scene": "Dark chocolate velvet theatre curtain, narrow warm slit of light on the right"},
     "wooden-table": {"file": "wooden-table.jpg", "scene": "Dark walnut desk in an empty rehearsal room, blank score and pencil on the right"},
     "door-light": {"file": "door-light.jpg", "scene": "Empty backstage corridor, half-open wooden door and warm amber light on the right"},
-    "window-chair": {"file": "window-chair.jpg", "scene": "Empty rehearsal room at dusk, a chair by a window on the right, deep shadows"}
+    "window-chair": {"file": "window-chair.jpg", "scene": "Empty rehearsal room at dusk, a chair by a window on the right, deep shadows"},
+    "door-handle": {"file": "door-handle.jpg", "scene": "Close-up of a bronze door handle on dark wood, one amber glint"},
+    "empty-auditorium": {"file": "empty-auditorium.jpg", "scene": "Empty dark theatre auditorium, rows of seats fading into shadow"},
+    "soft-spotlight": {"file": "soft-spotlight.jpg", "scene": "Defocused amber spotlight bloom in deep darkness"},
+    "piano-key": {"file": "piano-key.jpg", "scene": "Piano keys emerging from darkness, a narrow warm reflection"},
+    "black-contour": {"file": "black-contour.jpg", "scene": "Almost black frame with a barely visible doorway contour"},
+    "final-light": {"file": "final-light.jpg", "scene": "Restrained abstract amber beam and soft cinematic haze"}
   }
 }
