@@ -25,4 +25,13 @@ describe('cinematic backgrounds in existing editorial posts',()=>{
   expect(validCinematicBackground({libraryId:'empty-stage',generatedRef:'bad'})).toBe(false);
   expect(validCinematicBackground({libraryId:'empty-stage',generatedRef:'carousel-quiet-horror/bg-123',sha256:'a'.repeat(64)})).toBe(true);
  });
+ it('validates generated provenance while retaining older saved background records',()=>{
+  const image={...libraryBackground(0),generatedRef:'research-test/bg-123',sha256:'a'.repeat(64)};
+  const provenance={provider:'openai',model:'test-model',prompt:'Text-free ocean scene',createdAt:'2026-11-21T00:00:00Z'};
+  expect(validCinematicBackground(image)).toBe(true);
+  expect(validCinematicBackground({...image,provenance})).toBe(true);
+  expect(validCinematicBackground({...image,provenance:{...provenance,model:''}})).toBe(false);
+  expect(validCinematicBackground({...image,provenance:{...provenance,createdAt:'invalid'}})).toBe(false);
+  expect(validCinematicBackground({...libraryBackground(0),provenance})).toBe(false);
+ });
 });

@@ -77,14 +77,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const livePost=useRef(post);livePost.current=post;
  const [backgroundBusy,setBackgroundBusy]=useState(false);
  const [backgroundMessage,setBackgroundMessage]=useState('');
+ const [paidImageConsent,setPaidImageConsent]=useState(false);
  async function generateBackground(){
-  if(!post||backgroundBusy)return;
-  const id=post.id,topic=post.topic,slideId=post.slides[selectedSlide]?.id;
+  if(!post||backgroundBusy||!paidImageConsent)return;
+  const id=post.id,topic=post.topic,revision=post.revision,slideId=post.slides[selectedSlide]?.id;
   setBackgroundBusy(true);setBackgroundMessage('Создаётся фон без текста…');
+  setPaidImageConsent(false);
   try{
-   const result=await requestEditorialBackground(post,selectedSlide),current=livePost.current;
-   if(current?.id!==id||current.topic!==topic){setBackgroundMessage('Карусель изменилась. Запросите фон для текущей темы.');return}
-   onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?{...s,visual:'background',background:result.background}:s)}));
+   const result=await requestEditorialBackground(post,selectedSlide,{paidConsent:true}),current=livePost.current;
+   if(current?.id!==id||current.topic!==topic||current.revision!==revision){setBackgroundMessage('Карусель изменилась. Созданный фон не применён к новой редакции.');return}
+   if(result.status==='READY'&&result.background)onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?{...s,visual:'background',photoRef:undefined,background:result.background}:s)}));
    setBackgroundMessage(result.message);
   }finally{setBackgroundBusy(false)}
  }
@@ -95,6 +97,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [sourceTitle,setSourceTitle]=useState('');
  const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
+ useEffect(()=>setPaidImageConsent(false),[post?.id,post?.revision,selectedSlide]);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
  const [baselinePreviewError,setBaselinePreviewError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -263,11 +266,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  function chooseArchivePhoto(photoRef:string){
   if(!post||!slide||!(post.carouselFormat||post.research))return;
   if(post.carouselFormat==='mixed'&&selectedSlide%2===1)return;
-  modifySlide({visual:'archive-photo',photoRef});
+  modifySlide({visual:'archive-photo',photoRef,background:undefined});
  }
  function clearArchivePhoto(){
   if(!post||!slide||!(post.carouselFormat||post.research))return;
-  modifySlide({visual:'background',photoRef:undefined});
+  modifySlide({visual:'background',photoRef:undefined,background:undefined});
  }
  function moveArchivePhoto(delta:-1|1){
   if(!post||selectedPhotoPosition<0)return;
@@ -518,8 +521,50 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>
      {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>}
     </div>:<label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
-     <textarea value={slide?.text??''} maxLength={170} onChange={e=>modifySlide({text:e.target.value})}/>
+     <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
     </label>}
+    {post.research&&<section className="personaEditorialResearchReview" data-testid="editorial-source-review">
+     <h4>Источники и проверка фактов</h4>
+     <p>Открой ссылки, сопоставь каждый факт с оригиналом и отметь только действительно подтверждённые.
+      Галочки — ручная редакторская проверка, не автоматический аудит. Если изменишь текст, проверку потребуется повторить.</p>
+     <p role="status"><strong>Источник: {sourcePass?'SOURCE_PASS · проверено автором':'UNVERIFIED · утверждение текста заблокировано'}</strong></p>
+     <label>
+      <input type="checkbox" data-testid="research-public-copy-review"
+       checked={post.research.copyReviewed===true}
+       onChange={e=>updateResearch(current=>setEditorialPublicCopyReviewed(current,e.target.checked))}/>
+      Я проверил заголовок и подпись: в них нет неподтверждённых фактов
+     </label>
+     {post.slides.map((s,i)=>{
+      const sources=post.research!.sourceItems.filter(x=>x.slideId===s.id);
+      return <div key={s.id} className="personaEditorialResearchSlide">
+       <strong>Слайд {i+1}: {s.text.slice(0,85)}</strong>
+       {!sources.length&&<label>
+        <input type="checkbox" checked={post.research!.interpretationSlides.includes(s.id)}
+         onChange={e=>updateResearch(current=>setEditorialInterpretationReviewed(current,s.id,e.target.checked))}/>
+        Проверено автором: это исключительно художественный вывод или мнение, без проверяемых фактов
+       </label>}
+       {sources.map(source=><div key={source.url}>
+        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} · источник</a>
+        <label><input type="checkbox" checked={source.reviewed}
+         onChange={e=>reviewSource(s.id,source.url,e.target.checked)}/>
+         Проверено по оригиналу</label>
+        <button type="button" onClick={()=>updateResearch(current=>removeEditorialSource(current,s.id,source.url))}>Убрать источник</button>
+       </div>)}
+      </div>;
+     })}
+     {slide&&<div className="personaEditorialResearchSlide">
+      <strong>Добавить источник для выбранного слайда {selectedSlide+1}</strong>
+      <label>Название источника
+       <input value={sourceTitle} maxLength={160} onChange={e=>setSourceTitle(e.target.value)}/>
+      </label>
+      <label>Прямая ссылка на источник
+       <input type="url" value={sourceUrl} maxLength={2048}
+        onChange={e=>setSourceUrl(e.target.value)} placeholder="https://..."/>
+      </label>
+      <button type="button" disabled={!sourceTitle.trim()||!sourceUrl.trim()}
+       onClick={addCurrentSource}>Добавить как непроверенный</button>
+     </div>}
+    </section>}
     {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
      {post.slides.length<8&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
@@ -560,15 +605,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
     </div>
-    {!archiveFixture&&<div aria-label="Кинематографичные фоны">
-     <button type="button" data-testid="cinematic-library" disabled={backgroundBusy} onClick={()=>{
+    {(!archiveFixture||post.research)&&<div aria-label="Кинематографичные фоны">
+     {!post.research&&<button type="button" data-testid="cinematic-library" disabled={backgroundBusy} onClick={()=>{
       persist({slides:post.slides.map((s,i)=>({...s,visual:'background',background:libraryBackground(i)}))});
       setBackgroundMessage('Локальные кинофоны применены. Текст не изменён; оформление требует утверждения.');
-     }}>Кинофоны из библиотеки · все слайды</button>
-     <button type="button" disabled={backgroundBusy} onClick={()=>void generateBackground()}>
+     }}>Кинофоны из библиотеки · все слайды</button>}
+     <label><input type="checkbox" aria-label="Разрешаю один платный запрос генерации изображения" checked={paidImageConsent} disabled={backgroundBusy} onChange={e=>setPaidImageConsent(e.target.checked)}/>Разрешаю один платный запрос OpenAI для этого слайда</label>
+     <button type="button" disabled={backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
       {backgroundBusy?'Генерация фона…':'Сгенерировать фон слайда · OpenAI'}</button>
      {slide?.background&&<button type="button" disabled={backgroundBusy} onClick={()=>modifySlide({background:undefined})}>Однотонный фон слайда</button>}
-     <p>Фотографии без надписей. Текст рисует Persona. Без ключа или Worker используется локальная библиотека; генерация OpenAI по ключу может тарифицироваться.</p>
+     <p>Текст рисует Persona. Внешняя генерация требует ключа и отдельного согласия. При BLOCKED доступны собственный архив и однотонный фон. Локальная библиотека — предзаготовленные изображения, а не выполненная генерация.</p>
      {backgroundMessage&&<p role="status">{backgroundMessage}</p>}
     </div>}
     <fieldset className="personaEditorialMediaChoices">

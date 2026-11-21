@@ -63,6 +63,7 @@ try{
   for(const f of files)entries.push({name:f.name,data:new Uint8Array(await f.blob.arrayBuffer())});
   entries.push({name:'caption.txt',data:enc.encode(draft.caption)});
   entries.push({name:'draft.json',data:enc.encode(JSON.stringify(draft,null,2))});
+  entries.push({name:'image-provenance.json',data:enc.encode(JSON.stringify(await media.editorialImageProvenance(draft),null,2))});
   entries.push({name:'REVIEW.txt',data:enc.encode('Оформление и тексты ожидают автора. Публикация запрещена до утверждения.')});
   const reviewZip=await media.zipFileBytes(entries);
   const b64=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(b)});
@@ -81,12 +82,14 @@ try{
  assert.equal(actual,data.sha256[0],'preview PNG must match export byte-for-byte');
  // Library works with no Worker and no API key, through the actual editor UI.
  await page.route('**/health',route=>route.abort('failed'));
+ await page.getByLabel('Разрешаю один платный запрос генерации изображения',{exact:true}).check();
  await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
- await page.getByRole('status').filter({hasText:'Генерация недоступна.'}).waitFor();
+ await page.getByRole('status').filter({hasText:'BLOCKED:'}).waitFor();
  // A generated image must be stored, rendered and restored from IndexedDB.
  await page.unroute('**/health');
  await page.route('**/health',route=>route.fulfill({json:{token:'browser-test-only'}}));
- await page.route('**/carousel-background',route=>route.fulfill({json:{source:'openai',pngBase64:data.slides[0]}}));
+ await page.route('**/carousel-background',route=>route.fulfill({json:{status:'READY',source:'openai',pngBase64:data.slides[0],model:'test-fixture-not-live',prompt:'Synthetic browser transport fixture, not a real provider result',createdAt:'2026-11-21T00:00:00Z'}}));
+ await page.getByLabel('Разрешаю один платный запрос генерации изображения',{exact:true}).check();
  await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
  await page.getByRole('status').filter({hasText:'Фон создан OpenAI'}).waitFor();
  const generated=await page.evaluate(async()=>{
