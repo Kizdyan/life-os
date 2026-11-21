@@ -157,7 +157,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
   throw Error('Неподдерживаемый вариант эталонной карусели');
  const fonts=await Promise.all([
   document.fonts.load('500 100px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','')
+  document.fonts.load('400 24px "Inter"','А')
  ]);
  if(fonts.some(faces=>faces.length===0))
   throw Error('Локальные шрифты Playfair Display / Inter не загрузились; экспорт остановлен');
@@ -336,7 +336,7 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
  if(post.slides.length!==8||index<0||index>7||slide.visual!=='background'||post.preset!=='chocolate-graphite')
   throw Error('Неподдерживаемый вариант карусели');
  const fonts=await Promise.all([document.fonts.load('500 88px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','')]);
+  document.fonts.load('400 24px "Inter"','А')]);
  if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
