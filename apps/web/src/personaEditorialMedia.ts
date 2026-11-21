@@ -269,13 +269,14 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
     ctx.fillStyle=shade;ctx.fillRect(0,0,1080,1350);
    }
    const left=94,width=880;
+   const fitCtx:CanvasRenderingContext2D=ctx; // Narrowed context captured by the nested helper.
    function fit(value:string,weight:400|500,italic:boolean,maxSize:number,minSize:number,height:number,maxLines:number){
     for(let size=maxSize;size>=minSize;size-=2){
-     ctx.font=(italic?'italic ':'')+weight+' '+size+'px "Playfair Display", Georgia, serif';
+     fitCtx.font=(italic?'italic ':'')+weight+' '+size+'px "Playfair Display", Georgia, serif';
      try{
-      const lines=wrapText(ctx,value,width,maxLines);
+      const lines=wrapText(fitCtx,value,width,maxLines);
       const step=Math.round(size*1.33);
-      if(lines.length&&lines.length*step<=height&&lines.every(line=>ctx.measureText(line).width<=width))
+      if(lines.length&&lines.length*step<=height&&lines.every(line=>fitCtx.measureText(line).width<=width))
        return {lines,step,size};
      }catch{/* Try a smaller font; never truncate a line. */}
     }
@@ -436,24 +437,25 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
  if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ const paintCtx:CanvasRenderingContext2D=c; // Narrowed context captured by both nested helpers.
  c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
  c.drawImage(baselineGrain(),0,0);
  c.fillStyle=BASELINE_CREAM;c.strokeStyle=BASELINE_BEIGE;
  function line(x1:number,y1:number,x2:number,y2:number,width=1){
-  c.lineWidth=width;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+  paintCtx.lineWidth=width;paintCtx.beginPath();paintCtx.moveTo(x1,y1);paintCtx.lineTo(x2,y2);paintCtx.stroke();
  }
  function block(text:string,x:number,y:number,width:number,height:number,size:number,
   align:CanvasTextAlign='left',color=BASELINE_CREAM,leading=1.35,exactLines?:string[]){
   let lines:string[]=[],used=size;
   for(;used>=28;used--){
-   c.font='500 '+used+'px "Playfair Display"';
-   lines=exactLines??wrapText(c,text,width,40);
-   if(lines.every(value=>c.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
+   paintCtx.font='500 '+used+'px "Playfair Display"';
+   lines=exactLines??wrapText(paintCtx,text,width,40);
+   if(lines.every(value=>paintCtx.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
   }
   if(used<28)throw Error('Текст не помещается в композицию');
-  c.fillStyle=color;c.textAlign=align;c.textBaseline='top';
+  paintCtx.fillStyle=color;paintCtx.textAlign=align;paintCtx.textBaseline='top';
   const tx=align==='center'?x+width/2:align==='right'?x+width:x;
-  lines.forEach((value,i)=>c.fillText(value,tx,y+i*used*leading));
+  lines.forEach((value,i)=>paintCtx.fillText(value,tx,y+i*used*leading));
  }
  switch(index){
   case 0:
