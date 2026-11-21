@@ -47,9 +47,9 @@ export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:Editori
  for(const role of ['kicker','headline','highlight','body'] as const){
   const zone=layout[role],text=slide[role];if(!zone||!text)continue;
   const align=zone.align??'left';let lines:string[]=[],size=zone.size;
-  const font=(s:number)=>role==='headline'?`${index===0?700:600} ${s}px "Cormorant Garamond"`:
-   role==='highlight'?`italic 600 ${s}px "Cormorant Garamond"`:
-   `${role==='body'?300:400} ${s}px "Inter"`;
+  const font=(s:number)=>role==='headline'?`${index===0?700:600} ${s}px "Persona Carousel Cormorant"`:
+   role==='highlight'?`italic 600 ${s}px "Persona Carousel Cormorant"`:
+   `${role==='body'?300:400} ${s}px "Persona Carousel Inter"`;
   const leading=role==='body'?1.6:role==='headline'?1.08:1.25;
   const min=role==='headline'?64:role==='body'?28:role==='highlight'?40:20;
   for(;size>=min;size-=4){

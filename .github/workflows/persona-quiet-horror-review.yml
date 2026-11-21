@@ -12,6 +12,7 @@ on:
       - 'apps/web/src/personaQuietHorror.test.ts'
       - 'apps/web/src/personaEditorialBackgrounds*'
       - 'apps/web/src/personaEditorialTypography*'
+      - 'apps/web/src/persona-editorial-fonts.css'
       - 'package.json'
       - 'package-lock.json'
       - 'apps/web/public/carousel-backgrounds/**'

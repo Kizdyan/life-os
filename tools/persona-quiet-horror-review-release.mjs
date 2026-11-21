@@ -28,7 +28,14 @@ try{
    if(zone.role==='body'&&(zone.size!==32||zone.width>756))throw Error('Body scale/column changed');
   }
   for(const b of images){const im=await createImageBitmap(b);if(im.width!==1080||im.height!==1350)throw Error('Invalid PNG dimensions');im.close();}
+  // Simulate the app's delayed Google Fonts face replacing a global family.
+  // Renderer-scoped @fontsource aliases must keep the PNG unchanged.
+  const inter=performance.getEntriesByType('resource').find(e=>e.name.includes('inter-cyrillic-400-normal.woff2'));
+  if(!inter)throw Error('Bundled Cyrillic Inter was not loaded');
+  const competing=new FontFace('Cormorant Garamond',`url("${inter.name}")`,{weight:'700'});
+  await competing.load();document.fonts.add(competing);
   const second=await media.renderEditorialSlide(draft,draft.slides[0],0);
+  document.fonts.delete(competing);
   const digest=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
   if(await digest(second)!==await digest(images[0]))throw Error('Nondeterministic rendering');
   let checked=m.approveEditorialStep(m.approveEditorialStep(draft,'topic'),'content');

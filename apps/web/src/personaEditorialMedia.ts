@@ -3,10 +3,7 @@ import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/playfair-display/500-italic.css';
 import '@fontsource/inter/400.css';
-import '@fontsource/inter/300.css';
-import '@fontsource/cormorant-garamond/600.css';
-import '@fontsource/cormorant-garamond/700.css';
-import '@fontsource/cormorant-garamond/600-italic.css';
+import './persona-editorial-fonts.css';
 import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
@@ -409,7 +406,7 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
 
 export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  if(images.length!==8)throw Error('Нужны восемь слайдов');
- await document.fonts.load('400 24px "Inter"','01');
+ await document.fonts.load('400 24px "Persona Carousel Inter"','01');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
  c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
@@ -417,7 +414,7 @@ export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  for(let i=0;i<8;i++){
   const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
   c.drawImage(image,x,y,400,500);image.close();
-  c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
+  c.font='400 24px "Persona Carousel Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
  }
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
@@ -454,12 +451,13 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
  if(background&&!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
  const fonts=await Promise.all([
   ...(slide.headline!==undefined?[
-   document.fonts.load('600 88px "Cormorant Garamond"',slide.text),
-   document.fonts.load('700 90px "Cormorant Garamond"',slide.text),
-   document.fonts.load('italic 600 48px "Cormorant Garamond"',slide.text),
-   document.fonts.load('300 32px "Inter"',slide.text)
+   document.fonts.load('600 88px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('700 90px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('italic 600 48px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('300 32px "Persona Carousel Inter"',slide.text),
+   document.fonts.load('400 24px "Persona Carousel Inter"',slide.text+' 01 / 08')
   ]:[document.fonts.load('500 80px "Playfair Display"',slide.text),document.fonts.load('italic 500 80px "Playfair Display"',slide.text)]),
-  document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')
+  ...(slide.headline!==undefined?[]:[document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')])
  ]);
  if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
  let blob:Blob|undefined;
@@ -506,7 +504,7 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
  lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
  }
  // Decoration lines and dots are intentionally absent on photographs.
- c.font='400 24px "Inter"';c.fillStyle=BASELINE_BEIGE;c.textAlign='right';
+ c.font='400 24px "'+(slide.headline!==undefined?'Persona Carousel Inter':'Inter')+'"';c.fillStyle=BASELINE_BEIGE;c.textAlign='right';
  c.fillText(String(index+1).padStart(2,'0')+' / '+String(post.slides.length).padStart(2,'0'),980,1226);
  return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }
