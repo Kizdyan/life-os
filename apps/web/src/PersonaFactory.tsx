@@ -8,9 +8,9 @@ import {PersonaCreativeProjectCard} from './PersonaCreativeProjectCard';
 import PersonaActorPortfolio from './PersonaActorPortfolio';
 import PersonaMusicSyncPortfolio from './PersonaMusicSyncPortfolio';
 import PersonaQuickAutoRender from './PersonaQuickAutoRender';
-import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
+import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar.tsx';
 import PersonaEditorialStudio from './PersonaEditorialStudio';
-import PersonaReferenceWorkflows from './PersonaReferenceWorkflows';
+import PersonaReferenceWorkflows from './PersonaReferenceWorkflows.tsx';
 import {generatePersonaDraftWithRealAi} from './personaScriptGeneration';
 import {
  EDITORIAL_KEY,createSeedEditorialCarousel,createResearchedEditorialPost,loadEditorialStore,saveEditorialPost,

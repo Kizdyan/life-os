@@ -1,8 +1,9 @@
 import React,{useEffect,useState} from 'react';
+import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
+ CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
  editorialChecklistState,editorialChecklistReady,
@@ -45,7 +46,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'){
+  if([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -59,7 +60,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter';
+ const exact=[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter';
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -99,7 +100,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  useEffect(()=>{
   let alive=true;let previewUrl:string|null=null;
   setBaselinePreviewUrl(null);setBaselinePreviewError('');
-  if(post?.id!==CAROUSEL_BASELINE_ID||post.fontPreset!=='playfair-inter'||!slide)return;
+  if(![CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')||post?.fontPreset!=='playfair-inter'||!slide)return;
   void renderEditorialSlide(post,slide,selectedSlide).then(blob=>{
    if(!alive)return;
    previewUrl=URL.createObjectURL(blob);setBaselinePreviewUrl(previewUrl);
@@ -325,7 +326,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
    </p>}
-   <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
+   <p className="personaEditorialNote">Факт + мнение · 8 слайдов.
+    <button type="button" data-testid="open-carousel-quiet-horror" onClick={()=>{
+     if(!posts.some(p=>p.id===CAROUSEL_QUIET_HORROR_ID))onCreate(createQuietHorrorCarousel());
+     onSelect(CAROUSEL_QUIET_HORROR_ID);setError('');
+    }}>Почему самая страшная сцена часто тише всех</button>
+   </p>   <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
     <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
      {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
     </button>
@@ -405,6 +411,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       persist({slides:post.slides.filter(x=>x.id!==slide?.id)});setSelectedSlide(Math.max(0,selectedSlide-1));
      }}>Убрать слайд</button>}
     </div>}
+    {post.id===CAROUSEL_QUIET_HORROR_ID&&<div role="group" aria-label="Вариант подписи">
+     {(['1','2'] as const).map(id=><button key={id} type="button"
+      aria-pressed={post.caption===quietHorrorCaptions.variants[id]}
+      onClick={()=>persist({caption:quietHorrorCaptions.variants[id]})}>Вариант {id}</button>)}
+    </div>}
     <label>Основной текст публикации (Instagram / VK)
      <textarea className="personaEditorialCaption" value={post.caption} maxLength={4500}
       onChange={e=>persist({caption:e.target.value})} placeholder="Текст, который читатель увидит под каруселью…"/>
@@ -474,10 +485,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset+
-      (post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?' personaEditorialPreview--exact':'')}
+      ([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?' personaEditorialPreview--exact':'')}
      data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
-     {post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
+     {[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?
        baselinePreviewUrl?<img data-testid="baseline-exact-preview" src={baselinePreviewUrl} alt={'Готовый PNG слайда '+(selectedSlide+1)}/>:
         <span>{baselinePreviewError||'Готовится точный PNG...'}</span>:
        <>
@@ -489,7 +500,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
         </div>
        </>}
     </div>
-    <p>{post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
+    <p>{[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?
       'Предпросмотр сделан тем же Canvas-рендером, что и экспортируемый PNG 1080×1350.':
       'Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.'}</p>
     {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
