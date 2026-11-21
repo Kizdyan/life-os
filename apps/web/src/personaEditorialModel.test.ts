@@ -383,7 +383,7 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
  it('supports an eight-slide story and flags dense text without granting author approval',()=>{
   const draft=createSeedEditorialCarousel('PHOTO-001');
   const slides=Array.from({length:8},(_,i)=>({
-   id:'new-slide-'+i,text:i===0?'Почему режиссёр намеренно оставил актёра в абсолютной тишине на самой важной сцене именно этого фильма':i===7?'Сохраните и подпишитесь':i===3?'Здесь '+Array(30).fill('очень').join(' '):'Новая мысль '+i,
+   id:'new-slide-'+i,text:i===0?'Почему режиссёр намеренно оставил актёра в абсолютной тишине на самой важной сцене именно этого фильма':i===7?'Сохраните и подпишитесь':i===3?'Здесь '+Array(27).fill('очень').join(' '):'Новая мысль '+i,
    visual:'background' as const,photoDirection:''
   }));
   const eight=reviseEditorialPost(draft,{slides});
