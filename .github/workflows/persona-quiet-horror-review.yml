@@ -1,0 +1,59 @@
+name: Persona Quiet Horror v3 Review
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'config/carousel-quiet-horror*.json'
+      - 'apps/web/src/personaQuietHorror.test.ts'
+      - 'apps/web/src/personaEditorialModel.ts'
+      - 'apps/web/src/personaEditorialMedia.ts'
+      - 'apps/web/src/PersonaEditorialStudio.tsx'
+      - 'tools/persona-quiet-horror-review-release.mjs'
+      - '.github/workflows/persona-quiet-horror-review.yml'
+permissions:
+  contents: write
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Unit and typecheck
+        run: |
+          npx vitest run apps/web/src/personaQuietHorror.test.ts apps/web/src/personaEditorialModel.test.ts
+          npm run typecheck
+      - name: Start existing Persona
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 >/tmp/persona-quiet.log 2>&1 &
+          for i in {1..50}; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/persona-quiet.log
+          exit 1
+      - name: Chromium P0 and review export
+        run: node tools/persona-quiet-horror-review-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quiet-horror-draft
+          path: dist/carousels-v3-quiet-horror/
+      - name: Release v3 for author review
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=carousels-v3-quiet-horror
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing release"
+            exit 1
+          fi
+          printf '%s\n' 'v3: карусель №1 переделана по формату факт + мнение.' 'Оформление ждёт визуального подтверждения автора.' 'Текст и дизайн — черновик, публикация не разрешена.' >/tmp/quiet-notes.md
+          gh release create "$TAG" dist/carousels-v3-quiet-horror/*.png dist/carousels-v3-quiet-horror/*.zip --prerelease --title "Persona carousels v3 — quiet horror" --notes-file /tmp/quiet-notes.md --target "$GITHUB_SHA"
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 10

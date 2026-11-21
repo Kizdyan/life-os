@@ -1,5 +1,8 @@
 import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
+import quietHorror from '../../../config/carousel-quiet-horror.json';
+import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
  * This is a companion to existing PHOTO-001…010 ProductionJobs, not a second media job.
@@ -290,6 +293,15 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
+export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
+ const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
+  title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
+  slides:quietHorror.texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
+  preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
+  origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
+}
 /** Opt-in research-backed fixture; same Editorial Desk, statuses and color preset. */
 export function createDirectorQuestionCarousel(now=new Date().toISOString()):EditorialPost{
  const texts=[
@@ -392,7 +404,7 @@ export function validatePost(post:EditorialPost):void{
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
-  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?7:1)||
+  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?(post.id===CAROUSEL_QUIET_HORROR_ID?8:7):1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
   post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||

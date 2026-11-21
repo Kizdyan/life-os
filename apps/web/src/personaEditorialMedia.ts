@@ -1,4 +1,4 @@
-import {CAROUSEL_BASELINE_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/inter/400.css';
@@ -221,6 +221,8 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
+  return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
   return renderBaselineArtistSlide(post,slide,index);
  const c=document.createElement('canvas');c.width=1080;c.height=1350;
@@ -330,4 +332,84 @@ export function triggerEditorialDownload(blob:Blob,filename:string){
  a.href=url;a.download=filename;a.style.display='none';
  document.body.appendChild(a);a.click();a.remove();
  window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+/** Quiet Horror layout uses the existing Canvas export and the same grain on all slides. */
+async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.slides.length!==8||index<0||index>7||slide.visual!=='background'||post.preset!=='chocolate-graphite')
+  throw Error('Неподдерживаемый вариант карусели');
+ const fonts=await Promise.all([document.fonts.load('500 88px "Playfair Display"',slide.text),
+  document.fonts.load('400 24px "Inter"','01 / 08')]);
+ if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
+ const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ c.drawImage(baselineGrain(),0,0);
+ c.fillStyle=BASELINE_CREAM;c.strokeStyle=BASELINE_BEIGE;
+ function line(x1:number,y1:number,x2:number,y2:number,width=1){
+  c.lineWidth=width;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+ }
+ function block(text:string,x:number,y:number,width:number,height:number,size:number,
+  align:CanvasTextAlign='left',color=BASELINE_CREAM,leading=1.35,exactLines?:string[]){
+  let lines:string[]=[],used=size;
+  for(;used>=28;used--){
+   c.font='500 '+used+'px "Playfair Display"';
+   lines=exactLines??wrapText(c,text,width,40);
+   if(lines.every(value=>c.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
+  }
+  if(used<28)throw Error('Текст не помещается в композицию');
+  c.fillStyle=color;c.textAlign=align;c.textBaseline='top';
+  const tx=align==='center'?x+width/2:align==='right'?x+width:x;
+  lines.forEach((value,i)=>c.fillText(value,tx,y+i*used*leading));
+ }
+ switch(index){
+  case 0:
+   line(90,160.5,522,160.5);
+   block(slide.text,90,790,900,390,88,'left',BASELINE_CREAM,1.5,
+    slide.text==='Самые страшные сцены в кино часто почти беззвучны.'?
+     ['Самые страшные сцены','в кино часто почти беззвучны.']:undefined);
+   break;
+  case 1:block(slide.text,90,130,900,490,52,'left',BASELINE_CREAM,1.5);break;
+  case 2:{
+   const parts=slide.text.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.map(s=>s.trim())??[slide.text];
+   parts.forEach((text,i)=>block(text,90,290+i*250,900,190,56,'center'));break;
+  }
+  case 3:
+   line(91,230,91,350,2);block(slide.text,90,710,900,480,52);break;
+  case 4:{
+   line(90,1180,990,742.5);
+   const split=slide.text.indexOf('Когда');
+   block(split>0?slide.text.slice(0,split).trim():slide.text,90,140,790,390,56);
+   if(split>0)block(slide.text.slice(split),200,830,790,350,56,'right',BASELINE_BEIGE);
+   break;
+  }
+  case 5:
+   c.fillStyle=BASELINE_BEIGE;c.beginPath();c.arc(94,94,4,0,Math.PI*2);c.fill();
+   block(slide.text,110,330,860,740,64,'center');break;
+  case 6:block(slide.text,150,430,780,530,72,'center');break;
+  case 7:
+   line(90,910.5,414,910.5);
+   block(slide.text,90,950,900,240,44,'left',BASELINE_CREAM,1.5,
+    slide.text==='Следующий разбор — про одну ноту, которая меняет финал. Сохраните, если интересно.'?
+     ['Следующий разбор — про одну ноту, которая меняет финал.','Сохраните, если интересно.']:undefined);
+ }
+ c.font='400 24px "Inter"';c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle=BASELINE_BEIGE;
+ c.fillText(String(index+1).padStart(2,'0')+' / 08',990,1260);
+ return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('PNG export failed')),'image/png'));
+}
+
+export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
+ if(images.length!==8)throw Error('Нужны восемь слайдов');
+ await document.fonts.load('400 24px "Inter"','01');
+ const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
+ // 4 × (600 + labels) exceeds the requested sheet height. Keep 4:5 thumbnails.
+ for(let i=0;i<8;i++){
+  const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
+  c.drawImage(image,x,y,400,500);image.close();
+  c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
+  c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
+ }
+ return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
 }
