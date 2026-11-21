@@ -531,7 +531,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <p>Изображения и текст можно проверить до утверждения. Этот ZIP — черновик; разрешение на публикацию он не даёт.</p>
     {post.id===FRIDGE_HUM_ID&&<p>Новые иллюстрации созданы встроенным генератором Codex и импортированы в Persona. Это не кадры фильма, не копия V14 и не выполненная генерация через Worker. Источники и авторские решения требуют вашего отдельного подтверждения.</p>}
     {(post.id===FRIDGE_HUM_ID||isFridgeHumV2(post))&&<div aria-label="Сравнение редакций">
-     <p>{isFridgeHumV2(post)?'V2 — редакторская доработка; авторское решение и публикация не утверждены. Повторно использованы иллюстрации V1, кадрирование и свет изменены в Persona.':'V1 сохранена. Художественная оценка автора: NEEDS_REVISION; публикация запрещена.'}</p>
+     <p>{isFridgeHumV2(post)?'V2 — редакторская доработка; авторское решение и публикация не утверждены. Источник каждого фона и изменения кадрирования и света указаны в ZIP.':'V1 сохранена. Художественная оценка автора: NEEDS_REVISION; публикация запрещена.'}</p>
      <button type="button" disabled={busy} onClick={()=>void openFridgeHum()}>Открыть V1 без изменений</button>
      <button type="button" disabled={busy} onClick={()=>void openFridgeV2('a')}>V2 · обложка A</button>
      <button type="button" disabled={busy} onClick={()=>void openFridgeV2('b')}>V2 · обложка B</button>
