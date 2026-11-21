@@ -1,3 +1,4 @@
+import v2 from '../../../config/carousel-fridge-hum-v2.json';
 export type EditorialHierarchy={kicker:string;headline:string;body:string;highlight?:string};
 export function hierarchyCopy(s:EditorialHierarchy):string{
  return [s.kicker,s.headline,s.highlight,s.body].filter(Boolean).join('\n\n');
@@ -37,8 +38,12 @@ export const HIERARCHY_LAYOUTS:readonly HierarchyLayout[]=[
  {headline:{x:100,y:800,width:840,height:260,size:88},body:{x:100,y:1080,width:740,height:170,size:48}}
 ];
 
-export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number){
- const layout=HIERARCHY_LAYOUTS[index];if(!layout)throw Error('Неизвестная композиция');
+export function editorialHierarchyLayout(post:{compositionPreset?:string},index:number):HierarchyLayout{
+ const layout=post.compositionPreset==='fridge-hum-v2'?v2.layouts[index]:HIERARCHY_LAYOUTS[index];
+ if(!layout)throw Error('Неизвестная композиция');return layout;
+}
+export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number,layout=HIERARCHY_LAYOUTS[index]){
+ if(!layout)throw Error('Неизвестная композиция');
  for(const role of ['kicker','headline','highlight','body'] as const)
   if(slide[role]?.trim()&&!layout[role])throw Error('В композиции слайда '+(index+1)+' нет зоны '+role+'; текст не будет скрыт при экспорте');
  const result:{role:string;size:number;lines:string[];x:number;y:number;width:number;height:number}[]=[];

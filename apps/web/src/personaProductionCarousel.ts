@@ -27,8 +27,7 @@ export function createFridgeHumCarousel(now?:string):EditorialPost{
 
 /** Import actual new tool-generated images into the existing immutable local media store.
  * This performs local asset reads, NOT a live image-provider request. */
-export async function prepareFridgeHumCarousel():Promise<EditorialPost>{
- const post=createFridgeHumCarousel();
+export async function prepareFridgeHumCarousel(post=createFridgeHumCarousel()):Promise<EditorialPost>{
  for(const [i,asset] of images.entries()){
   const bg=post.slides[i].background!,response=await fetch('/carousel-backgrounds/fridge-hum-v1/'+asset.file);
   if(!response.ok)throw Error('Не найдена иллюстрация '+(i+1));

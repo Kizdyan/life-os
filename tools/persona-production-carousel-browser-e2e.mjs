@@ -7,6 +7,9 @@ import {join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 const {chromium}=await import(process.env.PERSONA_PLAYWRIGHT_MODULE||'playwright');
 const out=resolve(process.env.PERSONA_PRODUCTION_OUTPUT||'artifacts/persona-production-carousel');
+const revision=process.env.PERSONA_PRODUCTION_REVISION||'v1';
+assert.ok(['v1','v2a','v2b'].includes(revision));
+const draftId=revision==='v1'?'carousel-fridge-hum':'carousel-fridge-hum-v2'+(revision==='v2b'?'-hook-b':'');
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -22,10 +25,17 @@ try{
  await page.getByTestId('open-carousel-fridge-hum').click({timeout:8000});
  const editor=page.getByTestId('persona-editorial-studio');
  await editor.getByTestId('editorial-post-workflow').waitFor();
- const before=await page.evaluate(async()=>{
+ const v1Before=await page.evaluate(async()=>{
   const m=await import('/src/personaEditorialModel.ts');
   return m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-fridge-hum');
  });
+ if(revision!=='v1')await editor.getByRole('button',{name:revision==='v2a'?'V2 · обложка A':'V2 · обложка B',exact:true}).click();
+ let before;
+ for(let attempt=0;attempt<100&&!before;attempt++){
+  before=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);
+  if(!before)await new Promise(r=>setTimeout(r,100));
+ }
+ assert.ok(before,'Missing selected draft '+draftId+'; '+await editor.innerText());
  assert.equal(before.slides.length,7);assert.equal(before.approvals.topic,false);
  assert.equal(before.approvals.textApproved,false);assert.equal(before.approvals.designApproved,false);
  assert.ok(before.research.sourceItems.every(s=>!s.reviewed));
@@ -45,11 +55,16 @@ try{
  assert.ok(provenance.every(p=>p.source==='provider-generated'&&p.provider==='codex-imagegen'));
  for(let i=0;i<7;i++){
   await editor.getByRole('button',{name:'Проверить слайд '+(i+1),exact:true}).click();
-  await page.waitForFunction(async expected=>{
+  let actual;
+  for(let attempt=0;attempt<100;attempt++){
+  actual=await page.evaluate(async()=>{
    const img=document.querySelector('[data-testid="research-draft-preview"]');if(!img)return false;
    let bytes;try{bytes=await(await fetch(img.src)).arrayBuffer()}catch{return false} // A prior preview URL may have just been revoked.
-   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('')===expected;
-  },hash(pngs[i].bytes));
+   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  });
+  if(actual===hash(pngs[i].bytes))break;await new Promise(r=>setTimeout(r,75));
+  }
+  assert.equal(actual,hash(pngs[i].bytes),'Actual visible preview bytes must match slide '+(i+1));
  }
  // A separate same-origin page shares IndexedDB but has no React preview jobs.
  // Otherwise an in-flight preview can contaminate the per-slide canvas audit.
@@ -90,19 +105,25 @@ try{
  assert.ok(typography.every(t=>t.minimumContrast>=4.5),'Actual photo/glyph contrast below 4.5: '+JSON.stringify(typography.filter(t=>t.minimumContrast<4.5)));
  assert.ok(typography.every(t=>!/^\d{2}\s*\/\s*\d{2}$/.test(t.text)&&!/(PERSONA|EDITORIAL)/i.test(t.text)));
  assert.ok(typography.every(t=>!/(?:[А-Яа-яЁё][A-Za-z]|[A-Za-z][А-Яа-яЁё])/.test(t.text)),'No Latin substitutes inside Russian words');
- const after=await page.evaluate(async()=>{
+ const after=await page.evaluate(async id=>{
   const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
-  const p=m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-fridge-hum');
+  const store=m.loadEditorialStore(localStorage),p=store.posts.find(p=>p.id===id);
   let blocked=false;try{await media.buildEditorialExport(p)}catch(e){blocked=/SOURCE_PASS/.test(String(e))}
-  return {post:p,blocked};
- });
+  return {post:p,blocked,v1:store.posts.find(p=>p.id==='carousel-fridge-hum')};
+ },draftId);
+ assert.deepEqual(after.v1,v1Before,'V2 must preserve the original V1 record');
  assert.deepEqual(after.post,before,'Review export must not approve or revise a draft');assert.equal(after.blocked,true);
  assert.equal(paidRequests,0);assert.deepEqual(errors,[]);
- assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);
+ const mobile=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
+  editor:document.querySelector('[data-testid="persona-editorial-studio"]').getBoundingClientRect().toJSON(),
+  offenders:Array.from(document.querySelectorAll('body *')).filter(el=>{
+   const r=el.getBoundingClientRect();return el.checkVisibility()&&r.width>0&&r.right>innerWidth+2;
+  }).slice(-10).map(el=>({tag:el.tagName,cls:el.className,text:el.textContent?.slice(0,55),rect:el.getBoundingClientRect().toJSON()}))}));
+ assert.ok(mobile.width<=mobile.viewport+2,'Mobile horizontal overflow '+JSON.stringify(mobile));
  await page.screenshot({path:join(out,'mobile-persona-draft.png'),fullPage:true});
  await context.close();
- await writeFile(join(out,'browser-QA.json'),JSON.stringify({slides:7,pngSize:'1080x1350',paidRequests,
-  authorApprovalsUnchanged:true,publicationBlocked:true,previewMatchesExport:true,typography,provenance:'7 actual newly generated images, imported locally; no Worker generation',
+ await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
+  authorApprovalsUnchanged:true,publicationBlocked:true,previewMatchesExport:true,typography,provenance:revision==='v1'?'7 actual tool-generated images, imported locally; no Worker generation':'7 preserved V1 illustrations, reframed and relit in Persona; no new generation',
   sha256:pngs.map(p=>({file:p.name,sha256:hash(p.bytes)}))},null,2)+'\n');
  console.log('PERSONA_PRODUCTION_CAROUSEL_PASS: 7 real PNG, contact sheet, source/provenance ZIP, author approvals unchanged');
 }finally{await browser.close()}

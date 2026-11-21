@@ -4,7 +4,9 @@ import '@fontsource/playfair-display/500.css';
 import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
 import './persona-editorial-fonts.css';
-import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
+import {paintEditorialHierarchy,editorialHierarchyLayout,type EditorialHierarchy} from './personaEditorialTypography';
+import fridgeV2 from '../../../config/carousel-fridge-hum-v2.json';
+import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provenance.json';
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 
@@ -454,23 +456,25 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
 /** Evidence labels describe actual inputs; bundled photographs are never called live generation. */
 export async function editorialImageProvenance(post:EditorialPost){
  const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
- return Promise.all(post.slides.map(async s=>{
+ return Promise.all(post.slides.map(async(s,index)=>{
+  const treatment=post.compositionPreset==='fridge-hum-v2'?{compositionPreset:post.compositionPreset,renderTreatment:fridgeV2.visuals[index]}:{};
   if(s.visual==='archive-photo'){
    if(s.photoRef&&isGeneratedBackgroundRef(s.photoRef))throw Error('Созданный фон потерял provenance; выберите его как фон, а не авторский архив');
    const stored=s.photoRef?await readEditorialImageByRef(s.photoRef):await readEditorialImage(post.id,s.id);
    if(!stored)throw Error('Отсутствует оригинал фото из архива');
-   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false};
+   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false,...treatment};
   }
   if(s.background?.generatedRef){
    const stored=await readEditorialImageByRef(s.background.generatedRef);
    if(!stored)throw Error('Отсутствует оригинал созданного фона');
    const digest=await sha(stored.blob);if(digest!==s.background.sha256)throw Error('SHA-256 фона изменился');
    return {slideId:s.id,source:'provider-generated',sha256:digest,originalRef:s.background.generatedRef,...s.background.provenance,
-    generationMode:s.background.provenance?.provider==='codex-imagegen'?'external-tool-import':s.background.provenance?'worker-api':'legacy-metadata-incomplete'};
+    generationMode:s.background.provenance?.provider==='codex-imagegen'?'external-tool-import':s.background.provenance?'worker-api':'legacy-metadata-incomplete',
+    ...treatment,...(post.compositionPreset==='fridge-hum-v2'?{v1AssetReused:digest===fridgeV1Images[index]?.sha256&&s.background.provenance?.provider==='codex-imagegen'}:{})};
   }
   if(s.background){
    const response=await fetch(backgroundAssetUrl(s.background));if(!response.ok)throw Error('Нет библиотечного фона');
-   return {slideId:s.id,source:'pre-generated-library',libraryId:s.background.libraryId,sha256:await sha(await response.blob()),liveGeneration:false};
+   return {slideId:s.id,source:'pre-generated-library',libraryId:s.background.libraryId,sha256:await sha(await response.blob()),liveGeneration:false,...treatment};
   }
   return {slideId:s.id,source:'image-free-canvas',liveGeneration:false};
  }));
@@ -636,18 +640,33 @@ async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,inde
  c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
  if(blob){
   const image=await createImageBitmap(blob);
-  const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
-  c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);image.close();
+  if(post.compositionPreset==='fridge-hum-v2'){
+   const treatment=fridgeV2.visuals[index],[x,y,w,h]=treatment.crop;
+   c.save();c.filter='brightness('+treatment.brightness+')';
+   const sw=image.width*w,sh=image.height*h,scale=Math.max(1080/sw,1350/sh);
+   c.drawImage(image,image.width*x,image.height*y,sw,sh,(1080-sw*scale)/2,(1350-sh*scale)/2,sw*scale,sh*scale);c.restore();
+  }else{
+   const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
+   c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);
+  }
+  image.close();
  }
  // Keep meaningful objects on the right and reserve a genuinely dark text area.
+ const treatment=post.compositionPreset==='fridge-hum-v2'?fridgeV2.visuals[index]:undefined;
  const bottom=[0,2,3,6,7].includes(index);
+ if(treatment){
+  const g=treatment.overlay==='top'?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
+  g.addColorStop(0,'rgba(0,0,0,'+treatment.opacity+')');g.addColorStop(.65,'rgba(0,0,0,'+(treatment.opacity*.65)+')');g.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=g;c.fillRect(0,0,1080,1350);
+ }else{
  const gradient=bottom?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
  gradient.addColorStop(0,bottom?'rgba(0,0,0,0)':'rgba(0,0,0,.6)');
  gradient.addColorStop(bottom?.48:.84,'rgba(0,0,0,.6)');
  gradient.addColorStop(1,bottom?'rgba(0,0,0,.6)':'rgba(0,0,0,0)');
  c.fillStyle=gradient;c.fillRect(0,0,1080,1350);
+ }
  if(slide.headline!==undefined){
-  paintEditorialHierarchy(c,slide as EditorialHierarchy,index);
+  paintEditorialHierarchy(c,slide as EditorialHierarchy,index,editorialHierarchyLayout(post,index));
  }else{
  c.fillStyle=BASELINE_CREAM;c.textBaseline='top';
  const margin=90,maxWidth=index===0?810:860;

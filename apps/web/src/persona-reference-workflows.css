@@ -1,6 +1,6 @@
-.personaReferenceLab{margin:20px 0 26px;border:1px solid #d9d0c2;border-radius:19px;padding:clamp(14px,3vw,24px);background:#f8f5f0;color:#26303c}
+.personaReferenceLab{grid-template-columns:minmax(0,1fr);min-width:0;margin:20px 0 26px;border:1px solid #d9d0c2;border-radius:19px;padding:clamp(14px,3vw,24px);background:#f8f5f0;color:#26303c}
 .personaReferenceLab *{box-sizing:border-box}
-.personaReferenceHeader{border-bottom:1px solid #e0d8cd;padding-bottom:15px;margin-bottom:15px}
+.personaReferenceHeader{display:block;min-width:0;border-bottom:1px solid #e0d8cd;padding-bottom:15px;margin-bottom:15px}
 .personaReferenceHeader small{letter-spacing:.18em;font-size:10px;font-weight:800;color:#8a7351}
 .personaReferenceHeader h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:clamp(27px,3vw,40px);margin:5px 0 6px;line-height:1.07}
 .personaReferenceHeader p,.personaReferenceBody p{color:#67645d;font-size:12px;line-height:1.65;margin:5px 0}
@@ -11,7 +11,7 @@
 .personaReferenceLab summary strong{font-size:14px}
 .personaReferenceLab summary span{font-size:11px;color:#8f806d}
 .personaReferenceLab details[open]>summary{background:#efe9df}
-.personaReferenceBody{display:grid;gap:12px;padding:15px}
+.personaReferenceBody{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:12px;padding:15px}
 .personaReferenceSources>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px;padding:12px}
 .personaReferenceSources article{border:1px solid #e7ded0;border-radius:9px;padding:12px;background:#faf8f4;min-width:0}
 .personaReferenceSources article strong{font-size:12px;line-height:1.5}

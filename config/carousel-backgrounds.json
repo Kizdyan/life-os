@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "model": "gpt-image-1",
+  "model": "gpt-image-2.5-sunburst",
   "basePrompt": "cinematic still, low-key lighting, moody, quiet luxury, shallow depth of field, dark brown and beige tones, highly detailed, empty space for text on the left, photographic realism, portrait 4:5. Warm practical light, rich shadows. NO TEXT, no letters, no numbers, no logos, no people, no faces. No recreation of movie stills.",
   "sequence": ["empty-stage", "door-handle", "empty-auditorium", "soft-spotlight", "velvet-curtain", "piano-key", "black-contour", "final-light"],
   "library": {

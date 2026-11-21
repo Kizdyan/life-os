@@ -1,8 +1,8 @@
 import {spawn} from 'node:child_process';
-import {existsSync, readFileSync, readdirSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync,lstatSync} from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
-import {extname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {extname, join,resolve} from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {build} from 'vite';
 import {createPersonaMediaWorker, parseWorkerArgs} from './persona-media-worker.mjs';
 
@@ -12,7 +12,8 @@ const studio = origin + '/#persona';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const web = join(root, 'apps', 'web');
 const mime = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
- '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json'};
+ '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json',
+ '.jpg':'image/jpeg','.json':'application/json; charset=utf-8'};
 
 async function buildFrontend() {
  const result = await build({root:web, configFile:false, envFile:false,
@@ -24,10 +25,26 @@ async function buildFrontend() {
    files.set('/'+file.fileName, Buffer.from(file.type==='asset' ? file.source : file.code));
   }
  }
- for (const file of readdirSync(join(web,'public'),{withFileTypes:true})) {
-  if(file.isFile()&&mime[extname(file.name)])files.set('/'+file.name,readFileSync(join(web,'public',file.name)));
+ return createPersonaFrontendHandler(files);
+}
+
+export function createPersonaFrontendHandler(files,publicRoot=join(web,'public')){
+ function collect(directory,prefix=''){
+  for(const file of readdirSync(directory,{withFileTypes:true})){
+   if(file.isSymbolicLink())continue; // Includes Windows directory junctions.
+   const path=join(directory,file.name),url=prefix+'/'+file.name;
+   if(file.isDirectory())collect(path,url);
+   else if(file.isFile()&&mime[extname(file.name)])files.set(url,readFileSync(path));
+  }
  }
+ if(!lstatSync(publicRoot).isSymbolicLink())collect(publicRoot);
  return (req,res,url)=>{
+  // Check the original target, since new URL() removes dot segments before lookup.
+  let original;
+  try{original=decodeURIComponent((req.url??url.pathname).split('?')[0])}catch{res.writeHead(404).end();return;}
+  if(original.includes('\\')||original.includes('\0')||original.split('/').some(part=>part==='.'||part==='..')){
+   res.writeHead(404).end();return;
+  }
   const path=url.pathname==='/'?'/index.html':url.pathname;
   const bytes=files.get(path);
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405,{Allow:'GET, HEAD'}).end();return;}
@@ -81,8 +98,10 @@ async function start() {
  openBrowser();
 }
 
-try { await start(); }
-catch(error) {
- console.error(error.code==='EADDRINUSE'?'Port 3000 is already used by another application.':error.message);
- process.exitCode=1;
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+ try { await start(); }
+ catch(error) {
+  console.error(error.code==='EADDRINUSE'?'Port 3000 is already used by another application.':error.message);
+  process.exitCode=1;
+ }
 }
