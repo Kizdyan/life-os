@@ -483,7 +483,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    </section>
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
-    <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии.</p>
+    <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии. В исследовательской карусели пустая строка разделяет заголовок, абзац и необязательный курсивный акцент (до трёх блоков).</p>
     {post.kind==='carousel'&&<div className="personaEditorialNote" data-testid="persona-carousel-editorial-preflight">
      <strong>Структура:</strong> {post.slides.length===8?'8 слайдов: хук → контекст → препятствие → факт → поворот → авторская позиция → вопрос → финал.':'У каждого слайда должен быть собственный смысловой ход; допустимо 3–8 слайдов.'}
      {carouselEditorialWarnings(post).map((warning,i)=><p key={i} role="status">Редакторское замечание: {warning}</p>)}
