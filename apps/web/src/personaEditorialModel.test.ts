@@ -11,7 +11,7 @@ import {
  CAROUSEL_002_ID,createDirectorQuestionCarousel,
  CAROUSEL_003_ID,CAROUSEL_004_ID,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,editorialDesignHash,editorialTextHash,
- publicationDesignApproved,UNAPPROVED_DESIGN_MESSAGE
+ publicationDesignApproved,UNAPPROVED_DESIGN_MESSAGE,carouselEditorialWarnings
 } from './personaEditorialModel';
 function storage(){
  const values=new Map<string,string>();
@@ -380,4 +380,19 @@ describe('2026-11-20 author approvals imported through existing gate',()=>{
   expect(copy.approvals.textApproved).toBe(false);
   expect(copy.approvals.designApproved).toBe(false);
  });
+ it('supports an eight-slide story and flags dense text without granting author approval',()=>{
+  const draft=createSeedEditorialCarousel('PHOTO-001');
+  const slides=Array.from({length:8},(_,i)=>({
+   id:'new-slide-'+i,text:i===0?'Почему режиссёр намеренно оставил актёра в абсолютной тишине на самой важной сцене именно этого фильма':i===7?'Сохраните и подпишитесь':i===3?'Здесь '+Array(30).fill('очень').join(' '):'Новая мысль '+i,
+   visual:'background' as const,photoDirection:''
+  }));
+  const eight=reviseEditorialPost(draft,{slides});
+  expect(eight.slides).toHaveLength(8);
+  const warnings=carouselEditorialWarnings(eight).join(' ');
+  expect(warnings).toMatch(/Обложка/);
+  expect(warnings).toMatch(/Слайд 4/);
+  expect(warnings).toMatch(/шаблонным/);
+  expect(eight.approvals.design).toBe(false);
+ });
+
 });
