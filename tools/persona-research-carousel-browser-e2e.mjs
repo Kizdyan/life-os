@@ -3,7 +3,7 @@
  * No paid provider, user media or live publication. This is an eight-slide synthetic fixture only. It must not be reported as verified real-world sources or approved artwork. */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-import {mkdir,readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
 const artifacts=resolve('artifacts/persona-research-browser');
@@ -87,6 +87,23 @@ try{
   assert.equal(entry.bytes.readUInt32BE(16),1080);
   assert.equal(entry.bytes.readUInt32BE(20),1350);
  }
+ // Real 8-slide contact sheet from exported Persona PNG bytes (not a CSS mock).
+ const thumbs=entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).sort((a,b)=>a.name.localeCompare(b.name))
+  .map(e=>e.bytes.toString('base64'));
+ const sheet=await page.evaluate(async pngs=>{
+  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
+  const c=canvas.getContext('2d');if(!c)throw Error('Contact sheet Canvas unavailable');
+  c.fillStyle='#121417';c.fillRect(0,0,1080,2160);
+  await Promise.all(pngs.map(async(b64,i)=>{
+   const image=new Image();image.src='data:image/png;base64,'+b64;await image.decode();
+   const x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
+   c.drawImage(image,x,y,400,500);
+   c.font='24px sans-serif';c.textAlign='center';c.fillStyle='#e9e2d5';
+   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
+  }));
+  return canvas.toDataURL('image/png').split(',')[1];
+ },thumbs);
+ await writeFile(join(artifacts,'persona-research-eight-contact-sheet.png'),Buffer.from(sheet,'base64'));
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+2);
  assert.equal(overflow,false,'390px viewport must not overflow horizontally');
  assert.deepEqual(errors,[],'No browser runtime errors');
