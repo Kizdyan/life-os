@@ -1,11 +1,12 @@
 import React,{useEffect,useState} from 'react';
+import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
+ CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
- editorialChecklistState,editorialChecklistReady,editorialSourcesPass,setEditorialSourceReviewed,
+ editorialChecklistState,editorialChecklistReady,carouselEditorialWarnings,editorialSourcesPass,setEditorialSourceReviewed,
  addEditorialSource,removeEditorialSource,setEditorialInterpretationReviewed,setEditorialPublicCopyReviewed,
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
@@ -48,7 +49,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'){
+  if([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -62,7 +63,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter';
+ const exact=[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter';
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -97,7 +98,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat);
  const sourcePass=post?editorialSourcesPass(post):false;
- const exactCanvasPreview=Boolean(post?.research||(post?.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'));
+ const exactCanvasPreview=Boolean(post?.research||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
  const archiveRefsReady=post===null||!post.carouselFormat||!post.slides.some(s=>s.visual==='archive-photo')||
   (!archiveLoading&&!archiveError&&editorialArchiveProvenancePass(post,
    archiveChoices.map(x=>x.key)));
@@ -413,6 +414,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     Это слот фото-публикации в календаре. Выбери тему, чтобы создать редакционный план для этой даты.
     <button type="button" onClick={()=>setKind('photo')}>Показать идеи фото</button>
    </p>}
+   <p className="personaEditorialNote">Факт + мнение · 8 слайдов.
+    <button type="button" data-testid="open-carousel-quiet-horror" onClick={()=>{
+     if(!posts.some(p=>p.id===CAROUSEL_QUIET_HORROR_ID))onCreate(createQuietHorrorCarousel());
+     onSelect(CAROUSEL_QUIET_HORROR_ID);setError('');
+    }}>Почему самая страшная сцена часто тише всех</button>
+   </p>
    <p className="personaEditorialNote">Первая реальная карусель: «Почему пауза сильнее реплики» · text-only · 6 слайдов.
     <button type="button" data-testid="open-carousel-baseline" onClick={openBaseline}>
      {posts.some(p=>p.id===CAROUSEL_BASELINE_ID)?'Открыть baseline':'Создать baseline-карусель'}
@@ -477,6 +484,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
     <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии.</p>
+    {post.kind==='carousel'&&<div className="personaEditorialNote" data-testid="persona-carousel-editorial-preflight">
+     <strong>Структура:</strong> {post.slides.length===8?'8 слайдов: хук → контекст → препятствие → факт → поворот → авторская позиция → вопрос → финал.':'У каждого слайда должен быть собственный смысловой ход; допустимо 3–8 слайдов.'}
+     {carouselEditorialWarnings(post).map((warning,i)=><p key={i} role="status">Редакторское замечание: {warning}</p>)}
+     {carouselEditorialWarnings(post).length===0&&<p>Замечаний по длине текста нет; это не означает, что факты и оформление утверждены.</p>}
+    </div>}
     <div className="personaEditorialSlides" role="group" aria-label="Выбор слайда">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       Слайд {i+1}</button>)}
@@ -527,13 +539,18 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      </div>}
     </section>}
     {post.kind==='carousel'&&!post.research&&<div className="personaEditorialSlideActions">
-     {post.slides.length<7&&<button type="button" onClick={()=>{
+     {post.slides.length<8&&<button type="button" onClick={()=>{
       persist({slides:[...post.slides,{id:'slide-'+Date.now(),text:'Новый смысловой поворот',visual:'background',photoDirection:''}]});
       setSelectedSlide(post.slides.length);
      }}>+ Слайд</button>}
      {post.slides.length>3&&<button type="button" onClick={()=>{
       persist({slides:post.slides.filter(x=>x.id!==slide?.id)});setSelectedSlide(Math.max(0,selectedSlide-1));
      }}>Убрать слайд</button>}
+    </div>}
+    {post.id===CAROUSEL_QUIET_HORROR_ID&&<div role="group" aria-label="Вариант подписи">
+     {(['1','2'] as const).map(id=><button key={id} type="button"
+      aria-pressed={post.caption===quietHorrorCaptions.variants[id]}
+      onClick={()=>persist({caption:quietHorrorCaptions.variants[id]})}>Вариант {id}</button>)}
     </div>}
     <label>Основной текст публикации (Instagram / VK)
      <textarea className="personaEditorialCaption" value={post.caption} maxLength={4500}
