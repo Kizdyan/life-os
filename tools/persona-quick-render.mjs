@@ -705,7 +705,7 @@ export function createPersonaQuickRenderService(config={}){
     // decision; they could be misread as dialogue from the source material.
     plan={...plan,choices:plan.choices.map(c=>({...c,caption:''})),
      audioUnderstanding:assessment.mode==='speech'?'whisper-transcribed':
-      assessment.mode==='quote'?'no-substantial-speech-confirmed':'speech-unverified'};
+      assessment.mode==='quote'&&!CONTINUITY_FORMATS.has(job.videoFormat??'auto')?'no-substantial-speech-confirmed':'speech-unverified'};
     await writeFile(join(out,'caption-decision.json'),JSON.stringify(job.captionDecision,null,2)+'\n',{flag:'wx'});
     await save(job);
    }
@@ -782,7 +782,7 @@ export function createPersonaQuickRenderService(config={}){
      caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
     hasMusic:Boolean(music),hasCaptions:(!job.fastDraft||job.textAccents)&&cues.length>0,
     captionsDeferred:job.fastDraft&&!job.textAccents&&cues.length>0,
-    submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
+    submittedToModel:(['offline-fallback','sparse-vision-unqualified','author-selected-continuity'].includes(provenance.kind))?
       (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
      config.quickPlanner?'sampled_jpeg_frames_only':
       job.fastDraft?'sparse_2_5_second_jpeg_frames':'half_second_jpeg_frames_and_optional_text_transcript',
