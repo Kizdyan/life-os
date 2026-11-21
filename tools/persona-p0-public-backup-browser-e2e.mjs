@@ -155,6 +155,11 @@ try{
  assert.equal(manifest.stories.length,1);
  assert.ok(manifest.editorial.posts.some(p=>p.id==='PHOTO-001'&&p.approvals.design));
  assert.ok(manifest.editorial.posts.some(p=>p.id==='photo-week-01'&&p.approvals.design));
+ const approvedPhotoRefs=manifest.editorial.posts.flatMap(p=>p.slides.filter(s=>s.visual==='archive-photo').map(s=>s.photoRef)).sort();
+ assert.equal(approvedPhotoRefs.length,2);
+ assert.ok(approvedPhotoRefs.every(ref=>/^(PHOTO-001|photo-week-01)\/photo-[0-9a-f-]{36}$/.test(ref)),
+  'New uploads have immutable references, not overwriteable slide-id keys');
+ assert.deepEqual(manifest.photos.map(p=>p.key).sort(),approvedPhotoRefs);
  // New browser context has EMPTY localStorage + IndexedDB: must restore all bytes.
  const clean=await browser.newContext({acceptDownloads:true,viewport:{width:1280,height:900}});
  const fresh=await clean.newPage();
@@ -184,7 +189,7 @@ try{
  assert.deepEqual(restored.posts.map(p=>p.id).sort(),['PHOTO-001','photo-week-01']);
  assert.ok(restored.posts.every(p=>p.approvals.design&&p.caption.length>40));
  assert.equal(restored.stories.length,1);
- assert.deepEqual(restored.photos.map(p=>p.key).sort(),['PHOTO-001/slide-2','photo-week-01/slide-1']);
+ assert.deepEqual(restored.photos.map(p=>p.key).sort(),approvedPhotoRefs);
  assert.ok(restored.photos.every(p=>p.size===imageBuffer.length));
  // Re-export requires valid original image blobs in restored IndexedDB.
  await fresh.getByTestId('persona-weekly-calendar').locator('[data-calendar-item-id="PHOTO-001"]')
