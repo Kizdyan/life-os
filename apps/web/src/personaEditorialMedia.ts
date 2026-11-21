@@ -157,7 +157,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
   throw Error('Неподдерживаемый вариант эталонной карусели');
  const fonts=await Promise.all([
   document.fonts.load('500 100px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 06')
+  document.fonts.load('400 24px "Inter"','')
  ]);
  if(fonts.some(faces=>faces.length===0))
   throw Error('Локальные шрифты Playfair Display / Inter не загрузились; экспорт остановлен');
@@ -213,10 +213,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
    baselineLine(ctx,'действием.',150,870);
    break;
  }
- ctx.save();ctx.textAlign='right';ctx.fillStyle=BASELINE_BEIGE;
- ctx.font='400 24px "Inter", sans-serif';ctx.textBaseline='alphabetic';
- ctx.fillText(String(index+1).padStart(2,'0')+' / 06',990,1260);
- ctx.restore();
+ // Page numbers are only shown outside thumbnails on a contact sheet.
  return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 
@@ -339,7 +336,7 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
  if(post.slides.length!==8||index<0||index>7||slide.visual!=='background'||post.preset!=='chocolate-graphite')
   throw Error('Неподдерживаемый вариант карусели');
  const fonts=await Promise.all([document.fonts.load('500 88px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 08')]);
+  document.fonts.load('400 24px "Inter"','')]);
  if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
@@ -393,8 +390,7 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
     slide.text==='Следующий разбор — про одну ноту, которая меняет финал. Сохраните, если интересно.'?
      ['Следующий разбор — про одну ноту, которая меняет финал.','Сохраните, если интересно.']:undefined);
  }
- c.font='400 24px "Inter"';c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle=BASELINE_BEIGE;
- c.fillText(String(index+1).padStart(2,'0')+' / 08',990,1260);
+ // No page numbering inside individual slide PNG.
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('PNG export failed')),'image/png'));
 }
 
