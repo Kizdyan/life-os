@@ -2,6 +2,7 @@ import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+import fridgeV2Style from '../../../config/carousel-fridge-hum-v2.json';
 import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
 import {hierarchyCopy,type EditorialHierarchy} from './personaEditorialTypography';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
@@ -61,13 +62,13 @@ export function carouselEditorialWarnings(post:Pick<EditorialPost,'kind'|'slides
  return warnings;
 }
 
-export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
+export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'|'compositionPreset'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
   post.caption,post.preset,post.slides.map(s=>{
    const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
    const design=s.background?[...values,s.background]:values;
    return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
-  }),...(post.research?[post.research]:[])]));
+  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,fridgeV2Style.layouts,fridgeV2Style.visuals]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -184,6 +185,7 @@ export type EditorialResearch={
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
   fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter';carouselFormat?:'photo-led'|'mixed';
+ compositionPreset?:'fridge-hum-v2';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -532,6 +534,7 @@ export function validatePost(post:EditorialPost):void{
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
   (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter'].includes(post.fontPreset))||
+  (post.compositionPreset!==undefined&&(post.compositionPreset!=='fridge-hum-v2'||post.fontPreset!=='cormorant-inter'||post.slides?.length!==7))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -580,7 +583,8 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
-export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'compositionPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+ const compositionChanged=Object.hasOwn(changes,'compositionPreset')&&changes.compositionPreset!==post.compositionPreset;
  if(changes.slides)changes={...changes,slides:changes.slides.map(s=>{
   if(s.headline===undefined)return s;
   const previous=post.slides.find(p=>p.id===s.id);
@@ -597,7 +601,7 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    changes.slides.some((slide,i)=>slide.id!==post.slides[i]?.id||slide.text!==post.slides[i]?.text);
   result.approvals=copyChanged?{...result.approvals,content:false,design:false}:
    {...result.approvals,design:false};
- }else if(changes.preset!==undefined||changes.fontPreset!==undefined)
+ }else if(changes.preset!==undefined||changes.fontPreset!==undefined||compositionChanged)
   result.approvals={...result.approvals,design:false};
  // Changed wording invalidates human verification for affected factual claims.
  if(result.research&&(changes.topic!==undefined||changes.title!==undefined||
@@ -616,7 +620,7 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
  }
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
   changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined||
-  changes.fontPreset!==undefined){
+  changes.fontPreset!==undefined||compositionChanged){
   result.approvals.checklist=emptyChecklist();
   result.approvals.designApproved=false;result.approvals.designApprovedAt=null;
   result.approvals.contentHashAtDesignApproval='';

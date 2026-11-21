@@ -78,6 +78,16 @@ jobs:
           path: artifacts/persona-production-carousel/
           retention-days: 30
           if-no-files-found: error
+      - name: Produce and compare preserved V1 and revised V2 with alternate cover
+        run: node tools/persona-editorial-v2-browser-e2e.mjs
+      - name: Upload V1 V2 editorial comparison and review ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-editorial-v1-v2-review
+          path: artifacts/persona-editorial-v2/
+          retention-days: 30
+          if-no-files-found: error
       - name: Verify unified content calendar opens real Reels and photo jobs in Chromium
         run: node tools/persona-weekly-calendar-browser-e2e.mjs
       - name: Verify real one-click browser-to-MP4 workflow
