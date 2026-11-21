@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Browser E2E: sourced Persona carousel draft → author evidence review → real PNG ZIP.
- * No paid provider, user media or live publication. This is a synthetic fixture only. */
+ * No paid provider, user media or live publication. This is an eight-slide synthetic fixture only. It must not be reported as verified real-world sources or approved artwork. */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,readFile} from 'node:fs/promises';
@@ -17,7 +17,10 @@ const packet={
   {text:'Второе проверяемое утверждение',sources:[{title:'Источник B',url:'https://example.org/b'}]},
   {text:'Третий новый факт',sources:[{title:'Источник C',url:'https://example.org/c'}]},
   {text:'Четвёртый факт',sources:[{title:'Источник D',url:'https://example.org/d'}]},
-  {text:'Авторский вывод без фактических утверждений',interpretation:true}
+  {text:'Авторский вывод без фактических утверждений',interpretation:true},
+  {text:'Пятая независимая деталь',sources:[{title:'Источник E',url:'https://example.org/e'}]},
+  {text:'Шестая независимая деталь',sources:[{title:'Источник F',url:'https://example.org/f'}]},
+  {text:'Неожиданное заключительное наблюдение',sources:[{title:'Источник G',url:'https://example.org/g'}]}
  ]
 };
 function unzipEntries(buf){
@@ -49,7 +52,7 @@ try{
  const approve=editor.getByRole('button',{name:'Утвердить тексты и подпись'});
  const reviews=editor.getByTestId('editorial-source-review');
  assert.equal(await approve.isDisabled(),true,'No citation is automatically reviewed');
- for(let i=0;i<4;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
+ for(let i=0;i<7;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
  assert.equal(await approve.isDisabled(),true,'Public title/caption not reviewed');
  await reviews.getByTestId('research-public-copy-review').check();
  assert.equal(await approve.isEnabled(),true,'All evidence is now manually reviewed');
@@ -75,7 +78,7 @@ try{
  await editor.getByRole('button',{name:'Скачать ZIP с PNG и подписью'}).click();
  const download=await pending;await download.saveAs(file);
  const entries=unzipEntries(await readFile(file));
- assert.equal(entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).length,5);
+ assert.equal(entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).length,8);
  assert.ok(entries.some(e=>e.name==='research-sources.json'));
  const caption=entries.find(e=>e.name==='caption.txt');
  assert.equal(caption?.bytes.toString('utf8'),packet.caption);
@@ -88,5 +91,5 @@ try{
  assert.equal(overflow,false,'390px viewport must not overflow horizontally');
  assert.deepEqual(errors,[],'No browser runtime errors');
  await page.screenshot({path:join(artifacts,'reviewed-research-mobile.png'),fullPage:true,animations:'disabled'});
- console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:5,pngSize:'1080x1350',sources:4,viewport:390}));
+ console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:8,pngSize:'1080x1350',sources:7,viewport:390}));
 }finally{await browser.close()}
