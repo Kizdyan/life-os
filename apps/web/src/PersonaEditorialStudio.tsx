@@ -651,11 +651,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <legend>Чек-лист приёмки · 7 проверок</legend>
      {CHECKLIST_TEXT.map((description,index)=><label key={index}>
       <input type="checkbox" checked={Boolean(checklist[index])}
-       disabled={index===6||(index===5&&archiveFixture)} aria-label={'Пункт '+(index+1)}
+       disabled={index===6||(index===5&&Boolean(post.carouselFormat))} aria-label={'Пункт '+(index+1)}
        onChange={e=>setChecklist(index,e.target.checked)}/>
       <span><strong>{index+1}.</strong> {description}</span>
      </label>)}
-     {archiveFixture&&<p>Пункт 6: {archiveRefsReady?'PASS — все выбранные фото найдены в существующем архиве или карусель text-only':'FAIL — отсутствует оригинал по ключу IndexedDB'}.</p>}
+     {archiveFixture&&<p>{post.carouselFormat?'Пункт 6: ': 'Фотоархив: '}{archiveRefsReady?'проверяемые ключи исходников найдены / text-only':'не найдено выбранное исходное изображение'}. {post.research?'Для исследовательской карусели отдельно отметь пункт 6 после визуальной проверки.':''}</p>}
      <p>Пункт 7: {editorialContrastPass(post)?'PASS — цвета пресета удовлетворяют WCAG':'FAIL — контраст пресета ниже порога'}.
       Для фото поверх фона нужна дополнительная визуальная проверка.</p>
     </fieldset>}
