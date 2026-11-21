@@ -1,0 +1,90 @@
+name: Persona Quiet Horror v3 Review
+on:
+  workflow_dispatch:
+    inputs:
+      cinematic:
+        description: 'Publish v4 cinematic draft preview (keeps v1-v3 intact)'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'config/carousel-quiet-horror*.json'
+      - 'apps/web/src/personaQuietHorror.test.ts'
+      - 'apps/web/src/personaEditorialBackgrounds*'
+      - 'apps/web/src/personaEditorialTypography*'
+      - 'apps/web/src/persona-editorial-fonts.css'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'apps/web/public/carousel-backgrounds/**'
+      - 'config/carousel-backgrounds.json'
+      - 'tools/persona-carousel-backgrounds*'
+      - 'tools/persona-media-worker.mjs'
+      - 'apps/web/src/personaEditorialModel.ts'
+      - 'apps/web/src/personaEditorialMedia.ts'
+      - 'apps/web/src/PersonaEditorialStudio.tsx'
+      - 'tools/persona-quiet-horror-review-release.mjs'
+      - '.github/workflows/persona-quiet-horror-review.yml'
+permissions:
+  contents: write
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      QUIET_HORROR_CINEMATIC: ${{ (github.event_name == 'pull_request' || inputs.cinematic) && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Unit and typecheck
+        run: |
+          node --test tools/persona-carousel-backgrounds.test.mjs
+          npx vitest run apps/web/src/personaQuietHorror.test.ts apps/web/src/personaEditorialModel.test.ts apps/web/src/personaEditorialBackgrounds.test.ts apps/web/src/personaEditorialTypography.test.ts
+          npm run typecheck
+      - name: Start existing Persona
+        run: |
+          nohup npm run web:dev -- --host 127.0.0.1 --port 4173 >/tmp/persona-quiet.log 2>&1 &
+          for i in {1..50}; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/persona-quiet.log
+          exit 1
+      - name: Chromium P0 and review export
+        run: node tools/persona-quiet-horror-review-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quiet-horror-draft
+          path: dist/carousels-*/
+      - name: Release for author review
+        if: github.event_name == 'workflow_dispatch' && (inputs.cinematic || github.ref == 'refs/heads/main')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=carousels-v3-quiet-horror
+          DIR=dist/carousels-v3-quiet-horror
+          if [ "$QUIET_HORROR_CINEMATIC" = 1 ]; then
+            TAG=carousels-v4-cinematic-preview
+            DIR=dist/carousels-v4-cinematic-preview
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$TAG" != carousels-v4-cinematic-preview ]; then
+              echo "Refusing to overwrite a historical release"
+              exit 1
+            fi
+            gh release upload "$TAG" "$DIR"/*.png "$DIR"/*.zip --clobber
+            gh release delete-asset "$TAG" contact-sheet-quiet-horror-v2.png --yes || true
+            gh release delete-asset "$TAG" contact-sheet-quiet-horror-v3.png --yes || true
+            gh release edit "$TAG" --notes "Арт-правки v4: восемь разных фонов, Body 44–48px, без нумерации и декора в PNG, новые тексты и обе подписи. Черновик для визуального подтверждения автора; textApproved=false, designApproved=false."
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
+            test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 10
+            exit 0
+          fi
+          printf '%s\n' "$TAG: quiet horror — черновик для просмотра." 'Оформление ждёт визуального подтверждения автора.' 'Текст и дизайн — черновик, публикация не разрешена.' >/tmp/quiet-notes.md
+          gh release create "$TAG" "$DIR"/*.png "$DIR"/*.zip --prerelease --title "Persona $TAG — quiet horror" --notes-file /tmp/quiet-notes.md --target "$GITHUB_SHA"
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 10

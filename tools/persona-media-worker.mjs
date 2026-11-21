@@ -33,6 +33,7 @@ import {parseLearnedRules} from './persona-internet-learner.mjs';
 import {createPersonaQuickRenderService,quickRenderRoot} from './persona-quick-render.mjs';
 import {seedCarousels} from './seed_carousels.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
+import {generateCarouselBackground} from './persona-carousel-backgrounds.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -310,6 +311,11 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    const videoToken=req.method==='GET'&&((url.pathname.endsWith('/video')||url.pathname.endsWith('/video-full'))||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/export\/[a-z0-9-]+$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/quality-(?:report|contact-sheet)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
    if(await quickRender.handle(req,res,url))return;
+   if(req.method==='POST'&&url.pathname==='/carousel-background'){
+    const request=await json(req,4096);
+    const result=await generateCarouselBackground(request,{env:config.apiEnv??process.env});
+    respond(res,200,result);return;
+   }
    if(req.method==='PUT'&&url.pathname==='/hook-tests'){
     const length=Number(req.headers['content-length']);
     if(!Number.isSafeInteger(length)||length<1024||length>maxFile)fail('Выберите MP4 размером до 2 ГБ.');
