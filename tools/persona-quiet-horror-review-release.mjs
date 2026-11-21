@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 const {chromium}=await import(process.env.PERSONA_PLAYWRIGHT_MODULE||'playwright');
-const out=process.env.QUIET_HORROR_OUTPUT||'dist/carousels-v3-quiet-horror';
+const cinematic=process.env.QUIET_HORROR_CINEMATIC==='1';
+const out=process.env.QUIET_HORROR_OUTPUT||(cinematic?'dist/carousels-v4-cinematic-preview':'dist/carousels-v3-quiet-horror');
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 try{
@@ -16,6 +17,7 @@ try{
  const data=await page.evaluate(async()=>{
   const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
   const draft=m.createQuietHorrorCarousel('2026-11-21T00:00:00.000Z');
+  if(!draft.slides.every(s=>s.background))throw Error('Cinematic backgrounds missing');
   if(draft.approvals.textApproved||draft.approvals.designApproved)throw Error('Draft is already approved');
   const images=await Promise.all(draft.slides.map((s,i)=>media.renderEditorialSlide(draft,s,i)));
   for(const b of images){const im=await createImageBitmap(b);if(im.width!==1080||im.height!==1350)throw Error('Invalid PNG dimensions');im.close();}
@@ -52,6 +54,26 @@ try{
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
  });
  assert.equal(actual,data.sha256[0],'preview PNG must match export byte-for-byte');
+ // Library works with no Worker and no API key, through the actual editor UI.
+ await page.route('**/health',route=>route.abort('failed'));
+ await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Генерация недоступна.'}).waitFor();
+ // A generated image must be stored, rendered and restored from IndexedDB.
+ await page.unroute('**/health');
+ await page.route('**/health',route=>route.fulfill({json:{token:'browser-test-only'}}));
+ await page.route('**/carousel-background',route=>route.fulfill({json:{source:'openai',pngBase64:data.slides[0]}}));
+ await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Фон создан OpenAI'}).waitFor();
+ const generated=await page.evaluate(async()=>{
+  const m=await import('/src/personaEditorialModel.ts');
+  return m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-quiet-horror')?.slides[0].background;
+ });
+ assert.match(generated.generatedRef,/\/bg-/);assert.match(generated.sha256,/^[a-f0-9]{64}$/);
+ await page.getByTestId('cinematic-library').click();
+ // Check typography and content on a phone-sized UI as well.
+ await page.setViewportSize({width:390,height:844});
+ await preview.waitFor();
+ assert.ok(await preview.evaluate(img=>img.getBoundingClientRect().width<=390));
  await page.getByTestId('persona-editorial-studio').locator('textarea[maxlength="170"]').fill(data.draft.slides[0].text+' Ещё.');
  await page.getByRole('button',{name:'Утвердить тексты и подпись',exact:true}).waitFor();
  // Restore the author's initial draft in this isolated browser only.
@@ -61,8 +83,8 @@ try{
   localStorage.setItem(m.EDITORIAL_KEY,JSON.stringify(saved));
  },data.draft);
  for(let i=0;i<8;i++)await writeFile(join(out,'quiet-horror-slide-'+String(i+1).padStart(2,'0')+'.png'),Buffer.from(data.slides[i],'base64'));
- await writeFile(join(out,'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
- await writeFile(join(out,'carousel-quiet-horror-publish-'+new Date().toISOString().slice(0,10)+'.zip'),Buffer.from(data.zip,'base64'));
+ await writeFile(join(out,cinematic?'contact-sheet-quiet-horror-v2.png':'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
+ await writeFile(join(out,'carousel-quiet-horror-'+(cinematic?'cinematic-preview-':'publish-')+new Date().toISOString().slice(0,10)+'.zip'),Buffer.from(data.zip,'base64'));
  await writeFile(join(out,'draft.json'),JSON.stringify(data.draft,null,2)+'\n');
  await writeFile(join(out,'caption.txt'),data.draft.caption);
  await writeFile(join(out,'QA.json'),JSON.stringify({sha256:data.sha256,previewMatchesPng:true,gatePassedInIsolatedTest:true,

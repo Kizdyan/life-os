@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
@@ -10,7 +10,8 @@ import {
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
-import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide} from './personaEditorialMedia';
+import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide,requestEditorialBackground} from './personaEditorialMedia';
+import {libraryBackground} from './personaEditorialBackgrounds';
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
@@ -46,7 +47,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'){
+  if(post.slides.some(s=>s.background)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter')){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -60,7 +61,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter';
+ const exact=post.slides.some(s=>s.background)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter');
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -70,6 +71,20 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
 
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
+ const livePost=useRef(post);livePost.current=post;
+ const [backgroundBusy,setBackgroundBusy]=useState(false);
+ const [backgroundMessage,setBackgroundMessage]=useState('');
+ async function generateBackground(){
+  if(!post||backgroundBusy)return;
+  const id=post.id,topic=post.topic,slideId=post.slides[selectedSlide]?.id;
+  setBackgroundBusy(true);setBackgroundMessage('Создаётся фон без текста…');
+  try{
+   const result=await requestEditorialBackground(post,selectedSlide),current=livePost.current;
+   if(current?.id!==id||current.topic!==topic){setBackgroundMessage('Карусель изменилась. Запросите фон для текущей темы.');return}
+   onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?{...s,visual:'background',background:result.background}:s)}));
+   setBackgroundMessage(result.message);
+  }finally{setBackgroundBusy(false)}
+ }
  const [kind,setKind]=useState<PostKind>('carousel');
  const [selectedSlide,setSelectedSlide]=useState(0);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
@@ -97,16 +112,17 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const selectedPhotoPosition=photoSequence.findIndex(x=>x.i===selectedSlide);
  useEffect(()=>{setSelectedSlide(0);setError('');if(targetId?.startsWith('photo-week-'))setKind('photo')},[targetId]);
  const slide=post?.slides[Math.min(selectedSlide,post.slides.length-1)]??null;
+ const exactCanvas=Boolean(post&&(post.slides.some(s=>s.background)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter')));
  useEffect(()=>{
   let alive=true;let previewUrl:string|null=null;
   setBaselinePreviewUrl(null);setBaselinePreviewError('');
-  if(![CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')||post?.fontPreset!=='playfair-inter'||!slide)return;
+  if(!exactCanvas||!post||!slide)return;
   void renderEditorialSlide(post,slide,selectedSlide).then(blob=>{
    if(!alive)return;
    previewUrl=URL.createObjectURL(blob);setBaselinePreviewUrl(previewUrl);
   }).catch(e=>{if(alive)setBaselinePreviewError((e as Error).message)});
   return()=>{alive=false;if(previewUrl)URL.revokeObjectURL(previewUrl)};
- },[post?.id,post?.revision,slide?.id,slide?.text,selectedSlide,post?.fontPreset,post?.preset]);
+ },[post?.id,post?.revision,slide?.id,slide?.text,selectedSlide,post?.fontPreset,post?.preset,exactCanvas]);
  useEffect(()=>{
   let alive=true,url:string|null=null;
   setAsset(null);
@@ -436,6 +452,17 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
     </div>
+    {!archiveFixture&&<div aria-label="Кинематографичные фоны">
+     <button type="button" data-testid="cinematic-library" disabled={backgroundBusy} onClick={()=>{
+      persist({slides:post.slides.map((s,i)=>({...s,visual:'background',background:libraryBackground(i)}))});
+      setBackgroundMessage('Локальные кинофоны применены. Текст не изменён; оформление требует утверждения.');
+     }}>Кинофоны из библиотеки · все слайды</button>
+     <button type="button" disabled={backgroundBusy} onClick={()=>void generateBackground()}>
+      {backgroundBusy?'Генерация фона…':'Сгенерировать фон слайда · OpenAI'}</button>
+     {slide?.background&&<button type="button" disabled={backgroundBusy} onClick={()=>modifySlide({background:undefined})}>Однотонный фон слайда</button>}
+     <p>Фотографии без надписей. Текст рисует Persona. Без ключа или Worker используется локальная библиотека; генерация OpenAI по ключу может тарифицироваться.</p>
+     {backgroundMessage&&<p role="status">{backgroundMessage}</p>}
+    </div>}
     <fieldset className="personaEditorialMediaChoices">
      <legend>Оформление слайда {selectedSlide+1}</legend>
      <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
@@ -485,10 +512,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       <p>Фото пока не прикреплено. Оформление можно утвердить заранее, но экспорт потребует настоящий файл.</p>}
     </div>}
     <div className={'personaEditorialPreview personaEditorialPreview--'+post.preset+
-      ([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?' personaEditorialPreview--exact':'')}
+      (exactCanvas?' personaEditorialPreview--exact':'')}
      data-alternate={selectedSlide%2?'graphite':'chocolate'}
      role="img" aria-label={'Предпросмотр оформления слайда '+(selectedSlide+1)}>
-     {[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?
+     {exactCanvas?
        baselinePreviewUrl?<img data-testid="baseline-exact-preview" src={baselinePreviewUrl} alt={'Готовый PNG слайда '+(selectedSlide+1)}/>:
         <span>{baselinePreviewError||'Готовится точный PNG...'}</span>:
        <>
@@ -500,7 +527,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
         </div>
        </>}
     </div>
-    <p>{[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'?
+    <p>{exactCanvas?
       'Предпросмотр сделан тем же Canvas-рендером, что и экспортируемый PNG 1080×1350.':
       'Предпросмотр показывает композицию. Точный файл 1080×1350 появится в экспорте после утверждения.'}</p>
     {!post.approvals.design&&post.kind==='carousel'&&<fieldset className="personaCarouselChecklist"
