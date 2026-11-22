@@ -8,8 +8,8 @@ import {createHash} from 'node:crypto';
 const {chromium}=await import(process.env.PERSONA_PLAYWRIGHT_MODULE||'playwright');
 const out=resolve(process.env.PERSONA_PRODUCTION_OUTPUT||'artifacts/persona-production-carousel');
 const revision=process.env.PERSONA_PRODUCTION_REVISION||'v1';
-assert.ok(['v1','v2a','v2b'].includes(revision));
-const draftId=revision==='v1'?'carousel-fridge-hum':'carousel-fridge-hum-v2'+(revision==='v2b'?'-hook-b':'');
+assert.ok(['v1','v2a','v2b','v3'].includes(revision));
+const draftId=revision==='v3'?'carousel-fridge-hum-v3':revision==='v1'?'carousel-fridge-hum':'carousel-fridge-hum-v2'+(revision==='v2b'?'-hook-b':'');
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -29,7 +29,7 @@ try{
   const m=await import('/src/personaEditorialModel.ts');
   return m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-fridge-hum');
  });
- if(revision!=='v1')await editor.getByRole('button',{name:revision==='v2a'?'V2 · обложка A':'V2 · обложка B',exact:true}).click();
+ if(revision!=='v1')await editor.getByRole('button',{name:revision==='v3'?'V3 · финальная редакция':revision==='v2a'?'V2 · обложка A':'V2 · обложка B',exact:true}).click();
  let before;
  for(let attempt=0;attempt<100&&!before;attempt++){
   before=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);

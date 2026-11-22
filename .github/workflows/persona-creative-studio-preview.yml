@@ -90,6 +90,21 @@ jobs:
           if-no-files-found: error
       - name: Verify unified content calendar opens real Reels and photo jobs in Chromium
         run: node tools/persona-weekly-calendar-browser-e2e.mjs
+      - name: Produce final V3, verify fonts and compare V2 without author approvals
+        run: |
+          node --test tools/persona-editorial-fonts.test.mjs tools/start-persona.test.mjs
+          node tools/persona-editorial-v3-browser-e2e.mjs
+          node tools/persona-native-production-probe.mjs
+      - name: Upload final V3 PNGs ZIP mobile proof and blocked native control
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-editorial-v3-first-publication-review
+          path: |
+            artifacts/persona-editorial-v3/
+            artifacts/persona-native-production/native-production-proof.json
+          retention-days: 30
+          if-no-files-found: error
       - name: Verify real one-click browser-to-MP4 workflow
         run: node tools/persona-quick-browser-e2e.mjs
       - name: Upload weekly calendar screenshots and navigation proof

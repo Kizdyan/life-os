@@ -3,6 +3,7 @@ import baselineCaptions from '../../../config/carousel-baseline-pause-captions.j
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import fridgeV2Style from '../../../config/carousel-fridge-hum-v2.json';
+import fridgeV3Style from '../../../config/carousel-fridge-hum-v3.json';
 import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
 import {hierarchyCopy,type EditorialHierarchy} from './personaEditorialTypography';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
@@ -68,7 +69,8 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
    const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
    const design=s.background?[...values,s.background]:values;
    return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
-  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,fridgeV2Style.layouts,fridgeV2Style.visuals]:[])]));
+  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,
+   ...(post.compositionPreset==='fridge-hum-v3'?[fridgeV3Style.layouts,fridgeV3Style.visuals,'literata-golos-local-v1']:[fridgeV2Style.layouts,fridgeV2Style.visuals])]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -184,8 +186,8 @@ export type EditorialResearch={
 };
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
-  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter';carouselFormat?:'photo-led'|'mixed';
- compositionPreset?:'fridge-hum-v2';
+  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter'|'literata-golos';carouselFormat?:'photo-led'|'mixed';
+ compositionPreset?:'fridge-hum-v2'|'fridge-hum-v3';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -533,8 +535,8 @@ export function validatePost(post:EditorialPost):void{
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
-  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter'].includes(post.fontPreset))||
-  (post.compositionPreset!==undefined&&(post.compositionPreset!=='fridge-hum-v2'||post.fontPreset!=='cormorant-inter'||post.slides?.length!==7))||
+  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter','literata-golos'].includes(post.fontPreset))||
+  (post.compositionPreset!==undefined&&(!['fridge-hum-v2','fridge-hum-v3'].includes(post.compositionPreset)||post.fontPreset!==(post.compositionPreset==='fridge-hum-v3'?'literata-golos':'cormorant-inter')||post.slides?.length!==7))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||

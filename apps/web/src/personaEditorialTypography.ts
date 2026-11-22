@@ -1,4 +1,5 @@
 import v2 from '../../../config/carousel-fridge-hum-v2.json';
+import v3 from '../../../config/carousel-fridge-hum-v3.json';
 export type EditorialHierarchy={kicker:string;headline:string;body:string;highlight?:string};
 export function hierarchyCopy(s:EditorialHierarchy):string{
  return [s.kicker,s.headline,s.highlight,s.body].filter(Boolean).join('\n\n');
@@ -39,10 +40,10 @@ export const HIERARCHY_LAYOUTS:readonly HierarchyLayout[]=[
 ];
 
 export function editorialHierarchyLayout(post:{compositionPreset?:string},index:number):HierarchyLayout{
- const layout=post.compositionPreset==='fridge-hum-v2'?v2.layouts[index]:HIERARCHY_LAYOUTS[index];
+ const layout=post.compositionPreset==='fridge-hum-v3'?v3.layouts[index]:post.compositionPreset==='fridge-hum-v2'?v2.layouts[index]:HIERARCHY_LAYOUTS[index];
  if(!layout)throw Error('Неизвестная композиция');return layout;
 }
-export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number,layout=HIERARCHY_LAYOUTS[index]){
+export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:EditorialHierarchy,index:number,layout=HIERARCHY_LAYOUTS[index],fontSystem='cormorant-inter'){
  if(!layout)throw Error('Неизвестная композиция');
  for(const role of ['kicker','headline','highlight','body'] as const)
   if(slide[role]?.trim()&&!layout[role])throw Error('В композиции слайда '+(index+1)+' нет зоны '+role+'; текст не будет скрыт при экспорте');
@@ -51,10 +52,12 @@ export function paintEditorialHierarchy(c:CanvasRenderingContext2D,slide:Editori
  for(const role of ['kicker','headline','highlight','body'] as const){
   const zone=layout[role],text=slide[role];if(!zone||!text)continue;
   const align=zone.align??'left';let lines:string[]=[],size=zone.size;
-  const font=(s:number)=>role==='headline'?`${index===0?700:600} ${s}px "Persona Carousel Cormorant"`:
+  const font=(s:number)=>fontSystem==='literata-golos'?
+   `${role==='headline'?600:400} ${s}px "${role==='headline'?'Persona Editorial Literata':'Persona Editorial Golos'}"`:
+   role==='headline'?`${index===0?700:600} ${s}px "Persona Carousel Cormorant"`:
    role==='highlight'?`italic 600 ${s}px "Persona Carousel Cormorant"`:
    `${role==='body'?300:400} ${s}px "Persona Carousel Inter"`;
-  const leading=role==='body'?1.6:role==='headline'?1.08:1.25;
+  const leading=fontSystem==='literata-golos'?(role==='body'?1.38:1.15):role==='body'?1.6:role==='headline'?1.08:1.25;
   const min=role==='headline'?64:role==='body'?44:role==='highlight'?40:20;
   for(;size>=min;size-=4){
    c.font=font(size);
