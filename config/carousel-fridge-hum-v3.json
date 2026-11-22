@@ -1,0 +1,366 @@
+{
+  "id": "carousel-fridge-hum-v3",
+  "status": "DRAFT",
+  "parentRevision": "carousel-fridge-hum-v2",
+  "authorDecision": "READY_FOR_AUTHOR_REVIEW; not approved; publication forbidden",
+  "research": {
+    "title": "Гул холодильника: скрытая музыка «Старикам тут не место» · V3",
+    "angle": "Незаметная музыка, общая работа композитора и звукового отдела. Проверенные факты и отдельно обозначенный редакторский вывод.",
+    "caption": "В сцене с монетой из «Старикам тут не место» Картер Бёруэлл настроил нарастающий музыкальный гул на частоту холодильника — 60 Гц. Этот частный приём описывает Деннис Лим в статье, перепечатанной на сайте композитора.\n\nВ собственных заметках Бёруэлл объясняет общий замысел: протяжённые тона должны сливаться со звуковыми эффектами. Перкуссия возвращала привычный жанр; тона оставляли фильм тревожным. Бёруэлл и Скип Ливсей начали обмениваться примерами заранее.\n\nРедакторское наблюдение: реплика, шум и музыка могут быть частями общей драматургии. Для актёрского разбора здесь полезен вопрос: чего персонаж добивается от партнёра в паузе? Это интерпретация, не комментарий создателей фильма и не утверждённые слова от лица автора.\n\nИсточник: Carter Burwell’s Notes и Dennis Lim, Exploiting Sound, Exploring Silence, The New York Times, 6 января 2008 — https://www.carterburwell.com/projects/ncfom/\n\nИзображения — сохранённые иллюстрации, не кадры фильма. Вёрстка Persona, Literata и Golos Text. Черновик для авторской приёмки, публикация не разрешена.",
+    "slides": [
+      {
+        "text": "Музыку спрятали\nв гуле холодильника.\n\n«Старикам тут не место»",
+        "visualDirection": "Сохранённая монета справа внизу; заголовок выше неё. Фон не генерировать повторно.",
+        "sources": [
+          {
+            "title": "Dennis Lim — 60 Hz refrigerator, Sound Design",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Монета вместо ответа.\n\nНа заправке Чигур предлагает хозяину бросок монеты. Будничный разговор становится угрозой.",
+        "visualDirection": "Общий план заправки, сохранить архитектуру и свет окна. Текст слева, без перекрытия насоса.",
+        "sources": [
+          {
+            "title": "Dennis Lim — service-station coin flip",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "60 Гц.\n\nБёруэлл настроил нарастающий музыкальный гул на частоту холодильника в сцене с монетой.",
+        "visualDirection": "Приблизить холодильник, сделать светлее корпус, сохранить тёмную зону слева.",
+        "sources": [
+          {
+            "title": "Dennis Lim — swelling hum tuned to refrigerator",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Вместо ударных —\nпротяжённый тон.\n\nПеркуссия возвращала привычный жанр. Бёруэлл выбрал протяжённые тона — в том числе поющие чаши.",
+        "visualDirection": "Светлый бронзовый крупный план поющей чаши — образ выбранного протяжённого тона, не изображение отвергнутых барабанов.",
+        "sources": [
+          {
+            "title": "Carter Burwell's Notes — rejected percussion, sustained tones",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Не спорить\nза громкость.\n\nБёруэлл и Скип Ливсей обменивались звуками заранее — не ждали финального сведения.",
+        "visualDirection": "Звуковой кабинет крупнее и светлее; показать инструменты совместной работы, оставить текст слева.",
+        "sources": [
+          {
+            "title": "Burwell's Notes and Dennis Lim — early collaboration versus final mix",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Не подсказывать,\nчто сейчас случится.\n\nЛивсей объяснял: привычная музыка даёт зрителю опору. Здесь эту опору убрали.",
+        "visualDirection": "Дверь и полоска света: композиция с ожиданием, текст сверху и слева, дверь не перекрывать.",
+        "sources": [
+          {
+            "title": "Dennis Lim — Lievsay on removing the safety net of the score",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Музыка и шум —\nодна драматургия.\n\nРедакторский вывод: роли музыки, шума и речи стоит обсуждать до сведения.\nВ этой сцене они сохраняют неопределённость угрозы.",
+        "visualDirection": "Монета плашмя крупным планом в нижнем углу; светлее обложки, текст над предметом. Это редакторский профессиональный вывод.",
+        "interpretation": true
+      }
+    ]
+  },
+  "hierarchy": [
+    {
+      "headline": "Музыку спрятали\nв гуле холодильника.",
+      "body": "«Старикам тут не место»"
+    },
+    {
+      "headline": "Монета вместо ответа.",
+      "body": "На заправке Чигур предлагает хозяину бросок монеты. Будничный разговор становится угрозой."
+    },
+    {
+      "headline": "60 Гц.",
+      "body": "Бёруэлл настроил нарастающий музыкальный гул на частоту холодильника в сцене с монетой."
+    },
+    {
+      "headline": "Вместо ударных —\nпротяжённый тон.",
+      "body": "Перкуссия возвращала привычный жанр. Бёруэлл выбрал протяжённые тона — в том числе поющие чаши."
+    },
+    {
+      "headline": "Не спорить\nза громкость.",
+      "body": "Бёруэлл и Скип Ливсей обменивались звуками заранее — не ждали финального сведения."
+    },
+    {
+      "headline": "Не подсказывать,\nчто сейчас случится.",
+      "body": "Ливсей объяснял: привычная музыка даёт зрителю опору. Здесь эту опору убрали."
+    },
+    {
+      "headline": "Музыка и шум —\nодна драматургия.",
+      "body": "Редакторский вывод: роли музыки, шума и речи стоит обсуждать до сведения.\nВ этой сцене они сохраняют неопределённость угрозы."
+    }
+  ],
+  "sourceAudit": {
+    "checkedAt": "2026-11-22",
+    "checkedBy": "Codex source reading, not author approval",
+    "url": "https://www.carterburwell.com/projects/ncfom/",
+    "reporting": {
+      "author": "Dennis Lim",
+      "title": "Exploiting Sound, Exploring Silence",
+      "date": "2008-01-06",
+      "access": "Reprinted on composer’s site; original NYT URL inaccessible during this check"
+    },
+    "claims": [
+      {
+        "slides": [
+          1,
+          2,
+          3
+        ],
+        "section": "Sound Design, paragraph beginning Mr. Burwell found",
+        "result": "supported: threat, coin flip, 60 Hz refrigerator"
+      },
+      {
+        "slides": [
+          4
+        ],
+        "section": "Carter Burwell’s Notes, paragraphs 2–3",
+        "result": "supported: percussion rejected as familiar; sustained tones kept film unsettled"
+      },
+      {
+        "slides": [
+          5
+        ],
+        "section": "Notes paragraph 3; Sound Design collaboration paragraphs",
+        "result": "supported: early exchange, contrasting customary late meeting at final mix"
+      },
+      {
+        "slides": [
+          6
+        ],
+        "section": "Sound Design, Lievsay safety-net explanation",
+        "result": "supported: removing familiar reassurance of score"
+      },
+      {
+        "slides": [
+          7
+        ],
+        "result": "Explicit impersonal editorial interpretation, not author or filmmaker endorsement"
+      }
+    ],
+    "excludedUnverifiedClaim": "No claim that hum ends at the coin reveal.",
+    "authorSourceApproval": false
+  },
+  "visuals": [
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.06,
+      "overlay": "left",
+      "opacity": 0.52,
+      "protectedSubject": {
+        "x": 690,
+        "y": 780,
+        "width": 290,
+        "height": 460
+      }
+    },
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.26,
+      "overlay": "left",
+      "opacity": 0.88
+    },
+    {
+      "crop": [
+        0.08,
+        0.05,
+        0.92,
+        0.92
+      ],
+      "brightness": 1.5,
+      "overlay": "left",
+      "opacity": 0.62
+    },
+    {
+      "crop": [
+        0.18,
+        0.15,
+        0.82,
+        0.82
+      ],
+      "brightness": 1.82,
+      "overlay": "top",
+      "opacity": 0.88
+    },
+    {
+      "crop": [
+        0.12,
+        0.1,
+        0.88,
+        0.88
+      ],
+      "brightness": 1.65,
+      "overlay": "left",
+      "opacity": 0.62
+    },
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.24,
+      "overlay": "left",
+      "opacity": 0.6
+    },
+    {
+      "crop": [
+        0.25,
+        0.24,
+        0.75,
+        0.75
+      ],
+      "brightness": 1.55,
+      "overlay": "top",
+      "opacity": 0.88
+    }
+  ],
+  "layouts": [
+    {
+      "headline": {
+        "x": 100,
+        "y": 150,
+        "width": 880,
+        "height": 400,
+        "size": 78
+      },
+      "body": {
+        "x": 100,
+        "y": 510,
+        "width": 740,
+        "height": 130,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 160,
+        "width": 800,
+        "height": 300,
+        "size": 84
+      },
+      "body": {
+        "x": 100,
+        "y": 490,
+        "width": 650,
+        "height": 550,
+        "size": 50
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 140,
+        "width": 650,
+        "height": 240,
+        "size": 150
+      },
+      "body": {
+        "x": 100,
+        "y": 460,
+        "width": 580,
+        "height": 650,
+        "size": 50
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 130,
+        "width": 820,
+        "height": 280,
+        "size": 82
+      },
+      "body": {
+        "x": 100,
+        "y": 470,
+        "width": 700,
+        "height": 430,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 140,
+        "width": 710,
+        "height": 300,
+        "size": 84
+      },
+      "body": {
+        "x": 100,
+        "y": 540,
+        "width": 650,
+        "height": 420,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 160,
+        "width": 760,
+        "height": 300,
+        "size": 80
+      },
+      "body": {
+        "x": 100,
+        "y": 560,
+        "width": 650,
+        "height": 440,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 150,
+        "width": 820,
+        "height": 290,
+        "size": 82
+      },
+      "body": {
+        "x": 100,
+        "y": 470,
+        "width": 740,
+        "height": 600,
+        "size": 48
+      }
+    }
+  ],
+  "fontSystem": "literata-golos",
+  "referenceStandardStatus": "Requested full Perplexity standard not found in accessible project files; explicit user brief followed, not a claimed reading",
+  "designReview": {
+    "gate": "Independent key-screen review, not author approval",
+    "selectedSystem": "Left axis; headline above compact mid-frame explanation; subject right/bottom; 60 Hz reserved as numeric focal point",
+    "fixCyclesUsed": 1,
+    "maxFixCycles": 2
+  }
+}

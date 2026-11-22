@@ -187,7 +187,7 @@ export function createPersonaQuickRenderService(config={}){
   const production=new ProductionJob(directory(id));
   let canonical;try{canonical=await production.read()}catch{return null}
   // Crash recovery: a running job without its owning process is not falsely advertised as running.
-  if(!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
+  if(!canonical.productionSchedule&&!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
    canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
   }
   // Never expose completed before the final quick-state card metadata is
@@ -1111,5 +1111,5 @@ export function createPersonaQuickRenderService(config={}){
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,attachSeedPhotos,upload,run,promote,preparePackage,get,view,list,handle};
+ return {root,create,attachSeedPhotos,upload,run,promote,preparePackage,get,view,list,handle,isBusy:()=>active!==null};
 }

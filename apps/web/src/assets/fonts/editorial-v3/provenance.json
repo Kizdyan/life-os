@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Literata",
+    "gitBlobSha": "0a81b4984a4a4eb101e0ddc28babc85bb137efef",
+    "source": "https://github.com/google/fonts/blob/main/ofl/literata/Literata[opsz,wght].ttf",
+    "license": "SIL Open Font License 1.1",
+    "usage": "Local variable TTF, Cyrillic typography, no image-provider request"
+  },
+  {
+    "name": "GolosText",
+    "gitBlobSha": "05ee5ecc570b97818e24e58693662cd8294fdfc9",
+    "source": "https://github.com/google/fonts/blob/main/ofl/golostext/GolosText[wght].ttf",
+    "license": "SIL Open Font License 1.1",
+    "usage": "Local variable TTF, Cyrillic typography, no image-provider request"
+  }
+]

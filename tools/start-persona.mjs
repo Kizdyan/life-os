@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const web = join(root, 'apps', 'web');
 const mime = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
  '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json',
- '.jpg':'image/jpeg','.json':'application/json; charset=utf-8'};
+ '.jpg':'image/jpeg','.json':'application/json; charset=utf-8','.ttf':'font/ttf','.woff2':'font/woff2'};
 
 async function buildFrontend() {
  const result = await build({root:web, configFile:false, envFile:false,

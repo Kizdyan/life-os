@@ -17,6 +17,18 @@ async function serve(handler){
  }),close:()=>new Promise(resolve=>server.close(resolve))};
 }
 
+test('combined launcher serves bundled editorial font bytes with font MIME',async()=>{
+ const server=await serve(createPersonaFrontendHandler(new Map([
+  ['/assets/Literata.ttf',Buffer.from('font-fixture')],['/assets/Golos.woff2',Buffer.from('woff-fixture')]
+ ])));
+ try{
+  for(const [path,mime]of[['/assets/Literata.ttf','font/ttf'],['/assets/Golos.woff2','font/woff2']]){
+   const response=await server.get(path);assert.equal(response.status,200);
+   assert.equal(response.headers['content-type'],mime);assert.ok(response.bytes.length>0);
+  }
+ }finally{await server.close()}
+});
+
 test('combined launcher serves exact nested v1 JPG and provenance JSON bytes with correct MIME and HEAD',async()=>{
  const server=await serve(createPersonaFrontendHandler(new Map([['/index.html',Buffer.from('home')]])));
  try{

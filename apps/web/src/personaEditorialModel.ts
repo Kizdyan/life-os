@@ -3,8 +3,9 @@ import baselineCaptions from '../../../config/carousel-baseline-pause-captions.j
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import fridgeV2Style from '../../../config/carousel-fridge-hum-v2.json';
+import fridgeV3Style from '../../../config/carousel-fridge-hum-v3.json';
 import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
-import {hierarchyCopy,type EditorialHierarchy} from './personaEditorialTypography';
+import {hierarchyCopy,semanticEditorialCopy,suggestEvidenceHook,semanticEditorialComposition,SEMANTIC_COMPOSITION_VERSION,type EditorialHierarchy} from './personaEditorialTypography';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
@@ -68,7 +69,8 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
    const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
    const design=s.background?[...values,s.background]:values;
    return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
-  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,fridgeV2Style.layouts,fridgeV2Style.visuals]:[])]));
+  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,
+   ...(post.compositionPreset==='semantic-editorial-v1'?[SEMANTIC_COMPOSITION_VERSION,post.slides.map((_,i)=>semanticEditorialComposition(post,i)),fridgeV3Style.visuals]:post.compositionPreset==='fridge-hum-v3'?[fridgeV3Style.layouts,fridgeV3Style.visuals,'literata-golos-local-v1']:[fridgeV2Style.layouts,fridgeV2Style.visuals])]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -184,8 +186,8 @@ export type EditorialResearch={
 };
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
-  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter';carouselFormat?:'photo-led'|'mixed';
- compositionPreset?:'fridge-hum-v2';
+  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter'|'literata-golos';carouselFormat?:'photo-led'|'mixed';
+ compositionPreset?:'fridge-hum-v2'|'fridge-hum-v3'|'semantic-editorial-v1';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -533,8 +535,8 @@ export function validatePost(post:EditorialPost):void{
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
-  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter'].includes(post.fontPreset))||
-  (post.compositionPreset!==undefined&&(post.compositionPreset!=='fridge-hum-v2'||post.fontPreset!=='cormorant-inter'||post.slides?.length!==7))||
+  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter','literata-golos'].includes(post.fontPreset))||
+  (post.compositionPreset!==undefined&&(!['fridge-hum-v2','fridge-hum-v3','semantic-editorial-v1'].includes(post.compositionPreset)||post.fontPreset!==(post.compositionPreset==='fridge-hum-v2'?'cormorant-inter':'literata-golos')||(post.compositionPreset!=='semantic-editorial-v1'&&post.slides?.length!==7)))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -632,6 +634,20 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
   // Retain old fingerprint in audit to label the subsequent re-approval.
  }
  validatePost(result);return result;
+}
+/** Existing editor action: lossless research-copy adapter, deterministic composition, no author PASS. */
+export function composeEditorialByMeaning(post:EditorialPost,now=new Date().toISOString()):EditorialPost{
+ if(post.kind!=='carousel')throw Error('Смысловая композиция предназначена для карусели');
+ const slides=post.slides.map(s=>({...s,...semanticEditorialCopy(s)})),hook=suggestEvidenceHook({...post,slides});
+ let next=reviseEditorialPost(post,{fontPreset:'literata-golos',compositionPreset:'semantic-editorial-v1',
+  slides:hook?slides.map((s,i)=>i?s:{...s,headline:hook.headline}):slides},now);
+ if(hook&&next.research){
+  const cover=next.slides[0].id;
+  next=changeEditorialEvidence(next,{...next.research,
+   sourceItems:[...next.research.sourceItems.filter(s=>s.slideId!==cover),
+    ...next.research.sourceItems.filter(s=>s.slideId===hook.sourceSlideId).map(s=>({...s,slideId:cover,reviewed:false}))]},now);
+ }
+ return next;
 }
 export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'design',now=new Date().toISOString()):EditorialPost{
  if(editorialStage(post)!==step)throw Error('Approve steps in order: topic, content, design');
