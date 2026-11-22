@@ -393,10 +393,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    const next=applyFridgeHumFinalPass(post);
    if(next===post){setBackgroundMessage('Финальная редакторская правка уже применена. Дальше — только авторское решение.');return}
    preserveFridgeHumBeforeFinalPass(localStorage,post,next);
-   const typographyOnly=post.caption===next.caption&&post.slides.every((s,i)=>i===4||JSON.stringify(s)===JSON.stringify(next.slides[i]));
+   const changed=post.slides.flatMap((s,i)=>JSON.stringify(s)===JSON.stringify(next.slides[i])?[]:[i+1]);
+   const typographyOnly=post.caption===next.caption&&changed.length===1&&changed[0]===5;
    onChange(next);setError('');setBackgroundMessage(typographyOnly?
     'Исправлен только перенос заголовка слайда 5; предыдущая редакция сохранена. Остальные слайды и подпись не менялись.':
-    'Четыре слайда и публичная подпись обновлены; предыдущая редакция сохранена. Шрифты, изображения и композиции не менялись.');
+    `Обновлены слайды ${changed.join(', ')}${post.caption!==next.caption?' и публичная подпись':''}; предыдущая редакция сохранена. Шрифты, изображения и композиции не менялись.`);
   }catch(e){setError(e instanceof Error?e.message:'Правка не применена')}
  }
  return <section className="personaEditorialStudio" data-testid="persona-editorial-studio"

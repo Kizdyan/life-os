@@ -20,6 +20,17 @@ function finalCopy(post:EditorialPost,now:string){
   slides:post.slides.map((s,i)=>{const patch=finalPass.updates.find(p=>p.index===i);return patch?{...s,headline:patch.headline,body:patch.body}:s})},now);
  return setEditorialInterpretationReviewed(next,next.slides[6].id,true,now);
 }
+function previousCopy(post:EditorialPost,now:string){
+ const previous=finalPass.previousPublicCopy;
+ const next=reviseEditorialPost(post,{caption:previous.caption,slides:post.slides.map((s,i)=>{
+  const old=previous.updates.find(p=>p.index===i);return old?{...s,headline:old.headline,body:old.body}:s;
+ })},now);
+ return setEditorialInterpretationReviewed(next,next.slides[6].id,true,now);
+}
+/** Historical copy fixture for replay/restore; never a new carousel or author approval. */
+export function createPreviousFridgeHumFinalPass(){
+ return previousCopy(finalCopy(composeEditorialByMeaning(createFridgeHumV3()),'2026-11-22T00:00:00Z'),'2026-11-22T00:00:00Z');
+}
 export function applyFridgeHumFinalPass(post:EditorialPost,now=new Date().toISOString()){
  const base=composeEditorialByMeaning(createFridgeHumV3()),expected=finalCopy(base,'2026-11-22T00:00:00Z');
  if(signature(post)===signature(expected))return post;
@@ -27,6 +38,10 @@ export function applyFridgeHumFinalPass(post:EditorialPost,now=new Date().toISOS
  if(post.id===FRIDGE_HUM_V3_ID&&post.compositionPreset==='semantic-editorial-v1'&&
   !post.approvals.content&&!post.approvals.design&&signature(post)===signature(legacy))
   return reviseEditorialPost(post,{slides:post.slides.map((s,i)=>i===4?{...s,headline:expected.slides[4].headline}:s)},now);
+ const prior=previousCopy(expected,'2026-11-22T00:00:00Z');
+ const priorTypo=reviseEditorialPost(prior,{slides:prior.slides.map((s,i)=>i===4?{...s,headline:'Обмен звуками —\nдо сведения.'}:s)},'2026-11-22T00:00:00Z');
+ if(post.id===FRIDGE_HUM_V3_ID&&post.compositionPreset==='semantic-editorial-v1'&&!post.approvals.content&&!post.approvals.design&&
+  [signature(prior),signature(priorTypo)].includes(signature(post)))return finalCopy(post,now);
  if(post.id!==FRIDGE_HUM_V3_ID||post.compositionPreset!=='semantic-editorial-v1'||
   post.approvals.content||post.approvals.design||signature(post)!==signature(base))
   throw Error('Финальная правка рассчитана на проверенную основу. Изменения сохранённой редакции не будут перезаписаны.');

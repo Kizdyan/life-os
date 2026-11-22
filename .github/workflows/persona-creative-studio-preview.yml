@@ -117,7 +117,7 @@ jobs:
           PERSONA_PRODUCTION_REVISION: v3
           PERSONA_PRODUCTION_COMPOSITION: semantic
           PERSONA_PRODUCTION_FINAL_PASS: '1'
-          PERSONA_PRODUCTION_TYPOGRAPHY_ONLY: '1'
+          PERSONA_PRODUCTION_STORY_PASS: '1'
           PERSONA_PRODUCTION_OUTPUT: artifacts/persona-final-editorial-pass
         run: node tools/persona-production-carousel-browser-e2e.mjs
       - name: Upload final editorial pass for author decision

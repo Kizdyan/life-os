@@ -1,5 +1,15 @@
 # Persona first publication — review, not publication
 
+## Continuation after30984e2: why the sound choice matters
+
+The next explicit author brief rated the earlier copy8/10 and requested a stronger cover, a meaningful conclusion and a fuller public caption. The existing final-pass action now upgrades the exact30984e2 copy, with a write-once snapshot keyed by that commit. It changes only slides1/7 and the caption; slides2–6, photographs, fonts and composition stay unchanged. The earlier typography-only repair and all previous export folders remain historical evidence, not overwritten outputs.
+
+The current controlled export is `artifacts/persona-autonomy-continuation-20261122/carousel-final/` locally, and the `persona-final-editorial-pass-review` CI artifact remotely. Actual Chromium production through the existing editor verified all seven1080×1350 PNGs, five unchanged middle-slide SHA-256 hashes against the saved30984e2 files, preserved prior draft, exact visible preview/export bytes, mobile safe areas, Cyrillic/contrast and no internal numbering. Mobile cover/finale and the contact sheet were visually inspected. A separate agent independently confirmed preservation, migration safeguards and readable new screens; this is not author approval or a prediction of publication performance.
+
+The source was rechecked on2026-11-22 against Burwell's notes and Lim's article reproduced on his website. The new finale explains the blending of music into room sound and loss of familiar musical guidance; it is an editorial synthesis, not a quotation or a first-person author belief. No claim that the hum stops at the coin reveal was added. Public caption, source audit and image provenance remain separate. The source audit binds only to the exact checked copy; author SOURCE_PASS/CONTENT_PASS/VISUAL_PASS and publication remain ungranted.
+
+Replay: set `PERSONA_PRODUCTION_REVISION=v3`, `PERSONA_PRODUCTION_COMPOSITION=semantic`, `PERSONA_PRODUCTION_FINAL_PASS=1`, `PERSONA_PRODUCTION_STORY_PASS=1`, then run the existing browser production driver. Set `PERSONA_FINAL_PREVIOUS_OUTPUT` to the preserved30984e2 export to check actual prior files; CI uses the historical copy fixture through the same revision model. No image generation or paid request occurs.
+
 ## Conditional acceptance: slide5 dash only
 
 After2e1a9d5 the independent art decision was CONDITIONAL_ACCEPT, pending one typography fix and personal author approval. Only the explicit heading break moved from `Обмен звуками — / до сведения.` to `Обмен звуками / — до сведения.`. All words, other slides, caption, photographs, colors, fonts and layouts are unchanged. The existing editor action can safely upgrade the saved2e1a9d5 draft, preserves that exact prior draft under a new base-commit snapshot key, and grants no author PASS.
