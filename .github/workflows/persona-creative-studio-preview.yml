@@ -95,6 +95,12 @@ jobs:
           node --test tools/persona-editorial-fonts.test.mjs tools/start-persona.test.mjs
           node tools/persona-editorial-v3-browser-e2e.mjs
           node tools/persona-native-production-probe.mjs
+      - name: Verify existing editor chooses semantic compositions with readable body and exact preview bytes
+        env:
+          PERSONA_PRODUCTION_REVISION: v3
+          PERSONA_PRODUCTION_COMPOSITION: semantic
+          PERSONA_PRODUCTION_OUTPUT: artifacts/persona-editorial-v3/semantic-production
+        run: node tools/persona-production-carousel-browser-e2e.mjs
       - name: Upload final V3 PNGs ZIP mobile proof and blocked native control
         if: always()
         uses: actions/upload-artifact@v4

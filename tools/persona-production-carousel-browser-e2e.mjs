@@ -30,18 +30,31 @@ try{
   return m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-fridge-hum');
  });
  if(revision!=='v1')await editor.getByRole('button',{name:revision==='v3'?'V3 · финальная редакция':revision==='v2a'?'V2 · обложка A':'V2 · обложка B',exact:true}).click();
+ const semantic=process.env.PERSONA_PRODUCTION_COMPOSITION==='semantic';
+ if(semantic){
+  assert.equal(revision,'v3');
+  await editor.getByTestId('editorial-compose-by-meaning').click();
+ }
  let before;
  for(let attempt=0;attempt<100&&!before;attempt++){
   before=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);
+  if(before&&semantic&&before.compositionPreset!=='semantic-editorial-v1')before=undefined;
   if(!before)await new Promise(r=>setTimeout(r,100));
  }
  assert.ok(before,'Missing selected draft '+draftId+'; '+await editor.innerText());
+ if(semantic){
+  assert.equal(before.compositionPreset,'semantic-editorial-v1');
+  const plan=await page.evaluate(async post=>{const m=await import('/src/personaEditorialTypography.ts');return post.slides.map((_,i)=>m.semanticEditorialComposition(post,i))},before);
+  assert.ok(new Set(plan.map(p=>JSON.stringify(p.layout))).size>=5);
+  await writeFile(join(out,'composition-plan.json'),JSON.stringify(plan,null,2)+'\n');
+ }
  assert.equal(before.slides.length,7);assert.equal(before.approvals.topic,false);
  assert.equal(before.approvals.textApproved,false);assert.equal(before.approvals.designApproved,false);
  assert.ok(before.research.sourceItems.every(s=>!s.reviewed));
  const ready=page.waitForEvent('download',{timeout:60000});
  await editor.getByRole('button',{name:'Скачать черновик для проверки',exact:true}).click();
- const download=await ready;const zip=join(out,'fridge-hum-DRAFT.zip');await download.saveAs(zip);
+ const download=await ready.catch(async error=>{throw Error(error.message+'\nEditor state: '+(await editor.innerText()).slice(-7000))});
+ const zip=join(out,'fridge-hum-DRAFT.zip');await download.saveAs(zip);
  const files=unzip(await readFile(zip)),pngs=files.filter(f=>/^slide-\d\d\.png$/.test(f.name));
  assert.equal(pngs.length,7);
  for(const f of pngs){assert.equal(f.bytes.readUInt32BE(16),1080);assert.equal(f.bytes.readUInt32BE(20),1350);await writeFile(join(out,f.name),f.bytes);}
@@ -122,7 +135,7 @@ try{
  assert.ok(mobile.width<=mobile.viewport+2,'Mobile horizontal overflow '+JSON.stringify(mobile));
  await page.screenshot({path:join(out,'mobile-persona-draft.png'),fullPage:true});
  await context.close();
- await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
+ await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,compositionPreset:before.compositionPreset,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
   authorApprovalsUnchanged:true,publicationBlocked:true,previewMatchesExport:true,typography,provenance:revision==='v1'?'7 actual tool-generated images, imported locally; no Worker generation':'7 preserved V1 illustrations, reframed and relit in Persona; no new generation',
   sha256:pngs.map(p=>({file:p.name,sha256:hash(p.bytes)}))},null,2)+'\n');
  console.log('PERSONA_PRODUCTION_CAROUSEL_PASS: 7 real PNG, contact sheet, source/provenance ZIP, author approvals unchanged');

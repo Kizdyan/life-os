@@ -1,5 +1,17 @@
 # Persona first publication — review, not publication
 
+## Recovery after author rejection of the original V3 layout
+
+The checked-in original V3 fixture is preserved. The author reported good photographs but repetitive layout, small explanation text and a weak hook. The fix is an explicit **Подобрать композиции по смыслу** action in the existing editor, available to normal research drafts as well as V3. It does not create a V4 fixture or a second editor.
+
+The deterministic selector derives roles from text (scene, numeric evidence, contrast, work process, turn, takeaway) rather than a carousel ID or a slide-number lookup. Each role selects different geometry. Literata/Golos remain the typography system; explanations cannot shrink below60px, headings below88px. Normal research paragraphs are preserved when split into headline/body; existing kicker/highlight require an explicit editorial decision rather than disappearing. Overflow remains a visible error, never a license to omit words.
+
+One narrow hook transformation converts an existing sourced frequency-matching claim into a question. It is a rule-based editorial suggestion, not a general LLM writer or a factual verifier. The fact slide's source links are copied to the cover as unreviewed; author/source/design approval is not granted. Other stories without this explicit pattern keep their wording.
+
+The controlled Burwell production uses the seven existing illustrations. The actual UI action → Canvas → seven PNGs/ZIP → mobile preview passes, with minimum ink contrast5.98:1. The generic takeover zone was corrected to keep final text above the coin. CPU Canvas is used only for the semantic mode after the accelerated path produced different numeric glyph pixels between parallel export and later preview. The existing byte-equality gate now passes all seven; legacy V3 rendering is unchanged. Independent review found no remaining blocker for author review, not publication efficacy.
+
+Reproduce this single production check with `PERSONA_PRODUCTION_REVISION=v3 PERSONA_PRODUCTION_COMPOSITION=semantic node tools/persona-production-carousel-browser-e2e.mjs`. CI retains the output under the existing V3 review artifact's `semantic-production/` folder. The author must still review hook, rhythm, legibility and finale, then explicitly approve or request changes.
+
 ## Actual deliverables
 
 V3 is a separate seven-slide `carousel-fridge-hum-v3` in the existing Editorial Desk. It uses locally bundled, SIL OFL licensed Literata and Golos Text, real Cyrillic glyph checks, and the existing Canvas/export path. Open Persona → **V3 · финальная редакция для просмотра** → **Скачать черновик для проверки**. The downloaded ZIP contains seven 1080×1350 PNGs, contact sheet, caption, draft, sources and image provenance. On a phone, download the ZIP from this same interface and extract it in Files. Instagram upload is manual and requires author approval; downloading/opening Instagram is not publication.

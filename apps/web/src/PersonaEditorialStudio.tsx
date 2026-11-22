@@ -3,7 +3,7 @@ import {libraryBackground,isGeneratedBackgroundRef} from './personaEditorialBack
 import {editorialHierarchyLayout} from './personaEditorialTypography';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
- approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
+ approveEditorialStep,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
@@ -380,6 +380,13 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   try{const created=await prepareFridgeHumV3();onCreate(created);onSelect(created.id)}
   catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
+ function composeByMeaning(){
+  if(!post)return;
+  try{
+   onChange(composeEditorialByMeaning(post));
+   setError('');setBackgroundMessage('Композиции выбраны по роли текста. Хук из имеющегося факта — редакторское предложение; нужен авторский просмотр. Новые изображения и платные запросы не запускались.');
+  }catch(e){setError(e instanceof Error?e.message:'Композиции не применены')}
+ }
  return <section className="personaEditorialStudio" data-testid="persona-editorial-studio"
   aria-label="Редакция каруселей и фото">
   <header className="personaEditorialHead">
@@ -552,6 +559,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <div className="personaEditorialSlides">{post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>Проверить слайд {i+1}</button>)}</div>
      {baselinePreviewUrl?<img data-testid="research-draft-preview" src={baselinePreviewUrl} alt={'Черновой PNG слайда '+(selectedSlide+1)} style={{width:'100%',maxWidth:432,height:'auto'}}/>:<p>{baselinePreviewError||'Готовится PNG…'}</p>}
     </>}
+   </section>}
+   {post.kind==='carousel'&&<section aria-label="Смысловая композиция">
+    <button type="button" data-testid="editorial-compose-by-meaning" disabled={busy} onClick={composeByMeaning}>Подобрать композиции по смыслу</button>
+    <p>Persona различает сцену, факт, сопоставление и вывод. Размер пояснений — от 60 px. Факты и фотографии сохраняются; результат требует просмотра.</p>
    </section>}
    <PersonaLifeOSBridge key={post.id} post={post}/>
    <section aria-label="Шаг 1. Утверждение темы">
