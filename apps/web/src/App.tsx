@@ -99,7 +99,7 @@ export default function App() {
     setError('');
     try {
       if (backendMode === 'supabase' && !navigator.onLine) {
-        enqueueOutcome({itemId: item.id, command, createdAt: new Date().toISOString()});
+        enqueueOutcome({itemId: item.id, command, createdAt: new Date().toISOString()}, item);
         const status = command === 'complete' ? 'completed' :
           item.carry_forward ? 'missed_time' : 'not_completed';
         const pending = items.map(x => x.id === item.id ? {...x, status} as Item : x);
