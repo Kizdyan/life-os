@@ -102,6 +102,7 @@ jobs:
           PERSONA_PRODUCTION_OUTPUT: artifacts/persona-editorial-v3/semantic-production
         run: node tools/persona-production-carousel-browser-e2e.mjs
       - name: Upload final V3 PNGs ZIP mobile proof and blocked native control
+        # The final editorial patch uses the same accepted renderer and preserves the prior output.
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -109,6 +110,22 @@ jobs:
           path: |
             artifacts/persona-editorial-v3/
             artifacts/persona-native-production/native-production-proof.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify one final editorial pass without changing accepted slides fonts or images
+        env:
+          PERSONA_PRODUCTION_REVISION: v3
+          PERSONA_PRODUCTION_COMPOSITION: semantic
+          PERSONA_PRODUCTION_FINAL_PASS: '1'
+          PERSONA_FINAL_PREVIOUS_OUTPUT: artifacts/persona-editorial-v3/semantic-production
+          PERSONA_PRODUCTION_OUTPUT: artifacts/persona-final-editorial-pass
+        run: node tools/persona-production-carousel-browser-e2e.mjs
+      - name: Upload final editorial pass for author decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-final-editorial-pass-review
+          path: artifacts/persona-final-editorial-pass/
           retention-days: 30
           if-no-files-found: error
       - name: Verify real one-click browser-to-MP4 workflow

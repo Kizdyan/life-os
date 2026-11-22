@@ -16,7 +16,7 @@ import {
 import {buildEditorialExport,buildEditorialReviewExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide,requestEditorialBackground} from './personaEditorialMedia';
 import {FRIDGE_HUM_ID,prepareFridgeHumCarousel,fridgeHumSourceEvidence} from './personaProductionCarousel';
 import {FRIDGE_HUM_V2_ID,isFridgeHumV2,prepareFridgeHumV2,fridgeHumV2Evidence} from './personaEditorialV2';
-import {FRIDGE_HUM_V3_ID,prepareFridgeHumV3,fridgeHumV3Evidence} from './personaEditorialV3';
+import {FRIDGE_HUM_V3_ID,prepareFridgeHumV3,fridgeHumV3Evidence,applyFridgeHumFinalPass,preserveFridgeHumBeforeFinalPass,fridgeHumFinalSnapshotKey} from './personaEditorialV3';
 import PersonaLifeOSBridge from './PersonaLifeOSReview';
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
@@ -358,7 +358,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  async function exportReview(){
   if(!post||busy)return;
   setBusy(true);setError('');
-  try{triggerEditorialDownload(await buildEditorialReviewExport(post,{sourceEvidence:post.id===FRIDGE_HUM_ID?fridgeHumSourceEvidence(post):isFridgeHumV2(post)?fridgeHumV2Evidence(post):post.id===FRIDGE_HUM_V3_ID?fridgeHumV3Evidence(post):undefined}),post.id+'-DRAFT.zip')}
+  try{triggerEditorialDownload(await buildEditorialReviewExport(post,{sourceEvidence:post.id===FRIDGE_HUM_ID?fridgeHumSourceEvidence(post):isFridgeHumV2(post)?fridgeHumV2Evidence(post):post.id===FRIDGE_HUM_V3_ID?fridgeHumV3Evidence(post,localStorage.getItem(fridgeHumFinalSnapshotKey(post))):undefined}),post.id+'-DRAFT.zip')}
   catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  async function openFridgeHum(){
@@ -386,6 +386,15 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onChange(composeEditorialByMeaning(post));
    setError('');setBackgroundMessage('Композиции выбраны по роли текста. Хук из имеющегося факта — редакторское предложение; нужен авторский просмотр. Новые изображения и платные запросы не запускались.');
   }catch(e){setError(e instanceof Error?e.message:'Композиции не применены')}
+ }
+ function applyFinalEditorialPass(){
+  if(!post)return;
+  try{
+   const next=applyFridgeHumFinalPass(post);
+   if(next===post){setBackgroundMessage('Финальная редакторская правка уже применена. Дальше — только авторское решение.');return}
+   preserveFridgeHumBeforeFinalPass(localStorage,post,next);
+   onChange(next);setError('');setBackgroundMessage('Четыре слайда и публичная подпись обновлены; предыдущая редакция сохранена. Шрифты, изображения и композиции не менялись.');
+  }catch(e){setError(e instanceof Error?e.message:'Правка не применена')}
  }
  return <section className="personaEditorialStudio" data-testid="persona-editorial-studio"
   aria-label="Редакция каруселей и фото">
@@ -563,6 +572,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    {post.kind==='carousel'&&<section aria-label="Смысловая композиция">
     <button type="button" data-testid="editorial-compose-by-meaning" disabled={busy} onClick={composeByMeaning}>Подобрать композиции по смыслу</button>
     <p>Persona различает сцену, факт, сопоставление и вывод. Размер пояснений — от 60 px. Факты и фотографии сохраняются; результат требует просмотра.</p>
+   </section>}
+   {post.id===FRIDGE_HUM_V3_ID&&post.compositionPreset==='semantic-editorial-v1'&&<section aria-label="Финальная редакторская правка">
+    <button type="button" data-testid="editorial-apply-final-pass" disabled={busy} onClick={applyFinalEditorialPass}>Применить финальную редакторскую правку</button>
+    <p>Правки слайдов 1, 2, 5, 7 и подписи. Проверка источников привязана к этой копии; художественное решение остаётся за автором.</p>
    </section>}
    <PersonaLifeOSBridge key={post.id} post={post}/>
    <section aria-label="Шаг 1. Утверждение темы">

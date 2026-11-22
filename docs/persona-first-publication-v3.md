@@ -1,5 +1,13 @@
 # Persona first publication — review, not publication
 
+## One final editorial pass after a43a3a2
+
+The author accepted the composition mechanism and requested only copy changes on slides1/2/5/7. The versioned `editorial-patch` record is applied through the existing editor/revision functions; no new carousel ID, renderer, fonts, images or layout definitions. The action refuses a customized base, is idempotent, and verifies a write-once snapshot before replacing the active draft. Its stable snapshot key survives later review revisions; review ZIP source evidence includes the prior draft. Historical fixtures and earlier exported folders remain preserved.
+
+Actual source reading on2026-11-22 rechecked Burwell's notes and Lim's article reproduced on his site. `MATCHES_RECHECKED_COPY` / `sourceCheck:PASS` binds to this exact public copy and source mapping. Later wording/caption/source changes return `NEEDS_RECHECK`. This is separate from the author's SOURCE_PASS gate, which remains UNVERIFIED_AUTHOR. No text, design or publication approval was granted. The public caption contains no provenance, draft or font metadata; those remain in separate evidence files.
+
+The single controlled export is in `artifacts/persona-final-editorial-pass/` in CI. Real browser checks require unchanged PNG bytes for slides3/4/6, seven1080x1350 PNGs, mobile safe areas, actual text contrast>=4.5, exact visible preview/export hashes, preserved snapshot and author flags. The local export passed with minimum contrast5.98. Post-export visual inspection noted a MINOR isolated em dash on slide5; it is disclosed for the author rather than starting another artistic iteration. Final artistic/publication decisions remain pending.
+
 ## Recovery after author rejection of the original V3 layout
 
 The checked-in original V3 fixture is preserved. The author reported good photographs but repetitive layout, small explanation text and a weak hook. The fix is an explicit **Подобрать композиции по смыслу** action in the existing editor, available to normal research drafts as well as V3. It does not create a V4 fixture or a second editor.

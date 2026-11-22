@@ -1,0 +1,31 @@
+{
+  "kind": "editorial-patch",
+  "target": "carousel-fridge-hum-v3",
+  "baseCommit": "a43a3a2e5246ab986e04cee33b97898dfe4592f7",
+  "authorDecision": "Previous semantic production NEEDS_REVISION; this pass awaits author decision",
+  "updates": [
+    {"index": 0, "headline": "Зачем музыке\nгул холодильника?", "body": "60 Гц. «Старикам тут не место»."},
+    {"index": 1, "headline": "На кону —\nне деньги.", "body": "Чигур угрожает хозяину заправки.\nИ предлагает бросить монету."},
+    {"index": 4, "headline": "Обмен звуками —\nдо сведения.", "body": "Ливсей заранее присылал звуковые эффекты.\nБёруэлл — музыкальные тона."},
+    {"index": 6, "headline": "Композитор —\nне солист.", "body": "Общий звук сцены рождается\nв диалоге со звукорежиссёром."}
+  ],
+  "caption": "В сцене с монетой из «Старикам тут не место» Картер Бёруэлл подстроил нарастающий музыкальный гул под частоту холодильника — 60 Гц.\n\nЭто часть общего решения: музыка должна возникать из окружающих звуков, не возвращая зрителю привычную жанровую опору. Перкуссию отвергли, а протяжённые тона оставили.\n\nСкип Ливсей и Бёруэлл заранее обменивались звуковыми эффектами и музыкальными набросками. Музыка и звуковой монтаж складывались в общий замысел ещё до финального сведения.\n\nПрактический вывод: сначала услышать сцену целиком, потом решать, что в ней сыграть.\n\nЧто сильнее держит вас в напряжении — мелодия или едва заметный звук?\n\nИсточник: Картер Бёруэлл и Деннис Лим — https://www.carterburwell.com/projects/ncfom/",
+  "sourceAudit": {
+    "checkedAt": "2026-11-22",
+    "checkedBy": "Codex actual source reading; not author approval",
+    "url": "https://www.carterburwell.com/projects/ncfom/",
+    "access": "Composer's Notes and full Dennis Lim article reproduced on the composer's page; no claim of independent NYT access",
+    "reporting": {"author": "Dennis Lim", "title": "Exploiting Sound, Exploring Silence", "date": "2008-01-06"},
+    "claims": [
+      {"slides": [1, 3], "section": "Sound Design, paragraph beginning Mr. Burwell found", "result": "PASS: swelling hum tuned to refrigerator's 60-hertz frequency"},
+      {"slides": [2], "section": "Same paragraph: Chigurh menacing the service-station owner with a fateful coin flip", "result": "PASS for threat and coin flip; headline is an editorial condensation of the threat, not a new claim about the outcome"},
+      {"slides": [4], "section": "Carter Burwell's Notes, paragraphs 2-3", "result": "PASS: percussion rejected as familiar genre cue, sustained tones and singing bowls chosen"},
+      {"slides": [5], "section": "Notes paragraph 3; Sound Design collaboration paragraphs", "result": "PASS: early exchange of processed sound effects and tone compositions; cooperation before final mix"},
+      {"slides": [6], "section": "Sound Design, Lievsay's safety-net explanation", "result": "PASS: removing musical guidance makes the audience less certain"},
+      {"slides": [7], "section": "Editorial professional inference from documented collaboration", "result": "INTERPRETATION: not a quotation, filmmaker statement or approved first-person author opinion"}
+    ],
+    "captionScope": "Factual paragraphs checked against the same passages; practical conclusion and closing question are editorial interpretation",
+    "authorApprovalGranted": false,
+    "publicationAllowed": false
+  }
+}

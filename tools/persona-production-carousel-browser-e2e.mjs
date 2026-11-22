@@ -35,13 +35,29 @@ try{
   assert.equal(revision,'v3');
   await editor.getByTestId('editorial-compose-by-meaning').click();
  }
+ const finalPass=process.env.PERSONA_PRODUCTION_FINAL_PASS==='1';
+ let previous;
+ if(finalPass){
+  assert.ok(semantic,'Final editorial pass follows the accepted semantic production');
+  previous=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);
+  await editor.getByTestId('editorial-apply-final-pass').click();
+ }
  let before;
  for(let attempt=0;attempt<100&&!before;attempt++){
   before=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);
   if(before&&semantic&&before.compositionPreset!=='semantic-editorial-v1')before=undefined;
+  if(before&&finalPass&&before.revision<=previous.revision)before=undefined;
   if(!before)await new Promise(r=>setTimeout(r,100));
  }
  assert.ok(before,'Missing selected draft '+draftId+'; '+await editor.innerText());
+ if(finalPass){
+  const saved=await page.evaluate(async post=>{const v=await import('/src/personaEditorialV3.ts');return JSON.parse(localStorage.getItem(v.fridgeHumFinalSnapshotKey(post)))},before);
+  assert.deepEqual(saved,previous,'Exact previous editor revision preserved before mutation');
+  for(const index of [2,3,5])assert.deepEqual(before.slides[index],previous.slides[index]);
+  assert.deepEqual(before.slides.map(s=>s.background),previous.slides.map(s=>s.background));
+  assert.equal(before.fontPreset,previous.fontPreset);assert.equal(before.compositionPreset,previous.compositionPreset);
+  await writeFile(join(out,'previous-draft.json'),JSON.stringify(saved,null,2)+'\n');
+ }
  if(semantic){
   assert.equal(before.compositionPreset,'semantic-editorial-v1');
   const plan=await page.evaluate(async post=>{const m=await import('/src/personaEditorialTypography.ts');return post.slides.map((_,i)=>m.semanticEditorialComposition(post,i))},before);
@@ -63,6 +79,17 @@ try{
  }
  const manifest=JSON.parse(files.find(f=>f.name==='review-manifest.json').bytes);
  assert.equal(manifest.publicationAllowed,false);assert.equal(manifest.purpose,'author-review-only');
+ if(finalPass){
+  const evidence=JSON.parse(files.find(f=>f.name==='source-evidence.json').bytes);
+  assert.equal(evidence.status,'MATCHES_RECHECKED_COPY');assert.equal(evidence.sourceCheck,'PASS');
+  assert.deepEqual(evidence.previousRevision,previous);
+  assert.equal(manifest.gates.SOURCE_PASS,'UNVERIFIED_AUTHOR','Machine source audit must not grant author source review');
+  assert.ok(!/provenance|черновик|вёрстк|Literata|Golos/iu.test(files.find(f=>f.name==='caption.txt').bytes.toString('utf8')));
+  if(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT)for(const number of [3,4,6]){
+   const name='slide-0'+number+'.png',old=await readFile(join(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT,name));
+   assert.equal(hash(pngs.find(f=>f.name===name).bytes),hash(old),'Unchanged accepted PNG '+name);
+  }
+ }
  const provenance=JSON.parse(files.find(f=>f.name==='image-provenance.json').bytes);
  assert.equal(new Set(provenance.map(p=>p.sha256)).size,7);
  assert.ok(provenance.every(p=>p.source==='provider-generated'&&p.provider==='codex-imagegen'));
@@ -135,7 +162,8 @@ try{
  assert.ok(mobile.width<=mobile.viewport+2,'Mobile horizontal overflow '+JSON.stringify(mobile));
  await page.screenshot({path:join(out,'mobile-persona-draft.png'),fullPage:true});
  await context.close();
- await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,compositionPreset:before.compositionPreset,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
+ await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,finalEditorialPass:finalPass,previousRevisionPreserved:finalPass?true:undefined,
+  unchangedSlides:finalPass?[3,4,6]:undefined,compositionPreset:before.compositionPreset,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
   authorApprovalsUnchanged:true,publicationBlocked:true,previewMatchesExport:true,typography,provenance:revision==='v1'?'7 actual tool-generated images, imported locally; no Worker generation':'7 preserved V1 illustrations, reframed and relit in Persona; no new generation',
   sha256:pngs.map(p=>({file:p.name,sha256:hash(p.bytes)}))},null,2)+'\n');
  console.log('PERSONA_PRODUCTION_CAROUSEL_PASS: 7 real PNG, contact sheet, source/provenance ZIP, author approvals unchanged');
