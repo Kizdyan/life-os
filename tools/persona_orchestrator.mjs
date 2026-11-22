@@ -10,6 +10,7 @@ import {cachedFfprobe} from './persona-stage-cache.mjs';
 import {coverageGate,approvedCandidates,styleGate,economicsCommand} from './persona-p3-adapter.mjs';
 import {renderApprovedBroll} from './persona-approved-broll.mjs';
 import {proposeIntercuts,applyReviewedZoomFallback} from './persona-intercut-planner.mjs';
+import {WEEKLY_SLOTS} from '../packages/core/src/persona-editorial-calendar.mjs';
 export const STATES = Object.freeze([
   'PREPARING','WAITING_FOR_FOOTAGE','ANALYZING','EDITING','QUALITY_CHECK','AWAITING_APPROVAL','FAILED'
 ]);
@@ -24,6 +25,65 @@ const batchAdapter = fileURLToPath(new URL('./beatsync_adapter.py', import.meta.
 const batchPython = fileURLToPath(new URL(process.platform==='win32' ?
   '../.venv-beats/Scripts/python.exe' : '../.venv-beats/bin/python', import.meta.url));
 function fail(message){throw new Error('ProductionJob: '+message)}
+const productionStages=new Set(['local-media','research','images']);
+const safeRelative=p=>typeof p==='string'&&p.length<=300&&p.startsWith('output/')&&p.split('/').every(x=>/^[\w.-]+$/.test(x)&&x!=='.'&&x!=='..');
+const isAlive=pid=>{try{process.kill(pid,0);return true}catch(error){return error.code!=='ESRCH'}};
+function productionPlan(input){
+  if(!input||!['reel','carousel','photo'].includes(input.format)||typeof input.contentId!=='string'||
+     !/^[\w:-]{1,120}$/.test(input.contentId))fail('Invalid scheduled content ID/format');
+  const due=Date.parse(input.productionAt),publication=Date.parse(input.publicationAt);
+  if(!Number.isFinite(due)||!Number.isFinite(publication)||(publication-due)/86400000<7||
+     (publication-due)/86400000>14)fail('Production buffer must be 7–14 days');
+  const date=new Date(publication).toISOString().slice(0,10);
+  if(input.slotId!==`persona:${date}:${input.format}`||
+     WEEKLY_SLOTS.find(x=>x.format===input.format)?.weekday!==new Date(publication).getUTCDay())fail('Invalid editorial calendar slot');
+  const b=input.budget;
+  if(!b||b.paidCalls!==0||!Number.isInteger(b.maxAttempts)||b.maxAttempts<1||b.maxAttempts>2||
+     !Number.isSafeInteger(b.maxInputBytes)||b.maxInputBytes<1||b.maxInputBytes>500*1024*1024||
+     !Number.isInteger(b.maxStageMs)||b.maxStageMs<1000||b.maxStageMs>120000)fail('Invalid zero-paid production resource budget');
+  if(!Array.isArray(input.stages)||!input.stages.length||input.stages.length>3||
+     new Set(input.stages).size!==input.stages.length||input.stages.some(s=>!productionStages.has(s)))fail('Invalid production stages');
+  if(!Array.isArray(input.sources)||input.sources.length>12||input.sources.some(s=>!s||
+     !/^[\w.-]{1,180}$/.test(s.name)||s.name.startsWith('.')||!(/\.(mp4|mov|m4v|mkv|webm|png|jpe?g)$/i.test(s.name))||
+     !/^[a-f0-9]{64}$/.test(s.sha256)||!Number.isSafeInteger(s.bytes)||s.bytes<1)||
+     new Set(input.sources.map(s=>s.name)).size!==input.sources.length||
+     input.sources.reduce((n,s)=>n+s.bytes,0)>b.maxInputBytes)fail('Invalid scheduled input sources');
+  return {slotId:input.slotId,contentId:input.contentId,format:input.format,
+    productionAt:new Date(due).toISOString(),publicationAt:new Date(publication).toISOString(),
+    stages:[...input.stages],sources:input.sources.map(({name,sha256,bytes})=>({name,sha256,bytes})),budget:{...b,paidCalls:0}};
+}
+async function verifyScheduledArtifact(directory,artifact){
+  if(!safeRelative(artifact?.path)||!/^[a-f0-9]{64}$/.test(artifact?.sha256))fail('Invalid production receipt');
+  let current=directory;
+  for(const part of artifact.path.split('/')){current=join(current,part);if((await lstat(current)).isSymbolicLink())fail('Production receipt symlink refused')}
+  if(!(await lstat(current)).isFile()||await fingerprint(current)!==artifact.sha256)fail('Production receipt changed');
+}
+export async function lockProductionSchedule(path){
+  const metadata=JSON.stringify({kind:'persona-production-schedule-lock',pid:process.pid,token:randomUUID()});
+  const recoveryPath=path+'.recovery';let handle;
+  try{await lstat(recoveryPath);fail('Job locked by mutex recovery; retained for inspection')}
+  catch(error){if(error.code!=='ENOENT')throw error}
+  try{handle=await open(path,'wx')}
+  catch(error){
+    if(error.code!=='EEXIST')throw error;
+    // A second guard serializes stale-lock recovery. Unknown/legacy locks are
+    // never stolen; a crash inside this tiny recovery window requires inspection.
+    let recovery;
+    try{recovery=await open(recoveryPath,'wx')}catch{fail('Job locked by another recovery')}
+    try{
+      await recovery.writeFile(metadata);
+      const raw=await readFile(path,'utf8');let owner;
+      try{owner=JSON.parse(raw)}catch{fail('Job locked by unknown or legacy owner')}
+      if(owner.kind!=='persona-production-schedule-lock'||!Number.isSafeInteger(owner.pid)||owner.pid<1||
+         typeof owner.token!=='string'||!owner.token||isAlive(owner.pid))fail('Job locked by live or unknown owner');
+      if(await readFile(path,'utf8')!==raw)fail('Job lock changed during recovery');
+      await unlink(path);
+      try{handle=await open(path,'wx')}catch{fail('Job lock changed before recovery claim')}
+    }finally{await recovery.close();await unlink(recoveryPath)}
+  }
+  try{await handle.writeFile(metadata);return handle}
+  catch(error){await handle.close();await unlink(path).catch(()=>{});throw error}
+}
 function safeDir(p){if(typeof p!=='string'||!p.trim()) fail('Job path required');return resolve(p)}
 function validState(s){return STATES.includes(s)}
 function validFileName(n){return typeof n==='string' && n===basename(n) && !/[\\/\x00-\x1f:]/.test(n) && VIDEO_EXT.has(extname(n).toLowerCase()) && n.length<=240 && !n.startsWith('.');}
@@ -92,12 +152,95 @@ export class ProductionJob {
        (data.contentType!==undefined&&!['video','photo-carousel','photo-slideshow'].includes(data.contentType))||
        (data.strategy!==undefined&&!isPersonaStrategy(data.strategy))||data.version!==1||!validState(data.status)||!Number.isSafeInteger(data.revision)||
        !Array.isArray(data.history)||!Array.isArray(data.assets)||typeof data.id!=='string')fail('Corrupt job state');
+    if(data.productionSchedule!==undefined){
+      const q=data.productionSchedule;
+      if(q?.version!==1||q.publicationApproved!==false||q.distributionAllowed!==false||
+         !Array.isArray(q.stages)||q.stages.some(s=>!productionStages.has(s?.name)||
+         !['pending','running','completed','blocked','exhausted','retry_wait'].includes(s.status)||
+         !Number.isInteger(s.attempts)||s.attempts<0||s.attempts>2))fail('Corrupt production schedule');
+      productionPlan({...q,stages:q.stages.map(s=>s.name)});
+    }
     return data;
+  }
+  /** Schedule/checkpoints share the existing job.json lock and lifecycle authority. */
+  async updateProductionSchedule(mutate){
+    const lock=this.path+'.lock',handle=await lockProductionSchedule(lock);
+    let temp;
+    try{
+      const data=await this.read(),next=await mutate(structuredClone(data));
+      if(!next)return data;
+      next.revision=data.revision+1;next.updatedAt=new Date().toISOString();
+      temp=this.path+'.'+randomUUID()+'.tmp';
+      await writeFile(temp,JSON.stringify(next,null,2)+'\n',{flag:'wx'});await rename(temp,this.path);temp=null;
+      return next;
+    }finally{if(temp)await unlink(temp).catch(()=>{});await handle.close();await unlink(lock)}
+  }
+  async scheduleProduction(input){
+    const plan=productionPlan(input),planSha256=createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+    for(const source of plan.sources){
+      const directory=join(this.directory,'input'),path=join(directory,source.name),info=await lstat(path);
+      if((await lstat(directory)).isSymbolicLink()||info.isSymbolicLink()||!info.isFile()||
+         info.size!==source.bytes||await fingerprint(path)!==source.sha256)fail('Scheduled original does not verify');
+    }
+    return this.updateProductionSchedule(data=>{
+      if(data.productionSchedule){if(data.productionSchedule.planSha256!==planSha256)fail('Refuse overwrite with different production schedule');return null}
+      if(!['PREPARING','WAITING_FOR_FOOTAGE'].includes(data.status))fail('Schedule requires an unrendered existing job');
+      data.productionSchedule={...plan,version:1,planSha256,publicationApproved:false,distributionAllowed:false,
+        stages:plan.stages.map(name=>({name,status:'pending',attempts:0,artifacts:[]})),events:[]};
+      return data;
+    });
+  }
+  async verifyProductionReceipts(){
+    const data=await this.read();
+    for(const stage of data.productionSchedule?.stages??[])if(stage.status==='completed'){
+      if(!stage.artifacts?.length)fail('Missing production receipt');
+      for(const artifact of stage.artifacts)await verifyScheduledArtifact(this.directory,artifact);
+    }
+    return data;
+  }
+  async claimProductionStage({owner,now=new Date().toISOString()}={}){
+    if(typeof owner!=='string'||!/^[\w-]{1,80}$/.test(owner)||!Number.isFinite(Date.parse(now)))fail('Invalid production claim');
+    let claim=null;
+    await this.updateProductionSchedule(async data=>{
+      const q=data.productionSchedule;if(!q||data.status==='FAILED'||Date.parse(now)<Date.parse(q.productionAt))return null;
+      for(const s of q.stages)if(s.status==='completed')for(const a of s.artifacts)await verifyScheduledArtifact(this.directory,a);
+      const running=q.stages.find(s=>s.status==='running');
+      if(running){
+        if(!running.lease||isAlive(running.lease.pid))return null;
+        running.status=running.attempts>=q.budget.maxAttempts?'exhausted':'retry_wait';
+        running.error='Previous Worker stopped; retained attempt artifacts';running.nextAttemptAt=now;delete running.lease;
+        q.events.push({stage:running.name,event:'dead-owner-recovery',at:now});
+      }
+      const s=q.stages.find(s=>['pending','retry_wait'].includes(s.status)&&s.attempts<q.budget.maxAttempts&&
+        (!s.nextAttemptAt||Date.parse(now)>=Date.parse(s.nextAttemptAt)));
+      if(s){
+        const token=randomUUID();s.status='running';s.attempts++;
+        s.lease={owner,pid:process.pid,token,startedAt:now,expiresAt:new Date(Date.parse(now)+q.budget.maxStageMs+30000).toISOString()};
+        claim={stage:s.name,attempt:s.attempts,token,schedule:structuredClone(q)};
+        q.events.push({stage:s.name,event:'claimed',attempt:s.attempts,at:now});
+      }
+      return running||s?data:null;
+    });return claim;
+  }
+  async settleProductionStage({token,artifacts,blocked,error,now=new Date().toISOString()}={}){
+    if(typeof token!=='string'||!Number.isFinite(Date.parse(now)))fail('Invalid production settlement');
+    return this.updateProductionSchedule(async data=>{
+      const q=data.productionSchedule,s=q?.stages.find(s=>s.status==='running'&&s.lease?.token===token);
+      if(!s)fail('Production lease changed');
+      if(blocked){s.status='blocked';s.attempts--;s.error=String(blocked).slice(0,500)}
+      else if(error){s.status=s.attempts>=q.budget.maxAttempts?'exhausted':'retry_wait';
+        s.error=String(error).slice(0,500);s.nextAttemptAt=new Date(Date.parse(now)+30000).toISOString()}
+      else{
+        if(!Array.isArray(artifacts)||!artifacts.length||artifacts.length>20)fail('Verified artifacts required');
+        for(const a of artifacts)await verifyScheduledArtifact(this.directory,a);
+        s.status='completed';s.artifacts=artifacts.map(({path,sha256})=>({path,sha256}));delete s.error;
+      }
+      delete s.lease;q.events.push({stage:s.name,event:s.status,at:now});return data;
+    });
   }
   async transition(to,{reason='',asset=null,batchToken=null,batch=null}={}){
     if(!validState(to))fail('Unknown stage '+to);
-    const lock=this.path+'.lock';let handle;
-    try{handle=await open(lock,'wx');}catch(e){if(e.code==='EEXIST')fail('Job locked by another worker; investigate stale lock before recovery');throw e}
+    const lock=this.path+'.lock',handle=await lockProductionSchedule(lock);
     try{
       const owner=await readFile(this.path+'.batch.lock','utf8').catch(error=>{
         if(error.code!=='ENOENT')throw error;

@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
 import {createWriteStream,createReadStream} from 'node:fs';
-import {access,appendFile,mkdir,readFile,rename,rm,stat,writeFile} from 'node:fs/promises';
+import {access,appendFile,mkdir,readFile,readdir,lstat,rename,rm,stat,writeFile} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {join,resolve,basename,extname,dirname} from 'node:path';
@@ -31,8 +31,10 @@ import {draftHookLines,inspectHookVideo,renderHookVariants} from './persona-hook
 import {personaMediaPaths} from './persona-media-paths.mjs';
 import {parseLearnedRules} from './persona-internet-learner.mjs';
 import {createPersonaQuickRenderService,quickRenderRoot} from './persona-quick-render.mjs';
+import {inspectPhoto,renderPhotoCarousel} from './persona-quick-platforms.mjs';
+import {renderPersonaMedia} from './persona-media-engine.mjs';
 import {seedCarousels} from './seed_carousels.mjs';
-import {ProductionJob} from './persona_orchestrator.mjs';
+import {ProductionJob,lockProductionSchedule} from './persona_orchestrator.mjs';
 import {generateCarouselBackground,carouselBackgroundStatus} from './persona-carousel-backgrounds.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
@@ -55,7 +57,9 @@ export function parseWorkerArgs(args){
   musicLut:personaMediaPaths().humbleLut,
   whisperCli:value('--whisper-cli',false)||process.env.PERSONA_MEDIA_WHISPER_CLI||null,
   whisperModel:value('--whisper-model',false)||process.env.PERSONA_MEDIA_WHISPER_MODEL||null,
-  ollamaModel:value('--ollama-model',false)||process.env.PERSONA_MEDIA_OLLAMA_MODEL||'qwen3:4b-instruct'};
+  ollamaModel:value('--ollama-model',false)||process.env.PERSONA_MEDIA_OLLAMA_MODEL||'qwen3:4b-instruct',
+  ...(process.env.PERSONA_PRODUCTION_QUEUE_ENABLED==='1'?{productionQueue:{enabled:true,
+    root:process.env.PERSONA_PRODUCTION_QUEUE_ROOT,intervalMs:60000,maxJobsPerTick:3}}:{})};
 }
 function validBrief(value){return value&&typeof value==='object'&&!Array.isArray(value)&&(value.preEditPlanNeedsReview===undefined||value.preEditPlanNeedsReview===false)&&value.version===1&&value.sourceFormat==='reel'&&Array.isArray(value.script)&&value.script.length>=2&&value.script.length<=30&&Array.isArray(value.shots)&&value.shots.length===value.script.length&&value.script.every((b,i)=>b&&b.order===i+1&&typeof b.line==='string'&&b.line.trim())&&value.shots.every((s,i)=>s&&s.order===i+1)}
 async function json(req,limit=512*1024){let bytes=0,parts=[];for await(const part of req){bytes+=part.length;if(bytes>limit)fail('request too large');parts.push(part)}try{return JSON.parse(Buffer.concat(parts).toString('utf8'))}catch{fail('invalid JSON')}}
@@ -76,6 +80,29 @@ async function health(config){
  return {ok:unavailable.length===0,components:{ffmpeg,whisper,ollama},reason:unavailable.length?unavailable.join('; ')+' unavailable':null};
 }
 function safeFile(name){return typeof name==='string'&&basename(name)===name&&takeName.test(name)}
+/** Queue-owned direct FFmpeg/FFprobe only; HTTP input never supplies commands.
+ * The existing media engine receives this runner directly, without a Node wrapper. */
+export function runScheduledLocalProcess(command,args,{env=process.env,timeoutMs=60000,maxStdout=500000}={}){
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>120000||!Number.isInteger(maxStdout)||maxStdout<1||maxStdout>2000000)
+  return Promise.reject(Error('Invalid scheduled subprocess resource budget'));
+ return new Promise((ok,no)=>{
+  const child=spawn(command,args,{env,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  const chunks=[];let size=0,stderr='',problem=null,finished=false;
+  const finish=(error,value)=>{if(finished)return;finished=true;clearTimeout(timer);error?no(error):ok(value)};
+  const stop=error=>{
+   if(problem)return;problem=error;
+   if(!Number.isSafeInteger(child.pid)||child.pid<1)return finish(error);
+   child.kill();
+  };
+  const timer=setTimeout(()=>stop(Error('Scheduled local subprocess timed out; direct processor terminated')),timeoutMs);
+  child.stdout.on('data',chunk=>{size+=chunk.length;if(size>maxStdout)stop(Error('Scheduled subprocess output budget exceeded'));else chunks.push(chunk)});
+  child.stderr.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-1500)});
+  child.once('error',error=>finish(Error('Scheduled local processor unavailable: '+error.code)));
+  child.once('close',code=>{
+   finish(problem??(code===0?null:Error('Scheduled local processor failed: '+stderr)),Buffer.concat(chunks));
+  });
+ });
+}
 function originalName(header,fallback){
  if(header===undefined)return fallback;
  if(typeof header!=='string'||header.length>4096)fail('invalid original filename');
@@ -169,6 +196,152 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
  const sessions=new Map();
  const token=randomUUID();
  const quickRender=createPersonaQuickRenderService(config);
+ // Opt-in scheduling extends this Worker; job.json remains the only durable authority.
+ const queueConfig=config.productionQueue;
+ if(queueConfig?.enabled===true&&(!queueConfig.root||typeof queueConfig.root!=='string'||
+    !Number.isInteger(queueConfig.intervalMs??60000)||(queueConfig.intervalMs??60000)<1000||
+    !Number.isInteger(queueConfig.maxJobsPerTick??3)||(queueConfig.maxJobsPerTick??3)<1||
+    (queueConfig.maxJobsPerTick??3)>3))fail('Invalid opt-in production queue configuration');
+ const queueRoot=queueConfig?.enabled===true?resolve(queueConfig.root):null;
+ const queueOwner=randomUUID();let queueBusy=false,queueStopped=false,queueTimer=null,queueError=null,admittedManualRequests=0;
+ async function scheduledJobs(){
+  if(!queueRoot)fail('Production queue is disabled; opt in with an existing job root');
+  const info=await lstat(queueRoot);if(!info.isDirectory()||info.isSymbolicLink())fail('Queue root must be an existing real directory');
+  const entries=await readdir(queueRoot,{withFileTypes:true});
+  if(entries.length>1000)fail('Queue root exceeds bounded inventory limit');
+  const jobs=[];
+  for(const entry of entries.sort((a,b)=>a.name.localeCompare(b.name))){
+   if(!entry.isDirectory()||entry.isSymbolicLink())continue;
+   const job=new ProductionJob(join(queueRoot,entry.name));
+   if(!await exists(job.path))continue;
+   // Corrupt states surface as per-job errors; never silently reinitialize user work.
+   try{const state=await job.read();jobs.push({job,state,operationId:entry.name.replace(/^quick-/,''),directoryName:entry.name})}
+   catch(error){jobs.push({job,error:String(error.message).slice(0,300),directoryName:entry.name})}
+   if(jobs.length>100)fail('Queue supports at most 100 existing production jobs per root');
+  }
+  return jobs;
+ }
+ async function queueView(){
+  const jobs=await Promise.all((await scheduledJobs()).filter(item=>item.state?.productionSchedule||item.error).map(async item=>{
+   if(item.error)return {directoryName:item.directoryName,error:item.error,readyForReview:false};
+   const q=item.state.productionSchedule;
+   let receiptError=null;
+   try{await item.job.verifyProductionReceipts()}catch(error){receiptError=String(error.message).slice(0,300)}
+   return {id:item.state.id,operationId:item.operationId,contentId:q.contentId,slotId:q.slotId,format:q.format,
+    productionAt:q.productionAt,publicationAt:q.publicationAt,productionStatus:item.state.status,
+    readyForReview:!receiptError&&item.state.status==='AWAITING_APPROVAL'&&q.stages.every(s=>s.status==='completed'),
+    ...(receiptError?{error:receiptError}:{}),
+    stages:q.stages,publicationApproved:false,distributionAllowed:false,budget:q.budget};
+  }));
+  return {enabled:true,workerOnline:true,runsOnlyWhileWorkerIsRunning:true,busy:queueBusy,admittedManualRequests,lastError:queueError,jobs};
+ }
+ async function checkedScheduledSources(job,q){
+  const input=join(job.directory,'input');
+  if((await lstat(job.directory)).isSymbolicLink()||(await lstat(input)).isSymbolicLink())fail('Scheduled source directory symlink refused');
+  const sources=[];let bytes=0;
+  for(const source of q.sources){
+   const path=join(input,source.name),info=await lstat(path);
+   if(info.isSymbolicLink()||!info.isFile()||info.size!==source.bytes||await fileHash(path)!==source.sha256)fail('Scheduled original changed since intake');
+   bytes+=info.size;if(bytes>q.budget.maxInputBytes)fail('Scheduled input resource budget exceeded');sources.push(path);
+  }
+  return sources;
+ }
+ async function synchronizeScheduledReview(job){
+  const state=await job.verifyProductionReceipts(),q=state.productionSchedule;
+  if(state.status==='QUALITY_CHECK'&&q?.stages.every(s=>s.status==='completed'))
+   await job.transition('AWAITING_APPROVAL',{reason:'Scheduled local artifacts verified; awaiting author review, no publication authorized'});
+ }
+ async function runScheduledMedia(job,claim){
+  const q=claim.schedule,sources=await checkedScheduledSources(job,q);
+  if(!sources.length)return {blocked:'MEDIA_NOT_SELECTED: retain job until local footage/photos are explicitly staged'};
+  if((q.format==='reel'&&(sources.length!==1||!sources.every(p=>/\.(mp4|mov|m4v|mkv|webm)$/i.test(p))))||
+     (q.format!=='reel'&&!sources.every(p=>/\.(png|jpe?g)$/i.test(p)))||
+     (q.format==='photo'&&sources.length!==1))return {blocked:'MEDIA_FORMAT_OR_COVERAGE: local stage needs one Reel take, photos for carousel, or one photo'};
+  const started=Date.now(),deadline=started+q.budget.maxStageMs;
+  const env={...envPath(config.ffmpegDir),OPENAI_API_KEY:'',PERPLEXITY_API_KEY:'',OPENROUTER_API_KEY:''};
+  const boundedRun=(command,args,options={})=>{
+   const remaining=deadline-Date.now();if(remaining<1)throw Error('Scheduled stage wall-time budget exhausted');
+   return runScheduledLocalProcess(command,args,{...options,env,timeoutMs:Math.min(options.timeoutMs??q.budget.maxStageMs,remaining),maxStdout:Math.min(options.maxStdout??500000,2000000)});
+  };
+  const bin=name=>config.ffmpegDir?join(config.ffmpegDir,name+(process.platform==='win32'?'.exe':'')):name;
+  const attemptName='scheduled-local-media-'+claim.attempt+'-'+claim.token;
+  if((await lstat(join(job.directory,'output'))).isSymbolicLink())fail('Scheduled output directory symlink refused');
+  const output=join(job.directory,'output',attemptName);await mkdir(output);
+  const mediaConfig={run:boundedRun,ffmpegDir:config.ffmpegDir,env};
+  let durationSec=0,probe=null;
+  if(q.format==='reel'){
+   probe=JSON.parse((await boundedRun(bin('ffprobe'),['-v','error','-show_entries','format=duration:stream=codec_type,width,height,color_transfer','-of','json',sources[0]])).toString());
+   durationSec=Number(probe.format?.duration);
+   if(!Number.isFinite(durationSec)||durationSec<.25||durationSec>900||!probe.streams?.some(s=>s.codec_type==='video'))return {blocked:'MEDIA_DURATION_OR_VIDEO: supported input is 0.25–900 seconds'};
+   if(probe.streams.some(s=>['smpte2084','arib-std-b67'].includes(s.color_transfer)))return {blocked:'HDR_REQUIRES_REVIEW: original preserved'};
+  }else for(const source of sources)await inspectPhoto(source,mediaConfig);
+  let state=await job.read();
+  if(state.status==='PREPARING')await job.markReady();
+  state=await job.read();
+  if(state.status==='WAITING_FOR_FOOTAGE')await job.transition('ANALYZING',{reason:'Scheduled staged source SHA-256 and actual media inspection verified',
+   asset:{name:q.sources[0].name,sha256:q.sources[0].sha256,bytes:q.sources[0].bytes,durationSec}});
+  let result,files;
+  if(q.format==='reel'){
+   const path=join(output,'review.mp4');
+   // Existing local engine, no model fallback and no paid calls. A technical derivative,
+   // not a claim of speech recognition, artistic editing or final aspect approval.
+   result=await renderPersonaMedia(sources[0],path,0,durationSec,{runImpl:(name,args)=>boundedRun(bin(name),args)});
+   if(result.verification?.passed!==true||result.input?.sha256!==q.sources[0].sha256||result.output?.sha256!==await fileHash(path))fail('Scheduled real render receipt did not verify');
+   await boundedRun(bin('ffmpeg'),['-hide_banner','-nostdin','-v','error','-xerror','-i',path,'-map','0:v:0','-map','0:a?','-f','null','-']);
+   files=['review.mp4','review.mp4.persona.json'];
+  }else{
+   result=await renderPhotoCarousel({photos:sources,outputDir:output,textAccents:false,config:mediaConfig});
+   for(const photo of result.photos){const actual=await inspectPhoto(join(output,photo.file),mediaConfig);if(actual.width!==photo.width||actual.height!==photo.height)fail('Scheduled photo dimensions do not verify')}
+   files=[...result.photos.map(p=>p.file),result.package.file];
+  }
+  await checkedScheduledSources(job,q);
+  const report={version:1,kind:'scheduled-local-media',format:q.format,contentId:q.contentId,slotId:q.slotId,
+   operation:'existing-local-render-and-technical-inspection',startedAt:new Date(started).toISOString(),elapsedMs:Date.now()-started,
+   sources:q.sources,result,paidCalls:0,publicationApproved:false,distributionAllowed:false,
+   limitations:q.format==='reel'?['No transcript or artistic edit; complete selected take preserved','Author must review speech, framing, sound and creative quality']:['Uses selected archive images; no new image generation or editorial text approval']};
+  await writeFile(join(output,'STAGE-RESULT.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});files.push('STAGE-RESULT.json');
+  state=await job.read();if(state.status==='ANALYZING')await job.transition('EDITING',{reason:'Existing local renderer produced real unpublished media'});
+  state=await job.read();if(state.status==='EDITING')await job.transition('QUALITY_CHECK',{reason:'Actual output media, dimensions/decode and original hashes checked'});
+  return {artifacts:await Promise.all(files.map(async name=>({path:'output/'+attemptName+'/'+name,sha256:await fileHash(join(output,name))})))};
+ }
+ async function tickProductionQueue(){
+  if(!queueRoot)fail('Production queue is disabled');
+  if(queueBusy||queueStopped||admittedManualRequests>0)return {executed:0,reason:'WORKER_BUSY_OR_STOPPED'};
+  queueBusy=true;let executed=0;const outcomes=[];
+  try{
+   if(ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||
+      [...sessions.values()].some(s=>s.state==='running')||quickRender.isBusy())return {executed:0,reason:'WORKER_BUSY'};
+   for(const item of await scheduledJobs()){
+    if(queueStopped||executed>=(queueConfig.maxJobsPerTick??3))break;
+    if(item.error||!item.state.productionSchedule)continue;
+    try{
+     await synchronizeScheduledReview(item.job);
+     const claim=await item.job.claimProductionStage({owner:queueOwner});if(!claim)continue;
+     executed++;
+     try{
+      const result=claim.stage==='local-media'?await runScheduledMedia(item.job,claim):
+       {blocked:claim.stage==='images'?'IMAGE_PROVIDER_UNAVAILABLE: no authorized zero-cost image generator':'RESEARCH_PROVIDER_UNAVAILABLE: paid consent absent; URL alone is not fact verification'};
+      await item.job.settleProductionStage({token:claim.token,...result});outcomes.push({id:item.state.id,stage:claim.stage,status:result.blocked?'blocked':'completed'});
+      await synchronizeScheduledReview(item.job);
+     }catch(error){await item.job.settleProductionStage({token:claim.token,error:String(error.message).slice(0,500)});outcomes.push({id:item.state.id,stage:claim.stage,status:'retry_or_exhausted'})}
+    }catch(error){outcomes.push({id:item.state.id,status:'retained',reason:String(error.message).slice(0,300)})}
+   }
+   queueError=null;return {executed,outcomes,paidCalls:0,publicationApproved:false};
+  }catch(error){queueError=String(error.message).slice(0,500);throw error}
+  finally{queueBusy=false}
+ }
+ async function scheduleExistingProduction(body){
+  if(!body||typeof body.jobId!=='string'||Object.keys(body).some(k=>!['jobId','schedule'].includes(k)))fail('Existing job ID and schedule only; paths/commands are forbidden');
+  const lock=join(queueRoot,'.production-schedule.lock');let handle;
+  handle=await lockProductionSchedule(lock);
+  try{
+   const jobs=await scheduledJobs(),item=jobs.find(item=>item.state?.id===body.jobId);
+   if(!item)fail('Existing canonical job not found in configured Worker root');
+   if(jobs.some(other=>other.state?.id!==body.jobId&&other.state?.productionSchedule?.slotId===body.schedule?.slotId))fail('Calendar slot already bound to another existing job');
+   const scheduled=await item.job.scheduleProduction(body.schedule);
+   return {id:scheduled.id,operationId:item.operationId,slotId:scheduled.productionSchedule.slotId,publicationApproved:false};
+  }finally{await handle.close();await import('node:fs/promises').then(({unlink})=>unlink(lock))}
+ }
  // Read only operation metadata from worker-session.json; job.json is the state authority.
  async function restoreSession(id){
   if(!/^[a-f0-9-]{36}$/.test(id))return null;
@@ -310,6 +483,21 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
    const videoToken=req.method==='GET'&&((url.pathname.endsWith('/video')||url.pathname.endsWith('/video-full'))||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/export\/[a-z0-9-]+$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/quality-(?:report|contact-sheet)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(url.pathname.startsWith('/production-queue')){
+    if(!queueRoot)fail('Production queue is disabled; existing manual tools remain available');
+    if(req.method==='GET'&&url.pathname==='/production-queue'){respond(res,200,await queueView());return}
+    if(req.method==='POST'&&url.pathname==='/production-queue/schedule'){respond(res,200,await scheduleExistingProduction(await json(req,12000)));return}
+    if(req.method==='POST'&&url.pathname==='/production-queue/tick'){await json(req,100);respond(res,200,await tickProductionQueue());return}
+    fail('Unknown production queue operation');
+   }
+   if(queueBusy&&['POST','PUT','DELETE'].includes(req.method))fail('Scheduled local media stage is using Worker resources; retry after completion');
+   // Synchronous admission precedes the first awaited manual handler. The queue
+   // cannot enter while a /run request is awaiting intake/get/transition.
+   if(['POST','PUT','DELETE'].includes(req.method)){
+    admittedManualRequests++;let released=false;
+    const release=()=>{if(!released){released=true;admittedManualRequests--}};
+    res.once('finish',release);res.once('close',release);
+   }
    if(await quickRender.handle(req,res,url))return;
    if(req.method==='GET'&&url.pathname==='/carousel-background/status'){
     respond(res,200,carouselBackgroundStatus(config.apiEnv??process.env));return;
@@ -721,9 +909,13 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    respond(res,404,{error:'unknown_route'});
   }catch(error){respond(res,400,{error:String(error.message||error).slice(0,3000)})}
  });
+ server.once('close',()=>{queueStopped=true;if(queueTimer)clearInterval(queueTimer)});
  return {server,token,config,start:()=>new Promise((resolveStart,reject)=>{
   server.once('error',reject);
-  server.listen(config.port,host,()=>{server.off('error',reject);resolveStart(server.address().port);});
+  server.listen(config.port,host,()=>{server.off('error',reject);
+   if(queueRoot){queueTimer=setInterval(()=>tickProductionQueue().catch(()=>{}),queueConfig.intervalMs??60000).unref();
+    tickProductionQueue().catch(()=>{});}
+   resolveStart(server.address().port);});
  })};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){try{if(await exists(resolve('.env.local'))){if(typeof process.loadEnvFile!=='function')fail('Use Node22+ to load .env.local');process.loadEnvFile(resolve('.env.local'));}const worker=createPersonaMediaWorker();
