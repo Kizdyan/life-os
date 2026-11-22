@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { backendMode, today, outcome } from './api';
-import { cacheToday, cachedToday, flush } from './offline';
-import { enqueueOutcome } from './outbox';
+import { cacheToday, cachedToday, flush, submitQueuedOutcome } from './offline';
 import { deleteLocalTask } from './localRuntime';
 import { planLocalDate } from './planner';
 import ErikaSheet from './ErikaSheet';
@@ -98,8 +97,13 @@ export default function App() {
     setBusyId(item.id);
     setError('');
     try {
-      if (backendMode === 'supabase' && !navigator.onLine) {
-        enqueueOutcome({itemId: item.id, command, createdAt: new Date().toISOString()}, item);
+      if (backendMode === 'supabase') {
+        const state = await submitQueuedOutcome(item, command, { online: navigator.onLine, items });
+        if (state === 'CONFIRMED') {
+          await reload(viewDateRef.current);
+          setNotice('Изменение сохранено.');
+          return;
+        }
         const status = command === 'complete' ? 'completed' :
           item.carry_forward ? 'missed_time' : 'not_completed';
         const pending = items.map(x => x.id === item.id ? {...x, status} as Item : x);

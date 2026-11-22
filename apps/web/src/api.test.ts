@@ -32,3 +32,13 @@ it('rejects a response that does not acknowledge the requested item and outcome'
   vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ item_id: 'other', status: 'completed' })));
   await expect(outcome(task, 'complete')).rejects.toThrow();
 });
+it('reuses one carry successor across not_complete, complete, not_complete operations', async () => {
+  const { outcome } = await import('./api');
+  await outcome(task, 'not_complete', { idempotencyKey: 'operation-a', createdAt: '2026-11-20T10:00:00Z' });
+  await outcome(task, 'complete', { idempotencyKey: 'operation-b', createdAt: '2026-11-20T10:01:00Z' });
+  await outcome(task, 'not_complete', { idempotencyKey: 'operation-c', createdAt: '2026-11-20T10:02:00Z' });
+  expect(bodies[2].p_successor_id).toBe(bodies[0].p_successor_id);
+  expect(bodies[1].p_successor_id).toBeNull();
+  await outcome({ ...task, planned_start: '2026-11-22T09:00:00+03:00' }, 'not_complete');
+  expect(bodies[3].p_successor_id).not.toBe(bodies[0].p_successor_id);
+});
