@@ -1,5 +1,11 @@
 # Persona first publication — review, not publication
 
+## Conditional acceptance: slide5 dash only
+
+After2e1a9d5 the independent art decision was CONDITIONAL_ACCEPT, pending one typography fix and personal author approval. Only the explicit heading break moved from `Обмен звуками — / до сведения.` to `Обмен звуками / — до сведения.`. All words, other slides, caption, photographs, colors, fonts and layouts are unchanged. The existing editor action can safely upgrade the saved2e1a9d5 draft, preserves that exact prior draft under a new base-commit snapshot key, and grants no author PASS.
+
+The mobile browser regression now verifies six unchanged PNG hashes (1/2/3/4/6/7), unchanged caption, a non-isolated dash on5, exact preview/export bytes, no clipping, and a dedicated phone screenshot of slide5. Local production uses the actual saved prior draft and PNGs; CI uses an explicitly constructed legacy line-break fixture through the same revision functions. Prior artifacts remain preserved. This is a typographic repair, not a new artistic edition.
+
 ## One final editorial pass after a43a3a2
 
 The author accepted the composition mechanism and requested only copy changes on slides1/2/5/7. The versioned `editorial-patch` record is applied through the existing editor/revision functions; no new carousel ID, renderer, fonts, images or layout definitions. The action refuses a customized base, is idempotent, and verifies a write-once snapshot before replacing the active draft. Its stable snapshot key survives later review revisions; review ZIP source evidence includes the prior draft. Historical fixtures and earlier exported folders remain preserved.

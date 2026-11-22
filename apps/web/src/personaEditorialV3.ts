@@ -23,6 +23,10 @@ function finalCopy(post:EditorialPost,now:string){
 export function applyFridgeHumFinalPass(post:EditorialPost,now=new Date().toISOString()){
  const base=composeEditorialByMeaning(createFridgeHumV3()),expected=finalCopy(base,'2026-11-22T00:00:00Z');
  if(signature(post)===signature(expected))return post;
+ const legacy=reviseEditorialPost(expected,{slides:expected.slides.map((s,i)=>i===4?{...s,headline:'Обмен звуками —\nдо сведения.'}:s)},'2026-11-22T00:00:00Z');
+ if(post.id===FRIDGE_HUM_V3_ID&&post.compositionPreset==='semantic-editorial-v1'&&
+  !post.approvals.content&&!post.approvals.design&&signature(post)===signature(legacy))
+  return reviseEditorialPost(post,{slides:post.slides.map((s,i)=>i===4?{...s,headline:expected.slides[4].headline}:s)},now);
  if(post.id!==FRIDGE_HUM_V3_ID||post.compositionPreset!=='semantic-editorial-v1'||
   post.approvals.content||post.approvals.design||signature(post)!==signature(base))
   throw Error('Финальная правка рассчитана на проверенную основу. Изменения сохранённой редакции не будут перезаписаны.');

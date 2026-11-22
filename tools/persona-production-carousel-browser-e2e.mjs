@@ -36,10 +36,29 @@ try{
   await editor.getByTestId('editorial-compose-by-meaning').click();
  }
  const finalPass=process.env.PERSONA_PRODUCTION_FINAL_PASS==='1';
+ const typographyOnly=process.env.PERSONA_PRODUCTION_TYPOGRAPHY_ONLY==='1';
+ let previousSlideHashes;
  let previous;
  if(finalPass){
   assert.ok(semantic,'Final editorial pass follows the accepted semantic production');
+  if(typographyOnly){
+   const previousRecord=process.env.PERSONA_FINAL_PREVIOUS_OUTPUT?
+    JSON.parse(await readFile(join(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT,'draft.json'),'utf8')):null;
+   await page.evaluate(async old=>{
+    const m=await import('/src/personaEditorialModel.ts'),v=await import('/src/personaEditorialV3.ts');
+    if(!old){const current=m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-fridge-hum-v3');
+     const final=v.applyFridgeHumFinalPass(current);
+     old=m.reviseEditorialPost(final,{slides:final.slides.map((s,i)=>i===4?{...s,headline:'Обмен звуками —\nдо сведения.'}:s)});
+    }
+    m.saveEditorialPost(localStorage,old);
+   },previousRecord);
+   await page.reload();await page.getByTestId('open-carousel-fridge-hum-v3').click();
+  }
   previous=await page.evaluate(async id=>{const m=await import('/src/personaEditorialModel.ts');return m.loadEditorialStore(localStorage).posts.find(p=>p.id===id)},draftId);
+  if(typographyOnly)previousSlideHashes=await page.evaluate(async post=>{
+   const r=await import('/src/personaEditorialMedia.ts');
+   return Promise.all(post.slides.map(async(s,i)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await(await r.renderEditorialSlide(post,s,i)).arrayBuffer()))).map(n=>n.toString(16).padStart(2,'0')).join('')));
+  },previous);
   await editor.getByTestId('editorial-apply-final-pass').click();
  }
  let before;
@@ -53,7 +72,12 @@ try{
  if(finalPass){
   const saved=await page.evaluate(async post=>{const v=await import('/src/personaEditorialV3.ts');return JSON.parse(localStorage.getItem(v.fridgeHumFinalSnapshotKey(post)))},before);
   assert.deepEqual(saved,previous,'Exact previous editor revision preserved before mutation');
-  for(const index of [2,3,5])assert.deepEqual(before.slides[index],previous.slides[index]);
+  for(const index of (typographyOnly?[0,1,2,3,5,6]:[2,3,5]))assert.deepEqual(before.slides[index],previous.slides[index]);
+  if(typographyOnly){
+   assert.equal(before.caption,previous.caption);
+   assert.equal(before.slides[4].body,previous.slides[4].body);
+   assert.equal(before.slides[4].headline.replace(/\s+/gu,' '),previous.slides[4].headline.replace(/\s+/gu,' '));
+  }
   assert.deepEqual(before.slides.map(s=>s.background),previous.slides.map(s=>s.background));
   assert.equal(before.fontPreset,previous.fontPreset);assert.equal(before.compositionPreset,previous.compositionPreset);
   await writeFile(join(out,'previous-draft.json'),JSON.stringify(saved,null,2)+'\n');
@@ -85,7 +109,8 @@ try{
   assert.deepEqual(evidence.previousRevision,previous);
   assert.equal(manifest.gates.SOURCE_PASS,'UNVERIFIED_AUTHOR','Machine source audit must not grant author source review');
   assert.ok(!/provenance|черновик|вёрстк|Literata|Golos/iu.test(files.find(f=>f.name==='caption.txt').bytes.toString('utf8')));
-  if(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT)for(const number of [3,4,6]){
+  if(typographyOnly)for(const index of [0,1,2,3,5,6])assert.equal(hash(pngs[index].bytes),previousSlideHashes[index],'Unchanged in-browser PNG '+(index+1));
+  if(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT)for(const number of (typographyOnly?[1,2,3,4,6,7]:[3,4,6])){
    const name='slide-0'+number+'.png',old=await readFile(join(process.env.PERSONA_FINAL_PREVIOUS_OUTPUT,name));
    assert.equal(hash(pngs.find(f=>f.name===name).bytes),hash(old),'Unchanged accepted PNG '+name);
   }
@@ -145,6 +170,7 @@ try{
  assert.ok(typography.every(t=>t.minimumContrast>=4.5),'Actual photo/glyph contrast below 4.5: '+JSON.stringify(typography.filter(t=>t.minimumContrast<4.5)));
  assert.ok(typography.every(t=>!/^\d{2}\s*\/\s*\d{2}$/.test(t.text)&&!/(PERSONA|EDITORIAL)/i.test(t.text)));
  assert.ok(typography.every(t=>!/(?:[А-Яа-яЁё][A-Za-z]|[A-Za-z][А-Яа-яЁё])/.test(t.text)),'No Latin substitutes inside Russian words');
+ if(typographyOnly)assert.ok(typography.filter(t=>t.slide===5).every(t=>t.text.trim()!=='—'),'Slide 5 dash must not occupy its own line');
  const after=await page.evaluate(async id=>{
   const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
   const store=m.loadEditorialStore(localStorage),p=store.posts.find(p=>p.id===id);
@@ -161,9 +187,15 @@ try{
   }).slice(-10).map(el=>({tag:el.tagName,cls:el.className,text:el.textContent?.slice(0,55),rect:el.getBoundingClientRect().toJSON()}))}));
  assert.ok(mobile.width<=mobile.viewport+2,'Mobile horizontal overflow '+JSON.stringify(mobile));
  await page.screenshot({path:join(out,'mobile-persona-draft.png'),fullPage:true});
+ if(typographyOnly){
+  await editor.getByRole('button',{name:'Проверить слайд 5',exact:true}).click();
+  await page.waitForFunction(async expected=>{const img=document.querySelector('[data-testid="research-draft-preview"]');if(!img)return false;
+   const b=await(await fetch(img.src)).arrayBuffer();return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b))).map(x=>x.toString(16).padStart(2,'0')).join('')===expected},hash(pngs[4].bytes));
+  await page.getByTestId('research-draft-preview').screenshot({path:join(out,'mobile-slide-05.png')});
+ }
  await context.close();
  await writeFile(join(out,'browser-QA.json'),JSON.stringify({revision,draftId,finalEditorialPass:finalPass,previousRevisionPreserved:finalPass?true:undefined,
-  unchangedSlides:finalPass?[3,4,6]:undefined,compositionPreset:before.compositionPreset,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
+  typographyOnly,unchangedSlides:finalPass?(typographyOnly?[1,2,3,4,6,7]:[3,4,6]):undefined,compositionPreset:before.compositionPreset,slides:7,pngSize:'1080x1350',paidRequests,v1RecordUnchanged:true,
   authorApprovalsUnchanged:true,publicationBlocked:true,previewMatchesExport:true,typography,provenance:revision==='v1'?'7 actual tool-generated images, imported locally; no Worker generation':'7 preserved V1 illustrations, reframed and relit in Persona; no new generation',
   sha256:pngs.map(p=>({file:p.name,sha256:hash(p.bytes)}))},null,2)+'\n');
  console.log('PERSONA_PRODUCTION_CAROUSEL_PASS: 7 real PNG, contact sheet, source/provenance ZIP, author approvals unchanged');
