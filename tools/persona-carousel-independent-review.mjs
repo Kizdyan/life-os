@@ -27,9 +27,9 @@ function parseResult(data,input){
  if(data?.status!=='completed'||!Array.isArray(data.output))throw Error('Независимая проверка не завершена');
  const allowed=new Set(input.slides.flatMap(s=>s.urls)),found=new Map();
  for(const entry of data.output){
-  if(entry?.type!=='fetch_url_call'||!Array.isArray(entry.results))continue;
-  for(const r of entry.results){
-   if(!allowed.has(r?.url)||!bounded(r?.snippet,200000))continue;
+  if(entry?.type!=='fetch_url_results'||!Array.isArray(entry.contents))continue;
+  for(const r of entry.contents){
+   if(!allowed.has(r?.url)||!bounded(r?.snippet,200000)||/no_result_returned|robots.policy|^\s*(?:error|failed|http [45]\d\d)\b/iu.test(r.snippet))continue;
    const previous=found.get(r.url)||[];
    if(previous.length<5)found.set(r.url,[...previous,clean(r.snippet)]);
   }
@@ -67,7 +67,7 @@ export async function reviewPersonaCarousel({input,consent,env=process.env,fetch
  const model=env.PERSONA_CAROUSEL_REVIEW_MODEL?.trim();
  if(!key)throw Error('PERPLEXITY_API_KEY не настроен');
  if(!model||!/^[-A-Za-z0-9._/]{3,120}$/.test(model)||model===normalized.researchModel)throw Error('Настрой отдельную модель PERSONA_CAROUSEL_REVIEW_MODEL, отличную от исследователя');
- const body={model,input:JSON.stringify(normalized),instructions:system,tools:[{type:'fetch_url'}],max_steps:5,max_output_tokens:6500,store:false};
+ const body={model,input:JSON.stringify(normalized),instructions:system,tools:[{type:'fetch_url',max_urls:10}],max_steps:5,max_output_tokens:6500,store:false};
  let data;
  try{
   const response=await fetchImpl(endpoint,{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(110000)});
