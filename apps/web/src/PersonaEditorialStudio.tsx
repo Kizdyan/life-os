@@ -99,6 +99,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [researchJson,setResearchJson]=useState('');
  const [researchTheme,setResearchTheme]=useState('');
  const [researchBusy,setResearchBusy]=useState(false);
+ const researchInFlight=useRef(false);
  const [sourceTitle,setSourceTitle]=useState('');
  const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
@@ -199,13 +200,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onCreate(created);onSelect(id);setError('');setResearchJson('');
   }catch(e){setError('Импорт не выполнен: '+(e as Error).message)}
  }
- async function researchWithPerplexity(){
-  if(researchBusy)return;
-  if(researchTheme.trim().length<6||researchTheme.length>250){
+ async function researchWithPerplexity(mode:'topic'|'discover'='topic'){
+  if(researchInFlight.current)return;
+  if(mode==='topic'&&(researchTheme.trim().length<6||researchTheme.length>250)){
    setError('Укажи конкретную тему для исследования (6–250 символов)');return;
   }
-  setResearchBusy(true);setError('');
+  researchInFlight.current=true;setResearchBusy(true);setError('');
   try{
+   const history=[...new Set([...posts].filter(p=>p.kind==='carousel').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(p=>p.title.trim().slice(0,160)).filter(Boolean))].slice(0,20);
    const healthResponse=await fetch(personaWorkerUrl+'/health',{
     cache:'no-store',signal:AbortSignal.timeout(4500)
    });
@@ -216,18 +218,19 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     throw Error('Perplexity не подключён к локальному Persona Worker. Доступен ручной импорт JSON.');
    const response=await fetch(personaWorkerUrl+'/carousel-research',{
     method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},
-    body:JSON.stringify({theme:researchTheme.trim(),consent:true}),
+    body:JSON.stringify(mode==='discover'?{mode,history,consent:true}:{mode,theme:researchTheme.trim(),consent:true}),
     signal:AbortSignal.timeout(115000)
    });
    const data=await response.json();
    if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка исследования');
-   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||!data.packet)
+   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||data?.mode!==mode||typeof data.model!=='string'||!data.packet)
     throw Error('Worker не вернул исследование с источниками');
    const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
-   const created=importResearchCarousel(id,JSON.stringify(data.packet));
+   const receivedAt=new Date().toISOString();
+   const created=importResearchCarousel(id,JSON.stringify(data.packet),receivedAt,{mode,model:data.model,receivedAt});
    onCreate(created);onSelect(id);setResearchTheme('');
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
-  finally{setResearchBusy(false)}
+  finally{researchInFlight.current=false;setResearchBusy(false)}
  }
  function updateResearch(fn:(current:EditorialPost)=>EditorialPost){
   if(!post)return;
@@ -483,6 +486,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      onClick={()=>void researchWithPerplexity()}>
      {researchBusy?'Исследую…':'Исследовать через Perplexity (платный запрос)'}
     </button>
+    <button type="button" data-testid="editorial-discover-carousel" disabled={researchBusy}
+     onClick={()=>void researchWithPerplexity('discover')}>
+     {researchBusy?'Исследую…':'Persona: самостоятельно найти тему (1 платный запрос)'}
+    </button>
+    <p>Без заданной темы: поиск учитывает до 20 последних названий каруселей. Результат — новый черновик, не готовая публикация.</p>
     {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
     <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
     <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
@@ -557,6 +565,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       </span>)}
    </nav>
    {post.research&&<section aria-label="Черновик для авторской проверки">
+    {post.research.discovery&&<p role="status">Источник: Perplexity · {post.research.discovery.model} · {post.research.discovery.mode==='discover'?'самостоятельный выбор темы':'поиск заданной темы'}. Факты ещё не проверены.</p>}
     <p>Изображения и текст можно проверить до утверждения. Этот ZIP — черновик; разрешение на публикацию он не даёт.</p>
     {post.id===FRIDGE_HUM_ID&&<p>Новые иллюстрации созданы встроенным генератором Codex и импортированы в Persona. Это не кадры фильма, не копия V14 и не выполненная генерация через Worker. Источники и авторские решения требуют вашего отдельного подтверждения.</p>}
     {(post.id===FRIDGE_HUM_ID||isFridgeHumV2(post)||post.id===FRIDGE_HUM_V3_ID)&&<div aria-label="Сравнение редакций">
