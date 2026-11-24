@@ -6,6 +6,7 @@ import fridgeV2Style from '../../../config/carousel-fridge-hum-v2.json';
 import fridgeV3Style from '../../../config/carousel-fridge-hum-v3.json';
 import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
 import {hierarchyCopy,semanticEditorialCopy,suggestEvidenceHook,semanticEditorialComposition,SEMANTIC_COMPOSITION_VERSION,type EditorialHierarchy} from './personaEditorialTypography';
+import {carouselReviewInput,currentCarouselReview,validStoredCarouselReview,type StoredCarouselReview} from './personaCarouselIndependentReview';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
@@ -181,6 +182,7 @@ export type EditorialResearch={
  provider:'manual'|'perplexity';
  /** Optional provider receipt; presence does not establish claim accuracy. */
  discovery?:{mode:'topic'|'discover';model:string;receivedAt:string};
+ independentReview?:StoredCarouselReview;
  sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
  interpretationSlides:string[];
  /** Manual review of public title and caption, not machine fact-checking. */
@@ -201,6 +203,7 @@ export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:
 export function editorialSourcesPass(post:EditorialPost):boolean{
  if(!post.research)return true;
  if(post.research.copyReviewed!==true)return false;
+ if(currentCarouselReview(post)?.status==='NEEDS_REVISION')return false;
  return post.slides.every(slide=>{
   const sources=post.research!.sourceItems.filter(item=>item.slideId===slide.id);
   const interpretation=post.research!.interpretationSlides.includes(slide.id);
@@ -230,6 +233,11 @@ function changeEditorialEvidence(post:EditorialPost,research:EditorialResearch,n
   contentHashAtApproval:'',checkedAt:'',checkedBy:'',checklist:emptyChecklist()};
  const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
  validatePost(result);return result;
+}
+/** Independent review never sets human approval flags. */
+export function attachEditorialIndependentReview(post:EditorialPost,audit:StoredCarouselReview,now=new Date().toISOString()):EditorialPost{
+ if(!post.research||!validStoredCarouselReview(audit)||JSON.stringify(audit.input)!==JSON.stringify(carouselReviewInput(post)))throw Error('Отчёт не соответствует текущей редакции');
+ return changeEditorialEvidence(post,{...post.research,independentReview:audit},now);
 }
 export function editorialValidEvidenceUrl(raw:string):boolean{
  try{
@@ -560,6 +568,7 @@ export function validatePost(post:EditorialPost):void{
      typeof r.discovery.model!=='string'||!r.discovery.model.trim()||r.discovery.model.length>120||
      typeof r.discovery.receivedAt!=='string'||!Number.isFinite(Date.parse(r.discovery.receivedAt))))||
     (r.provider==='perplexity'&&!r.discovery)||
+    (r.independentReview!==undefined&&(r.provider!=='perplexity'||!validStoredCarouselReview(r.independentReview)))||
     (r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
     !Array.isArray(r.sourceItems)||r.sourceItems.length>32||
    !Array.isArray(r.interpretationSlides)||
