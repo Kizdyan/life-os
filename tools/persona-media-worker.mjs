@@ -21,7 +21,7 @@ import {generateLocalPersonaScriptDraft} from './persona-script-draft.mjs';
 import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mjs';
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
-import {generatePersonaCarouselResearch} from './persona-carousel-research.mjs';
+import {generatePersonaCarouselResearch,normalizeCarouselResearchInput} from './persona-carousel-research.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
 import {subtitlePreset} from './persona-subtitle-burn.mjs';
@@ -730,8 +730,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
     const body=await json(req,4000);
     if(body.consent!==true)fail('Нужно явное согласие на платное исследование');
-    if(typeof body.theme!=='string'||body.theme.trim().length<6||body.theme.length>250)
-     fail('Нужна конкретная тема до 250 символов');
+    const researchInput=normalizeCarouselResearchInput(body);
     const env=config.apiEnv??process.env;
     if(!env.PERPLEXITY_API_KEY)fail('Perplexity не настроен в локальном Worker');
     const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
@@ -739,7 +738,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     externalBusy=true;externalCalls.push(now);
     try{
      respond(res,200,await (config.carouselResearch??generatePersonaCarouselResearch)(
-      {theme:body.theme,consent:true,env}
+      {...researchInput,consent:true,env}
      ));
     }finally{externalBusy=false}
     return;
