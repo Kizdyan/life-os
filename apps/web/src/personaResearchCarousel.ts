@@ -86,12 +86,13 @@ export function parseResearchPacket(json:string):ResearchPacket{
   caption:field(p.caption,4500,'Подпись'),slides};
 }
 /** Creates an UNAPPROVED editorial project inside the pre-existing approval flow. */
-export function importResearchCarousel(id:string,json:string,now?:string):EditorialPost{
+export function importResearchCarousel(id:string,json:string,now?:string,receipt?:NonNullable<EditorialResearch['discovery']>):EditorialPost{
  const packet=parseResearchPacket(json);
  const seed=createResearchedEditorialPost(id,packet.title,packet.angle,
   {caption:packet.caption,slides:packet.slides.map(s=>({title:s.text,body:''}))},now);
  const research:EditorialResearch={
-  provider:'manual',
+  provider:receipt?'perplexity':'manual',
+  ...(receipt?{discovery:receipt}:{}),
   sourceItems:packet.slides.flatMap((slide,i)=>(slide.sources??[]).map(source=>({
    slideId:seed.slides[i].id,title:source.title,url:source.url,reviewed:false
   }))),
