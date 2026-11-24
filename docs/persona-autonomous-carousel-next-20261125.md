@@ -14,9 +14,9 @@ No ready-made theme is required or allowed in discovery mode. History consists o
 The result is UNVERIFIED, not SOURCE_PASS, never approved or published. A URL being in a search result is not evidence of entailment. The next stage must retain source text and verify each fact and caption. Current research model name is configurable and must be checked live before use; no real provider call was made during this change.
 
 ## Next increments (in order)
-1. Wire discovery to the existing Editorial Desk and its persisted title history, without a duplicate editor. Show exact provider, pending/failed states, cost consent and research draft. Do not fabricate a result when provider is unavailable.
+1. Implemented in this branch: explicit discovery button in the existing Editorial Desk, last 20 persisted carousel titles, and provider/model/mode/timestamp receipt. The actual live UI/provider run is still pending.
 2. Evidence: retain bounded source excerpts and provenance (retrieval date, URL, claim mapping). Validate source content against every factual claim, including caption, using independent review; block unsupported claims. Untrusted source text must not trigger tools, payments or actions. Fail closed when unavailable. Prefer first-party source material.
-3. Reuse the existing OpenAI carousel background adapter, one specific prompt per slide. Before real calls obtain explicit approval of a bounded total budget and model; existing per-call consent remains mandatory until a tested budget authorization replaces it. No paid calls on load or scheduler by default. Persist outputs and provenance, resume without duplicate generation. No library fallback counted as new generation.
+3. Implemented draft batch path: existing OpenAI adapter, explicit authorization for the exact number of missing backgrounds (at most 8), one request per missing slide, stop at first failure or revision change, persistence after each result, explicit new authorization on resume. No library fallback counted as generation. This limits request count, not total monetary cost. Check the selected model and pricing before granting real consent. No paid requests on load or scheduled run. Live provider/image acceptance is pending.
 4. Use existing Canvas/Editorial Desk rendering and export. Compare actual PNGs with accepted reference; editorial critic evaluates hook, narrative, visual hierarchy, legibility, consistency, repetition and accuracy. At most two repair passes; approval remains human. Save actual PNGs, contact sheet, caption, evidence, manifest and original revisions.
 5. Only after successful manual launch and acceptance, enable existing ProductionJob to run the stages. Keep typed receipts and budget, preserve crash recovery, block missing capabilities; avoid duplicated orchestrator or queue.
 
@@ -25,3 +25,17 @@ Perplexity Agent API for discovery/search, configured model for creative writing
 
 ## Acceptance
 A real launch from Persona produces a new topic not supplied by the author, fact-checked text, independently generated visual assets, actual rendered slides and caption, and survives reload. Require provider receipts, source evidence, asset provenance, actual artifacts, explicit human review. Unit tests with fixtures are software checks only and do not prove creative autonomy. Do not reuse the approved Burwell images for this new publication. No source/artistic/publish PASS without its actual evidence.
+
+## Morning launch / actual runtime blocker
+
+Use the existing Persona checkout and local launcher only after ensuring there are no unsaved/uncommitted changes; review PR #226 before merging or updating the local working tree. Never reset or overwrite the author's existing branch or production files. This PR targets the PR #224 branch, not main.
+
+With Persona's existing local Worker running from the reviewed branch, execute the read-only diagnostic from the repository root:
+
+```sh
+node tools/persona-carousel-provider-preflight.mjs
+```
+
+The diagnostic only performs two local GET requests per available launcher, prints configured status and selected image model, and does not expose secrets, spend credits, test provider connectivity, generate anything, or publish. If Worker is unavailable or keys are missing, stop and configure locally. No keys should be pasted into ChatGPT or committed to GitHub.
+
+If readiness is confirmed, open Editorial Desk → Create carousel from research → Persona: independently find a topic. The explicit button authorizes one research request. The result is saved as an unverified editorial project. Verify factual evidence and public caption before committing image expenditure. For a discovery draft, the new image batch button generates only missing backgrounds after the exact request count is explicitly authorized. A returned image is stored locally before being attached to the project; a failed/replaced draft may leave an unattached asset in the archive, not a successful slide. Once every generated image is saved, use existing semantic composition and draft ZIP review. The export is not publication approval. Source verification and independent visual QA remain mandatory before release; no automatic fact/artistic pass is implemented here.
