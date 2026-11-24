@@ -22,6 +22,7 @@ import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mj
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {generatePersonaCarouselResearch,normalizeCarouselResearchInput} from './persona-carousel-research.mjs';
+import {reviewPersonaCarousel,normalizeCarouselReviewInput} from './persona-carousel-independent-review.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
 import {subtitlePreset} from './persona-subtitle-burn.mjs';
@@ -726,6 +727,19 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
      if(body.consent!==true)fail('Подтвердите платный текстовый запрос');externalCalls.push(now);
      respond(res,200,await generateExternalIdeas({provider:body.provider,theme:body.theme,consent:body.consent,env:config.apiEnv??process.env}));
     }finally{externalBusy=false}return;
+   }
+   if(req.method==='POST'&&url.pathname==='/carousel-independent-review'){
+    const body=await json(req,140000);
+    if(body.consent!==true)fail('Нужно согласие на платную независимую проверку');
+    const input=normalizeCarouselReviewInput(body.input),env=config.apiEnv??process.env;
+    if(!env.PERPLEXITY_API_KEY||!env.PERSONA_CAROUSEL_REVIEW_MODEL||env.PERSONA_CAROUSEL_REVIEW_MODEL.trim()===input.researchModel)
+     fail('Нужна отдельная настроенная модель проверки');
+    const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
+    if(externalBusy||externalCalls.length>=5)fail('Предел 5 внешних запросов в час или Worker занят');
+    externalBusy=true;externalCalls.push(now);
+    try{respond(res,200,await (config.carouselIndependentReview??reviewPersonaCarousel)({input,consent:true,env}))}
+    finally{externalBusy=false}
+    return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
     const body=await json(req,12000);
