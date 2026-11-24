@@ -5,6 +5,7 @@ import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.
 import {
  approveEditorialStep,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
+ loadEditorialStore,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
@@ -25,6 +26,7 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -81,10 +83,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const post=posts.find(x=>x.id===targetId)??null;
  const livePost=useRef(post);livePost.current=post;
  const [backgroundBusy,setBackgroundBusy]=useState(false);
+ const batchInFlight=useRef(false),batchCancelled=useRef(false),mounted=useRef(true);
+ const [batchBusy,setBatchBusy]=useState(false);
+ const [batchMessage,setBatchMessage]=useState('');
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;batchCancelled.current=true}},[]);
  const [backgroundMessage,setBackgroundMessage]=useState('');
  const [paidImageConsent,setPaidImageConsent]=useState(false);
  async function generateBackground(){
-  if(!post||backgroundBusy||!paidImageConsent)return;
+  if(!post||backgroundBusy||batchInFlight.current||!paidImageConsent)return;
   const id=post.id,topic=post.topic,revision=post.revision,slideId=post.slides[selectedSlide]?.id;
   setBackgroundBusy(true);setBackgroundMessage('Создаётся фон без текста…');
   setPaidImageConsent(false);
@@ -94,6 +100,27 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    if(result.status==='READY'&&result.background)onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?{...s,visual:'background',photoRef:undefined,background:result.background}:s)}));
    setBackgroundMessage(result.message);
   }finally{setBackgroundBusy(false)}
+ }
+ let missingCount=0,batchBlock='';
+ if(post?.research?.discovery?.mode==='discover'){
+  try{missingCount=missingAutonomousBackgrounds(post).length}catch(e){batchBlock=(e as Error).message}
+ }
+ async function generateDraftImages(){
+  if(!post||batchInFlight.current||backgroundBusy||missingCount<1)return;
+  const id=post.id,count=missingCount;
+  if(!window.confirm('Разрешить до '+count+' платных запросов OpenAI Images для недостающих фонов этой карусели? Точная стоимость зависит от настроенной модели и тарифа. При ошибке серия остановится; автоматических повторов нет.'))return;
+  batchInFlight.current=true;batchCancelled.current=false;setBatchBusy(true);setBatchMessage('Генерация: 0 из '+count);
+  try{
+   const result=await generateMissingAutonomousBackgrounds({post,authorizedCalls:count,
+    readCurrent:()=>loadEditorialStore(localStorage).posts.find(p=>p.id===id),
+    persist:onChange,
+    generate:(current,index)=>requestEditorialBackground(current,index,{paidConsent:true}),
+    active:()=>mounted.current&&!batchCancelled.current&&livePost.current?.id===id,
+    progress:(done,total)=>{if(mounted.current)setBatchMessage('Сохранено '+done+' из '+total)}
+   });
+   if(mounted.current)setBatchMessage(result.message+' · Запросов: '+result.attempted+'; сохранено: '+result.completed+'.');
+  }catch(e){if(mounted.current)setBatchMessage(e instanceof Error?e.message:'Серия остановлена')}
+  finally{batchInFlight.current=false;if(mounted.current)setBatchBusy(false)}
  }
  const [kind,setKind]=useState<PostKind>('carousel');
  const [researchJson,setResearchJson]=useState('');
@@ -576,6 +603,15 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <button type="button" disabled={busy} onClick={()=>void openFridgeV3()}>V3 · финальная редакция</button>
     </div>}
     {post.id===FRIDGE_HUM_V3_ID&&<p>V3 — отдельный черновик для художественной приёмки. Literata и Golos Text; источники и происхождение изображений в ZIP. Текст и оформление не утверждены. Скачивание не является публикацией.</p>}
+    {post.research.discovery?.mode==='discover'&&<div className="personaEditorialNote" aria-label="Пакетная генерация черновых изображений">
+     <p>Новые изображения OpenAI: {post.slides.filter(s=>s.background?.provenance?.provider==='openai').length} из {post.slides.length}. Источники и оформление остаются неутверждёнными.</p>
+     {batchBlock?<p role="status">{batchBlock}</p>:<button type="button" data-testid="editorial-autonomous-draft-images"
+      disabled={batchBusy||backgroundBusy||missingCount===0} onClick={()=>void generateDraftImages()}>
+      {batchBusy?'Создаются изображения…':missingCount?'Создать недостающие фоны · до '+missingCount+' платных запросов':'Все новые фоны сохранены'}
+     </button>}
+     {batchBusy&&<button type="button" onClick={()=>{batchCancelled.current=true;setBatchMessage('Остановка после текущего запроса…')}}>Остановить серию</button>}
+     {batchMessage&&<p role="status">{batchMessage}</p>}
+    </div>}
     <button type="button" disabled={busy} onClick={()=>void exportReview()}>Скачать черновик для проверки</button>
     {!post.approvals.content&&<>
      <div className="personaEditorialSlides">{post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>Проверить слайд {i+1}</button>)}</div>
@@ -709,7 +745,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       setBackgroundMessage('Локальные кинофоны применены. Текст не изменён; оформление требует утверждения.');
      }}>Кинофоны из библиотеки · все слайды</button>}
      <label><input type="checkbox" aria-label="Разрешаю один платный запрос генерации изображения" checked={paidImageConsent} disabled={backgroundBusy} onChange={e=>setPaidImageConsent(e.target.checked)}/>Разрешаю один платный запрос OpenAI для этого слайда</label>
-     <button type="button" disabled={backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
+     <button type="button" disabled={batchBusy||backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
       {backgroundBusy?'Генерация фона…':'Сгенерировать фон слайда · OpenAI'}</button>
      {slide?.background&&<button type="button" disabled={backgroundBusy} onClick={()=>modifySlide({background:undefined})}>Однотонный фон слайда</button>}
      <p>Текст рисует Persona. Внешняя генерация требует ключа и отдельного согласия. При BLOCKED доступны собственный архив и однотонный фон. Локальная библиотека — предзаготовленные изображения, а не выполненная генерация.</p>
