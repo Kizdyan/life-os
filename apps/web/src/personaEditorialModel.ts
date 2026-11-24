@@ -178,7 +178,9 @@ export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphi
 export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
 /** Imported research is evidence supplied by a person, not automatic fact verification. */
 export type EditorialResearch={
- provider:'manual';
+ provider:'manual'|'perplexity';
+ /** Optional provider receipt; presence does not establish claim accuracy. */
+ discovery?:{mode:'topic'|'discover';model:string;receivedAt:string};
  sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
  interpretationSlides:string[];
  /** Manual review of public title and caption, not machine fact-checking. */
@@ -553,7 +555,12 @@ export function validatePost(post:EditorialPost):void{
   throw Error('Invalid editorial project');
  if(post.research){
   const r=post.research,ids=new Set(post.slides.map(s=>s.id));
-  if(r.provider!=='manual'||(r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
+  if(!['manual','perplexity'].includes(r.provider)||
+    (r.discovery!==undefined&&(r.provider!=='perplexity'||!['topic','discover'].includes(r.discovery.mode)||
+     typeof r.discovery.model!=='string'||!r.discovery.model.trim()||r.discovery.model.length>120||
+     typeof r.discovery.receivedAt!=='string'||!Number.isFinite(Date.parse(r.discovery.receivedAt))))||
+    (r.provider==='perplexity'&&!r.discovery)||
+    (r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
     !Array.isArray(r.sourceItems)||r.sourceItems.length>32||
    !Array.isArray(r.interpretationSlides)||
    r.interpretationSlides.some(id=>!ids.has(id))||
