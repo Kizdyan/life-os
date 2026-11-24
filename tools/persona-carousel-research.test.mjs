@@ -99,3 +99,65 @@ test('localhost Worker requires token and user consent for research and never ma
   assert.equal(researchCalls,1);
  }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
 });
+
+test('discovery selects its own topic and returns only an unverified candidate',async()=>{
+ const discovered=structuredClone(packet);
+ for(const slide of discovered.slides)slide.visualDirection='Конкретный кинематографичный кадр: '+slide.text;
+ let calls=0;
+ const env={PERPLEXITY_API_KEY:'test-only'};
+ const fetchImpl=async(url,options)=>{
+  calls++;
+  const body=JSON.parse(options.body);
+  assert.deepEqual(JSON.parse(body.input),{task:'Выбери тему самостоятельно',excludedTitles:['Уже использованная тема']});
+  assert.match(body.instructions,/Самостоятельно выбери/);
+  return {ok:true,json:async()=>result(discovered)};
+ };
+ const output=await generatePersonaCarouselResearch({mode:'discover',history:['Уже использованная тема'],consent:true,env,fetchImpl});
+ assert.equal(calls,1);
+ assert.equal(output.mode,'discover');
+ assert.equal(output.status,'UNVERIFIED');
+ assert.equal(output.approved,false);
+ assert.equal(output.published,false);
+ assert.equal(output.packet.title,discovered.title);
+});
+test('discovery rejects malformed inputs before spending, then rejects reused topics and inadequate results',async()=>{
+ let calls=0;
+ const env={PERPLEXITY_API_KEY:'test-only'};
+ const valid=structuredClone(packet);
+ for(const slide of valid.slides)slide.visualDirection='Крупный план: '+slide.text;
+ const request={mode:'discover',consent:true,env};
+ const mocked=p=>async()=>{calls++;return {ok:true,json:async()=>result(p)}};
+ for(const bad of [{theme:'Готовая тема'},{history:'not-an-array'},{history:Array(21).fill('Повтор')},{mode:'unknown'},{history:['']}])
+  await assert.rejects(generatePersonaCarouselResearch({...request,...bad,fetchImpl:mocked(valid)}));
+ await assert.rejects(generatePersonaCarouselResearch({...request,consent:false,fetchImpl:mocked(valid)}),/согласие/);
+ assert.equal(calls,0);
+ await assert.rejects(generatePersonaCarouselResearch({...request,history:[' ЗАЧЕМ МУЗЫКА ПРЕДУПРЕЖДАЕТ ЗРИТЕЛЯ! '],fetchImpl:mocked(valid)}),/повторил/);
+ await assert.rejects(generatePersonaCarouselResearch({...request,fetchImpl:mocked(packet)}),/визуальное решение/);
+ const thin=structuredClone(valid);
+ for(const slide of thin.slides.slice(2)){delete slide.sources;slide.interpretation=true}
+ await assert.rejects(generatePersonaCarouselResearch({...request,fetchImpl:mocked(thin)}),/достаточно слайдов/);
+ const repeated=structuredClone(valid);repeated.slides[1].text=repeated.slides[0].text;
+ await assert.rejects(generatePersonaCarouselResearch({...request,fetchImpl:mocked(repeated)}),/повторяющиеся/);
+});
+test('worker discovery uses existing auth, consent and rate limit before invoking provider',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-carousel-discover-'));
+ let calls=0;
+ const worker=createPersonaMediaWorker({
+  port:0,outputRoot:root,ollamaModel:'unused',apiEnv:{PERPLEXITY_API_KEY:'test-only'},
+  carouselResearch:async input=>{
+   calls++;assert.equal(input.mode,'discover');assert.deepEqual(input.history,['Старая тема']);assert.equal(input.consent,true);
+   assert.equal(input.theme,undefined);return {mode:'discover',provider:'perplexity',status:'UNVERIFIED',approved:false,packet};
+  }
+ });
+ const base='http://127.0.0.1:'+await worker.start();
+ const post=(body,token=worker.token)=>fetch(base+'/carousel-research',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},body:JSON.stringify(body)});
+ try{
+  const req={mode:'discover',history:['Старая тема'],consent:true};
+  assert.equal((await post(req,'bad')).status,401);
+  assert.equal((await post({...req,consent:false})).status,400);
+  assert.equal((await post({...req,theme:'Не заданная моделью тема'})).status,400);
+  assert.equal(calls,0);
+  for(let i=0;i<5;i++){const response=await post(req);assert.equal(response.status,200);assert.equal((await response.json()).status,'UNVERIFIED')}
+  assert.equal((await post(req)).status,400);assert.equal(calls,5);
+ }finally{await new Promise(r=>worker.server.close(r));await rm(root,{recursive:true,force:true})}
+});
