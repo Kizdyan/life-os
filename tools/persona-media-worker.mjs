@@ -728,7 +728,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     }finally{externalBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
-    const body=await json(req,4000);
+    const body=await json(req,12000);
     if(body.consent!==true)fail('Нужно явное согласие на платное исследование');
     const researchInput=normalizeCarouselResearchInput(body);
     const env=config.apiEnv??process.env;
