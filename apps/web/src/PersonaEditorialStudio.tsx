@@ -5,7 +5,7 @@ import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.
 import {
  approveEditorialStep,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
- loadEditorialStore,
+ loadEditorialStore,attachEditorialIndependentReview,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
@@ -26,6 +26,7 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt} from './personaCarouselIndependentReview';
 import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import './persona-editorial-studio.css';
 
@@ -127,6 +128,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [researchTheme,setResearchTheme]=useState('');
  const [researchBusy,setResearchBusy]=useState(false);
  const researchInFlight=useRef(false);
+ const reviewInFlight=useRef(false);
+ const [reviewBusy,setReviewBusy]=useState(false),[reviewMessage,setReviewMessage]=useState('');
+ const independentReview=post?currentCarouselReview(post):undefined;
  const [sourceTitle,setSourceTitle]=useState('');
  const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
@@ -258,6 +262,31 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onCreate(created);onSelect(id);setResearchTheme('');
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
   finally{researchInFlight.current=false;setResearchBusy(false)}
+ }
+ async function runIndependentReview(){
+  if(!post||reviewInFlight.current||batchInFlight.current||backgroundBusy)return;
+  if(!window.confirm('Разрешить один платный запрос Perplexity на проверку текста другой моделью?'))return;
+  reviewInFlight.current=true;setReviewBusy(true);setReviewMessage('Проверяются источники и публичный текст…');
+  try{
+   const input=carouselReviewInput(post),id=post.id;
+   const healthResponse=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(4500)});
+   if(!healthResponse.ok)throw Error('Локальный Worker недоступен');
+   const health=await healthResponse.json();
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string')throw Error('Worker недоступен');
+   const response=await fetch(personaWorkerUrl+'/carousel-independent-review',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({input,consent:true}),signal:AbortSignal.timeout(115000)});
+   const data=await response.json();
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Проверка недоступна');
+   const audit=await validateCarouselReviewReceipt(input,data);
+   const current=loadEditorialStore(localStorage).posts.find(p=>p.id===id);
+   if(!mounted.current||!current||livePost.current?.id!==id||JSON.stringify(carouselReviewInput(current))!==JSON.stringify(input))
+    throw Error('Черновик изменился; отчёт не применён');
+   const next=attachEditorialIndependentReview(current,audit);onChange(next);
+   if(loadEditorialStore(localStorage).posts.find(p=>p.id===id)?.research?.independentReview?.report.fingerprint!==data.fingerprint)
+    throw Error('Сохранение отчёта не подтверждено');
+   setReviewMessage('Отчёт сохранён. Авторское утверждение не выполнено.');
+  }catch(e){if(mounted.current)setReviewMessage(e instanceof Error?e.message:'Проверка не выполнена')}
+  finally{reviewInFlight.current=false;if(mounted.current)setReviewBusy(false)}
  }
  function updateResearch(fn:(current:EditorialPost)=>EditorialPost){
   if(!post)return;
@@ -592,6 +621,21 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       </span>)}
    </nav>
    {post.research&&<section aria-label="Черновик для авторской проверки">
+    {post.research.discovery&&<div className="personaEditorialNote" aria-label="Независимая проверка фактов">
+     <button type="button" data-testid="editorial-independent-review" disabled={reviewBusy||batchBusy||backgroundBusy} onClick={()=>void runIndependentReview()}>
+      {reviewBusy?'Проверяются факты…':'Независимый фактчек и редактор · 1 платный запрос'}
+     </button>
+     {post.research.independentReview&&!independentReview&&<p role="status">Отчёт устарел: текст или источники изменились.</p>}
+     {independentReview&&<div>
+      <strong>{independentReview.status==='NEEDS_REVISION'?'Нужна редактура':'Кандидат на авторскую проверку'} · {independentReview.model}</strong>
+      {independentReview.checks.map(c=><div key={c.target}><p><strong>{c.target}: {c.verdict}</strong> — {c.reason}</p>
+       {c.evidence.map((ev,i)=><p key={i}><a href={ev.url} target="_blank" rel="noreferrer">Источник</a> — {ev.quote}</p>)}</div>)}
+      <p>Хук: {independentReview.editorial.hook}</p><p>Драматургия: {independentReview.editorial.narrative}</p>
+      <p>Позиционирование: {independentReview.editorial.positioning}</p><p>Правки: {independentReview.editorial.revision}</p>
+     </div>}
+     {reviewMessage&&<p role="status">{reviewMessage}</p>}
+     <p>ИИ-отчёт не заменяет авторскую проверку. Неподтверждённые факты блокируют утверждение текста.</p>
+    </div>}
     {post.research.discovery&&<p role="status">Источник: Perplexity · {post.research.discovery.model} · {post.research.discovery.mode==='discover'?'самостоятельный выбор темы':'поиск заданной темы'}. Факты ещё не проверены.</p>}
     <p>Изображения и текст можно проверить до утверждения. Этот ZIP — черновик; разрешение на публикацию он не даёт.</p>
     {post.id===FRIDGE_HUM_ID&&<p>Новые иллюстрации созданы встроенным генератором Codex и импортированы в Persona. Это не кадры фильма, не копия V14 и не выполненная генерация через Worker. Источники и авторские решения требуют вашего отдельного подтверждения.</p>}
