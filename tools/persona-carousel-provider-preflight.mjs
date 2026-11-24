@@ -20,14 +20,14 @@ export async function inspectCarouselProviders({fetchImpl=fetch}={}){
     }
    }catch{/* no secrets or raw response in report */}
    return {worker:'CONNECTED',launcher:base.includes(':3000/')?'unified':'split',research:research?'KEY_CONFIGURED':'KEY_MISSING',
-    images,liveProviderVerified:false,paidRequests:0};
+    independentReview:health.carouselIndependentReview?.configured===true?'CONFIGURED':'NOT_CONFIGURED',images,liveProviderVerified:false,paidRequests:0};
   }catch{/* try other existing local launcher */}
  }
- return {worker:'UNAVAILABLE',research:'UNKNOWN',images:{configured:false,model:null,status:'UNKNOWN'},
+ return {worker:'UNAVAILABLE',research:'UNKNOWN',independentReview:'UNKNOWN',images:{configured:false,model:null,status:'UNKNOWN'},
   liveProviderVerified:false,paidRequests:0};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const report=await inspectCarouselProviders();
  process.stdout.write(JSON.stringify(report,null,2)+'\n');
- if(report.worker!=='CONNECTED'||report.research!=='KEY_CONFIGURED'||!report.images.configured||report.images.status!=='NEEDS_CONSENT')process.exitCode=1;
+ if(report.worker!=='CONNECTED'||report.research!=='KEY_CONFIGURED'||report.independentReview!=='CONFIGURED'||!report.images.configured||report.images.status!=='NEEDS_CONSENT')process.exitCode=1;
 }
