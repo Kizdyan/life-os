@@ -148,3 +148,20 @@ describe('Persona research-backed carousel importer',()=>{
   expect(loadEditorialStore(storage).posts[0].research).toBeUndefined();
  });
 });
+
+describe('autonomous research provenance',()=>{
+ it('preserves Perplexity receipt through existing editorial storage without advancing source gates',()=>{
+  const receivedAt='2026-11-25T02:00:00.000Z';
+  const receipt={mode:'discover' as const,model:'test-model',receivedAt};
+  const post=importResearchCarousel('research-discovery-226',fixture(),receivedAt,receipt);
+  expect(post.research?.provider).toBe('perplexity');
+  expect(post.research?.discovery).toEqual(receipt);
+  expect(editorialSourcesPass(post)).toBe(false);
+  expect(post.approvals).toMatchObject({topic:false,content:false,design:false});
+  const data=new Map<string,string>();
+  const storage={getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>{data.set(k,v)}};
+  saveEditorialPost(storage,post);
+  expect(loadEditorialStore(storage).posts.find(p=>p.id===post.id)?.research?.discovery).toEqual(receipt);
+  expect(()=>importResearchCarousel('research-invalid-226',fixture(),receivedAt,{...receipt,model:''})).toThrow(/research evidence/);
+ });
+});

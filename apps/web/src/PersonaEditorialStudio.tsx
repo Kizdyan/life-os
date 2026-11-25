@@ -5,6 +5,7 @@ import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.
 import {
  approveEditorialStep,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
+ loadEditorialStore,attachEditorialIndependentReview,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
  editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
@@ -25,6 +26,8 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt} from './personaCarouselIndependentReview';
+import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -81,10 +84,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const post=posts.find(x=>x.id===targetId)??null;
  const livePost=useRef(post);livePost.current=post;
  const [backgroundBusy,setBackgroundBusy]=useState(false);
+ const batchInFlight=useRef(false),batchCancelled=useRef(false),mounted=useRef(true);
+ const [batchBusy,setBatchBusy]=useState(false);
+ const [batchMessage,setBatchMessage]=useState('');
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;batchCancelled.current=true}},[]);
  const [backgroundMessage,setBackgroundMessage]=useState('');
  const [paidImageConsent,setPaidImageConsent]=useState(false);
  async function generateBackground(){
-  if(!post||backgroundBusy||!paidImageConsent)return;
+  if(!post||backgroundBusy||batchInFlight.current||!paidImageConsent)return;
   const id=post.id,topic=post.topic,revision=post.revision,slideId=post.slides[selectedSlide]?.id;
   setBackgroundBusy(true);setBackgroundMessage('Создаётся фон без текста…');
   setPaidImageConsent(false);
@@ -95,10 +102,35 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    setBackgroundMessage(result.message);
   }finally{setBackgroundBusy(false)}
  }
+ let missingCount=0,batchBlock='';
+ if(post?.research?.discovery?.mode==='discover'){
+  try{missingCount=missingAutonomousBackgrounds(post).length}catch(e){batchBlock=(e as Error).message}
+ }
+ async function generateDraftImages(){
+  if(!post||batchInFlight.current||backgroundBusy||missingCount<1)return;
+  const id=post.id,count=missingCount;
+  if(!window.confirm('Разрешить до '+count+' платных запросов OpenAI Images для недостающих фонов этой карусели? Точная стоимость зависит от настроенной модели и тарифа. При ошибке серия остановится; автоматических повторов нет.'))return;
+  batchInFlight.current=true;batchCancelled.current=false;setBatchBusy(true);setBatchMessage('Генерация: 0 из '+count);
+  try{
+   const result=await generateMissingAutonomousBackgrounds({post,authorizedCalls:count,
+    readCurrent:()=>loadEditorialStore(localStorage).posts.find(p=>p.id===id),
+    persist:onChange,
+    generate:(current,index)=>requestEditorialBackground(current,index,{paidConsent:true}),
+    active:()=>mounted.current&&!batchCancelled.current&&livePost.current?.id===id,
+    progress:(done,total)=>{if(mounted.current)setBatchMessage('Сохранено '+done+' из '+total)}
+   });
+   if(mounted.current)setBatchMessage(result.message+' · Запросов: '+result.attempted+'; сохранено: '+result.completed+'.');
+  }catch(e){if(mounted.current)setBatchMessage(e instanceof Error?e.message:'Серия остановлена')}
+  finally{batchInFlight.current=false;if(mounted.current)setBatchBusy(false)}
+ }
  const [kind,setKind]=useState<PostKind>('carousel');
  const [researchJson,setResearchJson]=useState('');
  const [researchTheme,setResearchTheme]=useState('');
  const [researchBusy,setResearchBusy]=useState(false);
+ const researchInFlight=useRef(false);
+ const reviewInFlight=useRef(false);
+ const [reviewBusy,setReviewBusy]=useState(false),[reviewMessage,setReviewMessage]=useState('');
+ const independentReview=post?currentCarouselReview(post):undefined;
  const [sourceTitle,setSourceTitle]=useState('');
  const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
@@ -199,13 +231,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    onCreate(created);onSelect(id);setError('');setResearchJson('');
   }catch(e){setError('Импорт не выполнен: '+(e as Error).message)}
  }
- async function researchWithPerplexity(){
-  if(researchBusy)return;
-  if(researchTheme.trim().length<6||researchTheme.length>250){
+ async function researchWithPerplexity(mode:'topic'|'discover'='topic'){
+  if(researchInFlight.current)return;
+  if(mode==='topic'&&(researchTheme.trim().length<6||researchTheme.length>250)){
    setError('Укажи конкретную тему для исследования (6–250 символов)');return;
   }
-  setResearchBusy(true);setError('');
+  researchInFlight.current=true;setResearchBusy(true);setError('');
   try{
+   const history=[...new Set([...posts].filter(p=>p.kind==='carousel').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(p=>p.title.trim().slice(0,160)).filter(Boolean))].slice(0,20);
    const healthResponse=await fetch(personaWorkerUrl+'/health',{
     cache:'no-store',signal:AbortSignal.timeout(4500)
    });
@@ -216,18 +249,44 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     throw Error('Perplexity не подключён к локальному Persona Worker. Доступен ручной импорт JSON.');
    const response=await fetch(personaWorkerUrl+'/carousel-research',{
     method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},
-    body:JSON.stringify({theme:researchTheme.trim(),consent:true}),
+    body:JSON.stringify(mode==='discover'?{mode,history,consent:true}:{mode,theme:researchTheme.trim(),consent:true}),
     signal:AbortSignal.timeout(115000)
    });
    const data=await response.json();
    if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка исследования');
-   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||!data.packet)
+   if(data?.provider!=='perplexity'||data?.status!=='UNVERIFIED'||data?.mode!==mode||typeof data.model!=='string'||!data.packet)
     throw Error('Worker не вернул исследование с источниками');
    const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
-   const created=importResearchCarousel(id,JSON.stringify(data.packet));
+   const receivedAt=new Date().toISOString();
+   const created=importResearchCarousel(id,JSON.stringify(data.packet),receivedAt,{mode,model:data.model,receivedAt});
    onCreate(created);onSelect(id);setResearchTheme('');
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
-  finally{setResearchBusy(false)}
+  finally{researchInFlight.current=false;setResearchBusy(false)}
+ }
+ async function runIndependentReview(){
+  if(!post||reviewInFlight.current||batchInFlight.current||backgroundBusy)return;
+  if(!window.confirm('Разрешить один платный запрос Perplexity на проверку текста другой моделью?'))return;
+  reviewInFlight.current=true;setReviewBusy(true);setReviewMessage('Проверяются источники и публичный текст…');
+  try{
+   const input=carouselReviewInput(post),id=post.id;
+   const healthResponse=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(4500)});
+   if(!healthResponse.ok)throw Error('Локальный Worker недоступен');
+   const health=await healthResponse.json();
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string')throw Error('Worker недоступен');
+   const response=await fetch(personaWorkerUrl+'/carousel-independent-review',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({input,consent:true}),signal:AbortSignal.timeout(115000)});
+   const data=await response.json();
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Проверка недоступна');
+   const audit=await validateCarouselReviewReceipt(input,data);
+   const current=loadEditorialStore(localStorage).posts.find(p=>p.id===id);
+   if(!mounted.current||!current||livePost.current?.id!==id||JSON.stringify(carouselReviewInput(current))!==JSON.stringify(input))
+    throw Error('Черновик изменился; отчёт не применён');
+   const next=attachEditorialIndependentReview(current,audit);onChange(next);
+   if(loadEditorialStore(localStorage).posts.find(p=>p.id===id)?.research?.independentReview?.report.fingerprint!==data.fingerprint)
+    throw Error('Сохранение отчёта не подтверждено');
+   setReviewMessage('Отчёт сохранён. Авторское утверждение не выполнено.');
+  }catch(e){if(mounted.current)setReviewMessage(e instanceof Error?e.message:'Проверка не выполнена')}
+  finally{reviewInFlight.current=false;if(mounted.current)setReviewBusy(false)}
  }
  function updateResearch(fn:(current:EditorialPost)=>EditorialPost){
   if(!post)return;
@@ -483,6 +542,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      onClick={()=>void researchWithPerplexity()}>
      {researchBusy?'Исследую…':'Исследовать через Perplexity (платный запрос)'}
     </button>
+    <button type="button" data-testid="editorial-discover-carousel" disabled={researchBusy}
+     onClick={()=>void researchWithPerplexity('discover')}>
+     {researchBusy?'Исследую…':'Persona: самостоятельно найти тему (1 платный запрос)'}
+    </button>
+    <p>Без заданной темы: поиск учитывает до 20 последних названий каруселей. Результат — новый черновик, не готовая публикация.</p>
     {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
     <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
     <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
@@ -557,6 +621,22 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       </span>)}
    </nav>
    {post.research&&<section aria-label="Черновик для авторской проверки">
+    {post.research.discovery&&<div className="personaEditorialNote" aria-label="Независимая проверка фактов">
+     <button type="button" data-testid="editorial-independent-review" disabled={reviewBusy||batchBusy||backgroundBusy} onClick={()=>void runIndependentReview()}>
+      {reviewBusy?'Проверяются факты…':'Независимый фактчек и редактор · 1 платный запрос'}
+     </button>
+     {post.research.independentReview&&!independentReview&&<p role="status">Отчёт устарел: текст или источники изменились.</p>}
+     {independentReview&&<div>
+      <strong>{independentReview.status==='NEEDS_REVISION'?'Нужна редактура':'Кандидат на авторскую проверку'} · {independentReview.model}</strong>
+      {independentReview.checks.map(c=><div key={c.target}><p><strong>{c.target}: {c.verdict}</strong> — {c.reason}</p>
+       {c.evidence.map((ev,i)=><p key={i}><a href={ev.url} target="_blank" rel="noreferrer">Источник</a> — {ev.quote}</p>)}</div>)}
+      <p>Хук: {independentReview.editorial.hook}</p><p>Драматургия: {independentReview.editorial.narrative}</p>
+      <p>Позиционирование: {independentReview.editorial.positioning}</p><p>Правки: {independentReview.editorial.revision}</p>
+     </div>}
+     {reviewMessage&&<p role="status">{reviewMessage}</p>}
+     <p>ИИ-отчёт не заменяет авторскую проверку. Неподтверждённые факты блокируют утверждение текста.</p>
+    </div>}
+    {post.research.discovery&&<p role="status">Источник: Perplexity · {post.research.discovery.model} · {post.research.discovery.mode==='discover'?'самостоятельный выбор темы':'поиск заданной темы'}. Факты ещё не проверены.</p>}
     <p>Изображения и текст можно проверить до утверждения. Этот ZIP — черновик; разрешение на публикацию он не даёт.</p>
     {post.id===FRIDGE_HUM_ID&&<p>Новые иллюстрации созданы встроенным генератором Codex и импортированы в Persona. Это не кадры фильма, не копия V14 и не выполненная генерация через Worker. Источники и авторские решения требуют вашего отдельного подтверждения.</p>}
     {(post.id===FRIDGE_HUM_ID||isFridgeHumV2(post)||post.id===FRIDGE_HUM_V3_ID)&&<div aria-label="Сравнение редакций">
@@ -567,6 +647,15 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      <button type="button" disabled={busy} onClick={()=>void openFridgeV3()}>V3 · финальная редакция</button>
     </div>}
     {post.id===FRIDGE_HUM_V3_ID&&<p>V3 — отдельный черновик для художественной приёмки. Literata и Golos Text; источники и происхождение изображений в ZIP. Текст и оформление не утверждены. Скачивание не является публикацией.</p>}
+    {post.research.discovery?.mode==='discover'&&<div className="personaEditorialNote" aria-label="Пакетная генерация черновых изображений">
+     <p>Новые изображения OpenAI: {post.slides.filter(s=>s.background?.provenance?.provider==='openai').length} из {post.slides.length}. Источники и оформление остаются неутверждёнными.</p>
+     {batchBlock?<p role="status">{batchBlock}</p>:<button type="button" data-testid="editorial-autonomous-draft-images"
+      disabled={batchBusy||backgroundBusy||missingCount===0} onClick={()=>void generateDraftImages()}>
+      {batchBusy?'Создаются изображения…':missingCount?'Создать недостающие фоны · до '+missingCount+' платных запросов':'Все новые фоны сохранены'}
+     </button>}
+     {batchBusy&&<button type="button" onClick={()=>{batchCancelled.current=true;setBatchMessage('Остановка после текущего запроса…')}}>Остановить серию</button>}
+     {batchMessage&&<p role="status">{batchMessage}</p>}
+    </div>}
     <button type="button" disabled={busy} onClick={()=>void exportReview()}>Скачать черновик для проверки</button>
     {!post.approvals.content&&<>
      <div className="personaEditorialSlides">{post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>Проверить слайд {i+1}</button>)}</div>
@@ -700,7 +789,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       setBackgroundMessage('Локальные кинофоны применены. Текст не изменён; оформление требует утверждения.');
      }}>Кинофоны из библиотеки · все слайды</button>}
      <label><input type="checkbox" aria-label="Разрешаю один платный запрос генерации изображения" checked={paidImageConsent} disabled={backgroundBusy} onChange={e=>setPaidImageConsent(e.target.checked)}/>Разрешаю один платный запрос OpenAI для этого слайда</label>
-     <button type="button" disabled={backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
+     <button type="button" disabled={batchBusy||backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
       {backgroundBusy?'Генерация фона…':'Сгенерировать фон слайда · OpenAI'}</button>
      {slide?.background&&<button type="button" disabled={backgroundBusy} onClick={()=>modifySlide({background:undefined})}>Однотонный фон слайда</button>}
      <p>Текст рисует Persona. Внешняя генерация требует ключа и отдельного согласия. При BLOCKED доступны собственный архив и однотонный фон. Локальная библиотека — предзаготовленные изображения, а не выполненная генерация.</p>

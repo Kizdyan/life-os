@@ -11,6 +11,7 @@ import fridgeV3 from '../../../config/carousel-fridge-hum-v3.json';
 import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provenance.json';
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -453,6 +454,7 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
    authorApprovals:post.approvals,slides:images.length,width:1080,height:1350})},
   {name:'research-sources.json',data:json(post.research??null)},
   {name:'image-provenance.json',data:json(await editorialImageProvenance(post))});
+ if(post.research?.discovery?.mode==='discover')files.push({name:'render-quality.json',data:json(await inspectEditorialRenderedSlides(images))});
  if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
  return zipFileBytes(files);
 }
