@@ -7,7 +7,7 @@ function draft(){return importResearchCarousel('review-draft-226',JSON.stringify
 function audit(post= draft(),negative=true):StoredCarouselReview{
  const input=carouselReviewInput(post);
  return {input,report:{status:negative?'NEEDS_REVISION':'REVIEW_CANDIDATE',provider:'perplexity',model:'review/model',fingerprint:'a'.repeat(64),reviewedAt:now,approved:false,published:false,
- checks:['title','caption',...input.slides.map((_,i)=>'slide-'+(i+1))].map((target,i)=>({target,verdict:i===0&&negative?'INSUFFICIENT':i===6?'INTERPRETATION':'SUPPORTED',reason:'fixture',evidence:i===0&&negative||i===6?[]:[{url:'https://example.org/source',quote:'Fixture text from an extracted page.'}]})),
+ checks:['title','caption',...input.slides.map((_,i)=>'slide-'+(i+1))].map((target,i)=>({target,verdict:i===0&&negative?'INSUFFICIENT':i===6?'INTERPRETATION':'SUPPORTED',reason:'fixture',evidence:i===0&&negative||i===6?[]:[{url:(i>=2?input.slides[i-2].urls[0]:input.slides[0].urls[0]),quote:'Fixture text from an extracted page.'}]})),
  editorial:{hook:'fixture',narrative:'fixture',positioning:'fixture',revision:'fixture'}}};
 }
 describe('independent review persistence and approval gate',()=>{
@@ -20,6 +20,12 @@ describe('independent review persistence and approval gate',()=>{
   const changed=reviseEditorialPost(post,{caption:'Изменённый текст'});
   expect(currentCarouselReview(changed)).toBeUndefined();
   expect(editorialSourcesPass(changed)).toBe(false);
+ });
+ it('rejects a citation from a different slide even when the URL is present elsewhere in the research',()=>{
+  const review=audit(draft(),false);
+  const check=review.report.checks.find(c=>c.target==='slide-4')!;
+  check.evidence[0].url=review.input.slides[0].urls[0];
+  expect(validStoredCarouselReview(review)).toBe(false);
  });
  it('persists a candidate without granting author approval',()=>{
   const p=draft(),review=audit(p,false);
