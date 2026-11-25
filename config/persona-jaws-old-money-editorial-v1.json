@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "jaws-old-money-editorial-v1",
+  "brandId": "old-money-editorial",
+  "themeFirst": false,
+  "status": "external-prototype-review-required",
+  "targetDate": "2026-11-28",
+  "size": {
+    "width": 1080,
+    "height": 1350
+  },
+  "approvals": {
+    "topic": false,
+    "content": false,
+    "design": false,
+    "publish": false
+  },
+  "slides": [
+    {
+      "headline": "Как две ноты заставили зрителей бояться океана",
+      "context": "«Челюсти» / 1975",
+      "body": "История одной музыкальной темы",
+      "palette": "light",
+      "layout": "editorial-split",
+      "art": "ocean-fin",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "Спилберг рассмеялся",
+      "body": "Когда режиссёр Стивен Спилберг впервые услышал тему к фильму «Челюсти», которую написал композитор Джон Уильямс, он решил, что это шутка.",
+      "palette": "dark",
+      "layout": "photo-led",
+      "art": "piano",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "Всего две ноты",
+      "body": "Ми и фа — расстояние в полутон. Вместо сложной пугающей мелодии Уильямс предложил повторение двух соседних нот.",
+      "palette": "light",
+      "layout": "archival-detail",
+      "art": "keyboard-diagram",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "Опасность приближается",
+      "body": "Низкий регистр, повторение, ускорение и нарастание громкости. Акулы ещё нет в кадре, а угроза уже ощущается.",
+      "palette": "dark",
+      "layout": "editorial-split",
+      "art": "waves",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "Зритель учится доверять музыке",
+      "body": "Знакомая тема становится предупреждением: акула рядом, даже если мы её ещё не видим.",
+      "palette": "light",
+      "layout": "photo-led",
+      "art": "ocean-fin",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "А потом тема не звучит",
+      "body": "На пляже начинается паника. Но знакомого мотива нет. И не случайно: плавник, который заметили люди, оказался поддельным.",
+      "palette": "light",
+      "layout": "editorial-split",
+      "art": "beach",
+      "authorSignature": false,
+      "decorativeNumber": false
+    },
+    {
+      "headline": "Музыка может рассказать больше, чем изображение.",
+      "body": "В кино она не просто усиливает эмоции. Она может сообщить зрителю то, чего он ещё не увидел.",
+      "palette": "dark",
+      "layout": "photo-led",
+      "art": "waves",
+      "authorSignature": false,
+      "decorativeNumber": false
+    }
+  ],
+  "sourceUrls": [
+    "https://www.vanityfair.com/hollywood/2023/07/jaws-making-of-spielberg-interview",
+    "https://www.vanityfair.com/hollywood/story/steven-spielberg-john-williams-partnership",
+    "https://www.sydney.edu.au/news-opinion/news/2025/06/20/jaws-at-50-how-two-notes-terrified-the-world.html"
+  ],
+  "provenance": {
+    "art": "AI-generated editorial illustrations in external ChatGPT prototype; not film stills",
+    "typography": "EB Garamond and Inter in external prototype; not yet approved tokens",
+    "render": "External Python/Pillow prototype, seven 1080x1350 PNGs generated and contact sheet visually inspected; binaries not committed"
+  },
+  "integration": {
+    "status": "not-wired",
+    "required": "Import through existing Persona editorial review workflow, produce new preview using approved local assets, compare external prototype, preserve source and design approvals, store per-slide feedback and rerender. Do not mark as produced by Persona or publish without approval. Do not replace missing V14."
+  }
+}
