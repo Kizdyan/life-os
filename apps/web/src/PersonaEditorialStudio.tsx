@@ -21,6 +21,8 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
+import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -416,6 +418,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </div>
     <div className="personaEditorialMiniStats"><strong>{posts.length}</strong><span>редакционных проектов</span></div>
    </div>
+   {kind==='carousel'&&<article className="personaEditorialNote" data-testid="persona-jaws-brand-trial">
+    <h4>Как две ноты заставили зрителей бояться океана</h4>
+    <p>«Челюсти» (1975) · музыка Джона Уильямса · пробный комплект Old Money. Предложение из подготовленного редакционного банка, не новый автоматический поиск.</p>
+    <button type="button" onClick={()=>{
+     try{if(!posts.some(p=>p.id===JAWS_BRAND_TRIAL_ID))onCreate(createJawsBrandTrial());onSelect(JAWS_BRAND_TRIAL_ID);setError('')}
+     catch(e){setError(e instanceof Error?e.message:String(e))}
+    }}>{posts.some(p=>p.id===JAWS_BRAND_TRIAL_ID)?'Открыть пробный комплект':'Попробовать тему в Persona'}</button>
+   </article>}
    <details className="personaEditorialNote" data-testid="editorial-research-import">
     <summary><strong>Создать карусель из исследования</strong> · Perplexity / проверяемый JSON</summary>
     <p>Новый проект в существующей редакции Persona. Источники будут помечены как непроверенные:
@@ -510,6 +520,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     {!post.approvals.topic?<button className="personaEditorialApprove" type="button" onClick={()=>void approve('topic')}>Утвердить тему</button>:
      <span className="personaEditorialApproved">Тема утверждена ✓</span>}
    </section>
+   {post.id===JAWS_BRAND_TRIAL_ID&&post.approvals.topic&&<PersonaBrandTrialPreview post={post}/>}
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
     <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии. В исследовательской карусели пустая строка разделяет заголовок, абзац и необязательный курсивный акцент (до трёх блоков).</p>
