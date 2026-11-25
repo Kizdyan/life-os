@@ -71,5 +71,15 @@
     "repeated author signature",
     "unapproved style changes"
   ],
-  "notes": "User confirmed Old Money profile, not these exact color/font tokens. Use actual approved reference and feed comparisons before locking. Existing historical approvals are not invalidated. Metadata checks are not image QA."
+  "notes": "User confirmed Old Money profile, not these exact color/font tokens. Use actual approved reference and feed comparisons before locking. Existing historical approvals are not invalidated. Metadata checks are not image QA.",
+  "preferenceEvidence": [
+    {
+      "id": "old-money-external-prototype-20261126",
+      "scope": "visual-direction",
+      "decision": "positive",
+      "detail": "Author considers the Old Money editorial prototype a substantial improvement and agrees to a Persona trial. Exact tokens, individual slides, source checks and publication remain unapproved.",
+      "referenceJob": "jaws-old-money-editorial-v1",
+      "provenance": "explicit author feedback on external prototype"
+    }
+  ]
 }
