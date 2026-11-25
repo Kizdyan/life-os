@@ -98,6 +98,7 @@ function editorialHash(value:string):string{
 /** Content, palette and font-version fingerprint for artist visual approval. */
 export function editorialDesignHash(post:EditorialPost):string{
  return editorialHash(JSON.stringify([editorialContentHash(post),
+  ...(post.id==='jaws-old-money-editorial-v1'?['old-money-local-illustration-v1']:[]),
   post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
    'persona-baseline-artist-layout-v3-no-page-numbers':
    post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter'?
