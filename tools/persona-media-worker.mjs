@@ -29,6 +29,7 @@ import {parseManualScript,validateManualSource} from './persona-manual-script.mj
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {generatePersonaCarouselResearch,normalizeCarouselResearchInput} from './persona-carousel-research.mjs';
 import {independentCritic} from '../packages/core/src/persona-critic-independence.mjs';
+import {runEditorialPipeline,normalizeEditorialPipelineRequest,editorialPipelineModels} from './persona-carousel-editorial-pipeline.mjs';
 import {reviewPersonaCarousel,normalizeCarouselReviewInput} from './persona-carousel-independent-review.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
@@ -804,6 +805,18 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     try{respond(res,200,await (config.carouselIndependentReview??reviewPersonaCarousel)({input,consent:true,env}))}
     finally{externalBusy=false}
     return;
+   }
+   if(req.method==='POST'&&url.pathname==='/carousel-editorial-pipeline'){
+    const body=await json(req,12000),input=normalizeEditorialPipelineRequest(body),env=config.apiEnv??process.env;
+    editorialPipelineModels(env);
+    const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
+    if(externalBusy||externalCalls.length+input.maxCalls>5)fail('Недостаточно свободных запросов из общего лимита 5/час');
+    externalBusy=true;
+    try{
+     const result=await runEditorialPipeline({request:body,env,research:config.carouselResearch??generatePersonaCarouselResearch,review:config.carouselIndependentReview??reviewPersonaCarousel,
+      beforeCall:()=>{externalCalls.push(Date.now())}});
+     respond(res,200,result);
+    }finally{externalBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
     const body=await json(req,12000);
