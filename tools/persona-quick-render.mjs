@@ -61,7 +61,7 @@ export function continuityEditPlan(videos,format){
 }
 
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
-import {loadReferenceProductionGuide} from './persona-reference-production.mjs';
+import {loadReferenceProductionGuide,compareReferenceColor} from './persona-reference-production.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
@@ -780,6 +780,12 @@ export function createPersonaQuickRenderService(config={}){
    }
    await verifyUploadedFiles(input,job.files);
    const outputHash=await sha(video),details=await probe(video,config,{rendered:true});
+   let referenceColor={status:'NOT_COMPARED',reason:'No compatible reference guidance or fast draft'};
+   if(!job.fastDraft&&referenceGuide.status==='REFERENCE_GUIDANCE'&&referenceGuide.referenceLumaMedian!==null){
+    try{const report=await analyzePersonaVideoQuality({videoPath:video,ffmpegDir:config.ffmpegDir});referenceColor=compareReferenceColor(referenceGuide,report);}
+    catch(error){referenceColor={status:'NOT_COMPARED',reason:'Reference color measurement failed: '+String(error.message||error).slice(0,140)}}
+   }
+   await writeFile(join(out,'reference-color-comparison.json'),JSON.stringify(referenceColor,null,2)+'\n',{flag:'wx'});
    const editPlanSha256=await sha(join(out,'edit-plan.json'));
    const timelineSha256=await sha(timelinePath);
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
@@ -790,7 +796,7 @@ export function createPersonaQuickRenderService(config={}){
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,videoFormat:job.videoFormat??'auto',visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,
+    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,referenceGuide,referenceColor,
     textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
