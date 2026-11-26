@@ -175,3 +175,17 @@ test('real scheduled Reel/carousel/photo use existing FFmpeg tools; restart and 
   await writeFile(artifactPath,original);await photoJob.verifyProductionReceipts();
  }finally{await close(worker)}
 });
+
+test('runtime status is authenticated and does not expose cache path or configured secret',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-runtime-auth-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const privateCache=join(root,'private-cache');
+ const worker=await start(root,{productionQueue:undefined,apiEnv:{PERSONA_YANDEX_CACHE_DIR:privateCache,PERPLEXITY_API_KEY:'private-test-token'}});
+ t.after(()=>close(worker));
+ assert.equal((await fetch(worker.base+'/runtime-status')).status,401);
+ const response=await request(worker,'/runtime-status');
+ assert.equal(response.status,200);assert.equal(response.body.version,1);
+ assert.equal(response.body.cache,'CONFIGURED');assert.equal(response.body.personal.status,'MISSING');
+ assert.equal(response.body.publicationApproved,false);
+ assert.ok(!JSON.stringify(response.body).includes('private-cache'));assert.ok(!JSON.stringify(response.body).includes('private-test-token'));
+ const health=await fetch(worker.base+'/health').then(r=>r.json());assert.equal(health.runtimeProtocol,1);
+});
