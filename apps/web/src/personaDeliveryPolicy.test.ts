@@ -20,3 +20,13 @@ describe('platform delivery evidence',()=>{
   expect(x.format).toBe('image/jpeg');expect(x.music.required).toBe(true);expect(x.music.state).toBe('AWAITING_NATIVE_SELECTION');expect(x.publication.authorized).toBe(false);
  });
 });
+
+it('a provider permalink is not independent confirmation of public visibility',()=>{
+ const publicUrl='https://www.tiktok.com/@example/photo/123';
+ const base={mode:'automatic' as const,status:'PUBLISHED',publicUrl};
+ expect(assessDelivery('tiktok',base).status).toBe('PROVIDER_RECEIPT_ONLY');
+ const visibility={state:'NOT_VISIBLE' as const,url:publicUrl,observedAt:'2026-11-27T12:00:00Z',source:'independent-viewer' as const};
+ const hidden=assessDelivery('tiktok',{...base,visibility});expect(hidden.status).toBe('RECONCILIATION_REQUIRED');expect(hidden.retryAllowed).toBe(false);
+ expect(assessDelivery('tiktok',{...base,visibility:{...visibility,state:'PUBLIC'}}).publiclyVisible).toBe(true);
+ expect(assessDelivery('tiktok',{...base,visibility:{...visibility,state:'PUBLIC',url:'https://www.tiktok.com/@example/photo/456'}}).publiclyVisible).toBe(false);
+});
