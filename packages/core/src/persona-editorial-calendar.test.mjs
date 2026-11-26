@@ -61,3 +61,23 @@ test('rejects invalid date and horizon',()=>{
  assert.throws(()=>buildPersonaEditorialCalendar({startDate:'2026-10-27',days:0}));
  assert.equal(WEEKLY_SLOTS.length,3);
 });
+
+test('daily sprint preserves saved dates, fills only gaps, and restores legacy projection after 30 days',()=>{
+ const saved={slotId:'persona:2026-11-29:photo',date:'2026-11-29',format:'photo',status:'needs_review',approved:false,contentId:'existing-photo',platforms:['instagram'],notes:'Do not move'};
+ const plan=buildPersonaEditorialCalendar({startDate:'2026-11-28',days:90,sprintStartDate:'2026-11-28',existing:[saved]});
+ const sprint=plan.slots.filter(s=>s.date>='2026-11-28'&&s.date<='2026-12-27');
+ assert.equal(sprint.length,30);assert.equal(new Set(sprint.map(s=>s.date)).size,30);
+ assert.equal(sprint.find(s=>s.date===saved.date).contentId,saved.contentId);
+ assert.deepEqual(sprint.find(s=>s.date===saved.date).platforms,saved.platforms);
+ assert.ok(sprint.filter(s=>s.date!==saved.date).every(s=>s.format==='carousel'&&!s.approved&&s.contentId===null&&s.status==='planned'));
+ assert.equal(plan.reserveTarget.carousels,7);assert.equal(plan.sprint.status,'PLANNING_ONLY');
+ assert.deepEqual(plan.slots.filter(s=>s.date>='2026-12-28'&&s.date<='2027-01-03').map(s=>s.format),['reel','carousel','photo']);
+ const legacy=buildPersonaEditorialCalendar({startDate:'2026-11-28',days:7,existing:[saved]});
+ assert.ok(legacy.slots.some(s=>s.contentId===saved.contentId));assert.equal(legacy.reserveTarget.carousels,2);
+});
+test('sprint rejects impossible date and retains multiple explicit commitments on one date',()=>{
+ assert.throws(()=>buildPersonaEditorialCalendar({startDate:'2026-11-28',sprintStartDate:'2026-02-30'}));
+ const existing=['photo','reel'].map(format=>({slotId:'persona:2026-11-28:'+format,date:'2026-11-28',format,contentId:format,approved:true,platforms:['instagram']}));
+ const plan=buildPersonaEditorialCalendar({startDate:'2026-11-28',days:7,sprintStartDate:'2026-11-28',existing});
+ assert.equal(plan.slots.filter(s=>s.date==='2026-11-28').length,2);assert.equal(plan.slots.length,8);
+});
