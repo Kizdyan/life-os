@@ -328,6 +328,7 @@ async function main() {
   try {
     const recipe=stageCacheEnabled()?{
       version:await stageFileSha(fileURLToPath(import.meta.url)),width,height,fps,identityFilter,renderProfile,
+      ...(soundtrack?.adaptiveMode?{soundDesignVersion:await stageFileSha(fileURLToPath(new URL('./persona-sound-design.mjs',import.meta.url)))}:{}),
       clips:clips.map(({path,beat,brollAfterBeat,...settings})=>settings),
       soundtrack:soundtrack?{...soundtrack,path:null}:null,
     }:null;
