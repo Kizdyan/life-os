@@ -815,7 +815,11 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     try{
      const result=await runEditorialPipeline({request:body,env,research:config.carouselResearch??generatePersonaCarouselResearch,review:config.carouselIndependentReview??reviewPersonaCarousel,
       beforeCall:()=>{externalCalls.push(Date.now())}});
-     respond(res,200,result);
+     const runId=randomUUID(),dir=join(config.outputRoot,'editorial-run-'+runId);
+     await mkdir(dir,{recursive:true});
+     await writeFile(join(dir,'result.tmp'),JSON.stringify({...result,runId},null,2),{flag:'wx'});
+     await rename(join(dir,'result.tmp'),join(dir,'result.json'));
+     respond(res,200,{...result,runId});
     }finally{externalBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
