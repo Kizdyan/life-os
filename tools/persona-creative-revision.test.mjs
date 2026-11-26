@@ -18,3 +18,15 @@ test('unsupported is explicit and provider failures are not simulated',async()=>
  assert.equal(validateCreativePatch({status:'unsupported',reason:'Нужен новый рисунок'}).status,'unsupported');
  await assert.rejects(localCreativeRevision({model:'qwen3:4b-instruct',request:{topic:'Кино',text:'Текст',comment:'Исправить'},fetchImpl:async()=>({ok:false,status:503})}),/ollama_http_503/);
 });
+
+test('author brand notes reach only the local model as bounded context',async()=>{
+ const request={topic:'Кино',text:'Заголовок',comment:'Сделай темнее',brandNotes:['Не использовать подпись автора']};
+ const result=await localCreativeRevision({model:'qwen3:4b-instruct',request,fetchImpl:async(url,init)=>{
+  assert.equal(url,'http://127.0.0.1:11434/api/chat');
+  const body=JSON.parse(init.body);
+  assert.deepEqual(JSON.parse(body.messages[1].content).brandNotes,request.brandNotes);
+  return {ok:true,json:async()=>({message:{content:'{"status":"patch","patch":{"palette":"dark"}}'}})};
+ }});
+ assert.equal(result.patch.palette,'dark');
+ await assert.rejects(localCreativeRevision({model:'qwen3:4b-instruct',request:{...request,brandNotes:['x'.repeat(601)]},fetchImpl:async()=>{throw Error('must not call')} }),/invalid_brand_notes/);
+});
