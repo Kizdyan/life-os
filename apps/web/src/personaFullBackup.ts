@@ -20,12 +20,15 @@ import {
  REFERENCE_LAB_KEY,loadReferenceLab,validateReferenceLab,type ReferenceLabState
 } from './personaReferenceWorkflows';
 
+import {CREATIVE_FEEDBACK_KEY,loadCreativeFeedback,mergeCreativeFeedback,validateCreativeFeedback,type CreativeFeedback} from './personaCreativeFeedback';
+
 type StorageAccess=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 type PhotoManifest={key:string;name:string;mime:'image/png'|'image/jpeg';size:number;sha256:string;file:string};
 type BackupManifest={
  kind:'life-os-persona-full-backup';version:2;exportedAt:string;
  legacy:unknown;editorial:{version:1;posts:EditorialPost[]};stories:StoryNote[];
  referenceLab?:ReferenceLabState;
+ creativeFeedback?:CreativeFeedback[];
  photos:PhotoManifest[];
 };
 export type FullBackupStats=PortableStats&{editorial:number;stories:number;photos:number};
@@ -33,7 +36,7 @@ const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
 const MAX_ARCHIVE=512*1024*1024;
 const MAIN_FILE='persona-backup.json';
 const rollbackKeys=['life-os:local-runtime:v1','lifeos:persona:idea-history:v2',
- 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY];
+ 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY,CREATIVE_FEEDBACK_KEY];
 
 function fail(reason:string):never{throw Error('Резервная копия Persona: '+reason)}
 function assertImage(m:PhotoManifest){
@@ -60,6 +63,7 @@ function parseManifest(bytes:Uint8Array):BackupManifest{
  try{
   x.editorial.posts.forEach(validatePost);
   if(x.referenceLab!==undefined)validateReferenceLab(x.referenceLab);
+  if(x.creativeFeedback!==undefined)validateCreativeFeedback(x.creativeFeedback);
   const ids=x.editorial.posts.map(p=>p.id);
   if(new Set(ids).size!==ids.length)fail('Повторяющиеся ID редакционных проектов');
   const check=loadStoryNotes({getItem:k=>k===STORY_KEY?JSON.stringify(x.stories):null});
@@ -165,7 +169,8 @@ function snapshot(storage:StorageAccess){
  const legacy=JSON.parse(exportDeviceData(storage)) as unknown;
  // Throws rather than silently replacing damaged local data: no partial backup.
  const referenceLab=loadReferenceLab(storage);
- return {legacy,editorial,stories,referenceLab};
+ const creativeFeedback=loadCreativeFeedback(storage);
+ return {legacy,editorial,stories,referenceLab,creativeFeedback};
 }
 export async function exportFullPersonaBackup(storage:StorageAccess):Promise<Blob>{
  const data=snapshot(storage);
@@ -188,7 +193,9 @@ export async function exportFullPersonaBackup(storage:StorageAccess):Promise<Blo
  }
  const manifest:BackupManifest={kind:'life-os-persona-full-backup',version:2,
   exportedAt:new Date().toISOString(),...data,photos};
- return zipFileBytes([{name:MAIN_FILE,data:enc.encode(JSON.stringify(manifest))},...files]);
+ const manifestBytes=enc.encode(JSON.stringify(manifest));
+ if(manifestBytes.length>3_000_000)fail('Манифест превышает лимит; экспорт остановлен без потери данных');
+ return zipFileBytes([{name:MAIN_FILE,data:manifestBytes},...files]);
 }
 export async function inspectFullPersonaBackup(blob:Blob):Promise<FullBackupStats>{
  const {manifest}=await readBackup(blob);
@@ -201,6 +208,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
  const {manifest,photos}=await readBackup(blob);
  const local=snapshot(storage); // raises on corrupt local data, before any writes
  const incomingLab=manifest.referenceLab;
+ const mergedFeedback=mergeCreativeFeedback(local.creativeFeedback,manifest.creativeFeedback??[]);
  if(incomingLab!==undefined&&local.referenceLab.revision>1&&
   JSON.stringify(local.referenceLab)!==JSON.stringify(incomingLab)){
   fail('Конфликт исследовательской мастерской. Экспортируй текущий ZIP перед импортом другой версии.');
@@ -238,6 +246,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
   storage.setItem(STORY_KEY,JSON.stringify([...local.stories,...addedStories]));
   if(incomingLab!==undefined&&local.referenceLab.revision===1)
    storage.setItem(REFERENCE_LAB_KEY,JSON.stringify(incomingLab));
+  if(manifest.creativeFeedback!==undefined)storage.setItem(CREATIVE_FEEDBACK_KEY,JSON.stringify(mergedFeedback));
   return {...base,editorial:addedPosts.length,stories:addedStories.length,photos:created.length};
  }catch(error){
   // Roll back all localStorage keys as well as newly added IndexedDB records.
