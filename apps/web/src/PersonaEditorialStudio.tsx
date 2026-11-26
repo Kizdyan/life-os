@@ -8,7 +8,7 @@ import {
  loadEditorialStore,attachEditorialIndependentReview,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
  createDirectorQuestionCarousel,createPhotoArchiveCarousel,createMixedNarrativeCarousel,
- editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,
+ editorialArchiveProvenancePass,applyChatCarouselApproval,publicationDesignApproved,editorialDesignHash,
  editorialChecklistState,editorialChecklistReady,carouselEditorialWarnings,editorialSourcesPass,setEditorialSourceReviewed,
  addEditorialSource,removeEditorialSource,setEditorialInterpretationReviewed,setEditorialPublicCopyReviewed,
  setEditorialChecklistItem,editorialContrastPass,
@@ -30,6 +30,7 @@ import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt}
 import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
 import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
+import PersonaCarouselVisualReview from './PersonaCarouselVisualReview';
 import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
 import './persona-editorial-studio.css';
 
@@ -895,6 +896,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      disabled={!checklistReady} onClick={()=>void approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
    </section>}
+   {post.kind==='carousel'&&post.approvals.topic&&<PersonaCarouselVisualReview key={post.id+':'+post.revision+':'+editorialDesignHash(post)} post={post}/>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
     <h4>4. Производство</h4>
     {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&publicationDesignApproved(post)&&<div><button type="button" onClick={rememberStyle}>Запомнить палитру и шрифты для новых каруселей</button>{styleMemoryMessage&&<p role="status">{styleMemoryMessage}</p>}</div>}
