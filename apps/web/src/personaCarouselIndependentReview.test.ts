@@ -1,14 +1,14 @@
 import {describe,it,expect} from 'vitest';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE} from './personaResearchCarousel';
-import {carouselReviewInput,currentCarouselReview,validStoredCarouselReview,type StoredCarouselReview} from './personaCarouselIndependentReview';
+import {carouselReviewInput,currentCarouselReview,validStoredCarouselReview,independentEditorialGate,type StoredCarouselReview} from './personaCarouselIndependentReview';
 import {attachEditorialIndependentReview,editorialSourcesPass,reviseEditorialPost,setEditorialPublicCopyReviewed,setEditorialSourceReviewed,loadEditorialStore,saveEditorialPost} from './personaEditorialModel';
 const now='2026-11-25T02:00:00.000Z';
-function draft(){return importResearchCarousel('review-draft-226',JSON.stringify(RESEARCH_CAROUSEL_EXAMPLE),now,{mode:'discover',model:'research/model',receivedAt:now})}
+function draft(){return importResearchCarousel('review-draft-226',JSON.stringify(RESEARCH_CAROUSEL_EXAMPLE),now,{mode:'discover',model:'openai/gpt-test',receivedAt:now})}
 function audit(post= draft(),negative=true):StoredCarouselReview{
  const input=carouselReviewInput(post);
- return {input,report:{status:negative?'NEEDS_REVISION':'REVIEW_CANDIDATE',provider:'perplexity',model:'review/model',fingerprint:'a'.repeat(64),reviewedAt:now,approved:false,published:false,
+ return {input,report:{status:negative?'NEEDS_REVISION':'REVIEW_CANDIDATE',provider:'perplexity',model:'anthropic/claude-test',fingerprint:'a'.repeat(64),reviewedAt:now,approved:false,published:false,
  checks:['title','caption',...input.slides.map((_,i)=>'slide-'+(i+1))].map((target,i)=>({target,verdict:i===0&&negative?'INSUFFICIENT':i===6?'INTERPRETATION':'SUPPORTED',reason:'fixture',evidence:i===0&&negative||i===6?[]:[{url:(i>=2?input.slides[i-2].urls[0]:input.slides[0].urls[0]),quote:'Fixture text from an extracted page.'}]})),
- editorial:{hook:'fixture',narrative:'fixture',positioning:'fixture',revision:'fixture'}}};
+ editorial:{hook:'fixture',narrative:'fixture',positioning:'fixture',revision:'fixture',verdict:negative?'REVISE':'PASS'}}};
 }
 describe('independent review persistence and approval gate',()=>{
  it('blocks a known negative report even after all human checkboxes are marked',()=>{
@@ -38,4 +38,16 @@ describe('independent review persistence and approval gate',()=>{
   expect(currentCarouselReview(loadEditorialStore(storage).posts[0])).toEqual(review.report);
   expect(()=>attachEditorialIndependentReview(reviseEditorialPost(p,{caption:'Другой текст'}),review)).toThrow();
  });
+});
+
+it('requires current cross-family positive editorial verdict for AI researched exports',()=>{
+ const p=draft();expect(independentEditorialGate(p)).toBe(false);
+ const positive=audit(p,false);const reviewed=attachEditorialIndependentReview(p,positive);
+ expect(independentEditorialGate(reviewed)).toBe(true);
+ expect(independentEditorialGate(reviseEditorialPost(reviewed,{caption:'Изменено'}))).toBe(false);
+ expect(independentEditorialGate(attachEditorialIndependentReview(p,audit(p,true)))).toBe(false);
+ const sameFamily=audit(p,false);sameFamily.report.model='openai/gpt-other';
+ expect(independentEditorialGate(attachEditorialIndependentReview(p,sameFamily))).toBe(false);
+ const old=audit(p,false);delete old.report.editorial.verdict;
+ expect(independentEditorialGate(attachEditorialIndependentReview(p,old))).toBe(false);
 });
