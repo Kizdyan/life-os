@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {rankPhotos} from './persona-yandex-start.mjs';
+import {createHash} from 'node:crypto';
+import {rankPhotos,selectPhotos,photoCoverage,reselectPhotos} from './persona-yandex-start.mjs';
 import {FOLDERS} from './persona-yandex-library.mjs';
 const scores={portrait:9,screen:8,stage:7,music:6,editorial:9};
 async function fixture(){
@@ -46,5 +47,33 @@ test('refuses concurrent or corrupted checkpoint, preserves data',async()=>{
   await rm(lock);const state=join(out,'photo-scores.json');await writeFile(state,'not json');
   await assert.rejects(rankPhotos({cache,model:'vision'}),/checkpoint unreadable/);
   assert.equal(await readFile(state,'utf8'),'not json');
+ }finally{await rm(cache,{recursive:true,force:true})}
+});
+
+const entry=(n,scores)=>({sha256:n.repeat(64),reason:'fixture',scores:{portrait:0,screen:0,stage:0,music:0,editorial:0,...scores}});
+test('global photo assignment protects scarce professional roles before duplicate portraits',()=>{
+ const rows=[entry('a',{portrait:10,music:8}),entry('b',{portrait:9}),entry('c',{stage:9}),entry('d',{screen:8}),entry('e',{editorial:8})];
+ const result=selectPhotos(rows);
+ assert.equal(result.length,5);assert.equal(result.find(x=>x.category==='music').sha256,'a'.repeat(64));
+ assert.equal(new Set(result.map(r=>r.sha256)).size,5);
+ assert.deepEqual(selectPhotos([...rows].reverse()),result);
+ const missing=photoCoverage(rows.filter(r=>r.sha256!=='a'.repeat(64)),selectPhotos(rows.filter(r=>r.sha256!=='a'.repeat(64))));
+ assert.equal(missing.music.eligible,0);assert.equal(missing.music.selected,0);
+});
+test('reselect saved scores without Ollama or modifying legacy checkpoint and shortlist',async()=>{
+ const {cache,assets,out}=await fixture();
+ try{
+  for(const a of assets){a.sha256=createHash('sha256').update(await readFile(a.sourcePath)).digest('hex')}
+  await writeFile(join(cache,'catalogs',FOLDERS[0],'persona-assets-v1.json'),JSON.stringify({assets}));
+  await mkdir(out,{recursive:true});await mkdir(join(out,'shortlist'));
+  await writeFile(join(out,'shortlist','keep.txt'),'old selection');
+  const saved={model:'legacy-vision',rows:assets.map((a,i)=>({sha256:a.sha256,scores:{...scores,music:i===0?9:0},reason:'ok'}))};
+  const raw=JSON.stringify(saved);await writeFile(join(out,'photo-scores.json'),raw);
+  const r=await reselectPhotos({cache});
+  assert.equal(r.scoresReused,3);assert.equal(r.modelCalls,0);assert.equal(r.publicationApproved,false);
+  assert.equal(r.coverage.music.eligible,1);
+  assert.equal(await readFile(join(out,'photo-scores.json'),'utf8'),raw);
+  assert.equal(await readFile(join(out,'shortlist','keep.txt'),'utf8'),'old selection');
+  assert.equal(JSON.parse(await readFile(join(r.shortlist,'selection.json'),'utf8')).checkpointSha256,r.checkpointSha256);
  }finally{await rm(cache,{recursive:true,force:true})}
 });
