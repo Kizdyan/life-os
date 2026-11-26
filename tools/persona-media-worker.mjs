@@ -1,5 +1,5 @@
-import {reviewCarouselVisual} from './persona-carousel-visual-review.mjs';
 #!/usr/bin/env node
+import {reviewCarouselVisual} from './persona-carousel-visual-review.mjs';
 import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
