@@ -21,7 +21,7 @@ export function assessDelivery(destination:Destination,evidence:DeliveryEvidence
  const musicConfirmed=Boolean(music&&music.title.trim()&&(music.kind==='native-confirmed'?music.artist.trim():/^[a-f0-9]{64}$/.test(music.assetSha256)));
  return {published,musicConfirmed,status:published?'PUBLISHED_CONFIRMED':evidence.status==='ERROR'?'FAILED':evidence.mode==='manual'?'MANUAL_UNVERIFIED':'AWAITING_RECEIPT',
   retryAllowed:evidence.mode==='automatic'&&evidence.status==='ERROR'&&!evidence.publicUrl,
-  musicRequired:destination==='tiktok'||destination==='instagram',readyForAutomaticPhotoPost:destination!=='tiktok'&&destination!=='instagram'};
+  musicRequired:destination==='tiktok'||destination==='instagram',musicGatePassed:destination!=='tiktok'&&destination!=='instagram'||musicConfirmed};
 }
 /** Exported guidance; the recipient must still choose/verify the track in the app. */
 export function photoDeliveryManifest(destination:'instagram'|'tiktok'){
