@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createJawsBrandTrial} from './personaJawsBrandTrial';
-import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback} from './personaCreativeFeedback';
+import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,applyCreativeModelPatch} from './personaCreativeFeedback';
 describe('creative feedback',()=>{
  it('only replaces requested heading, keeps other slides and does not grant approval',()=>{
   const p=createJawsBrandTrial(),s=p.slides[1];
@@ -18,5 +18,21 @@ describe('creative feedback',()=>{
   const storage={getItem:(k:string)=>m.get(k)??null,setItem:(k:string,v:string)=>{m.set(k,v)}};
   appendCreativeFeedback(storage,r.record);appendCreativeFeedback(storage,r.record);
   expect(loadCreativeFeedback(storage)).toEqual([r.record]);
+ });
+});
+
+describe('local model creative patches',()=>{
+ it('only changes targeted slide and invalidates visual approval',()=>{
+  const p=createJawsBrandTrial();
+  const next=applyCreativeModelPatch(p,p.slides[1].id,{palette:'light',font:'literary',layout:'image-middle',image:'smaller'});
+  expect(next?.slides[1].brandTrialStyle).toEqual({palette:'light',font:'literary',layout:'image-middle',image:'smaller'});
+  expect(next?.slides[1].text).toBe(p.slides[1].text);
+  expect(next?.slides[0]).toEqual(p.slides[0]);
+  expect(next?.research).toEqual(p.research);
+  expect(next?.approvals.design).toBe(false);
+ });
+ it('rejects arbitrary actions and invalid visual tokens',()=>{
+  const p=createJawsBrandTrial();
+  for(const patch of [{publish:true},{font:'unknown'},{text:'Persona'}])expect(()=>applyCreativeModelPatch(p,p.slides[0].id,patch)).toThrow();
  });
 });
