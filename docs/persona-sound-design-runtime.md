@@ -1,0 +1,10 @@
+# Adaptive soundtrack mix: first production slice
+
+PR #228 integrates an optional local sound-design mode into the existing Reel timeline renderer. Enable via PERSONA_ADAPTIVE_SOUND=1 in ignored local environment. The default mix and Fast Draft are unchanged. Acting and music formats retain existing manual mix behavior; this change is not a complete performance-audio protection audit.
+
+- Only explicitly supplied soundtrack files participate. No external track search, music identity recognition, automatic license claim, generated sound effects or beat-synchronous edits.
+- Measure up to 60 seconds of the selected soundtrack using existing EBU R128 measurement. Attenuate (never boost) towards -32 LUFS for audible/unknown source or -23 LUFS for verified soundless source, with peak headroom. Missing measurements use conservative fixed gains. This is a sample-derived gain, not a measurement of every loop.
+- The timeline rechecks actual source-audio presence, retains original mix gain at 1 in adaptive mode (existing clip-level normalization still applies), applies fades and signal-triggered sidechain compression for audible sources, and a final limiter. The existing explicit soundtrack looping behavior remains; no musical phrase boundary detection.
+- After render, integrated loudness and true peak are recorded in the timeline manifest with warnings and mandatory author listening. The cache recipe includes the sound-design module hash. No authorization to publish or assertion of rights.
+- A real synthetic 3-second FFmpeg signal experiment confirmed ducking amplitude 0.01358 vs 0.06249 during the active original signal, original 440 Hz amplitude 0.3 in both control and ducked mixes, and identical quiet-section music amplitude. This validates the filter behavior, not actual dialogue intelligibility or artistic quality. Added a corresponding regression test plus bounded planning tests.
+- Local acceptance requires real spoken, musical and silent footage, checking speech masking, noise, fades, timing, perceived dynamics, true peak, and rights. Music selection, rhythm alignment, sound effect design and a full production run remain open.
