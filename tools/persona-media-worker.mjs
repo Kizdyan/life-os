@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import {reviewCarouselVisual} from './persona-carousel-visual-review.mjs';
+import {indexReferences} from './persona-reference-intelligence.mjs';
+import {pickVision} from './persona-yandex-start.mjs';
 import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
@@ -505,11 +507,23 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    if(req.method==='GET'&&url.pathname==='/carousel-background/status'){
     respond(res,200,carouselBackgroundStatus(config.apiEnv??process.env));return;
    }
+   if(req.method==='POST'&&url.pathname==='/reference-intelligence/index'){
+    const body=await json(req,1000),env=config.apiEnv??process.env;
+    if(!env.PERSONA_YANDEX_CACHE_DIR)fail('Reference cache is not configured');
+    if(body?.limit!==undefined&&(!Number.isInteger(body.limit)||body.limit<1||body.limit>5))fail('Reference batch limit must be 1–5');
+    if(ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||quickRender.isBusy()||[...sessions.values()].some(j=>j.state==='running'))fail('Local AI is busy');
+    ideationBusy=true;
+    try{
+     const model=env.PERSONA_CAROUSEL_VISION_MODEL||await pickVision();
+     if(!model)fail('Local vision model not available');
+     respond(res,200,await indexReferences({cache:env.PERSONA_YANDEX_CACHE_DIR,model,limit:body.limit??1,log:()=>{}}));
+    }finally{ideationBusy=false}return;
+   }
    if(req.method==='POST'&&url.pathname==='/carousel-visual-review'){
     const body=await json(req,12*1024*1024);
     if(ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||quickRender.isBusy()||[...sessions.values()].some(j=>j.state==='running'))fail('Local AI is busy');
     ideationBusy=true;
-    try{respond(res,200,await (config.visualReview??reviewCarouselVisual)({request:body,model:(config.apiEnv??process.env).PERSONA_CAROUSEL_VISION_MODEL}));}
+    try{respond(res,200,await (config.visualReview??reviewCarouselVisual)({request:body,model:(config.apiEnv??process.env).PERSONA_CAROUSEL_VISION_MODEL,referenceCache:(config.apiEnv??process.env).PERSONA_YANDEX_CACHE_DIR}));}
     finally{ideationBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-creative-revision'){
