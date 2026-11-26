@@ -16,7 +16,7 @@ function mondayOf(value){
  * production buffer. Does not replace Life OS tasks, calendar or analytics.
  * The caller attaches canonical content IDs and production statuses.
  */
-export function buildPersonaEditorialCalendar({startDate,days=90,existing=[],sprintStartDate=null}={}){
+export function buildPersonaEditorialCalendar({startDate,days=90,existing=[],sprintStartDate=null,occupiedDates=[]}={}){
  if(!Number.isInteger(days)||days<7||days>366)throw new Error('days must be 7..366');
  const start=new Date(startDate+'T00:00:00Z');
  if(Number.isNaN(start.getTime())||iso(start)!==startDate)throw new Error('Invalid startDate');
@@ -70,7 +70,8 @@ export function buildPersonaEditorialCalendar({startDate,days=90,existing=[],spr
  // Keep every explicitly saved record, even inside the sprint. Only fill unoccupied dates.
  // The sprint is a planning projection, never a promise of production or publication.
  if(sprintStart){
-  const occupied=new Set(slots.map(s=>s.date));
+  if(!Array.isArray(occupiedDates)||occupiedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00Z'))||iso(new Date(d+'T00:00:00Z'))!==d))throw Error('Invalid occupiedDates');
+  const occupied=new Set([...slots.map(s=>s.date),...occupiedDates]);
   for(let day=new Date(start);day<endExclusive;day=addDays(day,1)){
    if(!inSprint(day)||occupied.has(iso(day)))continue;
    const date=iso(day);
