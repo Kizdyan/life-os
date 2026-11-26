@@ -2,6 +2,8 @@ import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
+import {hierarchyCopy,type EditorialHierarchy} from './personaEditorialTypography';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
@@ -61,7 +63,12 @@ export function carouselEditorialWarnings(post:Pick<EditorialPost,'kind'|'slides
 
 export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection]),...(post.research?[post.research]:[])]));
+  post.caption,post.preset,post.slides.map(s=>{
+   const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
+   const base=s.background?[...values,s.background]:values;
+   const design=s.brandTrialStyle?[...base,s.brandTrialStyle]:base;
+   return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
+  }),...(post.research?[post.research]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -92,6 +99,7 @@ function editorialHash(value:string):string{
 /** Content, palette and font-version fingerprint for artist visual approval. */
 export function editorialDesignHash(post:EditorialPost):string{
  return editorialHash(JSON.stringify([editorialContentHash(post),
+  ...(post.id==='jaws-old-money-editorial-v1'?['old-money-local-illustration-v1']:[]),
   post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
    'persona-baseline-artist-layout-v3-no-page-numbers':
    post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter'?
@@ -166,7 +174,13 @@ export function setEditorialChecklistItem(post:EditorialPost,index:number,checke
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
-export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
+export type BrandTrialStyle={palette?:'light'|'dark';layout?:'image-top'|'image-middle'|'image-bottom';font?:'classic'|'literary';image?:'normal'|'smaller'|'larger'};
+export function validBrandTrialStyle(v:unknown):v is BrandTrialStyle{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;
+ const allowed:Record<string,string[]>={palette:['light','dark'],layout:['image-top','image-middle','image-bottom'],font:['classic','literary'],image:['normal','smaller','larger']};
+ return Object.entries(v).every(([k,x])=>Object.hasOwn(allowed,k)&&typeof x==='string'&&allowed[k].includes(x));
+}
+export type EditorialSlide={brandTrialStyle?:BrandTrialStyle;id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
 /** Imported research is evidence supplied by a person, not automatic fact verification. */
 export type EditorialResearch={
  provider:'manual';
@@ -404,7 +418,7 @@ export function createResearchedEditorialPost(
 export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
  const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
   title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
-  slides:quietHorror.texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
+  slides:quietHorror.slides.map((copy,i)=>({...copy,id:'slide-'+(i+1),text:hierarchyCopy(copy),visual:'background',photoDirection:'',background:libraryBackground(i)})),
   caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
   preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
   origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
@@ -532,7 +546,11 @@ export function validatePost(post:EditorialPost):void{
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
   post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?8:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(post.research?260:170)||
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(s.headline!==undefined?600:post.research?260:170)||
+   (s.headline!==undefined&&(typeof s.kicker!=='string'||s.kicker.length>60||typeof s.headline!=='string'||!s.headline.trim()||s.headline.length>170||typeof s.body!=='string'||s.body.length>350||
+    (s.highlight!==undefined&&(typeof s.highlight!=='string'||s.highlight.length>170))||s.text!==hierarchyCopy(s as EditorialHierarchy)))||
+   (s.brandTrialStyle!==undefined&&(post.id!=='jaws-old-money-editorial-v1'||!validBrandTrialStyle(s.brandTrialStyle)))||
+   (s.background!==undefined&&!validCinematicBackground(s.background))||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
@@ -572,6 +590,12 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
 export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+ if(changes.slides)changes={...changes,slides:changes.slides.map(s=>{
+  if(s.headline===undefined)return s;
+  const previous=post.slides.find(p=>p.id===s.id);
+  const copyChanged=!previous||(['kicker','headline','body','highlight'] as const).some(k=>s[k]!==previous[k]);
+  return copyChanged?{...s,text:hierarchyCopy(s as EditorialHierarchy)}:s;
+ })};
  const result:EditorialPost={...post,...changes,updatedAt:now,revision:post.revision+1,approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
   result.approvals={...result.approvals,topic:false,content:false,design:false};

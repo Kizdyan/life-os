@@ -3,6 +3,12 @@ import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
 import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
+import './persona-editorial-fonts.css';
+import {paintEditorialHierarchy,type EditorialHierarchy} from './personaEditorialTypography';
+import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
+import {personaWorkerUrl} from './personaWorkerUrl';
+import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
+import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -219,6 +225,8 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(isLocalBrandTrialSlide(post,slide))return renderLocalBrandTrial(post,slide,index);
+ if(!post.research&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -229,13 +237,18 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  // Only the requested baseline preset alternates backgrounds; all other outputs stay unchanged.
  ctx.fillStyle=post.preset==='chocolate-graphite'&&index%2===1?'#1C1C1E':theme.bg;
  ctx.fillRect(0,0,1080,1350);
- const usePhoto=slide.visual==='archive-photo';
+ const usePhoto=slide.visual==='archive-photo'||Boolean(slide.background);
  if(usePhoto){
+  let imageBlob:Blob;
+  if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance. Выберите его как фон.');
   const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):
    await readEditorialImage(post.id,slide.id);
   if(!stored)throw Error('Нет фото для слайда №'+(index+1)+'. Выбери изображение из архива.');
+   imageBlob=stored.blob;
+  }else imageBlob=await readCinematicBackground(slide.background!);
   let image:ImageBitmap;
-  try{image=await createImageBitmap(stored.blob)}catch{throw Error('Повреждено архивное изображение для слайда №'+(index+1))}
+  try{image=await createImageBitmap(imageBlob)}catch{throw Error('Повреждено изображение для слайда №'+(index+1))}
   const scale=Math.max(1080/image.width,1350/image.height),w=image.width*scale,h=image.height*scale;
   ctx.drawImage(image,(1080-w)/2,(1350-h)/2,w,h);image.close();
   // Text remains legible in variable photographs without altering the originals.
@@ -420,7 +433,31 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
   };
   files.push({name:'research-sources.json',data:new TextEncoder().encode(JSON.stringify(sources,null,2))});
  }
+ if(post.research||post.slides.some(s=>s.background))files.push({name:'image-provenance.json',data:new TextEncoder().encode(JSON.stringify(await editorialImageProvenance(post),null,2))});
  return zipFileBytes(files);
+}
+/** Evidence labels describe actual inputs; bundled photographs are never called live generation. */
+export async function editorialImageProvenance(post:EditorialPost){
+ const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+ return Promise.all(post.slides.map(async s=>{
+  if(s.visual==='archive-photo'){
+   if(s.photoRef&&isGeneratedBackgroundRef(s.photoRef))throw Error('Созданный фон потерял provenance; выберите его как фон, а не авторский архив');
+   const stored=s.photoRef?await readEditorialImageByRef(s.photoRef):await readEditorialImage(post.id,s.id);
+   if(!stored)throw Error('Отсутствует оригинал фото из архива');
+   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false};
+  }
+  if(s.background?.generatedRef){
+   const stored=await readEditorialImageByRef(s.background.generatedRef);
+   if(!stored)throw Error('Отсутствует оригинал созданного фона');
+   const digest=await sha(stored.blob);if(digest!==s.background.sha256)throw Error('SHA-256 фона изменился');
+   return {slideId:s.id,source:'provider-generated',sha256:digest,originalRef:s.background.generatedRef,...s.background.provenance};
+  }
+  if(s.background){
+   const response=await fetch(backgroundAssetUrl(s.background));if(!response.ok)throw Error('Нет библиотечного фона');
+   return {slideId:s.id,source:'pre-generated-library',libraryId:s.background.libraryId,sha256:await sha(await response.blob()),liveGeneration:false};
+  }
+  return {slideId:s.id,source:'image-free-canvas',liveGeneration:false};
+ }));
 }
 export function triggerEditorialDownload(blob:Blob,filename:string){
  const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -506,4 +543,104 @@ export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
  }
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
+}
+
+/** Explicit generation only; browser never receives a provider credential. */
+export async function requestEditorialBackground(post:EditorialPost,index:number,{paidConsent=false}={}):Promise<{status:'READY'|'BLOCKED';background?:CinematicBackground;message:string}>{
+ const blocked=(message:string)=>({status:'BLOCKED' as const,message});
+ if(!paidConsent)return blocked('BLOCKED: нужно отдельное разрешение на один платный запрос. Генерация не выполнена.');
+ const direction=post.slides[index]?.photoDirection?.trim();
+ if(post.research&&!direction)return blocked('NEEDS_INPUT: заполните визуальное решение этого слайда. Генерация не выполнена.');
+ try{
+  const health=await fetch(personaWorkerUrl+'/health',{signal:AbortSignal.timeout(3000)});
+  if(!health.ok)return blocked('BLOCKED: Worker недоступен. Доступны собственный архив и однотонный фон.');
+  const {token}=await health.json();
+  if(typeof token!=='string')return blocked('BLOCKED: Worker не выдал локальный токен.');
+  const response=await fetch(personaWorkerUrl+'/carousel-background',{method:'POST',
+   headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},
+   body:JSON.stringify({theme:post.topic,index,paidConsent:true,...(direction?{visualDirection:direction}:{})}),signal:AbortSignal.timeout(125000)});
+  if(!response.ok)return blocked('BLOCKED: генератор недоступен. Генерация не выполнена.');
+  const result=await response.json();
+  if(result.source!=='openai'||result.status!=='READY')return blocked(result.warning||'BLOCKED: генерация не выполнена. Доступен собственный архив.');
+  if(typeof result.pngBase64!=='string'||result.pngBase64.length>20*1024*1024)throw Error('Invalid generated image');
+  const bytes=Uint8Array.from(atob(result.pngBase64),c=>c.charCodeAt(0));
+  const id='bg-'+crypto.randomUUID();
+  const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  const background:CinematicBackground={...libraryBackground(index),generatedRef:key(post.id,id),sha256,
+   provenance:{provider:'openai',model:result.model,prompt:result.prompt,createdAt:result.createdAt}};
+  if(!validCinematicBackground(background))throw Error('Invalid image provenance');
+  await saveEditorialImage(post.id,id,new File([bytes],'cinematic-background.png',{type:'image/png'}));
+  return {status:'READY',background,message:'Фон создан OpenAI и сохранён локально. Оформление требует вашего утверждения.'};
+ }catch{
+  return blocked('BLOCKED: Worker или генератор недоступен. Генерация не выполнена. Доступны собственный архив и однотонный фон.');
+ }
+}
+
+/** Photo-backed editorial composition; the older flat layouts remain byte-compatible. */
+async function readCinematicBackground(background:CinematicBackground):Promise<Blob>{
+ if(!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ if(background.generatedRef){
+  const stored=await readEditorialImageByRef(background.generatedRef);
+  if(!stored)throw Error('Созданный фон не найден в локальном архиве');
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await stored.blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  if(hash!==background.sha256)throw Error('Созданный фон изменился; экспорт остановлен');
+  return stored.blob;
+ }
+ const response=await fetch(backgroundAssetUrl(background));if(!response.ok)throw Error('Локальный кинофон не найден');
+ return response.blob();
+}
+async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ const background=slide.background;
+ if(background&&!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ const fonts=await Promise.all([
+  ...(slide.headline!==undefined?[
+   document.fonts.load('600 88px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('700 90px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('italic 600 48px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('300 32px "Persona Carousel Inter"',slide.text),
+   document.fonts.load('400 24px "Persona Carousel Inter"',slide.text+' 01 / 08')
+  ]:[document.fonts.load('500 80px "Playfair Display"',slide.text),document.fonts.load('italic 500 80px "Playfair Display"',slide.text)]),
+  ...(slide.headline!==undefined?[]:[document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')])
+ ]);
+ if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
+ let blob:Blob|undefined;
+ if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance');
+  const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):await readEditorialImage(post.id,slide.id);
+  if(!stored)throw Error('Нет оригинального фото для слайда '+(index+1));
+  blob=stored.blob;
+ }else blob=background?await readCinematicBackground(background):undefined;
+ const canvas=document.createElement('canvas');
+ canvas.width=1080;canvas.height=1350;
+ const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ if(blob){
+  const image=await createImageBitmap(blob);
+  const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
+  c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);image.close();
+ }
+ // Keep meaningful objects on the right and reserve a genuinely dark text area.
+ const bottom=[0,2,3,6,7].includes(index);
+ const gradient=bottom?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
+ gradient.addColorStop(0,bottom?'rgba(0,0,0,0)':'rgba(0,0,0,.6)');
+ gradient.addColorStop(bottom?.48:.84,'rgba(0,0,0,.6)');
+ gradient.addColorStop(1,bottom?'rgba(0,0,0,.6)':'rgba(0,0,0,0)');
+ c.fillStyle=gradient;c.fillRect(0,0,1080,1350);
+ if(slide.headline!==undefined){
+  paintEditorialHierarchy(c,slide as EditorialHierarchy,index);
+ }else{
+ c.fillStyle=BASELINE_CREAM;c.textBaseline='top';
+ const margin=90,maxWidth=index===0?810:860;
+ const size=index===0?88:index===6?74:index===7?60:index===5?58:54;
+ // Each phrase remains a whole authored paragraph; no AI-rendered glyphs.
+ const italic=[3,5,6,7].includes(index);
+ c.font=(italic?'italic ':'')+'500 '+size+'px "Playfair Display"';
+ const lines=wrapText(c,slide.text,maxWidth,12),leading=size*1.25;
+ if(lines.length*leading>860)throw Error('Текст слишком длинный для кинофона');
+ const y=bottom?Math.max(610,1190-lines.length*leading):index===5?260:150;
+ c.textAlign='left';
+ lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
+ }
+ // Publication artwork contains no slide numbers; labels belong to the contact sheet.
+ return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }

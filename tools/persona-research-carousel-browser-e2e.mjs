@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /** Browser E2E: sourced Persona carousel draft → author evidence review → real PNG ZIP.
  * No paid provider, user media or live publication. This is an eight-slide synthetic fixture only. It must not be reported as verified real-world sources or approved artwork. */
-import {chromium} from 'playwright';
+const {chromium}=await import(process.env.PERSONA_PLAYWRIGHT_MODULE||'playwright');
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
-const artifacts=resolve('artifacts/persona-research-browser');
+const artifacts=resolve(process.env.PERSONA_RESEARCH_ARTIFACTS||'artifacts/persona-research-browser');
 await mkdir(artifacts,{recursive:true});
 const packet={
  title:'Что делает звук в кино',
@@ -34,7 +34,7 @@ function unzipEntries(buf){
  }
  return entries;
 }
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 try{
  const context=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true});
  const page=await context.newPage(),errors=[];
@@ -52,6 +52,7 @@ try{
  const approve=editor.getByRole('button',{name:'Утвердить тексты и подпись'});
  const reviews=editor.getByTestId('editorial-source-review');
  assert.equal(await approve.isDisabled(),true,'No citation is automatically reviewed');
+ await page.screenshot({path:join(artifacts,'research-unverified-mobile.png'),fullPage:true,animations:'disabled'});
  for(let i=0;i<7;i++)await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(i).check();
  assert.equal(await approve.isDisabled(),true,'Public title/caption not reviewed');
  await reviews.getByTestId('research-public-copy-review').check();
@@ -63,6 +64,8 @@ try{
  await reviews.getByRole('checkbox',{name:'Проверено по оригиналу'}).nth(1).check();
  assert.equal(await approve.isEnabled(),true);
  await approve.click();
+ const generate=editor.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true});
+ assert.equal(await generate.isDisabled(),true,'Paid images require a separate one-shot opt-in');
  // The sourced carousel can attach one local photograph and REUSE the same source
  // on another slide without copying image bytes or losing research provenance.
  await editor.getByRole('button',{name:'Слайд 3'}).first().click();
@@ -78,9 +81,30 @@ try{
  }), 'base64');
  await editor.locator('.personaEditorialFile input[type=file]').setInputFiles({
   name:'original-scene-fixture.png',mimeType:'image/png',buffer:imageBuffer});
+ await editor.getByTestId('editorial-selected-photo').waitFor();
+ const archiveChecks=await page.evaluate(async b64=>{
+  const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
+  const bg=await import('/src/personaEditorialBackgrounds.ts');
+  const p=m.loadEditorialStore(localStorage).posts.find(p=>p.research);
+  if(!p)throw Error('Missing regression draft');
+  const s=p.slides[2];if(!s.photoRef?.includes('/photo-'))throw Error('Upload did not get an immutable photo key');
+  const clean=await media.renderEditorialSlide(p,s,2);
+  const stale=await media.renderEditorialSlide(p,{...s,background:bg.libraryBackground(0)},2);
+  const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+  const matching=equal(new Uint8Array(await clean.arrayBuffer()),new Uint8Array(await stale.arrayBuffer()));
+  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  await media.saveEditorialImage(p.id,'bg-test-fixture',new File([bytes],'cinematic-background.png',{type:'image/png'}));
+  const forged={...s,photoRef:p.id+'/bg-test-fixture'};
+  let refusedRender=false,refusedEvidence=false;
+  try{await media.renderEditorialSlide(p,forged,2)}catch(e){refusedRender=/provenance/.test(String(e))}
+  try{await media.editorialImageProvenance({...p,slides:p.slides.map((v,i)=>i===2?forged:v)})}catch(e){refusedEvidence=/provenance/.test(String(e))}
+  return {matching,refusedRender,refusedEvidence};
+ },imageBuffer.toString('base64'));
+ assert.deepEqual(archiveChecks,{matching:true,refusedRender:true,refusedEvidence:true},'Archive precedence and generated-image provenance cannot be bypassed');
  await editor.getByRole('button',{name:'Обновить архив'}).click();
  const archive=editor.getByTestId('editorial-archive-picker');
  await archive.locator('[data-archive-key]').first().waitFor({timeout:20000});
+ assert.equal(await archive.locator('[data-archive-key]').count(),1,'Generated backgrounds are not offered as author originals');
  await editor.getByRole('button',{name:'Слайд 4'}).first().click();
  await archive.locator('[data-archive-key]').first().click();
  assert.equal(await editor.getByTestId('editorial-selected-photo').count(),1,'Reused source key is visible');
@@ -101,9 +125,13 @@ try{
  const entries=unzipEntries(await readFile(file));
  assert.equal(entries.filter(e=>/^slide-\d\d\.png$/.test(e.name)).length,8);
  assert.ok(entries.some(e=>e.name==='research-sources.json'));
+ const imageEvidence=JSON.parse(entries.find(e=>e.name==='image-provenance.json').bytes.toString('utf8'));
+ assert.equal(imageEvidence.length,8);
+ assert.ok(imageEvidence.every(e=>e.source==='author-archive'||e.source==='image-free-canvas'),'Manual fallback is never labelled live generation');
  const caption=entries.find(e=>e.name==='caption.txt');
  assert.equal(caption?.bytes.toString('utf8'),packet.caption);
  for(const entry of entries.filter(e=>e.name.endsWith('.png'))){
+  await writeFile(join(artifacts,'research-fixture-'+entry.name),entry.bytes);
   assert.ok(entry.bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
   assert.equal(entry.bytes.readUInt32BE(16),1080);
   assert.equal(entry.bytes.readUInt32BE(20),1350);
@@ -129,5 +157,6 @@ try{
  assert.equal(overflow,false,'390px viewport must not overflow horizontally');
  assert.deepEqual(errors,[],'No browser runtime errors');
  await page.screenshot({path:join(artifacts,'reviewed-research-mobile.png'),fullPage:true,animations:'disabled'});
+ await writeFile(join(artifacts,'QA.json'),JSON.stringify({syntheticFixture:true,sourceVerification:'simulated only; example.org is not a verified factual source',paidApiCalls:0,slides:8,archiveChecks,mobileOverflow:false,pngSize:'1080x1350'},null,2)+'\n');
  console.log('PERSONA_RESEARCH_BROWSER_E2E_PASS '+JSON.stringify({slides:8,pngSize:'1080x1350',sources:7,viewport:390}));
 }finally{await browser.close()}

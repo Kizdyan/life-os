@@ -1,4 +1,6 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
+import {libraryBackground,isGeneratedBackgroundRef} from './personaEditorialBackgrounds';
+import {HIERARCHY_LAYOUTS} from './personaEditorialTypography';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
  approveEditorialStep,createEditorialFromTopic,editorialStage,editorialStageLabel,
@@ -11,7 +13,7 @@ import {
  setEditorialChecklistItem,editorialContrastPass,
  type EditorialPost,type TopicChoice,type EditorialPreset,type EditorialSlide,type PostKind
 } from './personaEditorialModel';
-import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide} from './personaEditorialMedia';
+import {buildEditorialExport,readEditorialImage,readEditorialImageByRef,saveEditorialImage,listEditorialImages,verifyEditorialArchivePhotos,triggerEditorialDownload,renderEditorialSlide,requestEditorialBackground} from './personaEditorialMedia';
 import {
  PUBLICATION_CAROUSEL_IDS,publicationCarouselDraft,publicationCarouselApproved,
  buildSinglePublicationZip,buildAllPublicationZip,publicationFilename,
@@ -19,6 +21,8 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
+import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
+import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -49,7 +53,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'){
+  if(post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter')){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -63,7 +67,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=[CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter';
+ const exact=Boolean(post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'));
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -73,6 +77,22 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
 
 export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange,onSelect,onClose}:Props){
  const post=posts.find(x=>x.id===targetId)??null;
+ const livePost=useRef(post);livePost.current=post;
+ const [backgroundBusy,setBackgroundBusy]=useState(false);
+ const [backgroundMessage,setBackgroundMessage]=useState('');
+ const [paidImageConsent,setPaidImageConsent]=useState(false);
+ async function generateBackground(){
+  if(!post||backgroundBusy||!paidImageConsent)return;
+  const id=post.id,topic=post.topic,revision=post.revision,slideId=post.slides[selectedSlide]?.id;
+  setBackgroundBusy(true);setBackgroundMessage('Создаётся фон без текста…');
+  setPaidImageConsent(false);
+  try{
+   const result=await requestEditorialBackground(post,selectedSlide,{paidConsent:true}),current=livePost.current;
+   if(current?.id!==id||current.topic!==topic||current.revision!==revision){setBackgroundMessage('Карусель изменилась. Созданный фон не применён к новой редакции.');return}
+   if(result.status==='READY'&&result.background)onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?{...s,visual:'background',photoRef:undefined,background:result.background}:s)}));
+   setBackgroundMessage(result.message);
+  }finally{setBackgroundBusy(false)}
+ }
  const [kind,setKind]=useState<PostKind>('carousel');
  const [researchJson,setResearchJson]=useState('');
  const [researchTheme,setResearchTheme]=useState('');
@@ -80,6 +100,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [sourceTitle,setSourceTitle]=useState('');
  const [sourceUrl,setSourceUrl]=useState('');
  const [selectedSlide,setSelectedSlide]=useState(0);
+ useEffect(()=>setPaidImageConsent(false),[post?.id,post?.revision,selectedSlide]);
  const [baselinePreviewUrl,setBaselinePreviewUrl]=useState<string|null>(null);
  const [baselinePreviewError,setBaselinePreviewError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -97,8 +118,9 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
  const checklist=post?.kind==='carousel'?editorialChecklistState(post):[];
  const archiveFixture=Boolean(post?.carouselFormat||post?.research);
+ const needsArchiveList=archiveFixture||Boolean(post?.slides.some(s=>s.visual==='archive-photo'&&s.photoRef));
  const sourcePass=post?editorialSourcesPass(post):false;
- const exactCanvasPreview=Boolean(post?.research||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
+ const exactCanvasPreview=Boolean(post?.research||post?.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
  const archiveRefsReady=post===null||
   (!post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'&&s.photoRef))||
   !post.slides.some(s=>s.visual==='archive-photo')||
@@ -131,12 +153,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   return()=>{alive=false;if(url)URL.revokeObjectURL(url)};
  },[post?.id,slide?.id,slide?.visual,slide?.photoRef,post?.revision]);
  useEffect(()=>{
-  if(!post?.carouselFormat&&!post?.research){setArchiveChoices([]);setArchiveError('');return}
+  if(!needsArchiveList){setArchiveChoices([]);setArchiveError('');return}
   let alive=true;const urls:string[]=[];
   setArchiveLoading(true);setArchiveError('');
   listEditorialImages().then(images=>{
    if(!alive)return;
-   const options=images.filter(img=>img.blob instanceof Blob&&img.blob.size===img.bytes&&
+   const options=images.filter(img=>!isGeneratedBackgroundRef(img.key)&&img.blob instanceof Blob&&img.blob.size===img.bytes&&
     ['image/jpeg','image/png'].includes(img.mime)).map(img=>{
      const url=URL.createObjectURL(img.blob);urls.push(url);
      return {key:img.key,name:img.name,url};
@@ -144,7 +166,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    setArchiveChoices(options);setArchiveLoading(false);
   }).catch(e=>{if(alive){setArchiveLoading(false);setArchiveChoices([]);setArchiveError((e as Error).message)}});
   return()=>{alive=false;urls.forEach(url=>URL.revokeObjectURL(url))};
- },[post?.id,post?.carouselFormat,Boolean(post?.research),archiveRefresh]);
+ },[post?.id,needsArchiveList,archiveRefresh]);
  function persist(changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'slides'|'scheduledDate'>>){
   if(!post)return;
   try{onChange(reviseEditorialPost(post,changes));setError('')}
@@ -248,11 +270,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  function chooseArchivePhoto(photoRef:string){
   if(!post||!slide||!(post.carouselFormat||post.research))return;
   if(post.carouselFormat==='mixed'&&selectedSlide%2===1)return;
-  modifySlide({visual:'archive-photo',photoRef});
+  modifySlide({visual:'archive-photo',photoRef,background:undefined});
  }
  function clearArchivePhoto(){
   if(!post||!slide||!(post.carouselFormat||post.research))return;
-  modifySlide({visual:'background',photoRef:undefined});
+  modifySlide({visual:'background',photoRef:undefined,background:undefined});
  }
  function moveArchivePhoto(delta:-1|1){
   if(!post||selectedPhotoPosition<0)return;
@@ -308,11 +330,16 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
 
  async function upload(file:File|null){
   if(!post||!slide||!file)return;
+  const id=post.id,revision=post.revision,slideId=slide.id,assetId='photo-'+crypto.randomUUID();
   setBusy(true);setError('');
   try{
-   await saveEditorialImage(post.id,slide.id,file);
-   // Changing an asset invalidates visual approval. No external uploads.
-   onChange(reviseEditorialPost(post,{preset:post.preset}));
+   await saveEditorialImage(id,assetId,file);
+   const current=livePost.current;
+   if(current?.id!==id||current.revision!==revision){setError('Карусель изменилась. Фото сохранено в архиве, но не применено к новой редакции.');return}
+   // Immutable upload: never overwrite a photograph reused by another slide.
+   onChange(reviseEditorialPost(current,{slides:current.slides.map(s=>s.id===slideId?
+    {...s,visual:'archive-photo',photoRef:id+'/'+assetId,background:undefined}:s)}));
+   setArchiveRefresh(n=>n+1);
    setAsset(old=>{if(old?.url)URL.revokeObjectURL(old.url);return null});
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
@@ -391,6 +418,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </div>
     <div className="personaEditorialMiniStats"><strong>{posts.length}</strong><span>редакционных проектов</span></div>
    </div>
+   {kind==='carousel'&&<article className="personaEditorialNote" data-testid="persona-jaws-brand-trial">
+    <h4>Как две ноты заставили зрителей бояться океана</h4>
+    <p>«Челюсти» (1975) · музыка Джона Уильямса · пробный комплект Old Money. Предложение из подготовленного редакционного банка, не новый автоматический поиск.</p>
+    <button type="button" onClick={()=>{
+     try{if(!posts.some(p=>p.id===JAWS_BRAND_TRIAL_ID))onCreate(createJawsBrandTrial());onSelect(JAWS_BRAND_TRIAL_ID);setError('')}
+     catch(e){setError(e instanceof Error?e.message:String(e))}
+    }}>{posts.some(p=>p.id===JAWS_BRAND_TRIAL_ID)?'Открыть пробный комплект':'Попробовать тему в Persona'}</button>
+   </article>}
    <details className="personaEditorialNote" data-testid="editorial-research-import">
     <summary><strong>Создать карусель из исследования</strong> · Perplexity / проверяемый JSON</summary>
     <p>Новый проект в существующей редакции Persona. Источники будут помечены как непроверенные:
@@ -485,6 +520,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     {!post.approvals.topic?<button className="personaEditorialApprove" type="button" onClick={()=>void approve('topic')}>Утвердить тему</button>:
      <span className="personaEditorialApproved">Тема утверждена ✓</span>}
    </section>
+   {post.id===JAWS_BRAND_TRIAL_ID&&post.approvals.topic&&<PersonaBrandTrialPreview post={post} onChange={onChange}/>}
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
     <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии. В исследовательской карусели пустая строка разделяет заголовок, абзац и необязательный курсивный акцент (до трёх блоков).</p>
@@ -497,9 +533,14 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       Слайд {i+1}</button>)}
     </div>
-    <label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
+    {slide?.headline!==undefined?<div aria-label="Иерархия текста слайда">
+     {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Кикер<input value={slide.kicker??''} maxLength={60} onChange={e=>modifySlide({kicker:e.target.value})}/></label>}
+     <label>Заголовок<textarea aria-label="Заголовок слайда" value={slide.headline} maxLength={170} onChange={e=>modifySlide({headline:e.target.value})}/></label>
+     {(post.id!==CAROUSEL_QUIET_HORROR_ID||HIERARCHY_LAYOUTS[selectedSlide]?.body)&&<label>Основной текст<textarea value={slide.body??''} maxLength={350} onChange={e=>modifySlide({body:e.target.value})}/></label>}
+     {post.id!==CAROUSEL_QUIET_HORROR_ID&&<label>Курсивный акцент<textarea value={slide.highlight??''} maxLength={170} onChange={e=>modifySlide({highlight:e.target.value})}/></label>}
+    </div>:<label>{post.kind==='carousel'?'Текст выбранного слайда':'Короткий титр на фото (необязательно)'}
      <textarea value={slide?.text??''} maxLength={post.research?260:170} onChange={e=>modifySlide({text:e.target.value})}/>
-    </label>
+    </label>}
     {post.research&&<section className="personaEditorialResearchReview" data-testid="editorial-source-review">
      <h4>Источники и проверка фактов</h4>
      <p>Открой ссылки, сопоставь каждый факт с оригиналом и отметь только действительно подтверждённые.
@@ -551,6 +592,11 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       persist({slides:post.slides.filter(x=>x.id!==slide?.id)});setSelectedSlide(Math.max(0,selectedSlide-1));
      }}>Убрать слайд</button>}
     </div>}
+    {post.id===CAROUSEL_QUIET_HORROR_ID&&<button type="button" onClick={()=>{
+     const draft=createQuietHorrorCarousel();
+     const caption=Object.values(quietHorrorCaptions.variants).find(value=>value===post.caption||value.startsWith(post.caption+'\n\n'))??post.caption;
+     persist({slides:draft.slides,caption});
+    }}>Применить тексты и фоны v4</button>}
     {post.id===CAROUSEL_QUIET_HORROR_ID&&<div role="group" aria-label="Вариант подписи">
      {(['1','2'] as const).map(id=><button key={id} type="button"
       aria-pressed={post.caption===quietHorrorCaptions.variants[id]}
@@ -572,16 +618,30 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       aria-pressed={post.preset===x.id} onClick={()=>persist({preset:x.id})}>{x.name}</button>)}
     </div>
     <p>Каждый слайд отдельно: спокойный фон с типографикой либо реальная фотография из твоего архива. Смешивать можно свободно.</p>
-    {post.research&&slide?.photoDirection&&<p className="personaEditorialNote"><strong>Замысел визуала:</strong> {slide.photoDirection}</p>}
+    {post.research&&slide&&<label>Визуальное решение выбранного слайда
+     <textarea value={slide.photoDirection} maxLength={350} onChange={e=>modifySlide({photoDirection:e.target.value})}/>
+    </label>}
     <div className="personaEditorialSlides">
      {post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>
       {i+1} · {s.visual==='archive-photo'?'Фото':'Фон'}</button>)}
     </div>
+    {(!archiveFixture||post.research)&&<div aria-label="Кинематографичные фоны">
+     {!post.research&&<button type="button" data-testid="cinematic-library" disabled={backgroundBusy} onClick={()=>{
+      persist({slides:post.slides.map((s,i)=>({...s,visual:'background',background:libraryBackground(i)}))});
+      setBackgroundMessage('Локальные кинофоны применены. Текст не изменён; оформление требует утверждения.');
+     }}>Кинофоны из библиотеки · все слайды</button>}
+     <label><input type="checkbox" aria-label="Разрешаю один платный запрос генерации изображения" checked={paidImageConsent} disabled={backgroundBusy} onChange={e=>setPaidImageConsent(e.target.checked)}/>Разрешаю один платный запрос OpenAI для этого слайда</label>
+     <button type="button" disabled={backgroundBusy||!paidImageConsent} onClick={()=>void generateBackground()}>
+      {backgroundBusy?'Генерация фона…':'Сгенерировать фон слайда · OpenAI'}</button>
+     {slide?.background&&<button type="button" disabled={backgroundBusy} onClick={()=>modifySlide({background:undefined})}>Однотонный фон слайда</button>}
+     <p>Текст рисует Persona. Внешняя генерация требует ключа и отдельного согласия. При BLOCKED доступны собственный архив и однотонный фон. Локальная библиотека — предзаготовленные изображения, а не выполненная генерация.</p>
+     {backgroundMessage&&<p role="status">{backgroundMessage}</p>}
+    </div>}
     <fieldset className="personaEditorialMediaChoices">
      <legend>Оформление слайда {selectedSlide+1}</legend>
-     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
+     <label><input type="radio" checked={slide?.visual==='background'} onChange={()=>post.carouselFormat||post.research?clearArchivePhoto():modifySlide({visual:'background'})}/>Фон + текст</label>
      <label><input type="radio" checked={slide?.visual==='archive-photo'}
-      disabled={Boolean(post.carouselFormat)} onChange={()=>modifySlide({visual:'archive-photo'})}/>Фото из архива + текст</label>
+      disabled={Boolean(post.carouselFormat)} onChange={()=>modifySlide({visual:'archive-photo',background:undefined})}/>Фото из архива + текст</label>
     </fieldset>
     {archiveFixture&&<section className="personaEditorialArchivePicker" data-testid="editorial-archive-picker"
      aria-label="Выбор фотографий из архива IndexedDB">

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "old-money-editorial",
+  "status": "draft-tokens",
+  "required": {
+    "style": "old-money",
+    "brandBeforeTheme": true,
+    "noSlideSignature": true,
+    "noDecorativeSlideNumbers": true,
+    "contextForNewViewer": true,
+    "creativeApproval": true
+  },
+  "candidates": {
+    "palettes": {
+      "light": {
+        "background": "#EFE7D8",
+        "text": "#292420",
+        "accent": "#554335"
+      },
+      "dark": {
+        "background": "#292420",
+        "text": "#EFE7D8",
+        "accent": "#A28C70"
+      },
+      "olive": {
+        "background": "#535B4A",
+        "text": "#EFE7D8",
+        "accent": "#EFE7D8"
+      }
+    },
+    "existingRenderer": {
+      "headline": "Persona Carousel Cormorant",
+      "body": "Persona Carousel Inter"
+    },
+    "comparisonFonts": [
+      "Literata",
+      "Golos Text"
+    ],
+    "layouts": [
+      "photo-led",
+      "editorial-split",
+      "archival-detail",
+      "typographic-pause"
+    ],
+    "texture": "subtle paper or film grain; never obscure text"
+  },
+  "workflow": [
+    "topic-proposal",
+    "topic-approval",
+    "research",
+    "render",
+    "independent-review",
+    "creative-revision",
+    "creative-approval",
+    "publish"
+  ],
+  "review": [
+    "mobile-readability",
+    "feed-coherence",
+    "composition",
+    "color-grading",
+    "source-accuracy",
+    "rights",
+    "no-signature",
+    "no-decorative-numbering"
+  ],
+  "exclusions": [
+    "theme-first palettes",
+    "default flat slides",
+    "unexplained names or context",
+    "repeated author signature",
+    "unapproved style changes"
+  ],
+  "notes": "User confirmed Old Money profile, not these exact color/font tokens. Use actual approved reference and feed comparisons before locking. Existing historical approvals are not invalidated. Metadata checks are not image QA.",
+  "preferenceEvidence": [
+    {
+      "id": "old-money-external-prototype-20261126",
+      "scope": "visual-direction",
+      "decision": "positive",
+      "detail": "Author considers the Old Money editorial prototype a substantial improvement and agrees to a Persona trial. Exact tokens, individual slides, source checks and publication remain unapproved.",
+      "referenceJob": "jaws-old-money-editorial-v1",
+      "provenance": "explicit author feedback on external prototype"
+    }
+  ]
+}
