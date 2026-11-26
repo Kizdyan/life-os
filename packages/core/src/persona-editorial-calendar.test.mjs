@@ -81,3 +81,9 @@ test('sprint rejects impossible date and retains multiple explicit commitments o
  const plan=buildPersonaEditorialCalendar({startDate:'2026-11-28',days:7,sprintStartDate:'2026-11-28',existing});
  assert.equal(plan.slots.filter(s=>s.date==='2026-11-28').length,2);assert.equal(plan.slots.length,8);
 });
+
+test('explicitly occupied editorial dates are never filled with another proposed carousel',()=>{
+ const plan=buildPersonaEditorialCalendar({startDate:'2026-11-28',days:7,sprintStartDate:'2026-11-28',occupiedDates:['2026-11-29','2026-12-02']});
+ assert.equal(plan.slots.length,5);assert.ok(plan.slots.every(s=>!['2026-11-29','2026-12-02'].includes(s.date)));
+ assert.throws(()=>buildPersonaEditorialCalendar({startDate:'2026-11-28',days:7,sprintStartDate:'2026-11-28',occupiedDates:['2026-02-30']}));
+});
