@@ -2,11 +2,12 @@ import React,{useEffect,useRef,useState} from 'react';
 import type {EditorialPost} from './personaEditorialModel';
 import {renderEditorialSlide} from './personaEditorialMedia';
 
-import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,requestCreativeModelPatch,markCreativeFeedbackPrepared,type CreativeFeedback} from './personaCreativeFeedback';
+import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,creativeBrandNotes,requestCreativeModelPatch,markCreativeFeedbackPrepared,type CreativeFeedback} from './personaCreativeFeedback';
 
 export default function PersonaBrandTrialPreview({post,onChange}:{post:EditorialPost;onChange:(post:EditorialPost)=>void}){
  const [selected,setSelected]=useState(post.slides[0]?.id??'');
  const [comment,setComment]=useState('');
+ const [reuse,setReuse]=useState(false);
  const [records,setRecords]=useState<CreativeFeedback[]>([]);
  const [feedbackStatus,setFeedbackStatus]=useState('');
  useEffect(()=>{try{setRecords(loadCreativeFeedback(localStorage).filter(r=>r.postId===post.id))}catch(e){setFeedbackStatus(e instanceof Error?e.message:String(e))}},[post.id]);
@@ -18,12 +19,12 @@ export default function PersonaBrandTrialPreview({post,onChange}:{post:Editorial
   inFlight.current=true;setFeedbackBusy(true);
   const original=post;
   try{
-   const result=prepareCreativeFeedback(post,selected,comment);
+   const result=prepareCreativeFeedback(post,selected,comment,undefined,reuse?'brand':undefined);
    setRecords(appendCreativeFeedback(localStorage,result.record).filter(r=>r.postId===post.id));
-   setComment('');
+   setComment('');setReuse(false);
    if(result.revised){onChange(result.revised);setFeedbackStatus('Новый заголовок передан в редактор; проверь PNG.');return}
    setFeedbackStatus('Локальная модель разбирает замечание…');
-   const model=await requestCreativeModelPatch(original,selected,result.record.comment);
+   const model=await requestCreativeModelPatch(original,selected,result.record.comment,creativeBrandNotes(loadCreativeFeedback(localStorage),result.record.id));
    if(!active.current)return;
    if(latest.current.id!==original.id||latest.current.revision!==original.revision){setFeedbackStatus('Проект изменился. Правка сохранена в журнале, но не применена к другой редакции.');return}
    if(model.revised){
@@ -64,10 +65,11 @@ export default function PersonaBrandTrialPreview({post,onChange}:{post:Editorial
     {post.slides.map((s,i)=><option key={s.id} value={s.id}>{i+1}</option>)}
    </select></label>
    <label>Что изменить<textarea maxLength={1500} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Например: Заголовок: Как музыка предупреждает об опасности"/></label>
+   <label><input type="checkbox" checked={reuse} onChange={e=>setReuse(e.target.checked)}/> Это общее пожелание для будущих работ, а не только этого слайда</label>
    <button type="button" disabled={feedbackBusy||!comment.trim()} onClick={()=>void submitFeedback()}>{feedbackBusy?'Обрабатываю…':'Передать правку Persona'}</button>
    <p>Persona использует локальную модель для текста, выбора из двух гарнитур, светлой/тёмной палитры, позиции и размера иллюстрации. Новые изображения и произвольные шрифты пока не поддерживаются. Неподдержанные замечания остаются в журнале.</p>
    {feedbackStatus&&<p role="status">{feedbackStatus}</p>}
-   {records.length>0&&<details><summary>История замечаний ({records.length})</summary>{records.slice().reverse().map(r=><p key={r.id}>{r.slideId} · редакция {r.revision}: {r.comment} · {r.status==='pending'?'ожидает исполнения':'редакция подготовлена'}</p>)}</details>}
+   {records.length>0&&<details><summary>История замечаний ({records.length})</summary>{records.slice().reverse().map(r=><p key={r.id}>{r.slideId} · редакция {r.revision}: {r.comment} · {r.scope==='brand'?'Общее пожелание · ':''}{r.status==='pending'?'ожидает исполнения':'редакция подготовлена'}</p>)}</details>}
   </fieldset>
   <p>Проверка фактов и утверждение готового дизайна остаются обязательными для экспорта. Выше и ниже можно редактировать текст и оформление; предпросмотр пересобирается.</p>
  </section>;
