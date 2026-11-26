@@ -45,9 +45,9 @@ function drawArt(c:CanvasRenderingContext2D,r:Rect,art:string,seed:number){
  }
  c.restore();c.strokeStyle=bronze;c.lineWidth=1;c.strokeRect(r.x,r.y,r.w,r.h);
 }
-function textBlock(c:CanvasRenderingContext2D,value:string,r:Rect,headline:boolean,color:string){
+function textBlock(c:CanvasRenderingContext2D,value:string,r:Rect,headline:boolean,color:string,literary=false){
  if(!value.trim())return;
- const family=headline?'Persona Carousel Cormorant':'Persona Carousel Inter',weight=headline?600:400;
+ const family=headline?(literary?'Playfair Display':'Persona Carousel Cormorant'):'Persona Carousel Inter',weight=headline?(literary?500:600):400;
  const max=headline?90:47,min=headline?58:38,leading=headline?1.08:1.35;
  for(let size=max;size>=min;size-=2){
   c.font=weight+' '+size+'px "'+family+'"';
@@ -63,27 +63,32 @@ export async function renderLocalBrandTrial(post:EditorialPost,slide:EditorialSl
  const spec=brandTrialArt(slide.id);
  const blocks=slide.text.split(/\n\s*\n/u).map(s=>s.trim()).filter(Boolean);
  if(!blocks.length||blocks.length>3)throw Error('Нужно 1–3 текстовых блока');
- const faces=await Promise.all([document.fonts.load('600 80px "Persona Carousel Cormorant"',blocks[0]),document.fonts.load('400 44px "Persona Carousel Inter"',blocks.slice(1).join(' ')||'А')]);
+ const style=slide.brandTrialStyle??{},literary=style.font==='literary';
+ const faces=await Promise.all([document.fonts.load(literary?'500 80px "Playfair Display"':'600 80px "Persona Carousel Cormorant"',blocks[0]),document.fonts.load('400 44px "Persona Carousel Inter"',blocks.slice(1).join(' ')||'А')]);
  if(faces.some(a=>!a.length))throw Error('Шрифты бренд-теста не загружены');
  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas 2D недоступен');
- const dark=spec.palette==='dark',fg=dark?ivory:espresso;
+ const dark=(style.palette??spec.palette)==='dark',fg=dark?ivory:espresso;
  c.fillStyle=dark?espresso:ivory;c.fillRect(0,0,W,H);
  // Subtle deterministic print texture.
  let n=0x271126;for(let i=0;i<18000;i++){n=(Math.imul(n,1664525)+1013904223)>>>0;const x=n%W;n=(Math.imul(n,1664525)+1013904223)>>>0;const y=n%H;c.fillStyle=dark?'rgba(255,244,220,.025)':'rgba(70,45,30,.035)';c.fillRect(x,y,2,1)}
  const body=blocks.slice(1).join('\n');
- if(index===0){
-  textBlock(c,blocks[0],{x:94,y:92,w:892,h:345},true,fg);
-  textBlock(c,body,{x:96,y:454,w:888,h:220},false,fg);
-  drawArt(c,{x:94,y:730,w:892,h:520},spec.art,index);
- }else if(index%2===1){
-  drawArt(c,{x:94,y:92,w:892,h:462},spec.art,index);
-  textBlock(c,blocks[0],{x:94,y:608,w:892,h:270},true,fg);
-  textBlock(c,body,{x:96,y:894,w:888,h:355},false,fg);
+ const layout=style.layout??(index===0?'image-bottom':index%2===1?'image-top':'image-middle');
+ const artH=style.image==='smaller'?340:style.image==='larger'?530:440;
+ const headline=(y:number,h:number)=>textBlock(c,blocks[0],{x:94,y,w:892,h},true,fg,literary);
+ const paragraph=(y:number,h:number)=>textBlock(c,body,{x:96,y,w:888,h},false,fg);
+ if(layout==='image-top'){
+  drawArt(c,{x:94,y:92,w:892,h:artH},spec.art,index);
+  headline(126+artH,270);
+  paragraph(416+artH,832-artH);
+ }else if(layout==='image-bottom'){
+  headline(92,310);
+  paragraph(420,740-artH);
+  drawArt(c,{x:94,y:1250-artH,w:892,h:artH},spec.art,index);
  }else{
-  textBlock(c,blocks[0],{x:94,y:92,w:892,h:270},true,fg);
-  drawArt(c,{x:94,y:402,w:892,h:420},spec.art,index);
-  textBlock(c,body,{x:96,y:884,w:888,h:365},false,fg);
+  headline(92,270);
+  drawArt(c,{x:94,y:392,w:892,h:artH},spec.art,index);
+  paragraph(426+artH,822-artH);
  }
  return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('PNG не создан')),'image/png'));
 }
