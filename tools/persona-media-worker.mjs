@@ -4,6 +4,7 @@ import {indexReferences} from './persona-reference-intelligence.mjs';
 import {indexReferenceVideos} from './persona-reference-video.mjs';
 import {pickVision} from './persona-yandex-start.mjs';
 import {prepareAboutMe,readAboutMeImage} from './persona-about-me-bridge.mjs';
+import {inspectPersonaRuntime,RUNTIME_PROTOCOL} from './persona-runtime-status.mjs';
 import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
@@ -485,11 +486,16 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     const musicStudio=Boolean(config.musicLut&&await exists(config.musicLut));
 
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),carouselResearch:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY),requiresConsent:true,provider:'perplexity'},carouselIndependentReview:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY&&(config.apiEnv??process.env).PERSONA_CAROUSEL_REVIEW_MODEL),requiresConsent:true,provider:'perplexity'},referenceBackground:referenceState,token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',runtimeProtocol:RUNTIME_PROTOCOL,creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),carouselResearch:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY),requiresConsent:true,provider:'perplexity'},carouselIndependentReview:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY&&(config.apiEnv??process.env).PERSONA_CAROUSEL_REVIEW_MODEL),requiresConsent:true,provider:'perplexity'},referenceBackground:referenceState,token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
    const videoToken=req.method==='GET'&&((url.pathname.endsWith('/video')||url.pathname.endsWith('/video-full'))||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/export\/[a-z0-9-]+$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/quality-(?:report|contact-sheet)$/.test(url.pathname))?url.searchParams.get('token'):null;
    if(req.headers['x-persona-worker-token']!==token&&videoToken!==token){respond(res,401,{error:'invalid_local_worker_token'});return}
+   if(req.method==='GET'&&url.pathname==='/runtime-status'){
+    const env=config.apiEnv??process.env;
+    respond(res,200,{...await inspectPersonaRuntime({cache:env.PERSONA_YANDEX_CACHE_DIR,backgroundEnabled:referenceAuto}),background:referenceState.status,
+     components:await health(config)});return;
+   }
    if(url.pathname.startsWith('/production-queue')){
     if(!queueRoot)fail('Production queue is disabled; existing manual tools remain available');
     if(req.method==='GET'&&url.pathname==='/production-queue'){respond(res,200,await queueView());return}
