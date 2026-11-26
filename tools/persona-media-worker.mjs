@@ -3,6 +3,7 @@ import {reviewCarouselVisual} from './persona-carousel-visual-review.mjs';
 import {indexReferences} from './persona-reference-intelligence.mjs';
 import {indexReferenceVideos} from './persona-reference-video.mjs';
 import {pickVision} from './persona-yandex-start.mjs';
+import {prepareAboutMe,readAboutMeImage} from './persona-about-me-bridge.mjs';
 import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
  * Local Persona AI Media Worker. This is intentionally a loopback-only bridge
@@ -507,6 +508,22 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    if(await quickRender.handle(req,res,url))return;
    if(req.method==='GET'&&url.pathname==='/carousel-background/status'){
     respond(res,200,carouselBackgroundStatus(config.apiEnv??process.env));return;
+   }
+   if(req.method==='POST'&&url.pathname==='/about-me/prepare'){
+    await json(req,1000);
+    const cache=(config.apiEnv??process.env).PERSONA_YANDEX_CACHE_DIR;
+    if(!cache)fail('Reference cache is not configured');
+    if(ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||quickRender.isBusy()||[...sessions.values()].some(j=>j.state==='running'))fail('Local AI is busy');
+    ideationBusy=true;
+    try{respond(res,200,await prepareAboutMe(cache));}
+    finally{ideationBusy=false}return;
+   }
+   const aboutMeAsset=/^\/about-me\/([a-f0-9-]{36})\/([a-f0-9]{64})$/.exec(url.pathname);
+   if(req.method==='GET'&&aboutMeAsset){
+    const cache=(config.apiEnv??process.env).PERSONA_YANDEX_CACHE_DIR;
+    if(!cache)fail('Reference cache is not configured');
+    const result=await readAboutMeImage(cache,aboutMeAsset[1],aboutMeAsset[2]);
+    res.writeHead(200,{'Content-Type':result.mime,'Content-Length':result.bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(result.bytes);return;
    }
    if(req.method==='POST'&&url.pathname==='/reference-intelligence/video-index'){
     await json(req,1000);
