@@ -14,6 +14,7 @@ import {personaWorkerUrl} from './personaWorkerUrl';
 import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
 import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
 import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
+import {renderCreamEditorial} from './personaCreamEditorialRenderer';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -230,6 +231,19 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.compositionPreset==='cream-editorial-v1'){
+  let blob:Blob|undefined;
+  if(slide.visual==='archive-photo'){
+   if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Нельзя выдавать созданный фон за оригинал');
+   const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):await readEditorialImage(post.id,slide.id);
+   blob=stored?.blob;
+  }else if(slide.background){
+   if(!validCinematicBackground(slide.background))throw Error('Неверная ссылка на кинофон');
+   blob=await readCinematicBackground(slide.background);
+  }
+  if(!blob)throw Error('Cream Editorial: нужен осмысленный визуальный материал для слайда '+(index+1));
+  return renderCreamEditorial(slide,index,blob);
+ }
  if(isLocalBrandTrialSlide(post,slide))return renderLocalBrandTrial(post,slide,index);
  if((!post.research||['cormorant-inter','literata-golos'].includes(post.fontPreset??''))&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
