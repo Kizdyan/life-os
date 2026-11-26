@@ -287,18 +287,34 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
   finally{researchInFlight.current=false;setResearchBusy(false)}
  }
- async function runAutonomousEditorial(){
-  if(researchInFlight.current||!window.confirm('Разрешить до 4 платных запросов: поиск темы, независимая проверка, при необходимости одна доработка и повторная проверка?'))return;
+ async function runAutonomousEditorial(retrySame=false){
+  if(researchInFlight.current)return;
+  const pendingKey='lifeos:persona:pending-editorial-run:v1';
+  let pending: {runId:string;mode:'discover';history:string[];consent:true;maxCalls:4}|null=null;
+  try{const raw=localStorage.getItem(pendingKey);if(raw){pending=JSON.parse(raw);if(!pending||!(/^[a-f0-9-]{36}$/.test(pending.runId))||pending.mode!=='discover'||pending.consent!==true||pending.maxCalls!==4||!Array.isArray(pending.history))throw Error('Повреждён журнал ожидания')}}catch(e){setError(String(e));return}
+  if(!pending&&!window.confirm('Разрешить до 4 платных запросов: поиск темы, независимая проверка, при необходимости одна доработка и повторная проверка?'))return;
+  if(pending&&retrySame&&!window.confirm('Повторить запрос с тем же ID? Worker вернёт сохранённый результат или потребует сверку. Если запуск ещё не принят, возможно до 4 платных запросов.'))return;
   researchInFlight.current=true;setResearchBusy(true);setError('');
   try{
    const history=[...new Set([...posts].filter(p=>p.kind==='carousel').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(p=>p.title.trim().slice(0,160)).filter(Boolean))].slice(0,20);
    const health=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(4500)}).then(r=>{if(!r.ok)throw Error('Worker недоступен');return r.json()});
-   if(health?.service!=='persona-media-worker'||typeof health.token!=='string'||!health.carouselResearch?.configured||!health.carouselIndependentReview?.configured)throw Error('Нужны настроенные исследователь и независимый критик');
-   const response=await fetch(personaWorkerUrl+'/carousel-editorial-pipeline',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({mode:'discover',history,consent:true,maxCalls:4}),signal:AbortSignal.timeout(480000)});
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string')throw Error('Worker недоступен');
+   const recovering=Boolean(pending);
+   if(!pending){
+    if(!health.carouselResearch?.configured||!health.carouselIndependentReview?.configured)throw Error('Нужны настроенные исследователь и независимый критик');
+    pending={runId:crypto.randomUUID(),mode:'discover',history,consent:true,maxCalls:4};
+    localStorage.setItem(pendingKey,JSON.stringify(pending));
+   }
+   const runId=pending.runId,readOnly=recovering&&!retrySame;
+   const response=await fetch(personaWorkerUrl+'/carousel-editorial-pipeline'+(readOnly?'/'+runId:''),{method:readOnly?'GET':'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},...(readOnly?{}:{body:JSON.stringify(pending)}),signal:AbortSignal.timeout(readOnly?10000:480000)});
    const data=await response.json();
    if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Редакционный цикл недоступен');
-   if(data?.version!==1||data.approved!==false||data.published!==false||!Array.isArray(data.attempts)||!['AUTHOR_REVIEW_REQUIRED','NEEDS_REVISION','BLOCKED'].includes(data.status)||!data.draft?.packet)throw Error(data.reason||'Черновик не создан');
-   const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+   if(data?.version!==1||data.runId!==runId||data.approved!==false||data.published!==false)throw Error('Не подтверждён ID редакционного запуска');
+   if(['RUNNING','NOT_FOUND','RECONCILIATION_REQUIRED'].includes(data.status))throw Error(data.status==='RUNNING'?'Запуск ещё выполняется; проверь сохранённый запуск.':data.status==='NOT_FOUND'?'Запуск не найден. Для повторной отправки используй тот же ID после подтверждения.':'Запуск прерван: возможны списания. Автоматический повтор запрещён; требуется сверка журнала Worker.');
+   if(!Array.isArray(data.attempts)||!['AUTHOR_REVIEW_REQUIRED','NEEDS_REVISION','BLOCKED'].includes(data.status))throw Error('Неизвестный результат запуска');
+   if(!data.draft?.packet){if(localStorage.getItem(pendingKey)===JSON.stringify(pending))localStorage.removeItem(pendingKey);throw Error(data.reason||'Черновик не создан; результат сохранён в Worker')}
+   const id='editorial-run-'+runId;
+   if(loadEditorialStore(localStorage).posts.some(p=>p.id===id)){if(localStorage.getItem(pendingKey)===JSON.stringify(pending))localStorage.removeItem(pendingKey);if(mounted.current)onSelect(id);return}
    const receivedAt=new Date().toISOString(),draft=data.draft;
    if(draft.provider!=='perplexity'||draft.status!=='UNVERIFIED'||typeof draft.model!=='string')throw Error('Не подтверждён исследователь');
    let created=importResearchCarousel(id,JSON.stringify(draft.packet),receivedAt,{mode:'discover',model:draft.model,receivedAt});
@@ -308,7 +324,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     created=attachEditorialIndependentReview(created,audit);
    }
    if(!mounted.current)return;
-   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));onSelect(id);
+   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));
+   if(!loadEditorialStore(localStorage).posts.some(p=>p.id===id))throw Error('Черновик не сохранён; повторная загрузка результата доступна без нового запроса');
+   if(localStorage.getItem(pendingKey)===JSON.stringify(pending))localStorage.removeItem(pendingKey);
+   onSelect(id);
    setError(data.status==='AUTHOR_REVIEW_REQUIRED'?'Редакционный цикл завершён. Требуется авторская проверка; публикация не разрешена.':('Редакционный цикл остановлен: '+(data.reason||data.status)));
   }catch(e){if(mounted.current)setError('Редакционный цикл: '+(e instanceof Error?e.message:String(e)))}
   finally{researchInFlight.current=false;if(mounted.current)setResearchBusy(false)}
@@ -615,6 +634,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     </button>
     <p>Без заданной темы: поиск учитывает до 20 последних названий каруселей. Результат — новый черновик, не готовая публикация.</p>
     <button type="button" data-testid="editorial-autonomous-cycle" disabled={researchBusy} onClick={()=>void runAutonomousEditorial()}>Persona: исследование → критика → доработка (до 4 платных запросов)</button>
+    <p>Если цикл был прерван, эта кнопка проверит прежний запуск без нового платного запроса.</p>
+    <button type="button" disabled={researchBusy} onClick={()=>void runAutonomousEditorial(true)}>Повторная отправка с прежним ID (после сверки)</button>
     {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
     <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
     <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
