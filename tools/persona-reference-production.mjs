@@ -31,7 +31,7 @@ export function buildReferenceProductionGuide({format,query,records}){
  if(chosen.length<2)return {status:'ABSTAIN',reason:'Fewer than two relevant measured references'};
  const raw=median(chosen.map(r=>r.montage.medianShotSec));
  const shotSec=round(Math.max(2.6,Math.min(3.6,raw)));
- const colors=chosen.map(r=>r.color?.measurement?.luma?.median).filter(n=>num(n,0,255));
+ const colors=chosen.filter(r=>r.color?.status==='measured'&&['bt709'].includes(r.technical?.colorSpace)&&r.technical?.transfer==='bt709'&&r.technical?.colorRange==='tv').map(r=>r.color?.measurement?.luma?.median).filter(n=>num(n,0,255));
  return {version:1,status:'REFERENCE_GUIDANCE',format,shotSec,rawMedianShotSec:round(raw),referenceLumaMedian:colors.length>=2?round(median(colors)):null,
   references:chosen.map(r=>({assetSha256:r.assetSha256,evidenceSha256:r.evidenceSha256,matchedTerms:r.matches,medianShotSec:r.montage.medianShotSec})),
   preference:'unconfirmed',colorPolicy:'comparison-only; no automatic LUT or skin-tone change',speechPolicy:'do not change windows on any source without verified no-audio status',
@@ -52,6 +52,8 @@ export async function loadReferenceProductionGuide({cache,format,query}){
    .flatMap(r=>Array.isArray(r.features)?r.features.filter(f=>f.status==='observed').map(f=>String(f.observation??'').slice(0,260)):[]).slice(0,18);
   const description=[a.annotation?.description,...(a.annotation?.tags??[]),...observed].join(' ').slice(0,4000);
   if(!description.trim())continue;
+  const terms=tokenize(query).filter(t=>t.length>=4),words=tokenize(description);
+  if(!terms.some(t=>words.some(w=>w===t||w.startsWith(t)||w.length>=4&&t.startsWith(w))))continue;
   let bytes;
   try{bytes=await readFile(join(dir,'video-evidence',a.sha256+'.json'))}catch(e){if(e.code==='ENOENT')continue;throw e}
   const r=JSON.parse(bytes);
@@ -61,4 +63,13 @@ export async function loadReferenceProductionGuide({cache,format,query}){
   records.push({...r,description,evidenceSha256:createHash('sha256').update(bytes).digest('hex')});
  }
  return buildReferenceProductionGuide({format,query,records});
+}
+
+/** Compare only explicitly compatible SDR metadata. Luma is content-dependent:
+ * this is an observation, never a score, LUT decision or proof of correct skin. */
+export function compareReferenceColor(guide,quality){
+ if(guide?.status!=='REFERENCE_GUIDANCE'||!num(guide.referenceLumaMedian,0,255))return {status:'NOT_COMPARABLE',reason:'No two compatible measured reference colors'};
+ const v=quality?.video,m=quality?.findings?.find(f=>f.id==='visual_metrics'&&f.status==='measured')?.measurement;
+ if(v?.colorSpace!=='bt709'||v.transfer!=='bt709'||v.colorRange!=='tv'||!num(m?.luma?.median,0,255))return {status:'NOT_COMPARABLE',reason:'Candidate does not have comparable explicit SDR metadata'};
+ return {status:'MEASURED_DIFFERENCE_ONLY',candidateSha256:v.sha256,referenceLumaMedian:guide.referenceLumaMedian,candidateLumaMedian:round(m.luma.median),delta:round(m.luma.median-guide.referenceLumaMedian),colorPresetChanged:false,limitations:'Mean frame luma is affected by scene content, exposure and framing; no artistic score or color correction is inferred.'};
 }
