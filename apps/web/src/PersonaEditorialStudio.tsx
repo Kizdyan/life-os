@@ -26,7 +26,7 @@ import {
 } from './personaEditorialPublish';
 import {importResearchCarousel,RESEARCH_CAROUSEL_EXAMPLE,RESEARCH_PROMPT} from './personaResearchCarousel';
 import {personaWorkerUrl} from './personaWorkerUrl';
-import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt} from './personaCarouselIndependentReview';
+import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt,independentEditorialGate} from './personaCarouselIndependentReview';
 import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
 import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
@@ -667,6 +667,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
       {reviewBusy?'Проверяются факты…':'Независимый фактчек и редактор · 1 платный запрос'}
      </button>
      {post.research.independentReview&&!independentReview&&<p role="status">Отчёт устарел: текст или источники изменились.</p>}
+     {!independentEditorialGate(post)&&<p role="status">Публикационный экспорт заблокирован: требуется независимый критик другого семейства моделей (не OpenAI) и актуальный редакционный вердикт. Черновики доступны для просмотра.</p>}
      {independentReview&&<div>
       <strong>{independentReview.status==='NEEDS_REVISION'?'Нужна редактура':'Кандидат на авторскую проверку'} · {independentReview.model}</strong>
       {independentReview.checks.map(c=><div key={c.target}><p><strong>{c.target}: {c.verdict}</strong> — {c.reason}</p>
