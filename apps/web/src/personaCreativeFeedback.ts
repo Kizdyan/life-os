@@ -3,11 +3,11 @@ import {personaWorkerUrl} from './personaWorkerUrl';
 import {brandTrialArt,isLocalBrandTrialSlide} from './personaJawsBrandTrial';
 
 export const CREATIVE_FEEDBACK_KEY='lifeos:persona:creative-feedback:v1';
-export type CreativeFeedback={id:string;postId:string;slideId:string;revision:number;createdAt:string;comment:string;decision:'change-request';status:'pending'|'revision-prepared'};
+export type CreativeFeedback={id:string;postId:string;slideId:string;revision:number;createdAt:string;comment:string;decision:'change-request';status:'pending'|'revision-prepared';scope?:'brand'};
 
 /** Conservative first adapter: explicit replacement only. Unrecognized artistic
  * requests remain pending, never pretend that an LLM understood them. */
-export function prepareCreativeFeedback(post:EditorialPost,slideId:string,raw:string,now=new Date().toISOString()){
+export function prepareCreativeFeedback(post:EditorialPost,slideId:string,raw:string,now=new Date().toISOString(),scope?:'brand'){
  const comment=raw.trim(),slide=post.slides.find(s=>s.id===slideId);
  if(!slide||!comment||comment.length>1500)throw Error('Выбери слайд и напиши замечание (до 1500 символов)');
  let revised:EditorialPost|null=null;
@@ -19,7 +19,7 @@ export function prepareCreativeFeedback(post:EditorialPost,slideId:string,raw:st
    if(text.length<=260&&text!==slide.text)revised=reviseEditorialPost(post,{slides:post.slides.map(s=>s.id===slideId?{...s,text}:s)},now);
   }
  }
- const record:CreativeFeedback={id:globalThis.crypto.randomUUID(),postId:post.id,slideId,revision:post.revision,createdAt:now,comment,decision:'change-request',status:revised?'revision-prepared':'pending'};
+ const record:CreativeFeedback={id:globalThis.crypto.randomUUID(),postId:post.id,slideId,revision:post.revision,createdAt:now,comment,decision:'change-request',status:revised?'revision-prepared':'pending',...(scope==='brand'?{scope}: {})};
  return {record,revised};
 }
 export function validateCreativeFeedback(data:unknown):CreativeFeedback[]{
@@ -27,7 +27,7 @@ export function validateCreativeFeedback(data:unknown):CreativeFeedback[]{
   typeof x.postId!=='string'||!x.postId||x.postId.length>75||typeof x.slideId!=='string'||!x.slideId||x.slideId.length>100||
   typeof x.comment!=='string'||!x.comment.trim()||x.comment.length>1500||!Number.isSafeInteger(x.revision)||x.revision<1||
   typeof x.createdAt!=='string'||!Number.isFinite(Date.parse(x.createdAt))||x.decision!=='change-request'||
-  !['pending','revision-prepared'].includes(x.status)||Object.keys(x).some(k=>!['id','postId','slideId','revision','createdAt','comment','decision','status'].includes(k)))||
+  !['pending','revision-prepared'].includes(x.status)||(x.scope!==undefined&&x.scope!=='brand')||Object.keys(x).some(k=>!['id','postId','slideId','revision','createdAt','comment','decision','status','scope'].includes(k)))||
   new Set(data.map(x=>x.id)).size!==data.length)throw Error('Журнал замечаний повреждён; существующие данные сохранены');
  return data as CreativeFeedback[];
 }
@@ -36,7 +36,7 @@ export function mergeCreativeFeedback(local:CreativeFeedback[],incoming:Creative
  for(const r of validateCreativeFeedback(incoming)){
   const old=byId.get(r.id);
   if(old){
-   if((['id','postId','slideId','revision','createdAt','comment','decision','status'] as const).some(k=>old[k]!==r[k]))throw Error('Конфликт записи творческой правки '+r.id);
+   if((['id','postId','slideId','revision','createdAt','comment','decision','status','scope'] as const).some(k=>old[k]!==r[k]))throw Error('Конфликт записи творческой правки '+r.id);
   }else byId.set(r.id,r);
  }
  return validateCreativeFeedback([...byId.values()]);
@@ -62,7 +62,18 @@ export function applyCreativeModelPatch(post:EditorialPost,slideId:string,raw:un
  if(next.text===slide.text&&Object.entries(next.brandTrialStyle).every(([k,v])=>Object.entries(slide.brandTrialStyle??{}).some(([a,b])=>a===k&&b===v)))return null;
  return reviseEditorialPost(post,{slides:post.slides.map(s=>s.id===slideId?next:s)});
 }
-export async function requestCreativeModelPatch(post:EditorialPost,slideId:string,comment:string){
+/** Only explicitly global author requests are reusable. Prepared is not approved. */
+export function creativeBrandNotes(records:CreativeFeedback[],excludeId?:string):string[]{
+ const seen=new Set<string>(),result:string[]=[];let chars=0;
+ for(const r of [...validateCreativeFeedback(records)].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))){
+  if(r.scope!=='brand'||r.id===excludeId)continue;
+  const note=r.comment.trim();const key=note.toLocaleLowerCase('ru').replace(/\s+/g,' ');
+  if(seen.has(key)||note.length>600||chars+note.length>2400)continue;
+  seen.add(key);result.push(note);chars+=note.length;if(result.length===6)break;
+ }
+ return result;
+}
+export async function requestCreativeModelPatch(post:EditorialPost,slideId:string,comment:string,brandNotes:string[]=[]){
  const slide=post.slides.find(s=>s.id===slideId);
  if(!slide||!isLocalBrandTrialSlide(post,slide))throw Error('Модельные правки пока доступны только в локальном бренд-тесте');
  const index=post.slides.indexOf(slide),spec=brandTrialArt(slideId);
@@ -70,7 +81,7 @@ export async function requestCreativeModelPatch(post:EditorialPost,slideId:strin
  if(!health.ok)throw Error('Локальный Worker недоступен');
  const h=await health.json();
  if(typeof h.token!=='string'||!h.token)throw Error('Нет токена локального Worker');
- const response=await fetch(personaWorkerUrl+'/carousel-creative-revision',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':h.token},body:JSON.stringify({topic:post.topic,text:slide.text,comment,style:{palette:spec.palette,layout:index===0?'image-bottom':index%2===1?'image-top':'image-middle',font:'classic',image:'normal',...slide.brandTrialStyle}}),signal:AbortSignal.timeout(100000)});
+ const response=await fetch(personaWorkerUrl+'/carousel-creative-revision',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':h.token},body:JSON.stringify({topic:post.topic,text:slide.text,comment,brandNotes,style:{palette:spec.palette,layout:index===0?'image-bottom':index%2===1?'image-top':'image-middle',font:'classic',image:'normal',...slide.brandTrialStyle}}),signal:AbortSignal.timeout(100000)});
  if(!response.ok)throw Error('Worker не выполнил правку: '+response.status);
  const result=await response.json();
  if(result?.provider!=='ollama-local'||typeof result.model!=='string')throw Error('Нет подтверждения ответа локальной модели');
