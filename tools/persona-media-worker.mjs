@@ -1,3 +1,4 @@
+import {reviewCarouselVisual} from './persona-carousel-visual-review.mjs';
 #!/usr/bin/env node
 import {readTakeBindings} from '../packages/core/src/persona-manual-script.mjs';
 /**
@@ -503,6 +504,13 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    if(await quickRender.handle(req,res,url))return;
    if(req.method==='GET'&&url.pathname==='/carousel-background/status'){
     respond(res,200,carouselBackgroundStatus(config.apiEnv??process.env));return;
+   }
+   if(req.method==='POST'&&url.pathname==='/carousel-visual-review'){
+    const body=await json(req,12*1024*1024);
+    if(ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||quickRender.isBusy()||[...sessions.values()].some(j=>j.state==='running'))fail('Local AI is busy');
+    ideationBusy=true;
+    try{respond(res,200,await (config.visualReview??reviewCarouselVisual)({request:body,model:(config.apiEnv??process.env).PERSONA_CAROUSEL_VISION_MODEL}));}
+    finally{ideationBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-creative-revision'){
     const body=await json(req,10000);
