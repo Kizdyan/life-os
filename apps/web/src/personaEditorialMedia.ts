@@ -13,6 +13,7 @@ import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provena
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
+import {reviewRenderedBlob,type VisualOpinion} from './personaCarouselVisualReview';
 import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
 import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 import {renderCreamEditorial} from './personaCreamEditorialRenderer';
@@ -479,7 +480,7 @@ export async function buildEditorialExport(post:EditorialPost,platform:'original
 
 /** Review-only delivery reuses the production renderer; it grants NO approvals.
  * The publication export above keeps all existing source/content/design gates. */
-export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvidence}:{sourceEvidence?:unknown}={}):Promise<Blob>{
+export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvidence,localVisualReview=false}:{sourceEvidence?:unknown;localVisualReview?:boolean}={}):Promise<Blob>{
  validatePost(post);
  const images=await Promise.all(post.slides.map((s,i)=>renderSlide(post,s,i)));
  const enc=new TextEncoder(),json=(value:unknown)=>enc.encode(JSON.stringify(value,null,2)+'\n');
@@ -492,7 +493,18 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
    authorApprovals:post.approvals,slides:images.length,width:1080,height:1350})},
   {name:'research-sources.json',data:json(post.research??null)},
   {name:'image-provenance.json',data:json(await editorialImageProvenance(post))});
- if(post.research?.discovery?.mode==='discover')files.push({name:'render-quality.json',data:json(await inspectEditorialRenderedSlides(images))});
+ if(post.research?.discovery?.mode==='discover'||localVisualReview)files.push({name:'render-quality.json',data:json(await inspectEditorialRenderedSlides(images))});
+ if(localVisualReview){
+  const receipts:VisualOpinion[]=[];
+  let blocked:string|null=null;
+  const signal=AbortSignal.timeout(20*60*1000);
+  for(const [index,image] of images.entries()){
+   try{receipts.push(await reviewRenderedBlob(post,index,image,signal))}
+   catch(error){blocked=String(error instanceof Error?error.message:error).slice(0,400);break}
+  }
+  const status=blocked?'BLOCKED':receipts.some(r=>r.status==='REVISION_SUGGESTED')?'REVISION_SUGGESTED':'AUTHOR_REVIEW_REQUIRED';
+  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',status,blocked,receipts,expectedSlides:images.length,independence:'MODEL_FAMILY_NOT_VERIFIED',approved:false,published:false})});
+ }
  if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
  return zipFileBytes(files);
 }
