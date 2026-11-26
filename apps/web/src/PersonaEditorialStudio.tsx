@@ -3,7 +3,7 @@ import {libraryBackground,isGeneratedBackgroundRef} from './personaEditorialBack
 import {editorialHierarchyLayout} from './personaEditorialTypography';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
 import {
- approveEditorialStep,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
+ approveEditorialStep,applyCreamEditorial,composeEditorialByMeaning,createEditorialFromTopic,editorialStage,editorialStageLabel,
  proposeTopics,reviseEditorialPost,SEED_CAROUSELS,createBaselinePauseCarousel,
  loadEditorialStore,attachEditorialIndependentReview,
  CAROUSEL_QUIET_HORROR_ID,createQuietHorrorCarousel,CAROUSEL_BASELINE_ID,CAROUSEL_002_ID,CAROUSEL_003_ID,CAROUSEL_004_ID,
@@ -65,7 +65,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
  useEffect(()=>{
   let alive=true,objectUrl:string|null=null;
   setUrl(null);
-  if(post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter')){
+  if(post.compositionPreset==='cream-editorial-v1'||post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter')){
    void renderEditorialSlide(post,first,0).then(blob=>{
     if(!alive)return;
     objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
@@ -79,7 +79,7 @@ function EditorialPublishCover({post}: {post:EditorialPost}){
    }).catch(()=>{if(alive)setUrl(null)});
   return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
  },[post.id,post.revision,first?.id,first?.visual,first?.photoRef]);
- const exact=Boolean(post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'));
+ const exact=Boolean(post.compositionPreset==='cream-editorial-v1'||post.research||post.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post.id)&&post.fontPreset==='playfair-inter'));
  return <div className={'personaEditorialPublishCover'+(exact?' personaEditorialPublishCover--exact':'')}
   role="img" aria-label={'Первый слайд: '+post.slides[0].text}>
   {url&&<img data-testid={exact?'baseline-exact-cover':undefined} src={url} alt=""/>}
@@ -178,7 +178,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const archiveFixture=Boolean(post?.carouselFormat||post?.research);
  const needsArchiveList=archiveFixture||Boolean(post?.slides.some(s=>s.visual==='archive-photo'&&s.photoRef));
  const sourcePass=post?editorialSourcesPass(post):false;
- const exactCanvasPreview=Boolean(post?.research||post?.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
+ const exactCanvasPreview=Boolean(post?.compositionPreset==='cream-editorial-v1'||post?.research||post?.slides.some(s=>s.background||s.headline!==undefined)||([CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID].includes(post?.id??'')&&post?.fontPreset==='playfair-inter'));
  const archiveRefsReady=post===null||
   (!post.carouselFormat&&!post.slides.some(s=>s.visual==='archive-photo'&&s.photoRef))||
   !post.slides.some(s=>s.visual==='archive-photo')||
@@ -926,7 +926,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    {post.kind==='carousel'&&post.approvals.topic&&<PersonaCarouselVisualReview key={post.id+':'+post.revision+':'+editorialDesignHash(post)} post={post} onChange={onChange}/>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
     <h4>4. Производство</h4>
-    {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&publicationDesignApproved(post)&&<div><button type="button" onClick={rememberStyle}>Запомнить палитру и шрифты для новых каруселей</button>{styleMemoryMessage&&<p role="status">{styleMemoryMessage}</p>}</div>}
+    {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&<button type="button" data-testid="cream-editorial-style" onClick={()=>{try{onChange(applyCreamEditorial(post));setError('')}catch(e){setError(String(e))}}}>Применить Cream Editorial · кремовая бумага и фотокомпозиция</button>}
+    {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&publicationDesignApproved(post)&&<div><button type="button" onClick={rememberStyle}>Запомнить оформление для новых каруселей</button>{styleMemoryMessage&&<p role="status">{styleMemoryMessage}</p>}</div>}
     <p>Тема, подпись и оформление утверждены. Экспорт создаст {post.slides.length} PNG 1080×1350
      {post.kind==='carousel'?' для карусели':' для фото-поста'} и отдельный <code>caption.txt</code> в ZIP.</p>
     <p>Исходные фотографии остаются без изменений. Готовность экспорта не означает публикацию.</p>
