@@ -30,14 +30,35 @@ export async function assessPhoto(bytes,model,fetchImpl=fetch){
  if(!validScore({...v,reason:typeof v.reason==='string'?v.reason.slice(0,400):v.reason}))throw Error('Invalid vision scores');
  return {scores:Object.fromEntries(CRITERIA.map(k=>[k,v.scores[k]])),reason:v.reason.slice(0,400)};
 }
+/** Global assignment, not greedy category order. First maximize role coverage,
+ * then count, then total suitability. Every file occupies at most one slot.
+ * State space is only 3^5 (0, 1, 2 pictures per category). */
 export function selectPhotos(rows){
- const used=new Set(),selected=[];
- for(const category of CRITERIA){
-  for(const x of rows.filter(x=>x.scores[category]>=6&&!used.has(x.sha256)).sort((a,b)=>b.scores[category]-a.scores[category]||a.sha256.localeCompare(b.sha256)).slice(0,2)){
-   selected.push({...x,category,score:x.scores[category]});used.add(x.sha256);
+ const distinct=[...new Map(rows.filter(r=>r&&/^[a-f0-9]{64}$/i.test(r.sha256)&&validScore(r)).map(r=>[r.sha256,r])).values()].sort((a,b)=>a.sha256.localeCompare(b.sha256));
+ const factors=CRITERIA.map((_,i)=>3**i);
+ let states=new Map([[0,{sum:0,selected:[]}]]);
+ for(const row of distinct){
+  const next=new Map(states);
+  for(const [state,current] of states){
+   for(const [i,category] of CRITERIA.entries()){
+    const score=row.scores[category];
+    if(score<6||Math.floor(state/factors[i])%3>=2)continue;
+    const key=state+factors[i],sum=current.sum+score,old=next.get(key);
+    if(!old||sum>old.sum)next.set(key,{sum,selected:[...current.selected,{...row,category,score}]});
+   }
   }
+  states=next;
  }
- return selected;
+ const coverage=state=>factors.filter(n=>Math.floor(state/n)%3>0).length;
+ const winner=[...states].sort((a,b)=>coverage(b[0])-coverage(a[0])||b[1].selected.length-a[1].selected.length||b[1].sum-a[1].sum||a[0]-b[0])[0][1];
+ return winner.selected.sort((a,b)=>CRITERIA.indexOf(a.category)-CRITERIA.indexOf(b.category)||b.score-a.score||a.sha256.localeCompare(b.sha256));
+}
+export function photoCoverage(rows,selected){
+ return Object.fromEntries(CRITERIA.map(category=>[category,{
+  eligible:rows.filter(r=>validScore(r)&&r.scores[category]>=6).length,
+  selected:selected.filter(r=>r.category===category).length,
+  bestScore:rows.length?Math.max(...rows.filter(validScore).map(r=>r.scores[category]),0):null
+ }]));
 }
 async function atomicJson(path,data){
  const tmp=path+'.'+randomUUID()+'.tmp';
@@ -103,7 +124,7 @@ export async function rankPhotos({cache,model,assess=assessPhoto,log=console.log
    const name=String(i+1).padStart(2,'0')+'-'+a.category+'-'+basename(a.sourcePath);
    await copyFile(a.sourcePath,join(shortlist,name));a.shortlistFile=name;
   }
-  const report={status:errors.length?'PARTIAL':selected.length?'PASS':'NO_CANDIDATES',model,imagesSeen:assets.length,imagesScored:rows.length,errors,selected,shortlist,limitations:'AI shortlist from thumbnails; artistic approval and identity verification are not established.'};
+  const report={status:errors.length?'PARTIAL':selected.length?'PASS':'NO_CANDIDATES',model,imagesSeen:assets.length,imagesScored:rows.length,errors,selected,coverage:photoCoverage(rows,selected),shortlist,limitations:'AI shortlist from thumbnails; artistic approval and identity verification are not established.'};
   await atomicJson(join(out,'selection.json'),report);
   status.state=report.status;status.current=null;status.remainingSeconds=0;await flush();return report;
  }catch(e){
