@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createJawsBrandTrial} from './personaJawsBrandTrial';
-import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,applyCreativeModelPatch,mergeCreativeFeedback,validateCreativeFeedback} from './personaCreativeFeedback';
+import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,applyCreativeModelPatch,mergeCreativeFeedback,validateCreativeFeedback,creativeBrandNotes} from './personaCreativeFeedback';
 describe('creative feedback',()=>{
  it('only replaces requested heading, keeps other slides and does not grant approval',()=>{
   const p=createJawsBrandTrial(),s=p.slides[1];
@@ -46,5 +46,17 @@ describe('creative feedback restore',()=>{
   expect(mergeCreativeFeedback([a],[])).toEqual([a]);
   expect(()=>mergeCreativeFeedback([a],[{...a,comment:'Иное замечание'}])).toThrow();
   expect(()=>validateCreativeFeedback([{...a,revision:0}])).toThrow();
+ });
+});
+
+describe('brand memory retrieval',()=>{
+ it('uses explicit global notes, not ordinary slide corrections or duplicate requests',()=>{
+  const p=createJawsBrandTrial(),s=p.slides[0].id;
+  const a=prepareCreativeFeedback(p,s,'Сделай этот рисунок меньше','2026-11-26T10:00:00Z').record;
+  const b=prepareCreativeFeedback(p,s,'Всегда сохраняй кремовые света','2026-11-26T11:00:00Z','brand').record;
+  const c=prepareCreativeFeedback(p,s,'Всегда сохраняй кремовые света','2026-11-26T12:00:00Z','brand').record;
+  expect(creativeBrandNotes([a,b,c])).toEqual([c.comment]);
+  expect(creativeBrandNotes([a,b,c],c.id)).toEqual([b.comment]);
+  expect(mergeCreativeFeedback([], [b])).toEqual([b]);
  });
 });
