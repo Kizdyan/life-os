@@ -20,7 +20,7 @@ export async function runEditorialPipeline({request,env=process.env,research=gen
  const result=(status,reason=null)=>({version:1,status,reason,calls,maxCalls:input.maxCalls,attempts,draft,approved:false,published:false});
  async function call(fn,params){
   if(calls>=input.maxCalls)throw Error('Лимит запросов исчерпан');
-  await beforeCall();calls++;return fn({...params,consent:true,env});
+  await beforeCall({call:calls+1,stage});calls++;return fn({...params,consent:true,env});
  }
  try{
   for(let round=0;round<input.maxCalls/2;round++){
