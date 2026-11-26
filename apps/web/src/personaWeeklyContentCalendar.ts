@@ -92,22 +92,22 @@ export function buildPersonaWeeklyCalendar({
   else missingVideos++;
   const job=photoById.get(carouselId),plan=editorialById.get(carouselId),seed=SEED_CAROUSELS[weekIndex];
   if(!job)missingPhotos++;
-  scheduled.push({id:'carousel:'+carouselId,projectId:job?.id??carouselId,sourceId:carouselId,
+  if(!plan?.scheduledDate)scheduled.push({id:'carousel:'+carouselId,projectId:job?.id??carouselId,sourceId:carouselId,
    title:plan?.title??job?.title??seed.title,kind:'carousel',
    status:plan?editorialStageLabel(plan):job?photoCalendarStatus(job):'Редакция доступна · Worker не подключён',
    scheduledDate:addCalendarDays(weekMonday,PERSONA_WEEKLY_WORKDAYS[1]),weekIndex,dayIndex:PERSONA_WEEKLY_WORKDAYS[1],scheduledTime:personaPublicationSlot('carousel').time,
    placeholder:!job&&!plan});
   const photoId='photo-week-'+String(weekIndex+1).padStart(2,'0'),photo=editorialById.get(photoId);
-  scheduled.push({id:'photo:'+photoId,projectId:photoId,sourceId:photoId,
+  if(!photo?.scheduledDate)scheduled.push({id:'photo:'+photoId,projectId:photoId,sourceId:photoId,
    title:photo?.title??'Выбрать тему фото-поста',kind:'photo',
    status:photo?editorialStageLabel(photo):'Тема не выбрана',
    scheduledDate:addCalendarDays(weekMonday,PERSONA_WEEKLY_WORKDAYS[2]),weekIndex,dayIndex:PERSONA_WEEKLY_WORKDAYS[2],scheduledTime:personaPublicationSlot('photo').time,
    placeholder:!photo});
  }
- // Author-scheduled additional editorial posts are shown alongside existing slots,
- // not forcibly substituted for or silently moved over approved work.
+ // Explicit author dates take precedence over generated dates, including seed IDs.
+ // No second copy is left in the default slot; no other material is moved.
  for(const post of editorialPosts){
-  if(!post.scheduledDate||post.id.startsWith('photo-week-')||post.id.startsWith('PHOTO-'))continue;
+  if(!post.scheduledDate)continue;
   if(calendarMonday(post.scheduledDate)!==weekMonday)continue;
   const dayIndex=(parseDate(post.scheduledDate).getDay()+6)%7;
   scheduled.push({id:'editorial:'+post.id,projectId:post.id,sourceId:post.id,
