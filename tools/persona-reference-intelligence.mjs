@@ -51,7 +51,9 @@ async function readIndex(dir){
  try{
   const x=JSON.parse(await readFile(join(dir,fileName),'utf8'));
   if(x.version!==1||!Array.isArray(x.rows)||x.rows.length>15000)throw Error('Invalid reference index');
-  x.rows.forEach(validateRow);return x;
+  x.rows.forEach(validateRow);
+  if(x.failures!==undefined&&(!Array.isArray(x.failures)||x.failures.length>15000||x.failures.some(r=>!r||!validHash(r.assetSha256)||!Number.isFinite(r.timeSec)||r.timeSec<0||!bounded(r.model,120)||!Number.isInteger(r.attempts)||r.attempts<1||r.attempts>2)))throw Error('Invalid reference failure index');
+  return x;
  }catch(e){if(e.code==='ENOENT')return {version:1,rows:[]};throw e}
 }
 async function atomic(path,data){
@@ -72,27 +74,38 @@ async function catalogFrames(dir){
  }
  return [...new Map(frames.map(f=>[f.assetSha256+':'+f.timeSec,f])).values()];
 }
-export async function indexReferences({cache,model,limit=100,describe=describeReferenceFrame,log=console.log}={}){
+export async function indexReferences({cache,model,limit=100,retryFailed=false,describe=describeReferenceFrame,log=console.log}={}){
  if(!cache||!bounded(model,120)||!Number.isInteger(limit)||limit<1||limit>500)throw Error('Invalid reference scan settings');
  const dir=dirFor(cache);await mkdir(dir,{recursive:true});
  const lockPath=join(dir,'reference-analysis.lock'),lock=await open(lockPath,'wx');
  try{
   const frames=await catalogFrames(dir),index=await readIndex(dir),rows=index.rows;
   const existing=new Map(rows.map(r=>[[r.assetSha256,r.timeSec,r.frameSha256,r.model].join(':'),r]));
-  let reused=0,analyzed=0,remaining=0;const errors=[];
+  let reused=0,analyzed=0,remaining=0,blocked=0;const errors=[];
+  const failures=new Map((index.failures??[]).map(r=>[[r.assetSha256,r.timeSec,r.model].join(':'),r]));
+  let attempted=0;
   for(const f of frames){
-   if(analyzed+errors.length>=limit){remaining++;continue}
+   const failKey=[f.assetSha256,f.timeSec,model].join(':');
+   const prior=failures.get(failKey);
    try{
     const bytes=await safeThumbnail(dir,f.thumbnail),frameSha256=hash(bytes),key=[f.assetSha256,f.timeSec,frameSha256,model].join(':');
     if(existing.has(key)){reused++;continue}
+    if(prior?.attempts>=2&&!retryFailed){blocked++;continue}
+    if(attempted>=limit){remaining++;continue}
+    attempted++;
     if(rows.length>=15000)throw Error('Index capacity reached; archive before further analysis');
     const result=validateFrameFeatures(await describe(bytes,model));
     const row=validateRow({...f,...result,version:VERSION,frameSha256,model,provenance:'local_vision_frame',preference:'unconfirmed'});
-    await atomic(join(dir,fileName),{...index,rows:[...rows,row]});rows.push(row);existing.set(key,row);analyzed++;
-   }catch(e){errors.push({assetSha256:f.assetSha256,timeSec:f.timeSec,error:String(e.message).replace(/https?:\/\/\S+/g,'[URL omitted]').slice(0,180)})}
+    const nextFailures=[...failures.values()].filter(x=>[x.assetSha256,x.timeSec,x.model].join(':')!==failKey);
+    await atomic(join(dir,fileName),{...index,rows:[...rows,row],failures:nextFailures});failures.delete(failKey);rows.push(row);existing.set(key,row);analyzed++;
+   }catch(e){
+    const failure={assetSha256:f.assetSha256,timeSec:f.timeSec,model,attempts:Math.min(2,(prior?.attempts??0)+1)};
+    failures.set(failKey,failure);await atomic(join(dir,fileName),{...index,rows,failures:[...failures.values()]});
+    errors.push({assetSha256:f.assetSha256,timeSec:f.timeSec,error:String(e.message).replace(/https?:\/\/\S+/g,'[URL omitted]').slice(0,180)})
+   }
    log('References: analyzed '+analyzed+'; reused '+reused+'; failed '+errors.length+'; remaining '+remaining);
   }
-  const report={version:1,status:errors.length||remaining?'PARTIAL':'FRAME_INDEX_READY',totalFrames:frames.length,analyzed,reused,remaining,errors,limitations:['Sampled frames only; no speech, music, cut rhythm or verified preference analysis.','Local catalog may include historical cached assets.']};
+  const report={version:1,status:errors.length||remaining||blocked?'PARTIAL':'FRAME_INDEX_READY',totalFrames:frames.length,analyzed,reused,remaining,blocked,errors,limitations:['Sampled frames only; no speech, music, cut rhythm or verified preference analysis.','Local catalog may include historical cached assets.']};
   await atomic(join(dir,'reference-progress.json'),report);return report;
  }finally{await lock.close();await unlink(lockPath)}
 }
