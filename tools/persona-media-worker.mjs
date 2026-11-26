@@ -484,7 +484,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     const musicStudio=Boolean(config.musicLut&&await exists(config.musicLut));
 
     const status=await health(config);
-    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),carouselResearch:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY),requiresConsent:true,provider:'perplexity'},carouselIndependentReview:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY&&(config.apiEnv??process.env).PERSONA_CAROUSEL_REVIEW_MODEL),requiresConsent:true,provider:'perplexity'},token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
+    respond(res,200,{...status,service:'persona-media-worker',creativeDirector:true,musicStudio,productionLut:musicStudio,quickRender:true,quickRenderConfigured:Boolean(config.quickPlanner||config.quickVisionBatch||(config.apiEnv??process.env).OPENROUTER_API_KEY),externalIdeas:externalIdeaStatus(config.apiEnv??process.env),carouselResearch:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY),requiresConsent:true,provider:'perplexity'},carouselIndependentReview:{configured:Boolean((config.apiEnv??process.env).PERPLEXITY_API_KEY&&(config.apiEnv??process.env).PERSONA_CAROUSEL_REVIEW_MODEL),requiresConsent:true,provider:'perplexity'},referenceBackground:referenceState,token,model:config.ollamaModel,ffmpegDir:config.ffmpegDir?true:false});return;
    }
    const hookRoute=/^\/hook-tests\/([a-f0-9-]{36})\/(render|variant\/([1-3]))$/.exec(url.pathname);
    const videoToken=req.method==='GET'&&((url.pathname.endsWith('/video')||url.pathname.endsWith('/video-full'))||hookRoute?.[3]||/^\/music-studio\/[a-f0-9-]{36}\/source$/.test(url.pathname)||/\/export-video\/(shorts|reels|vk|youtube)$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/export\/[a-z0-9-]+$/.test(url.pathname)||/^\/quick-render\/[0-9a-f-]{36}\/quality-(?:report|contact-sheet)$/.test(url.pathname))?url.searchParams.get('token'):null;
@@ -962,12 +962,33 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    respond(res,404,{error:'unknown_route'});
   }catch(error){respond(res,400,{error:String(error.message||error).slice(0,3000)})}
  });
- server.once('close',()=>{queueStopped=true;if(queueTimer)clearInterval(queueTimer)});
+ // Optional background reference work shares admission with production queue.
+ // Enable only after the separately launched legacy photo-review has finished.
+ const referenceEnv=config.apiEnv??process.env;
+ const referenceAuto=referenceEnv.PERSONA_REFERENCE_BACKGROUND==='1'&&Boolean(referenceEnv.PERSONA_YANDEX_CACHE_DIR);
+ let referenceTimer=null,referenceTurn=0,referenceState={status:referenceAuto?'IDLE':'DISABLED',lastRun:null,report:null,error:null};
+ async function tickReferenceQueue(){
+  if(!referenceAuto||queueStopped||queueBusy||admittedManualRequests||ideationBusy||directorPending||activeExport||musicBusy||hookBusy||producerBusy||quickRender.isBusy()||[...sessions.values()].some(j=>j.state==='running'))return;
+  queueBusy=true;ideationBusy=true;referenceState={...referenceState,status:'RUNNING',error:null};
+  try{
+   const cache=referenceEnv.PERSONA_YANDEX_CACHE_DIR;
+   if(await exists(join(cache,'about-me','photo-review.lock'))){referenceState={...referenceState,status:'WAITING_FOR_PHOTOS'};return}
+   const stage=referenceTurn++%2===0?'frames':'video';
+   const report=stage==='frames'?await (async()=>{
+    const model=referenceEnv.PERSONA_CAROUSEL_VISION_MODEL||await pickVision();if(!model)fail('Local vision model unavailable');
+    return indexReferences({cache,model,limit:1,log:()=>{}});
+   })():await indexReferenceVideos({cache,limit:1,ffmpegDir:config.ffmpegDir,whisperCli:config.whisperCli,whisperModel:config.whisperModel});
+   referenceState={status:'IDLE',lastRun:new Date().toISOString(),report:{stage,analyzed:report.analyzed,reused:report.reused,remaining:report.remaining,blocked:report.blocked,errors:report.errors.length},error:null};
+  }catch(error){referenceState={...referenceState,status:'ERROR',lastRun:new Date().toISOString(),error:String(error.message).replace(/https?:\/\/\S+/g,'[URL omitted]').slice(0,300)}}
+  finally{queueBusy=false;ideationBusy=false}
+ }
+ server.once('close',()=>{queueStopped=true;if(queueTimer)clearInterval(queueTimer);if(referenceTimer)clearInterval(referenceTimer)});
  return {server,token,config,start:()=>new Promise((resolveStart,reject)=>{
   server.once('error',reject);
   server.listen(config.port,host,()=>{server.off('error',reject);
    if(queueRoot){queueTimer=setInterval(()=>tickProductionQueue().catch(()=>{}),queueConfig.intervalMs??60000).unref();
     tickProductionQueue().catch(()=>{});}
+   if(referenceAuto)referenceTimer=setInterval(()=>{void tickReferenceQueue()},60000).unref();
    resolveStart(server.address().port);});
  })};
 }
