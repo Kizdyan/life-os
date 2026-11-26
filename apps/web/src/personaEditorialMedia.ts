@@ -13,7 +13,7 @@ import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provena
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
-import {reviewRenderedBlob,type VisualOpinion} from './personaCarouselVisualReview';
+import {reviewRenderedBlob,summarizeVisualPackage,type VisualOpinion} from './personaCarouselVisualReview';
 import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
 import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 import {renderCreamEditorial} from './personaCreamEditorialRenderer';
@@ -502,8 +502,7 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
    try{receipts.push(await reviewRenderedBlob(post,index,image,signal))}
    catch(error){blocked=String(error instanceof Error?error.message:error).slice(0,400);break}
   }
-  const status=blocked?'BLOCKED':receipts.some(r=>r.status==='REVISION_SUGGESTED')?'REVISION_SUGGESTED':'AUTHOR_REVIEW_REQUIRED';
-  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',status,blocked,receipts,expectedSlides:images.length,independence:'MODEL_FAMILY_NOT_VERIFIED',approved:false,published:false})});
+  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',...summarizeVisualPackage(receipts,images.length,blocked),independence:'MODEL_FAMILY_NOT_VERIFIED'})});
  }
  if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
  return zipFileBytes(files);
