@@ -34,17 +34,26 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
  const active=useRef<AbortController|null>(null);
  const [indexBusy,setIndexBusy]=useState(false),[indexMessage,setIndexMessage]=useState('');
  const indexLock=useRef(false);
+ const indexStop=useRef(false);
+ useEffect(()=>()=>{indexStop.current=true},[]);
  async function indexNext(){
   if(indexLock.current||active.current)return;
-  indexLock.current=true;setIndexBusy(true);setIndexMessage('Анализ одного нового кадра…');
+  indexLock.current=true;indexStop.current=false;setIndexBusy(true);setIndexMessage('Начинаю анализ банка…');
+  let analyzed=0,errors=0;
   try{
    const h=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});
    if(!h.ok)throw Error('Worker недоступен');
    const health=await h.json();if(health.service!=='persona-media-worker'||typeof health.token!=='string')throw Error('Worker не подтверждён');
-   const r=await fetch(personaWorkerUrl+'/reference-intelligence/index',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({limit:1}),signal:AbortSignal.timeout(210000)});
-   const data=await r.json();
-   if(!r.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка индекса');
-   setIndexMessage('Новых кадров: '+data.analyzed+'; повторно использовано: '+data.reused+'; осталось: '+data.remaining+'; ошибок: '+data.errors.length+'.');
+   for(let i=0;i<20&&!indexStop.current;i++){
+    const r=await fetch(personaWorkerUrl+'/reference-intelligence/index',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({limit:1}),signal:AbortSignal.timeout(210000)});
+    const data=await r.json();
+    if(!r.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка индекса');
+    if(!Number.isInteger(data.analyzed)||!Number.isInteger(data.reused)||!Number.isInteger(data.remaining)||!Number.isInteger(data.blocked)||!Array.isArray(data.errors))throw Error('Некорректный отчёт индекса');
+    analyzed+=data.analyzed;errors+=data.errors.length;
+    setIndexMessage('За сеанс изучено: '+analyzed+'; в индексе: '+(data.reused+data.analyzed)+'; осталось: '+data.remaining+'; заблокировано: '+data.blocked+'; ошибок за сеанс: '+errors+'.');
+    if(data.remaining===0)break;
+   }
+   if(indexStop.current)setIndexMessage(s=>s+' Остановлено после текущего кадра.');
   }catch(e){setIndexMessage(e instanceof Error?e.message:String(e))}
   finally{indexLock.current=false;setIndexBusy(false)}
  }
@@ -67,7 +76,8 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
  return <section aria-label="Визуальная экспертиза готовых слайдов" data-testid="persona-carousel-visual-review">
   <h4>Визуальный критик Persona</h4>
   <p>Локальная модель оценивает реальные PNG текущей редакции. Это рекомендации, не утверждение автора. Если настроен локальный банк, модель получает до двух релевантных кадров. Это не утверждённые предпочтения и не фактчекинг.</p>
-  <button type="button" disabled={busy||indexBusy} onClick={()=>void indexNext()}>Проанализировать следующий кадр банка</button>
+  <button type="button" disabled={busy||indexBusy} onClick={()=>void indexNext()}>Анализировать банк (до 20 новых кадров)</button>
+  {indexBusy&&<button type="button" onClick={()=>{indexStop.current=true}}>Остановить после текущего кадра</button>}
   {indexMessage&&<p role="status">{indexMessage}</p>}
   <button type="button" disabled={busy||indexBusy} onClick={()=>void run()}>{busy?'Проверяю слайды…':'Проверить оформление'}</button>
   {canImprove&&<button type="button" disabled={busy||indexBusy} onClick={()=>void run(true)}>Проверить и улучшить автоматически (до 3 попыток)</button>}
