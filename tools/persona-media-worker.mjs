@@ -30,6 +30,7 @@ import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas
 import {generatePersonaCarouselResearch,normalizeCarouselResearchInput} from './persona-carousel-research.mjs';
 import {independentCritic} from '../packages/core/src/persona-critic-independence.mjs';
 import {runEditorialPipeline,normalizeEditorialPipelineRequest,editorialPipelineModels} from './persona-carousel-editorial-pipeline.mjs';
+import {claimEditorialRun,readEditorialRun,recordEditorialCall,finishEditorialRun,editorialRunResponse} from './persona-editorial-run-journal.mjs';
 import {reviewPersonaCarousel,normalizeCarouselReviewInput} from './persona-carousel-independent-review.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
@@ -468,7 +469,7 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
   }finally{await rm(temp,{force:true}).catch(()=>{});}
   respond(res,201,result);
  }
- const directorDecisions=new Map();let directorPending=null,ideationBusy=false,activeExport=false,externalBusy=false;const externalCalls=[];
+ const directorDecisions=new Map();let directorPending=null,ideationBusy=false,activeExport=false,externalBusy=false;const externalCalls=[];const activeEditorialRuns=new Set();
  const briefHash=brief=>createHash('sha256').update(JSON.stringify(brief)).digest('hex');
  const server=createServer(async(req,res)=>{
   const expected=new Set(['127.0.0.1:'+server.address().port,'localhost:'+server.address().port]);if(!expected.has(req.headers.host||'')){respond(res,403,{error:'host_not_allowed'});return}
@@ -806,21 +807,30 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     finally{externalBusy=false}
     return;
    }
+   const editorialRunRoute=/^\/carousel-editorial-pipeline\/([a-f0-9-]{36})$/.exec(url.pathname);
+   if(req.method==='GET'&&editorialRunRoute){
+    const id=editorialRunRoute[1];
+    respond(res,200,editorialRunResponse(await readEditorialRun(config.outputRoot,id),id,activeEditorialRuns.has(id)));return;
+   }
    if(req.method==='POST'&&url.pathname==='/carousel-editorial-pipeline'){
     const body=await json(req,12000),input=normalizeEditorialPipelineRequest(body),env=config.apiEnv??process.env;
+    const id=body.runId;
+    const previous=await readEditorialRun(config.outputRoot,id);
+    if(previous){
+     const existing=await claimEditorialRun(config.outputRoot,id,body);
+     respond(res,200,editorialRunResponse(existing,id,activeEditorialRuns.has(id)));return;
+    }
     editorialPipelineModels(env);
     const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
     if(externalBusy||externalCalls.length+input.maxCalls>5)fail('Недостаточно свободных запросов из общего лимита 5/час');
-    externalBusy=true;
+    externalBusy=true;activeEditorialRuns.add(id);
     try{
+     const claim=await claimEditorialRun(config.outputRoot,id,body);
+     if(!claim.claimed){respond(res,200,editorialRunResponse(claim,id,false));return}
      const result=await runEditorialPipeline({request:body,env,research:config.carouselResearch??generatePersonaCarouselResearch,review:config.carouselIndependentReview??reviewPersonaCarousel,
-      beforeCall:()=>{externalCalls.push(Date.now())}});
-     const runId=randomUUID(),dir=join(config.outputRoot,'editorial-run-'+runId);
-     await mkdir(dir,{recursive:true});
-     await writeFile(join(dir,'result.tmp'),JSON.stringify({...result,runId},null,2),{flag:'wx'});
-     await rename(join(dir,'result.tmp'),join(dir,'result.json'));
-     respond(res,200,{...result,runId});
-    }finally{externalBusy=false}return;
+      beforeCall:async({call,stage})=>{await recordEditorialCall(config.outputRoot,id,call,stage);externalCalls.push(Date.now())}});
+     respond(res,200,await finishEditorialRun(config.outputRoot,id,result));
+    }finally{activeEditorialRuns.delete(id);externalBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-research'){
     const body=await json(req,12000);
