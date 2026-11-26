@@ -22,7 +22,7 @@ export default function LifeOSContentHub(){
   <h2>Контент · Life OS</h2>
   <p>Здесь расписание, идеи Stories и аналитика. Persona отвечает за производство. Планы и метрики не являются разрешением на публикацию.</p>
   <PersonaWeeklyContentCalendar videos={projects} editorialPosts={posts} onStartVideo={id=>{location.hash='#persona/from-calendar/video/'+id}} onStartCarousel={openEditorial} onStartPhoto={openEditorial} onImportReels={()=>{location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
-  <details><summary>План на 90 дней</summary><PersonaEditorialCalendar/></details>
+  <details><summary>План на 90 дней</summary><PersonaEditorialCalendar occupiedDates={posts.flatMap(p=>p.scheduledDate?[p.scheduledDate]:[])}/></details>
   <section aria-label="Аналитика публикаций">
    <h3>Результаты публикаций · Metricool</h3>
    <p>История наблюдений. Прямое обновление из Metricool пока не подключено к приложению; импортируй полученный JSON. Недоступные метрики остаются неизвестными.</p>
