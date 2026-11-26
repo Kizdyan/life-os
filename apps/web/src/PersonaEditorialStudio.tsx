@@ -520,7 +520,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     {!post.approvals.topic?<button className="personaEditorialApprove" type="button" onClick={()=>void approve('topic')}>Утвердить тему</button>:
      <span className="personaEditorialApproved">Тема утверждена ✓</span>}
    </section>
-   {post.id===JAWS_BRAND_TRIAL_ID&&post.approvals.topic&&<PersonaBrandTrialPreview post={post}/>}
+   {post.id===JAWS_BRAND_TRIAL_ID&&post.approvals.topic&&<PersonaBrandTrialPreview post={post} onChange={onChange}/>}
    {post.approvals.topic&&<section aria-label="Шаг 2. Текст и подпись">
     <h4>2. Структура и основной текст</h4>
     <p>На слайдах — короткие смысловые фразы. Развёрнутая история располагается <strong>в подписи под каруселью</strong>, а не поверх фотографии. В исследовательской карусели пустая строка разделяет заголовок, абзац и необязательный курсивный акцент (до трёх блоков).</p>
