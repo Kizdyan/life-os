@@ -429,12 +429,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
  }
- async function exportZip(){
+ async function exportZip(platform:'original'|'tiktok'='original'){
   if(!post||busy)return;
   setBusy(true);setError('');
   try{
-   const zip=await buildEditorialExport(post);
-   triggerEditorialDownload(zip,'persona-'+post.id+'.zip');
+   const zip=await buildEditorialExport(post,platform);
+   triggerEditorialDownload(zip,'persona-'+post.id+(platform==='tiktok'?'-tiktok-jpeg':'')+'.zip');
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
  }
@@ -933,6 +933,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <p>Исходные фотографии остаются без изменений. Готовность экспорта не означает публикацию.</p>
     <button className="personaEditorialExport" type="button" disabled={busy} onClick={()=>void exportZip()}>
      {busy?'Собираю ZIP…':'Скачать ZIP с PNG и подписью'}</button>
+    <button className="personaEditorialExport" type="button" disabled={busy} onClick={()=>void exportZip('tiktok')}>Экспорт для TikTok · JPEG</button>
    </section>}
    {error&&<p className="personaEditorialError" role="alert">{error}</p>}
   </div>}
