@@ -934,6 +934,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <button className="personaEditorialExport" type="button" disabled={busy} onClick={()=>void exportZip()}>
      {busy?'Собираю ZIP…':'Скачать ZIP с PNG и подписью'}</button>
     <button className="personaEditorialExport" type="button" disabled={busy} onClick={()=>void exportZip('tiktok')}>Экспорт для TikTok · JPEG</button>
+    <p>Для TikTok: выбери музыку в приложении до публикации. JPEG-пакет не означает отправку, а уведомление не подтверждает выход поста.</p>
    </section>}
    {error&&<p className="personaEditorialError" role="alert">{error}</p>}
   </div>}
