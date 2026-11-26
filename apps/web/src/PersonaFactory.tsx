@@ -538,6 +538,10 @@ export default function PersonaFactory(){
    setEditorialPosts(saved.posts);setEditorialError('');
   }catch(error){setEditorialError('Не удалось сохранить редакционный проект: '+String((error as Error).message||error))}
  }
+ useEffect(()=>{
+  const openFromCalendar=()=>{const match=/^#persona\/editorial\/([-A-Za-z0-9]{3,75})$/.exec(location.hash);if(match)openEditorial(match[1])};
+  openFromCalendar();window.addEventListener('hashchange',openFromCalendar);return()=>window.removeEventListener('hashchange',openFromCalendar);
+ },[]);
  function openEditorial(id:string){
   try{
    const current=loadEditorialStore(localStorage);
