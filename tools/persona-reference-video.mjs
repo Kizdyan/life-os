@@ -6,6 +6,7 @@ import {createReadStream} from 'node:fs';
 import {readFile,writeFile,rename,unlink,open,mkdir,realpath,stat,mkdtemp,rm} from 'node:fs/promises';
 import {join,resolve,relative,isAbsolute,sep,delimiter} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {tmpdir} from 'node:os';
 import {FOLDERS} from './persona-yandex-library.mjs';
 import {analyzePersonaVideoQuality} from './persona-video-quality.mjs';
 import {transcribe,parseWhisperJson} from './persona-semantic-autoselect.mjs';
@@ -48,7 +49,7 @@ export async function detectReferenceCuts(path,durationSec,{ffmpegDir}={}){
 }
 async function extractSpeech(path,durationSec,{ffmpegDir,whisperCli,whisperModel}={}){
  if(!whisperCli||!whisperModel)return {status:'NOT_CONFIGURED',segments:[]};
- const scratch=await mkdtemp(join(resolve(process.env.TEMP||process.env.TMPDIR||process.env.TMP||'.'),'persona-ref-asr-'));
+ const scratch=await mkdtemp(join(tmpdir(),'persona-ref-asr-'));
  try{
   const audioPath=join(scratch,'speech.wav');
   await run('ffmpeg',['-hide_banner','-nostdin','-v','error','-i',path,'-map','0:a:0','-ac','1','-ar','16000','-c:a','pcm_s16le',audioPath],{ffmpegDir});
@@ -61,6 +62,9 @@ async function extractSpeech(path,durationSec,{ffmpegDir,whisperCli,whisperModel
 }
 export async function analyzeReferenceVideo(path,expectedSha,{ffmpegDir,whisperCli,whisperModel}={}){
  if(!validHash(expectedSha)||await hash(path)!==expectedSha)throw Error('Reference source hash mismatch');
+ const probe=JSON.parse((await run('ffprobe',['-v','error','-show_entries','format=duration','-of','json',path],{ffmpegDir,timeoutMs:30000})).stdout);
+ const seconds=Number(probe.format?.duration);
+ if(!Number.isFinite(seconds)||seconds<=0||seconds>MAX_DURATION)throw Error('Reference duration outside supported range');
  const quality=await analyzePersonaVideoQuality({videoPath:path,ffmpegDir});
  const durationSec=quality.video.durationSec;
  if(durationSec>MAX_DURATION||quality.video.sha256!==expectedSha)throw Error('Reference duration or hash mismatch');
@@ -118,6 +122,6 @@ export async function indexReferenceVideos({cache,limit=1,ffmpegDir,whisperCli,w
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{
   const [cache]=process.argv.slice(2);
-  const report=await indexReferenceVideos({cache,ffmpegDir:process.env.PERSONA_FFMPEG_DIR,whisperCli:process.env.PERSONA_WHISPER_CLI,whisperModel:process.env.PERSONA_WHISPER_MODEL});console.log(JSON.stringify(report,null,2));
+  const report=await indexReferenceVideos({cache,ffmpegDir:process.env.PERSONA_FFMPEG_DIR,whisperCli:process.env.PERSONA_MEDIA_WHISPER_CLI,whisperModel:process.env.PERSONA_MEDIA_WHISPER_MODEL});console.log(JSON.stringify(report,null,2));
  }catch(e){console.error(cleanError(e));process.exitCode=1}
 }
