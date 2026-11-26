@@ -12,6 +12,8 @@ import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provena
 import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
 import {personaWorkerUrl} from './personaWorkerUrl';
 import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
+import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
+import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -228,6 +230,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(isLocalBrandTrialSlide(post,slide))return renderLocalBrandTrial(post,slide,index);
  if((!post.research||['cormorant-inter','literata-golos'].includes(post.fontPreset??''))&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
