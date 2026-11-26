@@ -15,6 +15,7 @@ import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
 import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
 import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 import {renderCreamEditorial} from './personaCreamEditorialRenderer';
+import {photoDeliveryManifest} from './personaDeliveryPolicy';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -460,6 +461,7 @@ export async function buildEditorialExport(post:EditorialPost,platform:'original
  // The downloadable caption is paste-ready: no theme/status/approval metadata.
  const caption=post.caption.trim();
  files.push({name:'caption.txt',data:new TextEncoder().encode(caption)});
+ if(platform==='tiktok')files.push({name:'delivery.json',data:new TextEncoder().encode(JSON.stringify(photoDeliveryManifest('tiktok'),null,2))});
  if(post.research){
   const sources={
    status:'SOURCE_PASS (manual review, not independent automatic verification)',
