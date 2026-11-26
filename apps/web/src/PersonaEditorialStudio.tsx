@@ -896,7 +896,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      disabled={!checklistReady} onClick={()=>void approve('design')}>Утвердить оформление</button>:
      <span className="personaEditorialApproved">Оформление утверждено ✓</span>}
    </section>}
-   {post.kind==='carousel'&&post.approvals.topic&&<PersonaCarouselVisualReview key={post.id+':'+post.revision+':'+editorialDesignHash(post)} post={post}/>}
+   {post.kind==='carousel'&&post.approvals.topic&&<PersonaCarouselVisualReview key={post.id+':'+post.revision+':'+editorialDesignHash(post)} post={post} onChange={onChange}/>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
     <h4>4. Производство</h4>
     {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&publicationDesignApproved(post)&&<div><button type="button" onClick={rememberStyle}>Запомнить палитру и шрифты для новых каруселей</button>{styleMemoryMessage&&<p role="status">{styleMemoryMessage}</p>}</div>}
