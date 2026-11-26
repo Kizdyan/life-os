@@ -32,6 +32,7 @@ import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial'
 import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
 import PersonaCarouselVisualReview from './PersonaCarouselVisualReview';
 import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
+import {importAboutMeDraft} from './personaAboutMe';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -145,6 +146,18 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [showPublish,setShowPublish]=useState(false);
  const [publishError,setPublishError]=useState('');
  const [error,setError]=useState('');
+ const [aboutMeStatus,setAboutMeStatus]=useState('');
+ const aboutMeBusy=useRef(false);
+ async function prepareAboutMeDraft(){
+  if(aboutMeBusy.current)return;aboutMeBusy.current=true;setBusy(true);setError('');
+  try{
+   const id='about-me-'+crypto.randomUUID(),r=await importAboutMeDraft(id,setAboutMeStatus);
+   onCreate(r.post);onSelect(id);setArchiveRefresh(n=>n+1);
+   setAboutMeStatus('Использовано оценок: '+r.scoresReused+'. Новый черновик; отсутствуют категории: '+(r.missingCategories.join(', ')||'нет')+'. Ошибок импорта: '+r.errors.length+'.');
+  }catch(e){setError(e instanceof Error?e.message:String(e));setAboutMeStatus('Черновик не создан; исходные материалы сохранены.')}
+  finally{aboutMeBusy.current=false;setBusy(false)}
+ }
+
  const [styleMemoryMessage,setStyleMemoryMessage]=useState('');
  function rememberStyle(){if(!post)return;try{rememberCreativeStyle(localStorage,post);setStyleMemoryMessage('Палитра и гарнитура сохранены для новых каруселей.')}catch(e){setStyleMemoryMessage(e instanceof Error?e.message:String(e))}}
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
@@ -477,6 +490,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <button type="button" className="personaEditorialBack" onClick={onClose}>Все темы ↖</button>
    </div>}
   </header>
+  {!post&&!showPublish&&<div><button type="button" disabled={busy} onClick={()=>void prepareAboutMeDraft()}>Подготовить «Обо мне» из локального архива</button><p>Повторный отбор по сохранённым оценкам, без Qwen. Создаётся отдельный черновик.</p></div>}
+  {aboutMeStatus&&<p role="status">{aboutMeStatus}</p>}
   {!post&&showPublish?<div className="personaEditorialPublish" data-testid="editorial-publication-package">
    <div className="personaEditorialPublishIntro">
     <div><h3>Пакет для публикации</h3>
