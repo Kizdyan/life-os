@@ -26,6 +26,8 @@ import {CREATIVE_STYLE_KEY,loadCreativeStyle,mergeCreativeStyle,validateCreative
 
 import {PUBLICATION_ANALYTICS_KEY,loadPublicationAnalytics,validatePublicationAnalytics,mergePublicationAnalytics,type MetricSnapshot} from './personaPublicationAnalytics';
 
+import {WEEKLY_ANCHOR_KEY,EDITORIAL_CALENDAR_KEY,readCalendarBackup,validateCalendarBackup,mergeCalendarBackup,writeCalendarBackup,type CalendarBackup} from './personaCalendarBackup';
+
 type StorageAccess=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 type PhotoManifest={key:string;name:string;mime:'image/png'|'image/jpeg';size:number;sha256:string;file:string};
 type BackupManifest={
@@ -35,6 +37,7 @@ type BackupManifest={
  creativeFeedback?:CreativeFeedback[];
  creativeStyle?:CreativeStyle|null;
  publicationAnalytics?:MetricSnapshot[];
+ calendar?:CalendarBackup;
  photos:PhotoManifest[];
 };
 export type FullBackupStats=PortableStats&{editorial:number;stories:number;photos:number};
@@ -42,7 +45,7 @@ const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
 const MAX_ARCHIVE=512*1024*1024;
 const MAIN_FILE='persona-backup.json';
 const rollbackKeys=['life-os:local-runtime:v1','lifeos:persona:idea-history:v2',
- 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY,CREATIVE_FEEDBACK_KEY,CREATIVE_STYLE_KEY,PUBLICATION_ANALYTICS_KEY];
+ 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY,CREATIVE_FEEDBACK_KEY,CREATIVE_STYLE_KEY,PUBLICATION_ANALYTICS_KEY,WEEKLY_ANCHOR_KEY,EDITORIAL_CALENDAR_KEY];
 
 function fail(reason:string):never{throw Error('Резервная копия Persona: '+reason)}
 function assertImage(m:PhotoManifest){
@@ -70,6 +73,7 @@ function parseManifest(bytes:Uint8Array):BackupManifest{
   x.editorial.posts.forEach(validatePost);
   if(x.referenceLab!==undefined)validateReferenceLab(x.referenceLab);
   if(x.creativeFeedback!==undefined)validateCreativeFeedback(x.creativeFeedback);
+  if(x.calendar!==undefined)validateCalendarBackup(x.calendar);
   if(x.publicationAnalytics!==undefined)validatePublicationAnalytics(x.publicationAnalytics);
   if(x.creativeStyle!==undefined&&x.creativeStyle!==null)validateCreativeStyle(x.creativeStyle);
   const ids=x.editorial.posts.map(p=>p.id);
@@ -178,7 +182,7 @@ function snapshot(storage:StorageAccess){
  // Throws rather than silently replacing damaged local data: no partial backup.
  const referenceLab=loadReferenceLab(storage);
  const creativeFeedback=loadCreativeFeedback(storage);
- return {legacy,editorial,stories,referenceLab,creativeFeedback,creativeStyle:loadCreativeStyle(storage),publicationAnalytics:loadPublicationAnalytics(storage)};
+ return {legacy,editorial,stories,referenceLab,creativeFeedback,creativeStyle:loadCreativeStyle(storage),publicationAnalytics:loadPublicationAnalytics(storage),calendar:readCalendarBackup(storage)};
 }
 export async function exportFullPersonaBackup(storage:StorageAccess):Promise<Blob>{
  const data=snapshot(storage);
@@ -218,6 +222,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
  const incomingLab=manifest.referenceLab;
  const mergedFeedback=mergeCreativeFeedback(local.creativeFeedback,manifest.creativeFeedback??[]);
  const mergedStyle=mergeCreativeStyle(local.creativeStyle,manifest.creativeStyle??null);
+ const mergedCalendar=manifest.calendar===undefined?local.calendar:mergeCalendarBackup(local.calendar,manifest.calendar);
  const mergedAnalytics=mergePublicationAnalytics(local.publicationAnalytics,manifest.publicationAnalytics??[]);
  if(incomingLab!==undefined&&local.referenceLab.revision>1&&
   JSON.stringify(local.referenceLab)!==JSON.stringify(incomingLab)){
@@ -258,6 +263,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
    storage.setItem(REFERENCE_LAB_KEY,JSON.stringify(incomingLab));
   if(manifest.creativeFeedback!==undefined)storage.setItem(CREATIVE_FEEDBACK_KEY,JSON.stringify(mergedFeedback));
   if(mergedStyle)storage.setItem(CREATIVE_STYLE_KEY,JSON.stringify(mergedStyle));
+  if(manifest.calendar!==undefined)writeCalendarBackup(storage,mergedCalendar);
   if(manifest.publicationAnalytics!==undefined)storage.setItem(PUBLICATION_ANALYTICS_KEY,JSON.stringify(mergedAnalytics));
   return {...base,editorial:addedPosts.length,stories:addedStories.length,photos:created.length};
  }catch(error){
