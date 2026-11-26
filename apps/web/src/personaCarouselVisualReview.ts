@@ -1,6 +1,5 @@
 import {personaWorkerUrl} from './personaWorkerUrl';
 import type {EditorialPost} from './personaEditorialModel';
-import {renderEditorialSlide} from './personaEditorialMedia';
 const dimensions=['readability','hierarchy','composition','brandCoherence','imageRelevance'] as const;
 export type VisualDimension=typeof dimensions[number];
 export type ReferenceEvidence={assetSha256:string;frameSha256:string;timeSec:number;model:string;preference:'unconfirmed'};
@@ -20,14 +19,14 @@ export function validateVisualReceipt(raw:unknown,index:number,sha256:string):Vi
 function base64(bytes:Uint8Array){
  let value='';for(let i=0;i<bytes.length;i+=8192)value+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(value);
 }
-export async function reviewRenderedSlide(post:EditorialPost,i:number,signal:AbortSignal):Promise<VisualOpinion>{
+export async function reviewRenderedBlob(post:EditorialPost,i:number,png:Blob,signal:AbortSignal):Promise<VisualOpinion>{
  if(post.kind!=='carousel'||post.slides.length<3||post.slides.length>8||!post.slides[i])throw Error('Нужна карусель из 3–8 слайдов');
  signal.throwIfAborted();
  const health=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.any([signal,AbortSignal.timeout(5000)])});
  if(!health.ok)throw Error('Локальный Worker недоступен');
  const h=await health.json();
  if(h.service!=='persona-media-worker'||typeof h.token!=='string')throw Error('Локальный Worker не подтверждён');
- const slide=post.slides[i],png=await renderEditorialSlide(post,slide,i);
+ const slide=post.slides[i];
  if(png.type!=='image/png'||png.size<1000||png.size>8*1024*1024)throw Error('PNG вне допустимого размера: слайд '+(i+1));
  const bytes=new Uint8Array(await png.arrayBuffer());
  const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -38,6 +37,12 @@ export async function reviewRenderedSlide(post:EditorialPost,i:number,signal:Abo
  if(!response.ok){const e=await response.json().catch(()=>null);throw Error(typeof e?.error==='string'?e.error:'Визуальная проверка не выполнена: '+response.status)}
  const receipt=validateVisualReceipt(await response.json(),i+1,sha256);
  signal.throwIfAborted();return receipt;
+}
+export async function reviewRenderedSlide(post:EditorialPost,i:number,signal:AbortSignal):Promise<VisualOpinion>{
+ if(post.kind!=='carousel'||!post.slides[i])throw Error('Слайд не найден');
+ signal.throwIfAborted();
+ const {renderEditorialSlide}=await import('./personaEditorialMedia');
+ return reviewRenderedBlob(post,i,await renderEditorialSlide(post,post.slides[i],i),signal);
 }
 export async function reviewRenderedCarousel(post:EditorialPost,options:{signal:AbortSignal;onSlide:(receipt:VisualOpinion)=>void}){
  if(post.kind!=='carousel'||post.slides.length<3||post.slides.length>8)throw Error('Нужна карусель из 3–8 слайдов');
