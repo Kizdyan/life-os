@@ -1,0 +1,12 @@
+# Reference Intelligence: first operational slice
+
+Implemented in the unified PR #228. The existing read-only Yandex adapter and local asset catalog remain canonical. No source modifications, new cloud inference, or private URLs in Git.
+
+- Configure PERSONA_YANDEX_CACHE_DIR on the local Worker, pointing to the existing private cache. Optional PERSONA_CAROUSEL_VISION_MODEL selects the local visual model; no model is automatically installed.
+- Local index reads only catalogs/Банк референсов/persona-assets-v1.json and its contained JPEG thumbnails. CLI: node tools/persona-reference-intelligence.mjs "<cache>" [model]. Existing editor offers an explicit batch up to 20 new frames. Worker accepts bounded batches. Do not run while the legacy external photo analyzer is using Ollama; its lock may not be shared.
+- Indexed observations include typography, composition, lighting, color, framing, graphics. Observed, uncertain and not-visible are separate. Application is a hypothesis. Every row has asset/frame SHA-256, frame timestamp, model and version; all preference flags remain unconfirmed.
+- Incremental checkpoints preserve prior rows, reuse matching frame hash/model, record up to two failed attempts per asset/time/model and skip exhausted items. No deletion of originals. Crash-held lock recovery is not automatic. The browser batch stops with the component; persistent background scheduling is not implemented.
+- Visual critic receives actual target PNG and up to two locally retrieved reference frames with matched words and observed features. Retrieval is lexical, not embeddings; a no-match result is honest zero. Receipt records reference identity and model. Before/after acceptance requires identical reference evidence. These are model recommendations, not author approval or calibrated taste scores.
+- Currently sampled frames only. Video shot boundaries, temporal montage, speech, music, audio, cross-frame typography/watermarks, human preference labels, reference retrieval quality benchmarks and production-level application to video remain open. No live model or private library run was performed in implementing this slice.
+
+Acceptance: run exact-head CI, local indexed reference batch after photo review, inspect evidence against actual files, verify changed thumbnails are rejected, demonstrate same-reference before/after comparisons, evaluate on two separate subjects and obtain author acceptance. Never claim full reference learning merely because indexing succeeds.
