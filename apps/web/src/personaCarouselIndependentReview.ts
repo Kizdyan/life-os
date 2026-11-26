@@ -1,6 +1,7 @@
 import type {EditorialPost} from './personaEditorialModel';
+import {independentCritic} from '../../../packages/core/src/persona-critic-independence.mjs';
 export type CarouselReviewInput={title:string;caption:string;researchModel:string;slides:{text:string;urls:string[];interpretation:boolean}[]};
-export type CarouselReviewReport={status:'NEEDS_REVISION'|'REVIEW_CANDIDATE';provider:'perplexity';model:string;fingerprint:string;reviewedAt:string;approved:false;published:false;checks:{target:string;verdict:'SUPPORTED'|'CONTRADICTED'|'INSUFFICIENT'|'INTERPRETATION';reason:string;evidence:{url:string;quote:string}[]}[];editorial:{hook:string;narrative:string;positioning:string;revision:string}};
+export type CarouselReviewReport={status:'NEEDS_REVISION'|'REVIEW_CANDIDATE';provider:'perplexity';model:string;fingerprint:string;reviewedAt:string;approved:false;published:false;checks:{target:string;verdict:'SUPPORTED'|'CONTRADICTED'|'INSUFFICIENT'|'INTERPRETATION';reason:string;evidence:{url:string;quote:string}[]}[];editorial:{hook:string;narrative:string;positioning:string;revision:string;verdict?:'PASS'|'REVISE'}};
 export type StoredCarouselReview={input:CarouselReviewInput;report:CarouselReviewReport};
 export function carouselReviewInput(post:EditorialPost):CarouselReviewInput{
  const r=post.research;
@@ -31,7 +32,8 @@ export function validStoredCarouselReview(value:unknown):value is StoredCarousel
   if(['SUPPORTED','CONTRADICTED'].includes(c.verdict)&&!c.evidence.length)return false;
   if(index>=0&&c.verdict==='INTERPRETATION'&&!input.slides[index].interpretation)return false;
  }
- if(report.status!==(report.checks.some(c=>['CONTRADICTED','INSUFFICIENT'].includes(c.verdict))?'NEEDS_REVISION':'REVIEW_CANDIDATE'))return false;
+ if(report.editorial?.verdict!==undefined&&!['PASS','REVISE'].includes(report.editorial.verdict))return false;
+ if(report.status!==((report.editorial?.verdict==='REVISE'||report.checks.some(c=>['CONTRADICTED','INSUFFICIENT'].includes(c.verdict)))?'NEEDS_REVISION':'REVIEW_CANDIDATE'))return false;
  return Boolean(report.editorial&&(['hook','narrative','positioning','revision'] as const).every(k=>bounded(report.editorial[k],800)));
 }
 export async function validateCarouselReviewReceipt(input:CarouselReviewInput,report:unknown):Promise<StoredCarouselReview>{
@@ -41,4 +43,12 @@ export async function validateCarouselReviewReceipt(input:CarouselReviewInput,re
  const sha=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
  if(sha!==audit.report.fingerprint)throw Error('Отчёт относится к другому тексту');
  return audit;
+}
+
+/** Historical reports remain readable, but only a current cross-family verdict can
+ * authorize the machine-researched publication package. Author approval is separate. */
+export function independentEditorialGate(post:EditorialPost):boolean{
+ if(post.research?.provider!=='perplexity')return true;
+ const r=currentCarouselReview(post);
+ return Boolean(r&&r.status==='REVIEW_CANDIDATE'&&r.editorial.verdict==='PASS'&&independentCritic(post.research.discovery?.model,r.model).eligible);
 }
