@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -37,4 +37,33 @@ test('concurrent duplicate claims, damaged claim and unsafe identity fail closed
  const corrupt=randomUUID();await mkdir(join(root,'editorial-run-'+corrupt));await writeFile(join(root,'editorial-run-'+corrupt,'claim.json'),'invalid');
  await assert.rejects(claimEditorialRun(root,corrupt,request));
  await assert.rejects(readEditorialRun(root,'../../private'));
+}));
+
+test('valid JSON with changed claim request is rejected before replay',()=>withRoot(async root=>{
+ const id=randomUUID();await claimEditorialRun(root,id,request);
+ const file=join(root,'editorial-run-'+id,'claim.json');
+ const claim=JSON.parse(await readFile(file,'utf8'));claim.request.history=['Changed'];
+ await writeFile(file,JSON.stringify(claim));
+ await assert.rejects(readEditorialRun(root,id),/Некорректный журнал/);
+}));
+test('missing, malformed and out-of-order checkpoints fail closed',()=>withRoot(async root=>{
+ const id=randomUUID();await claimEditorialRun(root,id,request);
+ await assert.rejects(recordEditorialCall(root,id,1,'revision'));
+ await recordEditorialCall(root,id,1,'research');
+ const dir=join(root,'editorial-run-'+id);
+ await writeFile(join(dir,'call-1-started.json'),JSON.stringify({call:1,stage:'revision',startedAt:new Date().toISOString()}));
+ await assert.rejects(readEditorialRun(root,id),/Некорректная контрольная точка/);
+ await rm(join(dir,'call-1-started.json'));
+ await writeFile(join(dir,'call-2-started.json'),JSON.stringify({call:2,stage:'independent-review',startedAt:new Date().toISOString()}));
+ await assert.rejects(readEditorialRun(root,id),/последовательность/);
+}));
+test('completed result cannot replay with mismatched call evidence',()=>withRoot(async root=>{
+ const id=randomUUID();await claimEditorialRun(root,id,request);
+ await recordEditorialCall(root,id,1,'research');
+ await recordEditorialCall(root,id,2,'independent-review');
+ await finishEditorialRun(root,id,{version:1,status:'AUTHOR_REVIEW_REQUIRED',calls:2,maxCalls:4,approved:false,published:false});
+ const file=join(root,'editorial-run-'+id,'result.json');
+ const result=JSON.parse(await readFile(file,'utf8'));result.calls=1;
+ await writeFile(file,JSON.stringify(result));
+ await assert.rejects(claimEditorialRun(root,id,request),/Некорректный результат/);
 }));
