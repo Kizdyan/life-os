@@ -287,6 +287,32 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
   finally{researchInFlight.current=false;setResearchBusy(false)}
  }
+ async function runAutonomousEditorial(){
+  if(researchInFlight.current||!window.confirm('Разрешить до 4 платных запросов: поиск темы, независимая проверка, при необходимости одна доработка и повторная проверка?'))return;
+  researchInFlight.current=true;setResearchBusy(true);setError('');
+  try{
+   const history=[...new Set([...posts].filter(p=>p.kind==='carousel').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(p=>p.title.trim().slice(0,160)).filter(Boolean))].slice(0,20);
+   const health=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(4500)}).then(r=>{if(!r.ok)throw Error('Worker недоступен');return r.json()});
+   if(health?.service!=='persona-media-worker'||typeof health.token!=='string'||!health.carouselResearch?.configured||!health.carouselIndependentReview?.configured)throw Error('Нужны настроенные исследователь и независимый критик');
+   const response=await fetch(personaWorkerUrl+'/carousel-editorial-pipeline',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({mode:'discover',history,consent:true,maxCalls:4}),signal:AbortSignal.timeout(480000)});
+   const data=await response.json();
+   if(!response.ok)throw Error(typeof data.error==='string'?data.error:'Редакционный цикл недоступен');
+   if(data?.version!==1||data.approved!==false||data.published!==false||!Array.isArray(data.attempts)||!['AUTHOR_REVIEW_REQUIRED','NEEDS_REVISION','BLOCKED'].includes(data.status)||!data.draft?.packet)throw Error(data.reason||'Черновик не создан');
+   const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+   const receivedAt=new Date().toISOString(),draft=data.draft;
+   if(draft.provider!=='perplexity'||draft.status!=='UNVERIFIED'||typeof draft.model!=='string')throw Error('Не подтверждён исследователь');
+   let created=importResearchCarousel(id,JSON.stringify(draft.packet),receivedAt,{mode:'discover',model:draft.model,receivedAt});
+   const latest=data.attempts.at(-1);
+   if(latest?.report){
+    const audit=await validateCarouselReviewReceipt(carouselReviewInput(created),latest.report);
+    created=attachEditorialIndependentReview(created,audit);
+   }
+   if(!mounted.current)return;
+   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));onSelect(id);
+   setError(data.status==='AUTHOR_REVIEW_REQUIRED'?'Редакционный цикл завершён. Требуется авторская проверка; публикация не разрешена.':('Редакционный цикл остановлен: '+(data.reason||data.status)));
+  }catch(e){if(mounted.current)setError('Редакционный цикл: '+(e instanceof Error?e.message:String(e)))}
+  finally{researchInFlight.current=false;if(mounted.current)setResearchBusy(false)}
+ }
  async function runIndependentReview(){
   if(!post||reviewInFlight.current||batchInFlight.current||backgroundBusy)return;
   if(!window.confirm('Разрешить один платный запрос Perplexity на проверку текста другой моделью?'))return;
@@ -588,6 +614,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {researchBusy?'Исследую…':'Persona: самостоятельно найти тему (1 платный запрос)'}
     </button>
     <p>Без заданной темы: поиск учитывает до 20 последних названий каруселей. Результат — новый черновик, не готовая публикация.</p>
+    <button type="button" data-testid="editorial-autonomous-cycle" disabled={researchBusy} onClick={()=>void runAutonomousEditorial()}>Persona: исследование → критика → доработка (до 4 платных запросов)</button>
     {researchBusy&&<p role="status">Persona ищет первоисточники через локальный Worker. Это черновик, не утверждение фактов.</p>}
     <p>Поиск запускается только нажатием кнопки, если на твоём ПК подключён локальный Worker с ключом API. Если он недоступен, импортируй JSON вручную.</p>
     <button type="button" onClick={()=>copy(RESEARCH_PROMPT)}>Скопировать исследовательский промпт</button>
