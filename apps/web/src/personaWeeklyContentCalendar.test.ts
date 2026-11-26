@@ -119,3 +119,15 @@ describe('Persona 10-week Reel / Carousel / Photo editorial calendar',()=>{
   expect(loadPersonaCalendarAnchor(storage,'2026-11-25')).toBe('2026-11-16');
  });
 });
+
+it('moves only explicitly dated seed material and never duplicates it in the old week',()=>{
+ const seed={...createSeedEditorialCarousel('PHOTO-001'),scheduledDate:'2026-11-28'};
+ const photo={...createEditorialFromTopic('photo-week-01',TOPIC_CHOICES.find(x=>x.kind==='photo')!),scheduledDate:'2026-12-01'};
+ const old=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[seed,photo],weekMonday:'2026-11-16'});
+ const next=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[seed,photo],weekMonday:'2026-11-23'});
+ const later=buildPersonaWeeklyCalendar({...plans(),editorialPosts:[seed,photo],weekMonday:'2026-11-30'});
+ expect(old.items.some(x=>x.sourceId===seed.id||x.sourceId===photo.id)).toBe(false);
+ expect(next.items.filter(x=>x.sourceId===seed.id).map(x=>x.scheduledDate)).toEqual(['2026-11-28']);
+ expect(later.items.filter(x=>x.sourceId===photo.id).map(x=>x.scheduledDate)).toEqual(['2026-12-01']);
+ expect(next.items.find(x=>x.sourceId==='PHOTO-002')?.scheduledDate).toBe('2026-11-26');
+});

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import {planFraming} from './persona-studio-framing.mjs';
 import {personaIdentityFfmpegFilter} from './persona-visual-identity.mjs';
 import {getVisualPreset} from './persona-creative-director.mjs';
+import {measuredSoundtrackGain,adaptiveMixFilter,assessRenderedMix} from './persona-sound-design.mjs';
 import {cachedFfmpegStage,cachedFfprobe,cachedMp4,stageCacheEnabled,stageFileSha} from './persona-stage-cache.mjs';
 import {fileURLToPath} from 'node:url';
 
@@ -220,7 +221,7 @@ async function encodeTimeline(clips,soundtrack,{tempDir,staged,width,height,fps,
   if (soundtrack) {
     const assembled=join(tempDir,'assembled.mp4');
     await run('ffmpeg',[...args.slice(0,-1),assembled]);
-    const filter='[0:a]volume='+soundtrack.originalVolume+'[original];[1:a]atrim=start='+soundtrack.startSec+',asetpts=PTS-STARTPTS,volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0[a]';
+    const filter=soundtrack.adaptiveMode?adaptiveMixFilter({mode:soundtrack.adaptiveMode,volume:soundtrack.volume,startSec:soundtrack.startSec,totalSec}):'[0:a]volume='+soundtrack.originalVolume+'[original];[1:a]atrim=start='+soundtrack.startSec+',asetpts=PTS-STARTPTS,volume='+soundtrack.volume+',atrim=duration='+totalSec+',asetpts=PTS-STARTPTS[music];[original][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0[a]';
     await run('ffmpeg',['-hide_banner','-nostdin','-loglevel','error','-y','-i',assembled,'-stream_loop','-1','-i',soundtrack.path,'-filter_complex',filter,'-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac','-ar','48000','-ac','2','-b:a','160k','-t',String(totalSec),'-movflags','+faststart',staged]);
   } else await run('ffmpeg',args);
 }
@@ -296,6 +297,16 @@ async function main() {
     const volume = numeric(project.soundtrack.volume ?? 0.8,'soundtrack volume',0,2);
     const originalVolume = numeric(project.soundtrack.originalVolume ?? 0.2,'original volume',0,2);
     soundtrack = { path:musicPath,startSec,volume,originalVolume,sha256:await hash(musicPath) };
+    if(project.soundtrack.adaptiveMode!==undefined){
+      if(!['silent-source','protect-original'].includes(project.soundtrack.adaptiveMode))fail('Invalid adaptive soundtrack mode');
+      const mode=clips.some(c=>c.media.audio&&!c.muteSourceAudio)?'protect-original':'silent-source';
+      const sampleDuration=Math.min(60,musicDuration-startSec);
+      let measurement=null;
+      try{measurement=await measureLoudness(musicPath,startSec,sampleDuration)}catch{}
+      const gain=measuredSoundtrackGain(measurement,mode);
+      soundtrack={...soundtrack,adaptiveMode:mode,originalVolume:1,volume:gain.volume,measurement,gain,sampleDuration,
+        rightsConfirmed:false,authorReviewRequired:true};
+    }
   }
   const totalSec = clips.reduce((sum, clip) => sum + clip.durationSec, 0);
   if (totalSec > 900) fail('Timeline exceeds 15 minute safety limit');
@@ -317,6 +328,7 @@ async function main() {
   try {
     const recipe=stageCacheEnabled()?{
       version:await stageFileSha(fileURLToPath(import.meta.url)),width,height,fps,identityFilter,renderProfile,
+      ...(soundtrack?.adaptiveMode?{soundDesignVersion:await stageFileSha(fileURLToPath(new URL('./persona-sound-design.mjs',import.meta.url)))}:{}),
       clips:clips.map(({path,beat,brollAfterBeat,...settings})=>settings),
       soundtrack:soundtrack?{...soundtrack,path:null}:null,
     }:null;
@@ -351,7 +363,13 @@ async function main() {
       audioLeveling.clips.push(entry);
       outputOffset+=clip.durationSec;
     }
-    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,renderProfile,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null,visualPreset:project.visualPreset??null}, clips, outputTimeline, soundtrack, audioLeveling, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
+    let adaptiveMixReview=null;
+    if(soundtrack?.adaptiveMode){
+      let measured=null;
+      try{measured=await measureLoudness(staged,0,totalSec)}catch{}
+      adaptiveMixReview=assessRenderedMix(measured);
+    }
+    const manifest = { version:1, operation:'timeline-render', project:projectPath, settings:{width,height,fps,renderProfile,visualIdentity:project.visualIdentity??null,stylePack:project.stylePack??null,visualPreset:project.visualPreset??null}, clips, outputTimeline, soundtrack, audioLeveling, adaptiveMixReview, output:{path:output,sha256:await hash(staged),...actual}, verification:{passed:true,expectedDurationSec:totalSec,toleranceSec} };
     await moveVerifiedRender(staged,output);
     try { await writeFile(output + '.persona.json',JSON.stringify(manifest,null,2)+'\n',{flag:'wx'}); }
     catch (error) { await rm(output,{force:true}); throw error; }

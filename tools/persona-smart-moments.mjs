@@ -94,7 +94,7 @@ function speechWeight(f,speech){
  const touching=speech.filter(s=>s.fileIndex===f.fileIndex&&f.atSec>=s.startSec-.4&&f.atSec<=s.endSec+.4);
  return touching.length?Math.max(...touching.map(s=>s.emphasis>=4?3:1)):0;
 }
-export function chooseSmartMoments(scored,{videos,speech=[]}={}){
+export function chooseSmartMoments(scored,{videos,speech=[],referenceShotSec=null}={}){
  if(!Array.isArray(scored)||!scored.length||!Array.isArray(videos))throw Error('Missing frame evidence');
  const viable=scored.filter(eligible).map(f=>({...f,score:frameRank(f)+speechWeight(f,speech)}));
  if(viable.length<3)throw Error('Not enough sharp, camera-facing actor frames for three reliable emotional peaks');
@@ -137,6 +137,13 @@ export function chooseSmartMoments(scored,{videos,speech=[]}={}){
   }
   startSec=round(clamp(startSec,0,video.durationSec-durationSec));
   durationSec=round(durationSec);
+  // Only verified soundless sources may be resized by heuristic reference pacing.
+  // Never trim dialogue, musical performance, unknown audio or overlap neighboring peaks.
+  if(video.hasAudio===false&&!speech.some(s=>s.fileIndex===f.fileIndex)&&Number.isFinite(referenceShotSec)&&referenceShotSec>=2.6&&referenceShotSec<=3.6){
+   const proposed=round(Math.min(referenceShotSec,3.1,video.durationSec));
+   const nextStart=round(clamp(f.atSec-proposed*1.43/3.1,0,video.durationSec-proposed));
+   if(proposed<durationSec&&nextStart>=startSec-.001&&nextStart+proposed<=startSec+durationSec+.001&&f.atSec>=nextStart&&f.atSec<=nextStart+proposed){startSec=nextStart;durationSec=proposed}
+  }
   return {id:'peak_'+i,fileIndex:f.fileIndex,startSec,durationSec,stillSec:f.atSec,
    sourceSha256:video.sha256,emotion:f.emotion,score:round(f.score),
    visualReason:f.reason,arcRole:i===0?'hook':i===1?'turn':i===2?'finale':'support',
@@ -145,9 +152,9 @@ export function chooseSmartMoments(scored,{videos,speech=[]}={}){
  // Order: hook, optional support, turn, optional support, finale.
  return choices.length===3?choices:[choices[0],...choices.slice(3,4),choices[1],...choices.slice(4),choices[2]];
 }
-export function makeSmartEditPlan({prompt,videos,scored,audio=[],visionProvider='openrouter',visionModel='unknown',frameIntervalSec=.5}){
+export function makeSmartEditPlan({prompt,videos,scored,audio=[],visionProvider='openrouter',visionModel='unknown',frameIntervalSec=.5,referenceShotSec=null}){
  const speech=audio.flatMap((a,fileIndex)=>Array.isArray(a.segments)?a.segments.map(x=>({...x,fileIndex})):[]);
- const moments=chooseSmartMoments(scored,{videos,speech});
+ const moments=chooseSmartMoments(scored,{videos,speech,referenceShotSec});
  const candidates=moments.map((x,i)=>({id:'m'+i,fileIndex:x.fileIndex,startSec:x.startSec,durationSec:x.durationSec,
   stillSec:x.stillSec,sourceSha256:x.sourceSha256}));
  const order=(candidates.length===moments.length);

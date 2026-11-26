@@ -192,6 +192,10 @@ try{
  assert.ok(manifest.editorial.posts.some(p=>p.id==='photo-week-01'&&p.approvals.design));
  assert.equal(manifest.stories.length,1);
  assert.equal(manifest.photos.length,2);
+ const approvedPhotoRefs=manifest.editorial.posts.flatMap(p=>p.slides.filter(s=>s.visual==='archive-photo').map(s=>s.photoRef)).sort();
+ assert.equal(approvedPhotoRefs.length,2);
+ assert.ok(approvedPhotoRefs.every(ref=>/^(PHOTO-001|photo-week-01)\/photo-[0-9a-f-]{36}$/.test(ref)));
+ assert.deepEqual(manifest.photos.map(p=>p.key).sort(),approvedPhotoRefs);
  // Fresh independent browser profile must restore actual bytes, not merely
  // the labels and author decisions from localStorage.
  const fresh=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true});
@@ -222,7 +226,7 @@ try{
  assert.deepEqual(restoredEvidence.editorial.map(p=>p.id).sort(),['PHOTO-001','photo-week-01']);
  assert.ok(restoredEvidence.editorial.every(p=>p.approved&&p.caption.length>40));
  assert.equal(restoredEvidence.stories.length,1);
- assert.deepEqual(restoredEvidence.images.map(p=>p.key).sort(),['PHOTO-001/slide-2','photo-week-01/slide-1']);
+ assert.deepEqual(restoredEvidence.images.map(p=>p.key).sort(),approvedPhotoRefs);
  assert.ok(restoredEvidence.images.every(p=>p.size>1024));
  // An imported carousel must still EXPORT; this confirms photos are usable.
  await restored.getByTestId('persona-weekly-calendar')

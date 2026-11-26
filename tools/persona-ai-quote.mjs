@@ -10,6 +10,8 @@ const MOODS=Object.freeze({dramatic:'Драматичное',calm:'Спокой�
 const limit=(n,low,high)=>Math.max(low,Math.min(high,n));
 const round=x=>Math.round(x);
 const words=x=>x.trim().split(/\s+/u).filter(Boolean);
+// Keep suspicious hypotheses as evidence, never as dialogue or confirmed silence.
+const suspiciousTranscript=text=>/(\p{L})\1{3,}/u.test(text)||/^\s*(?:\[[^\]]*\]|\([^)]*\)|<[^>]*>)\s*$/u.test(text);
 export function classifyQuoteSpeech(audio){
  if(!Array.isArray(audio)||!audio.length||audio.some(t=>!t||!Array.isArray(t.segments)))
   throw Error('Speech evaluation requires per-source Whisper evidence');
@@ -18,6 +20,8 @@ export function classifyQuoteSpeech(audio){
  // Unknown transcription MUST NOT be interpreted as silence. No quote is sent.
  if(audio.some(t=>!CONFIRMED_EMPTY.has(t.status)&&t.status!=='whisper-transcribed'))
   return {mode:'unverified',wordCount:count,reason:'Whisper unavailable or failed; speech presence unknown'};
+ if(audio.some(t=>t.segments.some(s=>typeof s.text==='string'&&suspiciousTranscript(s.text))))
+  return {mode:'unverified',wordCount:count,reason:'Whisper contains repeated glyphs or non-speech annotations; manual transcript review required'};
  if(audio.some(t=>t.status==='whisper-transcribed'&&t.segments.some(s=>
   !Number.isFinite(s.startSec)||!Number.isFinite(s.endSec)||s.endSec<=s.startSec)))
   return {mode:'unverified',wordCount:count,reason:'Whisper timestamps unreliable'};
@@ -34,6 +38,7 @@ export function cueFromWhisper({audio,choices}){
   const src=audio[c.fileIndex],from=c.startSec,to=c.startSec+c.durationSec;
   for(const seg of src?.segments??[]){
    if(typeof seg.text!=='string'||!Number.isFinite(seg.startSec)||!Number.isFinite(seg.endSec))continue;
+   if(suspiciousTranscript(seg.text))continue;
    // Never attach ASR from a different take or unseen window.
    const start=Math.max(from,seg.startSec),end=Math.min(to,seg.endSec);
    if(end-start<.22)continue;

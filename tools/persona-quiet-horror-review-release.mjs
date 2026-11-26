@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 const {chromium}=await import(process.env.PERSONA_PLAYWRIGHT_MODULE||'playwright');
-const out=process.env.QUIET_HORROR_OUTPUT||'dist/carousels-v3-quiet-horror';
+const cinematic=process.env.QUIET_HORROR_CINEMATIC==='1';
+const out=process.env.QUIET_HORROR_OUTPUT||(cinematic?'dist/carousels-v4-cinematic-preview':'dist/carousels-v3-quiet-horror');
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 try{
@@ -16,19 +17,56 @@ try{
  const data=await page.evaluate(async()=>{
   const m=await import('/src/personaEditorialModel.ts'),media=await import('/src/personaEditorialMedia.ts');
   const draft=m.createQuietHorrorCarousel('2026-11-21T00:00:00.000Z');
+  if(!draft.slides.every(s=>s.background))throw Error('Cinematic backgrounds missing');
   if(draft.approvals.textApproved||draft.approvals.designApproved)throw Error('Draft is already approved');
-  const images=await Promise.all(draft.slides.map((s,i)=>media.renderEditorialSlide(draft,s,i)));
+  const artworkTexts=[],originalFill=CanvasRenderingContext2D.prototype.fillText,originalStroke=CanvasRenderingContext2D.prototype.stroke;
+  let strokes=0,images;
+  CanvasRenderingContext2D.prototype.fillText=function(text,...args){artworkTexts.push(String(text));return originalFill.call(this,text,...args)};
+  CanvasRenderingContext2D.prototype.stroke=function(...args){strokes++;return originalStroke.apply(this,args)};
+  try{images=await Promise.all(draft.slides.map((s,i)=>media.renderEditorialSlide(draft,s,i)))}
+  finally{CanvasRenderingContext2D.prototype.fillText=originalFill;CanvasRenderingContext2D.prototype.stroke=originalStroke}
+  if(artworkTexts.some(t=>/^\d{2}\s*\/\s*\d{2}$/.test(t)))throw Error('Slide numbering leaked into artwork');
+  if(strokes!==0)throw Error('Decorative lines leaked into artwork');
+  const typography=await import('/src/personaEditorialTypography.ts');
+  const ctx=document.createElement('canvas').getContext('2d');
+  const layouts=draft.slides.map((s,i)=>typography.paintEditorialHierarchy(ctx,s,i));
+  for(const layout of layouts)for(const zone of layout){
+   if(zone.x<100||zone.y<100||zone.x+zone.width>980||zone.y+zone.height>1250)throw Error('Typography escaped safe margins');
+   if(zone.role==='body'&&(zone.size<44||zone.size>48||zone.width>756))throw Error('Body scale/column changed');
+   if(zone.role==='kicker'||zone.role==='highlight')throw Error('Unexpected small caption');
+  }
   for(const b of images){const im=await createImageBitmap(b);if(im.width!==1080||im.height!==1350)throw Error('Invalid PNG dimensions');im.close();}
+  // Simulate the app's delayed Google Fonts face replacing a global family.
+  // Renderer-scoped @fontsource aliases must keep the PNG unchanged.
+  const inter=performance.getEntriesByType('resource').find(e=>e.name.includes('inter-cyrillic-400-normal.woff2'));
+  if(!inter)throw Error('Bundled Cyrillic Inter was not loaded');
+  const competing=new FontFace('Cormorant Garamond',`url("${inter.name}")`,{weight:'700'});
+  await competing.load();document.fonts.add(competing);
   const second=await media.renderEditorialSlide(draft,draft.slides[0],0);
+  document.fonts.delete(competing);
   const digest=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  const backgrounds=await import('/src/personaEditorialBackgrounds.ts');
+  const backgroundHashes=await Promise.all(draft.slides.map(async s=>digest(await(await fetch(backgrounds.backgroundAssetUrl(s.background))).blob())));
+  if(new Set(backgroundHashes).size!==8)throw Error('Background images repeat');
   if(await digest(second)!==await digest(images[0]))throw Error('Nondeterministic rendering');
+  // A real archive choice must replace the cinematic background, including in
+  // headline-only compositions. This procedural image is a test fixture only.
+  const photo=document.createElement('canvas');photo.width=1080;photo.height=1350;
+  const pc=photo.getContext('2d');if(!pc)throw Error('Fixture Canvas unavailable');
+  pc.fillStyle='#244c64';pc.fillRect(0,0,1080,1350);
+  const imageFile=await new Promise(ok=>photo.toBlob(b=>ok(new File([b],'archive-fixture.png',{type:'image/png'}))));
+  await media.saveEditorialImage(draft.id,'photo-test-fixture',imageFile);
+  const archiveSlide={...draft.slides[0],visual:'archive-photo',photoRef:draft.id+'/photo-test-fixture'};
+  const archiveWithStale=await media.renderEditorialSlide(draft,archiveSlide,0);
+  const archiveClean=await media.renderEditorialSlide(draft,{...archiveSlide,background:undefined},0);
+  if(await digest(archiveWithStale)!==await digest(archiveClean)||await digest(archiveClean)===await digest(images[0]))throw Error('Archive photo did not replace cinematic background');
   let checked=m.approveEditorialStep(m.approveEditorialStep(draft,'topic'),'content');
   for(let i=0;i<6;i++)checked=m.setEditorialChecklistItem(checked,i,true);
   if(!m.editorialChecklistReady(checked))throw Error('Gate failed');
   checked=m.approveEditorialStep(checked,'design');
   if(checked.approvals.contentHashAtApproval!==m.editorialContentHash(checked))throw Error('Approval hash failed');
   const zip=await media.buildEditorialExport(checked);
-  const changed=m.reviseEditorialPost(checked,{slides:checked.slides.map((s,i)=>i?s:{...s,text:s.text+' Ещё.'})});
+  const changed=m.reviseEditorialPost(checked,{slides:checked.slides.map((s,i)=>i?s:{...s,headline:s.headline+' Ещё.'})});
   if(changed.approvals.textApproved||changed.approvals.designApproved)throw Error('Edit retained approval');
   const sheet=await media.quietHorrorContactSheet(images);
   const files=images.map((b,i)=>({name:'quiet-horror-slide-'+String(i+1).padStart(2,'0')+'.png',blob:b}));
@@ -36,11 +74,12 @@ try{
   for(const f of files)entries.push({name:f.name,data:new Uint8Array(await f.blob.arrayBuffer())});
   entries.push({name:'caption.txt',data:enc.encode(draft.caption)});
   entries.push({name:'draft.json',data:enc.encode(JSON.stringify(draft,null,2))});
+  entries.push({name:'image-provenance.json',data:enc.encode(JSON.stringify(await media.editorialImageProvenance(draft),null,2))});
   entries.push({name:'REVIEW.txt',data:enc.encode('Оформление и тексты ожидают автора. Публикация запрещена до утверждения.')});
   const reviewZip=await media.zipFileBytes(entries);
   const b64=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(b)});
   return {slides:await Promise.all(images.map(b64)),sheet:await b64(sheet),zip:await b64(reviewZip),draft,
-   sha256:await Promise.all(images.map(digest)),gateZipBytes:zip.size};
+   sha256:await Promise.all(images.map(digest)),gateZipBytes:zip.size,layouts,backgroundHashes,artworkTexts};
  });
  // Real UI preview uses precisely the same PNG bytes as export.
  await page.getByRole('button',{name:'Утвердить тему',exact:true}).click();
@@ -52,7 +91,29 @@ try{
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
  });
  assert.equal(actual,data.sha256[0],'preview PNG must match export byte-for-byte');
- await page.getByTestId('persona-editorial-studio').locator('textarea[maxlength="170"]').fill(data.draft.slides[0].text+' Ещё.');
+ // Library works with no Worker and no API key, through the actual editor UI.
+ await page.route('**/health',route=>route.abort('failed'));
+ await page.getByLabel('Разрешаю один платный запрос генерации изображения',{exact:true}).check();
+ await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'BLOCKED:'}).waitFor();
+ // A generated image must be stored, rendered and restored from IndexedDB.
+ await page.unroute('**/health');
+ await page.route('**/health',route=>route.fulfill({json:{token:'browser-test-only'}}));
+ await page.route('**/carousel-background',route=>route.fulfill({json:{status:'READY',source:'openai',pngBase64:data.slides[0],model:'test-fixture-not-live',prompt:'Synthetic browser transport fixture, not a real provider result',createdAt:'2026-11-21T00:00:00Z'}}));
+ await page.getByLabel('Разрешаю один платный запрос генерации изображения',{exact:true}).check();
+ await page.getByRole('button',{name:'Сгенерировать фон слайда · OpenAI',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Фон создан OpenAI'}).waitFor();
+ const generated=await page.evaluate(async()=>{
+  const m=await import('/src/personaEditorialModel.ts');
+  return m.loadEditorialStore(localStorage).posts.find(p=>p.id==='carousel-quiet-horror')?.slides[0].background;
+ });
+ assert.match(generated.generatedRef,/\/bg-/);assert.match(generated.sha256,/^[a-f0-9]{64}$/);
+ await page.getByTestId('cinematic-library').click();
+ // Check typography and content on a phone-sized UI as well.
+ await page.setViewportSize({width:390,height:844});
+ await preview.waitFor();
+ assert.ok(await preview.evaluate(img=>img.getBoundingClientRect().width<=390));
+ await page.getByLabel('Заголовок слайда',{exact:true}).fill(data.draft.slides[0].headline+' Ещё.');
  await page.getByRole('button',{name:'Утвердить тексты и подпись',exact:true}).waitFor();
  // Restore the author's initial draft in this isolated browser only.
  await page.evaluate(async draft=>{
@@ -61,11 +122,13 @@ try{
   localStorage.setItem(m.EDITORIAL_KEY,JSON.stringify(saved));
  },data.draft);
  for(let i=0;i<8;i++)await writeFile(join(out,'quiet-horror-slide-'+String(i+1).padStart(2,'0')+'.png'),Buffer.from(data.slides[i],'base64'));
- await writeFile(join(out,'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
- await writeFile(join(out,'carousel-quiet-horror-publish-'+new Date().toISOString().slice(0,10)+'.zip'),Buffer.from(data.zip,'base64'));
+ await writeFile(join(out,cinematic?'contact-sheet-quiet-horror-v4.png':'contact-sheet-quiet-horror.png'),Buffer.from(data.sheet,'base64'));
+ await writeFile(join(out,'carousel-quiet-horror-'+(cinematic?'cinematic-preview-':'publish-')+new Date().toISOString().slice(0,10)+'.zip'),Buffer.from(data.zip,'base64'));
  await writeFile(join(out,'draft.json'),JSON.stringify(data.draft,null,2)+'\n');
  await writeFile(join(out,'caption.txt'),data.draft.caption);
  await writeFile(join(out,'QA.json'),JSON.stringify({sha256:data.sha256,previewMatchesPng:true,gatePassedInIsolatedTest:true,
+  typography:data.layouts,
+  uniqueBackgrounds:new Set(data.backgroundHashes).size,backgroundHashes:data.backgroundHashes,artworkNumbering:false,decorativeLines:false,
   textApproved:false,designApproved:false,publicationAllowed:false,sheet:{width:1080,height:2160,thumbnailWidth:400,thumbnailHeight:500}},null,2));
  assert.deepEqual(errors,[]);
  console.log('QUIET_HORROR_PASS eight PNGs, deterministic preview, approval gate, caption, contact sheet, edit invalidation');

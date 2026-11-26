@@ -1,0 +1,40 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {claimEditorialRun,readEditorialRun,recordEditorialCall,finishEditorialRun,editorialRunResponse} from './persona-editorial-run-journal.mjs';
+const request={mode:'discover',history:['Old topic'],maxCalls:4,consent:true};
+const withRoot=async fn=>{const root=await mkdtemp(join(tmpdir(),'persona-editorial-journal-'));try{await fn(root)}finally{await rm(root,{recursive:true,force:true})}};
+test('same run identity replays persisted result and rejects changed task',()=>withRoot(async root=>{
+ const id=randomUUID();
+ assert.equal((await claimEditorialRun(root,id,request)).claimed,true);
+ await recordEditorialCall(root,id,1,'research');
+ await recordEditorialCall(root,id,2,'independent-review');
+ const result={version:1,status:'AUTHOR_REVIEW_REQUIRED',calls:2,maxCalls:4,approved:false,published:false};
+ const finished=await finishEditorialRun(root,id,result);
+ const duplicate=await claimEditorialRun(root,id,request);
+ assert.equal(duplicate.claimed,false);
+ assert.deepEqual(editorialRunResponse(duplicate,id),finished);
+ await assert.rejects(claimEditorialRun(root,id,{...request,history:['Different']}),/другому заданию/);
+ await assert.rejects(finishEditorialRun(root,id,result),/перезаписать/);
+}));
+test('interrupted call remains ambiguous and cannot be claimed again after restart',()=>withRoot(async root=>{
+ const id=randomUUID();
+ await claimEditorialRun(root,id,request);
+ await recordEditorialCall(root,id,1,'research');
+ const state=await readEditorialRun(root,id);
+ assert.equal(editorialRunResponse(state,id,true).status,'RUNNING');
+ assert.equal(editorialRunResponse(state,id,false).status,'RECONCILIATION_REQUIRED');
+ assert.equal(editorialRunResponse(state,id,false).callsPossiblyStarted,1);
+ assert.equal((await claimEditorialRun(root,id,request)).claimed,false);
+ await assert.rejects(recordEditorialCall(root,id,1,'research'));
+}));
+test('concurrent duplicate claims, damaged claim and unsafe identity fail closed',()=>withRoot(async root=>{
+ const id=randomUUID(),both=await Promise.allSettled([claimEditorialRun(root,id,request),claimEditorialRun(root,id,request)]);
+ assert.equal(both.filter(x=>x.status==='fulfilled'&&x.value.claimed).length,1);
+ const corrupt=randomUUID();await mkdir(join(root,'editorial-run-'+corrupt));await writeFile(join(root,'editorial-run-'+corrupt,'claim.json'),'invalid');
+ await assert.rejects(claimEditorialRun(root,corrupt,request));
+ await assert.rejects(readEditorialRun(root,'../../private'));
+}));

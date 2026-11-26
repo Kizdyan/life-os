@@ -1,0 +1,104 @@
+{
+  "kind": "editorial-patch",
+  "target": "carousel-fridge-hum-v3",
+  "baseCommit": "30984e2abcfe4e3900cf4c22c79afe9485107268",
+  "authorDecision": "Previous carousel rated8/10; strengthen why the sound choice matters. New copy awaits author decision.",
+  "updates": [
+    {
+      "index": 0,
+      "headline": "Композитор настроил\nмузыку на холодильник.",
+      "body": "«Старикам тут не место»."
+    },
+    {
+      "index": 1,
+      "headline": "На кону —\nне деньги.",
+      "body": "Чигур угрожает хозяину заправки.\nИ предлагает бросить монету."
+    },
+    {
+      "index": 4,
+      "headline": "Обмен звуками\n— до сведения.",
+      "body": "Ливсей заранее присылал звуковые эффекты.\nБёруэлл — музыкальные тона."
+    },
+    {
+      "index": 6,
+      "headline": "Музыка слилась\nс шумом комнаты.",
+      "body": "Тревога растёт,\nа привычной музыкальной подсказки нет."
+    }
+  ],
+  "caption": "Обычная заправка. Чигур предлагает хозяину бросить монету. Разговор звучит почти буднично, но ставка явно выше денег.\n\nВ «Старикам тут не место» музыка в этот момент не превращается в узнаваемую тему. Картер Бёруэлл настроил нарастающий гул на 60 Гц — частоту холодильника в сцене.\n\nЗачем? Чтобы музыкальный тон мог слиться с окружающим шумом. Напряжение усиливается, а зритель не получает привычной жанровой подсказки о том, что сейчас произойдёт.\n\nСначала Бёруэлл обсуждал с Коэнами перкуссию. Она показалась слишком знакомым способом сопровождать действие. Протяжённые тона помогали сохранить неопределённость. Композитор и звукорежиссёр Скип Ливсей заранее обменивались звуками, чтобы музыка возникала из общей среды сцены.\n\nДля кино здесь важна не необычная частота сама по себе. Важен способ управлять вниманием: заставить зрителя вслушиваться в комнату, а не ждать команды от оркестра. Музыка может работать, даже когда мы не распознаём её как музыку.\n\nВ какой сцене вы особенно остро слышали тишину?\n\nИсточники: заметки Картера Бёруэлла и статья Денниса Лима на сайте композитора — https://www.carterburwell.com/projects/ncfom/",
+  "sourceAudit": {
+    "checkedAt": "2026-11-22",
+    "checkedBy": "Codex actual source reading; not author approval",
+    "url": "https://www.carterburwell.com/projects/ncfom/",
+    "access": "Composer's Notes and full Dennis Lim article reproduced on the composer's page; no claim of independent NYT access",
+    "reporting": {
+      "author": "Dennis Lim",
+      "title": "Exploiting Sound, Exploring Silence",
+      "date": "2008-01-06"
+    },
+    "claims": [
+      {
+        "slides": [
+          1,
+          3
+        ],
+        "section": "Sound Design, paragraph beginning Mr. Burwell found",
+        "result": "PASS: swelling hum tuned to refrigerator60Hz; headline is a concise editorial formulation, precise tone/frequency explanation retained onslide3"
+      },
+      {
+        "slides": [
+          2
+        ],
+        "section": "Same paragraph: Chigurh menacing the service-station owner with a fateful coin flip",
+        "result": "PASS for threat and coin flip; headline is an editorial condensation of the threat, not a new claim about the outcome"
+      },
+      {
+        "slides": [
+          4
+        ],
+        "section": "Carter Burwell's Notes, paragraphs 2-3",
+        "result": "PASS: percussion rejected as familiar genre cue, sustained tones and singing bowls chosen"
+      },
+      {
+        "slides": [
+          5
+        ],
+        "section": "Notes paragraph 3; Sound Design collaboration paragraphs",
+        "result": "PASS: early exchange of processed sound effects and tone compositions; cooperation before final mix"
+      },
+      {
+        "slides": [
+          6
+        ],
+        "section": "Sound Design, Lievsay's safety-net explanation",
+        "result": "PASS: removing musical guidance makes the audience less certain"
+      },
+      {
+        "slides": [
+          7
+        ],
+        "section": "Editorial synthesis of Burwell Notes paragraphs2-4 and Lievsay safety-net explanation in Lim article",
+        "result": "INTERPRETATION grounded in sustained tones blending into sound effects and removal of familiar score guidance; not a quotation or approved author belief"
+      }
+    ],
+    "captionScope": "Fact paragraphs checked against Notes and Lim reprint; viewer-attention explanation and closing question are editorial synthesis, not first-person author beliefs",
+    "authorApprovalGranted": false,
+    "publicationAllowed": false
+  },
+  "previousPublicCopy": {
+    "baseCommit": "30984e2abcfe4e3900cf4c22c79afe9485107268",
+    "caption": "В сцене с монетой из «Старикам тут не место» Картер Бёруэлл подстроил нарастающий музыкальный гул под частоту холодильника — 60 Гц.\n\nЭто часть общего решения: музыка должна возникать из окружающих звуков, не возвращая зрителю привычную жанровую опору. Перкуссию отвергли, а протяжённые тона оставили.\n\nСкип Ливсей и Бёруэлл заранее обменивались звуковыми эффектами и музыкальными набросками. Музыка и звуковой монтаж складывались в общий замысел ещё до финального сведения.\n\nПрактический вывод: сначала услышать сцену целиком, потом решать, что в ней сыграть.\n\nЧто сильнее держит вас в напряжении — мелодия или едва заметный звук?\n\nИсточник: Картер Бёруэлл и Деннис Лим — https://www.carterburwell.com/projects/ncfom/",
+    "updates": [
+      {
+        "index": 0,
+        "headline": "Зачем музыке\nгул холодильника?",
+        "body": "60 Гц. «Старикам тут не место»."
+      },
+      {
+        "index": 6,
+        "headline": "Композитор —\nне солист.",
+        "body": "Общий звук сцены рождается\nв диалоге со звукорежиссёром."
+      }
+    ]
+  }
+}

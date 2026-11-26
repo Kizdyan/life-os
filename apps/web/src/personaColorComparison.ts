@@ -101,10 +101,14 @@ export function inspectPersonaColorComparisonManifest(
  manifest:unknown,files:ComparisonFileEvidence[],importedAt:string,
 ):PersonaColorComparisonRecord{
  if(!timestamp(importedAt))fail('invalid import timestamp');
- if(!object(manifest)||manifest.version!==1||manifest.kind!=='persona-color-variants-v1'||
+ if(!object(manifest))throw Error('Comparison Studio: manifest must be an object');
+ if(manifest.version!==1||manifest.kind!=='persona-color-variants-v1'||
   manifest.status!=='awaiting-author-comparison'||manifest.publicationApproved!==false||
   !object(manifest.source)||!Array.isArray(manifest.variants)||manifest.variants.length!==3)
   fail('COMPARISON.json has unsupported version, state or structure');
+ // Keep the actual array shape narrowed after the manifest compatibility check.
+ if(!Array.isArray(manifest.variants))throw Error('Comparison Studio: variant list missing');
+ const manifestVariants=manifest.variants;
  const selected=new Map<string,ComparisonFileEvidence>();
  for(const file of files){
   if(!file||typeof file.name!=='string'||selected.has(file.name)||!SHA.test(file.sha256)||
@@ -112,24 +116,28 @@ export function inspectPersonaColorComparisonManifest(
     fail('duplicate, invalid or oversized MP4');
   selected.set(file.name,file);
  }
- if(typeof manifest.source.path!=='string'||typeof manifest.source.sha256!=='string'||
-  !SHA.test(manifest.source.sha256))fail('invalid source evidence');
- const sourceName=basename(manifest.source.path);
+ const sourceMeta=manifest.source;
+ if(!object(sourceMeta)||typeof sourceMeta.path!=='string'||
+  typeof sourceMeta.sha256!=='string'||!SHA.test(sourceMeta.sha256))
+  throw Error('Comparison Studio: invalid source evidence');
+ const sourceName=basename(sourceMeta.path);
  if(!sourceName||sourceName.length>220||!sourceName.toLowerCase().endsWith('.mp4')||
    COLOR_VARIANT_PRESETS.some(p=>p.fileName===sourceName))fail('invalid original file name');
  if(selected.size!==4||!selected.has(sourceName))fail('select the original MP4 and all three rendered MP4s');
  const source=selected.get(sourceName)!;
- if(source.sha256!==manifest.source.sha256)fail('original MP4 SHA-256 differs from manifest');
+ if(source.sha256!==sourceMeta.sha256)fail('original MP4 SHA-256 differs from manifest');
  const unique=new Set<string>([source.sha256]);
  const variants:Variant[]=[];
  for(const [index,preset] of COLOR_VARIANT_PRESETS.entries()){
-  const entry=manifest.variants[index];
+  const entry=manifestVariants[index];
   if(!object(entry)||entry.id!==preset.id||entry.label!==preset.label||
     !knownPresetFilter(index,entry.filter)||typeof entry.path!=='string'||
     basename(entry.path)!==preset.fileName||typeof entry.sha256!=='string'||!SHA.test(entry.sha256))
     fail('unexpected preset or variant metadata');
   const file=selected.get(preset.fileName);
-  if(!file||file.sha256!==entry.sha256||unique.has(file.sha256))fail('variant missing, changed or duplicated: '+preset.id);
+  if(!file)throw Error('Comparison Studio: variant missing: '+preset.id);
+  if(file.sha256!==entry.sha256||unique.has(file.sha256))
+   throw Error('Comparison Studio: variant missing, changed or duplicated: '+preset.id);
   unique.add(file.sha256);
   variants.push({...preset,filter:entry.filter,sha256:file.sha256});
  }
@@ -154,7 +162,7 @@ export function choosePersonaColorVariant(
 ):PersonaColorComparisonRecord{
  if(!readPersonaColorComparisonRecord(current)||!COLOR_VARIANT_PRESETS.some(v=>v.id===id)||
   typeof comment!=='string'||comment.length>1000||!timestamp(decidedAt))fail('invalid author decision');
- const legacyPrevious=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
+ const legacyPrevious:PersonaColorDecisionHistoryEntry[]=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
   ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
  const decisionHistory=[...(current.decisionHistory??legacyPrevious),{selectedVariantId:id,comment,decidedAt}].slice(-20);
  const {rejectedAll:_previousRejection,...withoutRejection}=current;
@@ -173,7 +181,7 @@ export function rejectPersonaColorVariants(
  const legacyPrevious:PersonaColorDecisionHistoryEntry[]=current.decisionHistory===undefined&&current.selectedVariantId&&current.decidedAt
   ?[{selectedVariantId:current.selectedVariantId,comment:current.comment??'',decidedAt:current.decidedAt}]:[];
  const decisionHistory:PersonaColorDecisionHistoryEntry[]=[
-  ...(current.decisionHistory??legacyPrevious),{rejectedAll:true,comment,decidedAt},
+  ...(current.decisionHistory??legacyPrevious),{rejectedAll:true as const,comment,decidedAt},
  ].slice(-20);
  const {selectedVariantId:_previousChoice,...withoutChoice}=current;
  const next:PersonaColorComparisonRecord={...withoutChoice,rejectedAll:true,comment,decidedAt,decisionHistory};

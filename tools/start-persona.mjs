@@ -1,10 +1,11 @@
 import {spawn} from 'node:child_process';
-import {existsSync, readFileSync, readdirSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync,lstatSync} from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
-import {extname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {extname, join,resolve} from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {build} from 'vite';
 import {createPersonaMediaWorker, parseWorkerArgs} from './persona-media-worker.mjs';
+import {RUNTIME_PROTOCOL} from './persona-runtime-status.mjs';
 
 const port = 3000;
 const origin = `http://127.0.0.1:${port}`;
@@ -12,7 +13,8 @@ const studio = origin + '/#persona';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const web = join(root, 'apps', 'web');
 const mime = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
- '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json'};
+ '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json',
+ '.jpg':'image/jpeg','.json':'application/json; charset=utf-8','.ttf':'font/ttf','.woff2':'font/woff2'};
 
 async function buildFrontend() {
  const result = await build({root:web, configFile:false, envFile:false,
@@ -24,10 +26,26 @@ async function buildFrontend() {
    files.set('/'+file.fileName, Buffer.from(file.type==='asset' ? file.source : file.code));
   }
  }
- for (const file of readdirSync(join(web,'public'),{withFileTypes:true})) {
-  if(file.isFile()&&mime[extname(file.name)])files.set('/'+file.name,readFileSync(join(web,'public',file.name)));
+ return createPersonaFrontendHandler(files);
+}
+
+export function createPersonaFrontendHandler(files,publicRoot=join(web,'public')){
+ function collect(directory,prefix=''){
+  for(const file of readdirSync(directory,{withFileTypes:true})){
+   if(file.isSymbolicLink())continue; // Includes Windows directory junctions.
+   const path=join(directory,file.name),url=prefix+'/'+file.name;
+   if(file.isDirectory())collect(path,url);
+   else if(file.isFile()&&mime[extname(file.name)])files.set(url,readFileSync(path));
+  }
  }
+ if(!lstatSync(publicRoot).isSymbolicLink())collect(publicRoot);
  return (req,res,url)=>{
+  // Check the original target, since new URL() removes dot segments before lookup.
+  let original;
+  try{original=decodeURIComponent((req.url??url.pathname).split('?')[0])}catch{res.writeHead(404).end();return;}
+  if(original.includes('\\')||original.includes('\0')||original.split('/').some(part=>part==='.'||part==='..')){
+   res.writeHead(404).end();return;
+  }
   const path=url.pathname==='/'?'/index.html':url.pathname;
   const bytes=files.get(path);
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405,{Allow:'GET, HEAD'}).end();return;}
@@ -45,9 +63,21 @@ function openBrowser(){
  child.unref();
 }
 
+export function parseLauncherArgs(args){
+ const parsed={noBrowser:false,cache:null};
+ for(let i=0;i<args.length;i++){
+  if(args[i]==='--no-browser'&&!parsed.noBrowser)parsed.noBrowser=true;
+  else if(args[i]==='--cache'&&parsed.cache===null&&args[i+1]&&!args[i+1].startsWith('--'))parsed.cache=resolve(args[++i]);
+  else throw Error('Unknown or repeated launcher option');
+ }
+ return parsed;
+}
+export function existingWorkerCompatible(health){return health?.service==='persona-media-worker'&&health.runtimeProtocol===RUNTIME_PROTOCOL;}
 async function start() {
+ const options=parseLauncherArgs(process.argv.slice(2));
  process.chdir(root);
  if(existsSync('.env.local'))process.loadEnvFile('.env.local');
+ if(options.cache)process.env.PERSONA_YANDEX_CACHE_DIR=options.cache;
  const tools=join(homedir(),'Tools');
  const ffmpeg=join(tools,'FFmpeg');
  if(!process.env.PERSONA_MEDIA_FFMPEG_DIR&&existsSync(ffmpeg)){
@@ -65,12 +95,14 @@ async function start() {
  }
  const outputRoot=process.env.PERSONA_MEDIA_OUTPUT_ROOT||
   join(process.env.LOCALAPPDATA||tmpdir(),'LifeOS','Persona','renders');
- let running;
+ let existing=null;
  try {
-  const response=await fetch(origin+'/persona-worker/health',{signal:AbortSignal.timeout(2800)});
-  if(response.ok&&response.headers.get('Content-Type')?.startsWith('application/json'))
-   running=(await response.json()).service==='persona-media-worker';
+  const response=await fetch(origin+'/persona-worker/health',{signal:AbortSignal.timeout(5000)});
+  if(response.ok&&response.headers.get('Content-Type')?.startsWith('application/json'))existing=await response.json();
  } catch { /* The server will bind the port below. */ }
+ const running=existing?.service==='persona-media-worker';
+ if(running&&!existingWorkerCompatible(existing))throw Error('An older Persona Worker is running. Stop that instance before launching this version; no processes were terminated.');
+ if(running&&options.cache)throw Error('Persona is already running; restart it to apply an explicit cache override.');
  if(!running){
   const config=parseWorkerArgs(['--port',String(port),'--output-root',outputRoot]);
   const frontend=await buildFrontend();
@@ -78,11 +110,13 @@ async function start() {
   await worker.start();
  }
  console.log('Persona: '+studio);
- openBrowser();
+ if(!options.noBrowser)openBrowser();
 }
 
-try { await start(); }
-catch(error) {
- console.error(error.code==='EADDRINUSE'?'Port 3000 is already used by another application.':error.message);
- process.exitCode=1;
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+ try { await start(); }
+ catch(error) {
+  console.error(error.code==='EADDRINUSE'?'Port 3000 is already used by another application.':error.message);
+  process.exitCode=1;
+ }
 }

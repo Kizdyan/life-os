@@ -1,0 +1,368 @@
+{
+  "id": "carousel-fridge-hum-v2",
+  "status": "DRAFT",
+  "parentRevision": "carousel-fridge-hum",
+  "authorDecision": "NEEDS_REVISION; publication forbidden",
+  "hooks": {
+    "a": {
+      "headline": "Музыку спрятали\nв гуле холодильника.",
+      "body": "«Старикам тут не место»"
+    },
+    "b": {
+      "headline": "Зачем триллеру\nчастота холодильника?",
+      "body": "«Старикам тут не место»"
+    }
+  },
+  "research": {
+    "title": "Музыка под видом шума: «Старикам тут не место» · V2",
+    "angle": "От бытового гула к совместной драматургии композитора и звукового отдела; актёрский вывод обозначен как мнение.",
+    "caption": "На заправке Чигур предлагает хозяину бросок монеты. Картер Бёруэлл настроил музыкальный гул на частоту холодильника — 60 Гц. Об этом пишет Деннис Лим в статье, размещённой на сайте композитора.\n\nВ собственных заметках Бёруэлл рассказывает, почему отказался от ударных: они возвращали действие в привычную жанровую рамку. Он и Скип Ливсей обменивались музыкальными и шумовыми примерами заранее.\n\nМой профессиональный вывод: композитор и звукорежиссёр могут не подчёркивать угрозу, а оставлять её неопределённой. Актёру такая сцена напоминает: у паузы есть задача; её не нужно заполнять демонстрацией страха. Это моя интерпретация, не объяснение авторов фильма.\n\nИсточник: Carter Burwell’s Notes и Dennis Lim, Exploiting Sound, Exploring Silence, The New York Times, 6 января 2008 — https://www.carterburwell.com/projects/ncfom/\n\nИзображения — ранее созданные оригинальные иллюстрации, не кадры фильма. V2: новое кадрирование и свет средствами Persona. Черновик, публикация не утверждена.",
+    "slides": [
+      {
+        "text": "Музыку спрятали\nв гуле холодильника.\n\n«Старикам тут не место»",
+        "visualDirection": "Сохранённая монета справа внизу; заголовок выше неё. Фон не генерировать повторно.",
+        "sources": [
+          {
+            "title": "Dennis Lim — 60 Hz refrigerator, Sound Design",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Монета вместо ответа.\n\nНа заправке Чигур предлагает хозяину бросок монеты. Будничный разговор становится угрозой.",
+        "visualDirection": "Общий план заправки, сохранить архитектуру и свет окна. Текст слева, без перекрытия насоса.",
+        "sources": [
+          {
+            "title": "Dennis Lim — service-station coin flip",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "60 Гц.\n\nКартер Бёруэлл настроил нарастающий музыкальный гул на частоту холодильника.",
+        "visualDirection": "Приблизить холодильник, сделать светлее корпус, сохранить тёмную зону слева.",
+        "sources": [
+          {
+            "title": "Dennis Lim — swelling hum tuned to refrigerator",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Вместо ударных —\nпротяжённый тон.\n\nПеркуссия возвращала привычный жанр. Бёруэлл выбрал протяжённые тона — в том числе поющие чаши.",
+        "visualDirection": "Светлый бронзовый крупный план поющей чаши — образ выбранного протяжённого тона, не изображение отвергнутых барабанов.",
+        "sources": [
+          {
+            "title": "Carter Burwell's Notes — rejected percussion, sustained tones",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Не спорить\nза громкость.\n\nБёруэлл и Скип Ливсей обменивались звуками заранее — не ждали финального сведения.",
+        "visualDirection": "Звуковой кабинет крупнее и светлее; показать инструменты совместной работы, оставить текст слева.",
+        "sources": [
+          {
+            "title": "Burwell's Notes and Dennis Lim — early collaboration versus final mix",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Не подсказывать,\nчто сейчас случится.\n\nЛивсей объяснял: привычная музыка даёт зрителю опору. Здесь эту опору убрали.",
+        "visualDirection": "Дверь и полоска света: композиция с ожиданием, текст сверху и слева, дверь не перекрывать.",
+        "sources": [
+          {
+            "title": "Dennis Lim — Lievsay on removing the safety net of the score",
+            "url": "https://www.carterburwell.com/projects/ncfom/"
+          }
+        ]
+      },
+      {
+        "text": "Одна сцена.\nОбщая задача.\n\nБёруэлл и Ливсей\nработали вместе.\nМой актёрский вывод: в паузе добиваться ответа от партнёра,\nа не изображать тревогу.",
+        "visualDirection": "Монета плашмя крупным планом в нижнем углу; светлее обложки, текст над предметом. Это авторский профессиональный вывод.",
+        "interpretation": true
+      }
+    ]
+  },
+  "hierarchy": [
+    {
+      "headline": "Музыку спрятали\nв гуле холодильника.",
+      "body": "«Старикам тут не место»"
+    },
+    {
+      "headline": "Монета вместо ответа.",
+      "body": "На заправке Чигур предлагает хозяину бросок монеты. Будничный разговор становится угрозой."
+    },
+    {
+      "headline": "60 Гц.",
+      "body": "Картер Бёруэлл настроил нарастающий музыкальный гул на частоту холодильника."
+    },
+    {
+      "headline": "Вместо ударных —\nпротяжённый тон.",
+      "body": "Перкуссия возвращала привычный жанр. Бёруэлл выбрал протяжённые тона — в том числе поющие чаши."
+    },
+    {
+      "headline": "Не спорить\nза громкость.",
+      "body": "Бёруэлл и Скип Ливсей обменивались звуками заранее — не ждали финального сведения."
+    },
+    {
+      "headline": "Не подсказывать,\nчто сейчас случится.",
+      "body": "Ливсей объяснял: привычная музыка даёт зрителю опору. Здесь эту опору убрали."
+    },
+    {
+      "headline": "Одна сцена.\nОбщая задача.",
+      "body": "Бёруэлл и Ливсей\nработали вместе.\nМой актёрский вывод: в паузе добиваться ответа от партнёра,\nа не изображать тревогу."
+    }
+  ],
+  "sourceAudit": {
+    "checkedAt": "2026-11-22",
+    "checkedBy": "Codex source reading, not author approval",
+    "url": "https://www.carterburwell.com/projects/ncfom/",
+    "reporting": {
+      "author": "Dennis Lim",
+      "title": "Exploiting Sound, Exploring Silence",
+      "date": "2008-01-06",
+      "access": "Reprinted on composer’s site; original NYT URL inaccessible during this check"
+    },
+    "claims": [
+      {
+        "slides": [
+          1,
+          2,
+          3
+        ],
+        "section": "Sound Design, paragraph beginning Mr. Burwell found",
+        "result": "supported: threat, coin flip, 60 Hz refrigerator"
+      },
+      {
+        "slides": [
+          4
+        ],
+        "section": "Carter Burwell’s Notes, paragraphs 2–3",
+        "result": "supported: percussion rejected as familiar; sustained tones kept film unsettled"
+      },
+      {
+        "slides": [
+          5
+        ],
+        "section": "Notes paragraph 3; Sound Design collaboration paragraphs",
+        "result": "supported: early exchange, contrasting customary late meeting at final mix"
+      },
+      {
+        "slides": [
+          6
+        ],
+        "section": "Sound Design, Lievsay safety-net explanation",
+        "result": "supported: removing familiar reassurance of score"
+      },
+      {
+        "slides": [
+          7
+        ],
+        "result": "explicit personal professional interpretation, not attributed filmmaker intent"
+      }
+    ],
+    "excludedUnverifiedClaim": "No claim that hum ends at the coin reveal.",
+    "authorSourceApproval": false
+  },
+  "visuals": [
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.06,
+      "overlay": "left",
+      "opacity": 0.52,
+      "protectedSubject": {
+        "x": 690,
+        "y": 780,
+        "width": 290,
+        "height": 460
+      }
+    },
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.26,
+      "overlay": "left",
+      "opacity": 0.88
+    },
+    {
+      "crop": [
+        0.08,
+        0.05,
+        0.92,
+        0.92
+      ],
+      "brightness": 1.5,
+      "overlay": "left",
+      "opacity": 0.62
+    },
+    {
+      "crop": [
+        0.18,
+        0.15,
+        0.82,
+        0.82
+      ],
+      "brightness": 1.82,
+      "overlay": "top",
+      "opacity": 0.88
+    },
+    {
+      "crop": [
+        0.12,
+        0.1,
+        0.88,
+        0.88
+      ],
+      "brightness": 1.65,
+      "overlay": "left",
+      "opacity": 0.62
+    },
+    {
+      "crop": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "brightness": 1.24,
+      "overlay": "left",
+      "opacity": 0.6
+    },
+    {
+      "crop": [
+        0.25,
+        0.24,
+        0.75,
+        0.75
+      ],
+      "brightness": 1.55,
+      "overlay": "top",
+      "opacity": 0.88
+    }
+  ],
+  "layouts": [
+    {
+      "headline": {
+        "x": 100,
+        "y": 160,
+        "width": 820,
+        "height": 400,
+        "size": 96
+      },
+      "body": {
+        "x": 100,
+        "y": 600,
+        "width": 740,
+        "height": 160,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 160,
+        "width": 700,
+        "height": 300,
+        "size": 88
+      },
+      "body": {
+        "x": 100,
+        "y": 760,
+        "width": 600,
+        "height": 480,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 180,
+        "width": 650,
+        "height": 200,
+        "size": 112
+      },
+      "body": {
+        "x": 100,
+        "y": 460,
+        "width": 550,
+        "height": 600,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 130,
+        "width": 820,
+        "height": 280,
+        "size": 92
+      },
+      "body": {
+        "x": 100,
+        "y": 470,
+        "width": 700,
+        "height": 470,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 140,
+        "width": 710,
+        "height": 300,
+        "size": 92
+      },
+      "body": {
+        "x": 100,
+        "y": 870,
+        "width": 690,
+        "height": 380,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 160,
+        "width": 760,
+        "height": 350,
+        "size": 88
+      },
+      "body": {
+        "x": 100,
+        "y": 820,
+        "width": 650,
+        "height": 400,
+        "size": 48
+      }
+    },
+    {
+      "headline": {
+        "x": 100,
+        "y": 170,
+        "width": 820,
+        "height": 270,
+        "size": 92
+      },
+      "body": {
+        "x": 100,
+        "y": 450,
+        "width": 740,
+        "height": 620,
+        "size": 48
+      }
+    }
+  ]
+}

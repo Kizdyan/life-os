@@ -1,0 +1,9 @@
+# Unified runtime diagnostics and startup
+
+PR #228 adds a read-only runtime status endpoint and panel in Editorial Desk. The Worker is still local-only; no network exposure, Windows service installation, remote machine commands, or automatic publication.
+
+- The existing combined launcher loads ignored .env.local. Set PERSONA_YANDEX_CACHE_DIR to the existing cache, or use node tools/start-persona.mjs --cache "<existing cache>". The optional --no-browser flag launches without opening a browser. Existing incompatible Worker protocol is rejected without terminating any process. Protocol compatibility does not guarantee an identical Git revision.
+- Runtime status reports catalog counts, validated saved score rows, legacy summary separately, frame/video evidence and recent/stale heartbeat. Configured does not mean reachable or healthy. A recent heartbeat is not proof that inference succeeded. No file paths, filenames, raw scores, photo bytes or API credentials are returned by the diagnostics endpoint.
+- FFmpeg, Whisper and textual Ollama availability use the existing health check; the status is not a visual-model inference test. Reference background remains explicitly opt-in. Do not start it while the old external photo process is active.
+- The actual PC cache and old checkpoint format have not been inspected in this change. Unknown or incompatible reports must not cause automatic destructive migration or full rescoring.
+- Acceptance: install exact tested branch on Windows, start the combined launcher using the existing cache, confirm local diagnostics, create a new About Me candidate without Qwen calls, render and review actual PNGs, confirm backup and restore. Check reference processing only after author approval of the operating mode. Production and publication remain separate author gates.

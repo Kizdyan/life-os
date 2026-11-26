@@ -113,3 +113,13 @@ test('Fast Draft analyzes only each fifth former 0.5s position and reduces image
   frameAt:async()=>{throw Error('unexpected Vision frame extraction after deadline')},
   batchOverride:async()=>{throw Error('unexpected cloud request')}}),/time budget exhausted/);
 });
+
+test('reference pacing changes only verified silent windows, preserves peaks and source bounds',()=>{
+ const silent=videos.map(v=>({...v,hasAudio:false})),scored=smartFrameSchedule(silent).map(classify);
+ const base=chooseSmartMoments(scored,{videos:silent}),guided=chooseSmartMoments(scored,{videos:silent,referenceShotSec:2.6});
+ assert.ok(guided.some((m,i)=>m.durationSec<base[i].durationSec));
+ assert.deepEqual(guided.map(m=>m.stillSec),base.map(m=>m.stillSec));
+ assert.ok(guided.every((m,i)=>m.startSec>=base[i].startSec-.001&&m.startSec+m.durationSec<=base[i].startSec+base[i].durationSec+.001));
+ assert.deepEqual(chooseSmartMoments(scored,{videos,referenceShotSec:2.6}),chooseSmartMoments(scored,{videos}));
+ assert.deepEqual(chooseSmartMoments(scored,{videos:silent.map(v=>({...v,hasAudio:true})),referenceShotSec:2.6}),base);
+});

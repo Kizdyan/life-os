@@ -8,6 +8,9 @@ import {tmpdir} from 'node:os';
 import {seedCarousels,carouselPlan} from './seed_carousels.mjs';
 import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 
+const ciWorkerPort=Number(process.env.PERSONA_CI_WORKER_PORT??47832);
+if(!Number.isInteger(ciWorkerPort)||ciWorkerPort<1024||ciWorkerPort>65535)throw Error('Invalid CI Worker port');
+
 const root=await mkdtemp(join(tmpdir(),'persona-carousel-visual-'));
 const captures=resolve('artifacts/persona-carousel-seed');
 await mkdir(captures,{recursive:true});
@@ -15,8 +18,8 @@ let worker,browser;
 try{
  const seeded=await seedCarousels(join(root,'quick'));
  assert.equal(seeded.created,10);
- worker=createPersonaMediaWorker({port:47832,outputRoot:join(root,'media'),quickRenderRoot:join(root,'quick')});
- assert.equal(await worker.start(),47832);
+ worker=createPersonaMediaWorker({port:ciWorkerPort,outputRoot:join(root,'media'),quickRenderRoot:join(root,'quick')});
+ assert.equal(await worker.start(),ciWorkerPort);
  browser=await chromium.launch({headless:true});
  const origin=process.env.PERSONA_PREVIEW_URL||'http://127.0.0.1:4173';
  const page=await browser.newPage({viewport:{width:1440,height:900}});

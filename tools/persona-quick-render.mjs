@@ -30,7 +30,40 @@ export function offlineEditPlan(videos){
  return {...plan,mediaEvidence:'ffprobe-verified-offline-intervals',audioUnderstanding:'not_transcribed'};
 }
 
+/** Explicit author-selected format: protect speech and performance continuity. */
+export const PERSONA_VIDEO_FORMATS=Object.freeze({
+ auto:'Автоматический',explainer:'Экспертный',personal:'Личная история',
+ dialogue:'Диалог / интервью',acting:'Актёрская сцена',music:'Музыкальный',
+ cinematic:'Кинематографическая история',backstage:'Закулисье',voiceover:'Закадровый рассказ'
+});
+const CONTINUITY_FORMATS=new Set(['explainer','personal','dialogue','acting','music','voiceover']);
+/** Keep complete, verified footage; never guess where a sentence can be cut. */
+export function continuityEditPlan(videos,format){
+ if(!CONTINUITY_FORMATS.has(format)||!Array.isArray(videos)||videos.length<1||videos.length>4)
+  throw Error('Некорректный формат или количество исходников');
+ if(videos.some(v=>!Number.isFinite(v.durationSec)||v.durationSec<8||v.durationSec>1200||
+  typeof v.sha256!=='string'||!/^[a-f0-9]{64}$/.test(v.sha256)))
+  throw Error('Нужны проверенные длительность и SHA-256 исходников');
+ if(videos.reduce((n,v)=>n+v.durationSec,0)>75)
+  throw Error('Бережный монтаж: суммарно больше 75 секунд. Выберите короткие дубли; речь обрезать автоматически нельзя.');
+ const candidates=videos.length>1?videos.map((v,i)=>({
+  id:'complete-'+i,fileIndex:i,startSec:0,durationSec:v.durationSec,stillSec:v.durationSec/2,sourceSha256:v.sha256
+ })):[{id:'complete-0a',fileIndex:0,startSec:0,durationSec:videos[0].durationSec/2,
+  stillSec:videos[0].durationSec/4,sourceSha256:videos[0].sha256},
+  {id:'complete-0b',fileIndex:0,startSec:videos[0].durationSec/2,
+   durationSec:videos[0].durationSec/2,stillSec:videos[0].durationSec*3/4,
+   sourceSha256:videos[0].sha256}];
+ const plan=validateEditPlan({stylePack:'Cinematic',
+  creativeIntent:'Бережный монтаж: исходные фразы, паузы и музыка сохранены. Авторский просмотр обязателен.',
+  choices:candidates.map(c=>({candidateId:c.id,role:'actor',caption:''}))},candidates);
+ return {...plan,videoFormat:format,mediaEvidence:'ffprobe-verified-continuous-takes',
+  audioUnderstanding:'not_transcribed',requiresHumanReview:true};
+}
+
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
+import {loadReferenceProductionGuide,compareReferenceColor} from './persona-reference-production.mjs';
+import {selectLocalGrade} from './persona-grade-selection.mjs';
+import {buildSoundDesign} from './persona-sound-design.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
@@ -98,6 +131,18 @@ export function runBounded(command,args,{env=process.env,timeoutMs=60000,maxStdo
   child.on('close',code=>code===0?finish(null,Buffer.concat(out)):finish(Error('Media processor failed (code '+code+'): '+errorText.slice(-300))));
  });
 }
+/** FFmpeg autorotates right-angle display matrices before scale/pad. Keep the
+ * original encoded bytes; report their displayed geometry without cropping. */
+export function quickVideoGeometry(video){
+ if(!Number.isInteger(video.width)||!Number.isInteger(video.height)||video.width<16||video.height<16)
+  throw Error('Некорректные размеры видеокадра');
+ const rotation=Number(video.side_data_list?.find(x=>x.rotation!==undefined)?.rotation??video.tags?.rotate??0);
+ if(!Number.isFinite(rotation)||Math.abs(rotation)>3600||Math.abs(rotation/90-Math.round(rotation/90))>.0001)
+  throw Error('Неподдерживаемый поворот: допустимы только 0, 90, 180 и 270 градусов');
+ const rotationDeg=((Math.round(rotation/90)*90%360)+360)%360,swap=rotationDeg%180!==0;
+ return {width:swap?video.height:video.width,height:swap?video.width:video.height,
+  codedWidth:video.width,codedHeight:video.height,rotationDeg};
+}
 async function probe(file,config,{audioOnly=false,rendered=false}={}){
  const raw=await runBounded(mediaBin('ffprobe',config),['-v','error','-show_entries',
   'format=duration:stream=codec_type,width,height,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation',
@@ -110,9 +155,7 @@ async function probe(file,config,{audioOnly=false,rendered=false}={}){
  if(!video||!Number.isInteger(video.width)||!Number.isInteger(video.height))throw Error('Video stream is missing');
  if(['smpte2084','arib-std-b67'].includes(video.color_transfer)||
   String(video.color_primaries??'').startsWith('bt2020'))throw Error('Это видео в HDR/Dolby Vision. Для безопасной цветокоррекции сначала экспортируйте его копию в SDR (Rec.709), оригинал сохраните.');
- if(Number(video.tags?.rotate??0)!==0||video.side_data_list?.some(x=>Number(x.rotation??0)!==0))
-  throw Error('У видео есть метаданные поворота. Сначала экспортируйте копию с правильной ориентацией кадра, чтобы автоматический монтаж не обрезал лицо.');
- return {durationSec,width:video.width,height:video.height,hasAudio:data.streams.some(x=>x.codec_type==='audio')};
+ return {durationSec,...quickVideoGeometry(video),hasAudio:data.streams.some(x=>x.codec_type==='audio')};
 }
 async function jpegFrame(path,second,config){
  const raw=await runBounded(mediaBin('ffmpeg',config),
@@ -147,7 +190,7 @@ export function createPersonaQuickRenderService(config={}){
   const production=new ProductionJob(directory(id));
   let canonical;try{canonical=await production.read()}catch{return null}
   // Crash recovery: a running job without its owning process is not falsely advertised as running.
-  if(!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
+  if(!canonical.productionSchedule&&!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
    canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
   }
   // Never expose completed before the final quick-state card metadata is
@@ -179,10 +222,12 @@ export function createPersonaQuickRenderService(config={}){
  }
  async function save(job){
   const view={...job};delete view.child;delete view.promise;
-  jobs.set(job.id,view);
   // quick-state.json retains upload/UX metadata only. job.json owns lifecycle and failure.
   const disk={...view};delete disk.state;delete disk.error;delete disk.fullRender;
-  await atomicFile(metaFile(job.id),disk);return view;
+  await atomicFile(metaFile(job.id),disk);
+  // A completed card is observable only after its atomic disk commit. Otherwise
+  // polling clients can back up/restart/clean up while the writer is still active.
+  jobs.set(job.id,view);return view;
  }
  const view=job=>({id:job.id,title:job.title,state:job.state,stage:job.stage,
   uploaded:job.uploads.length,expected:job.files.length,error:job.error??null,
@@ -194,10 +239,10 @@ export function createPersonaQuickRenderService(config={}){
   fastDraft:job.fastDraft===true,
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
   fullReady:job.fullRender?.status==='COMPLETED',finalQuality:job.finalQuality??null,
-  moments:job.moments??[],
-  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
+  moments:job.moments??[],referenceGuide:job.referenceGuide??null,
+  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,gradeDecision:job.gradeDecision??null,soundDesign:job.soundDesign??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
-  contentType:job.contentType??'video',carouselAspect:job.carouselAspect??'4:5',
+  contentType:job.contentType??'video',videoFormat:job.videoFormat??'auto',carouselAspect:job.carouselAspect??'4:5',
   carouselFiles:job.carouselFiles??[],exportStatus:job.exportStatus??null,
   exportError:job.exportError??null,exportItems:job.exportItems??[],
   styleChoice:job.appearance?.styleChoice??'auto',colorPreset:job.appearance?.colorPreset??null,
@@ -212,6 +257,9 @@ export function createPersonaQuickRenderService(config={}){
    body.consent!==true||!Array.isArray(body.files)||body.files.length<1||body.files.length>13)
    throw Error('Provide a short prompt, files and explicit vision processing consent');
   const contentType=body.contentType??'video';
+  const videoFormat=body.videoFormat??'auto';
+  if(typeof videoFormat!=='string'||!Object.hasOwn(PERSONA_VIDEO_FORMATS,videoFormat)||
+    (contentType!=='video'&&videoFormat!=='auto'))throw Error('Неподдерживаемый формат монтажа');
   if(!['video','photo-carousel','photo-slideshow'].includes(contentType))throw Error('Unknown content type');
   const nv=body.files.filter(x=>x.kind==='video').length,np=body.files.filter(x=>x.kind==='photo').length,
    na=body.files.filter(x=>x.kind==='audio').length;
@@ -245,7 +293,7 @@ export function createPersonaQuickRenderService(config={}){
   await production.transition('WAITING_FOR_FOOTAGE',{reason:'One-click files requested'});
   const job={version:1,id,title,prompt:body.prompt.trim(),state:'uploading',stage:'Загрузка',files,
    uploads:[],appearance,autoStyle,textAccents:body.textAccents===true,
-   contentType,carouselAspect,coverTitle:body.coverTitle?.trim()??'',slides,
+   contentType,videoFormat,carouselAspect,coverTitle:body.coverTitle?.trim()??'',slides,
    fastDraft:contentType==='video'&&body.fastDraft===true,
    directFull:contentType!=='video'||body.fastDraft===false,
    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceConsent:true};
@@ -448,7 +496,10 @@ export function createPersonaQuickRenderService(config={}){
      {env,timeoutMs:15000,maxStdout:10000});}
     catch{await writeFile(lightingPath,JSON.stringify({status:'unavailable',note:'План света не обязателен для монтажа уже снятого видео.'}));}
    }
-   const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
+   const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256,hasAudio:f.media.hasAudio}));
+   const referenceGuide=await loadReferenceProductionGuide({cache:env.PERSONA_YANDEX_CACHE_DIR,format:job.videoFormat??'auto',query:job.prompt}).catch(error=>({status:'ABSTAIN',reason:'Reference evidence unavailable: '+String(error.message||error).slice(0,140)}));
+   job.referenceGuide=referenceGuide;
+   await writeFile(join(out,'reference-production-guide.json'),JSON.stringify(referenceGuide,null,2)+'\n',{flag:'wx'});
    // In Fast Draft, optional text accents explicitly opt in to a real local
    // Whisper attempt. Previously Fast Draft skipped ASR entirely. Unavailable
    // ASR is never silently interpreted as silence or a license to invent words.
@@ -468,6 +519,8 @@ export function createPersonaQuickRenderService(config={}){
       accentAudio.push({status:'whisper-failed',segments:[],reason:String(error.message||error).slice(0,140)});
      }
     }
+    await writeFile(join(out,'asr-evidence.json'),JSON.stringify({version:1,sourceShas:vids.map(f=>f.sha256),
+     audio:accentAudio,warning:'Unverified local Whisper hypotheses, not author-approved dialogue',authorReviewRequired:true},null,2)+'\n',{flag:'wx'});
    }
    // One shared Fast Draft Vision deadline: 3–5 mood frames + sparse moment detection.
    // This prevents automatic styling from silently extending the cloud time budget.
@@ -523,7 +576,13 @@ export function createPersonaQuickRenderService(config={}){
    await writeFile(join(out,'style-decision.json'),JSON.stringify(job.styleDecision,null,2)+'\n',{flag:'wx'});
    await save(job);
    let plan,provenance;
-   if(config.quickPlanner){
+   if(CONTINUITY_FORMATS.has(job.videoFormat??'auto')&&!config.quickPlanner&&!config.quickVisionBatch){
+    job.stage='Бережный монтаж: сохраняю полные дубли';await save(job);
+    plan=continuityEditPlan(candidateInput,job.videoFormat);
+    provenance={version:1,kind:'author-selected-continuity',provider:'none',visionAvailable:false,
+     visionAttempted:false,sourceShas:vids.map(f=>f.sha256),rightsConfirmed:false,
+     reason:'Формат указан автором; сохранены все интервалы источников.'};
+   }else if(config.quickPlanner){
     // Legacy unit-test seam only: production selects via full 2fps Vision instead.
     job.stage='Тестовый редакторский план';await save(job);
     const candidates=frameCandidates(candidateInput),frames=[];
@@ -584,7 +643,8 @@ export function createPersonaQuickRenderService(config={}){
        highlight.startSec<=segment.endSec&&highlight.endSec>=segment.startSec)?4:0}))}));
     let chosen;
     try{chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
-     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec});}
+     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec,
+     referenceShotSec:referenceGuide.status==='REFERENCE_GUIDANCE'?referenceGuide.shotSec:null});}
     catch(error){
      if(!job.fastDraft)throw error;
      plan=offlineEditPlan(candidateInput);
@@ -621,6 +681,21 @@ export function createPersonaQuickRenderService(config={}){
     }
     }
    }
+   let gradeDecision={version:1,status:'NOT_RUN',reason:'Local grade comparison disabled, manual choice or Fast Draft',publicationApproved:false};
+   if(job.autoStyle&&!job.fastDraft&&env.PERSONA_LOCAL_GRADE_COMPARE==='1'&&QUICK_COLORS.has(job.appearance.colorPreset)){
+    try{
+     job.stage='Локальный колорист: сравнение обработанных кадров';await save(job);
+     await verifyUploadedFiles(input,job.files);
+     const makeSample=(choice,fraction)=>({fileIndex:choice.fileIndex,atSec:choice.startSec+choice.durationSec*fraction,sourceSha256:vids[choice.fileIndex].sha256});
+     const first=makeSample(plan.choices[0],.25),last=makeSample(plan.choices.at(-1),.75);
+     gradeDecision=await selectLocalGrade({baseline:job.appearance.colorPreset,samples:[first,last],out,topic:job.prompt,model:env.PERSONA_CAROUSEL_VISION_MODEL,
+      renderFrame:async(sample,filter)=>runBounded(mediaBin('ffmpeg',config),['-nostdin','-hide_banner','-loglevel','error','-ss',String(sample.atSec),'-i',join(input,vids[sample.fileIndex].name),'-frames:v','1','-vf',filter,'-q:v','5','-f','image2pipe','-vcodec','mjpeg','pipe:1'],{env,timeoutMs:30000,maxStdout:500000})});
+     await verifyUploadedFiles(input,job.files);
+     if(gradeDecision.status==='ALTERNATIVE_SUGGESTED')job.appearance=quickRenderAppearance({...job.appearance,colorPreset:gradeDecision.selected});
+    }catch(error){gradeDecision={version:1,status:'BASELINE_RETAINED',reason:'Local comparison inconclusive: '+String(error.message||error).slice(0,140),publicationApproved:false}}
+   }
+   await writeFile(join(out,'grade-decision.json'),JSON.stringify(gradeDecision,null,2)+'\n',{flag:'wx'});
+   job.gradeDecision=gradeDecision;
    const appearance=quickRenderAppearance(job.appearance);
    let accentCues=null;
    if(job.textAccents){
@@ -634,6 +709,10 @@ export function createPersonaQuickRenderService(config={}){
       job.captionDecision.mode='speech-not-in-cut';
       job.captionDecision.reason='Whisper detected words, but no recognized phrase overlaps chosen edit windows';
      }
+    }else if(assessment.mode==='quote'&&CONTINUITY_FORMATS.has(job.videoFormat??'auto')){
+     job.captionDecision.mode='speech-unavailable';
+     job.captionDecision.needsManualTranscriptReview=true;
+     job.captionDecision.reason='В этом формате нельзя подменять речь выдуманной ИИ цитатой.';
     }else if(assessment.mode==='quote'){
      job.stage='AI Quote Generator: короткая оригинальная фраза';await save(job);
      if(config.quickQuoteGenerator||env.OPENROUTER_API_KEY?.trim()){
@@ -663,7 +742,7 @@ export function createPersonaQuickRenderService(config={}){
     // decision; they could be misread as dialogue from the source material.
     plan={...plan,choices:plan.choices.map(c=>({...c,caption:''})),
      audioUnderstanding:assessment.mode==='speech'?'whisper-transcribed':
-      assessment.mode==='quote'?'no-substantial-speech-confirmed':'speech-unverified'};
+      assessment.mode==='quote'&&!CONTINUITY_FORMATS.has(job.videoFormat??'auto')?'no-substantial-speech-confirmed':'speech-unverified'};
     await writeFile(join(out,'caption-decision.json'),JSON.stringify(job.captionDecision,null,2)+'\n',{flag:'wx'});
     await save(job);
    }
@@ -671,7 +750,7 @@ export function createPersonaQuickRenderService(config={}){
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
     appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset},
-    styleDecision:job.styleDecision,captionDecision:job.captionDecision??null},null,2)+'\n');
+    styleDecision:job.styleDecision,gradeDecision,referenceGuide,captionDecision:job.captionDecision??null},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
@@ -681,11 +760,14 @@ export function createPersonaQuickRenderService(config={}){
     preserveOriginalAudio:false,beat:c.order,
    }));
    const music=job.files.find(x=>x.kind==='audio');
+   const soundDesign=music?buildSoundDesign({format:job.videoFormat??'auto',sourceAudio:plan.choices.map(c=>vids[c.fileIndex].media.hasAudio),enabled:env.PERSONA_ADAPTIVE_SOUND==='1',fastDraft:job.fastDraft}):{status:'NO_SOUNDTRACK',publicationApproved:false};
+   job.soundDesign=soundDesign;
+   await writeFile(join(out,'sound-design.json'),JSON.stringify(soundDesign,null,2)+'\n',{flag:'wx'});
    const timeline={version:1,width:job.directFull?1080:720,height:job.directFull?1920:1280,fps:job.fastDraft?24:30,
     ...(job.fastDraft?{renderProfile:'fast-draft'}:job.directFull?{renderProfile:'full-quality'}:{}),visualIdentity:'persona-visual-identity-v1',
     stylePack:plan.stylePack,
     ...(appearance.colorPreset?{visualPreset:appearance.colorPreset}:{}),clips:sources,
-    ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74}}:{})};
+    ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74,...(soundDesign.status==='ADAPTIVE_MIX_REQUESTED'?{adaptiveMode:soundDesign.mode}: {})}}:{})};
    const timelinePath=join(out,'timeline.json'),draft=join(out,'edited.mp4');
    await writeFile(timelinePath,JSON.stringify(timeline,null,2)+'\n',{flag:'wx'});
    await production.transition('QUALITY_CHECK',{reason:'FFmpeg timeline render and source hash verification'});
@@ -718,6 +800,12 @@ export function createPersonaQuickRenderService(config={}){
    }
    await verifyUploadedFiles(input,job.files);
    const outputHash=await sha(video),details=await probe(video,config,{rendered:true});
+   let referenceColor={status:'NOT_COMPARED',reason:'No compatible reference guidance or fast draft'};
+   if(!job.fastDraft&&referenceGuide.status==='REFERENCE_GUIDANCE'&&referenceGuide.referenceLumaMedian!==null){
+    try{const report=await analyzePersonaVideoQuality({videoPath:video,ffmpegDir:config.ffmpegDir});referenceColor=compareReferenceColor(referenceGuide,report);}
+    catch(error){referenceColor={status:'NOT_COMPARED',reason:'Reference color measurement failed: '+String(error.message||error).slice(0,140)}}
+   }
+   await writeFile(join(out,'reference-color-comparison.json'),JSON.stringify(referenceColor,null,2)+'\n',{flag:'wx'});
    const editPlanSha256=await sha(join(out,'edit-plan.json'));
    const timelineSha256=await sha(timelinePath);
    const result={version:1,status:'awaiting-author-review',distributionAllowed:false,
@@ -726,9 +814,9 @@ export function createPersonaQuickRenderService(config={}){
     fastDraft:job.fastDraft===true,renderProfile:job.fastDraft?'fast-draft':job.directFull?'full-quality':'standard',
     width:details.width,height:details.height,editPlanSha256,timelineSha256,
     strategy:{status:audit.status,recommendation:audit.recommendation},
-    stylePack:plan.stylePack,visualPreset:appearance.colorPreset,
+    stylePack:plan.stylePack,videoFormat:job.videoFormat??'auto',visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,
+    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,gradeDecision,referenceGuide,referenceColor,soundDesign,
     textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
@@ -740,7 +828,7 @@ export function createPersonaQuickRenderService(config={}){
      caveat:'Image volume is not a direct API cost measurement; pricing and network latency vary.'},
     hasMusic:Boolean(music),hasCaptions:(!job.fastDraft||job.textAccents)&&cues.length>0,
     captionsDeferred:job.fastDraft&&!job.textAccents&&cues.length>0,
-    submittedToModel:(provenance.kind==='offline-fallback'||provenance.kind==='sparse-vision-unqualified')?
+    submittedToModel:(['offline-fallback','sparse-vision-unqualified','author-selected-continuity'].includes(provenance.kind))?
       (provenance.visionAttempted?'vision_attempted_not_verified':'none'):
      config.quickPlanner?'sampled_jpeg_frames_only':
       job.fastDraft?'sparse_2_5_second_jpeg_frames':'half_second_jpeg_frames_and_optional_text_transcript',
@@ -1054,5 +1142,5 @@ export function createPersonaQuickRenderService(config={}){
    resJson(res,405,{error:'method_not_allowed'});return true;
   }catch(error){resJson(res,400,{error:String(error.message||error).slice(0,400)});return true}
  }
- return {root,create,attachSeedPhotos,upload,run,promote,preparePackage,get,view,list,handle};
+ return {root,create,attachSeedPhotos,upload,run,promote,preparePackage,get,view,list,handle,isBusy:()=>active!==null};
 }

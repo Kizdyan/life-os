@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, rename, rm, stat, writeFile, access } from 'node:fs/promises';
 import { dirname, resolve, extname } from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const ALLOWED = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v']);
@@ -31,11 +32,11 @@ function run(bin, args) {
     proc.on('close', code => code === 0 ? done(stdout) : reject(new Error(bin + ' exited ' + code + ': ' + stderr.slice(-2500))));
   });
 }
-async function probe(input) {
+async function probe(input,{runImpl=run}={}) {
   if (!ALLOWED.has(extname(input).toLowerCase())) fail('Unsupported video extension');
   const info = await stat(input);
   if (!info.isFile() || !info.size || info.size > MAX_BYTES) fail('Invalid input file size');
-  const raw = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration,format_name,size:stream=index,codec_type,codec_name,width,height,r_frame_rate', '-of', 'json', input]);
+  const raw = await runImpl('ffprobe', ['-v', 'error', '-show_entries', 'format=duration,format_name,size:stream=index,codec_type,codec_name,width,height,r_frame_rate', '-of', 'json', input]);
   const data = JSON.parse(raw);
   const video = data.streams?.find(stream => stream.codec_type === 'video');
   if (!video || !video.width || !video.height) fail('No decodable video stream');
@@ -47,19 +48,19 @@ async function sha256(path) {
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest('hex');
 }
-async function render(input, output, start, requestedDuration) {
+async function render(input, output, start, requestedDuration,{runImpl=run}={}) {
   if (resolve(input) === resolve(output)) fail('Output must not overwrite the source');
   if (extname(output).toLowerCase() !== '.mp4') fail('Output must be .mp4');
   await access(output).then(() => fail('Output already exists; choose a new name'), () => {});
   await access(output + '.persona.json').then(() => fail('Manifest already exists'), () => {});
-  const source = await probe(input);
+  const source = await probe(input,{runImpl});
   const startSec = bounded(start ?? 0, 'start', 0, source.durationSec - 0.01);
   const durationSec = bounded(requestedDuration ?? source.durationSec - startSec, 'duration', 0.01, source.durationSec - startSec + 0.001);
   await mkdir(dirname(output), { recursive: true });
   const temp = output + '.partial-' + process.pid + '.mp4';
   try {
-    await run('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-y', '-ss', String(startSec), '-i', input, '-t', String(durationSec), '-map', '0:v:0', '-map', '0:a:0?', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', temp]);
-    const result = await probe(temp);
+    await runImpl('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-y', '-ss', String(startSec), '-i', input, '-t', String(durationSec), '-map', '0:v:0', '-map', '0:a:0?', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', temp]);
+    const result = await probe(temp,{runImpl});
     const tolerance = Math.max(1, durationSec * 0.05);
     if (Math.abs(result.durationSec - durationSec) > tolerance) fail('Export duration mismatch');
     const sourceHash = await sha256(input);
@@ -82,4 +83,6 @@ async function main() {
   const result = command === 'probe' ? await probe(input) : await render(input, resolve(outputArg ?? fail('Missing output')), start, duration);
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }
-main().catch(error => { console.error('Persona Media Engine:', error.message); process.exitCode = 1; });
+export {probe as probePersonaMedia,render as renderPersonaMedia};
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)
+ main().catch(error => { console.error('Persona Media Engine:', error.message); process.exitCode = 1; });

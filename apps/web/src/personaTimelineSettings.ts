@@ -47,9 +47,9 @@ function validClip(value: unknown): value is PersonaTimelineClip {
   const clip = value as Partial<PersonaTimelineClip>;
   return typeof clip.id === 'string' && clip.id.length > 0
     && typeof clip.name === 'string' && clip.name.length > 0
-    && Number.isInteger(clip.bytes) && clip.bytes >= 0
+    && finite(clip.bytes) && Number.isInteger(clip.bytes) && clip.bytes >= 0
     && typeof clip.mime === 'string' && clip.mime.startsWith('video/')
-    && Number.isInteger(clip.lastModified) && clip.lastModified >= 0
+    && finite(clip.lastModified) && Number.isInteger(clip.lastModified) && clip.lastModified >= 0
     && finite(clip.sourceDuration) && clip.sourceDuration > 0
     && finite(clip.startSec) && clip.startSec >= 0
     && finite(clip.durationSec) && clip.durationSec > 0
@@ -71,9 +71,9 @@ function validMusic(value: unknown): value is PersonaTimelineMusic | null {
   if (!value || typeof value !== 'object') return false;
   const music = value as Partial<PersonaTimelineMusic>;
   return typeof music.name === 'string' && music.name.length > 0
-    && Number.isInteger(music.bytes) && music.bytes >= 0
+    && finite(music.bytes) && Number.isInteger(music.bytes) && music.bytes >= 0
     && typeof music.mime === 'string' && music.mime.startsWith('audio/')
-    && Number.isInteger(music.lastModified) && music.lastModified >= 0
+    && finite(music.lastModified) && Number.isInteger(music.lastModified) && music.lastModified >= 0
     && finite(music.volume) && music.volume >= 0 && music.volume <= 1
     && finite(music.originalVolume) && music.originalVolume >= 0 && music.originalVolume <= 1;
 }

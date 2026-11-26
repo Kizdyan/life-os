@@ -1,7 +1,25 @@
-import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
+import {independentEditorialGate} from './personaCarouselIndependentReview';
+import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,validatePost,editorialContentHash,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
+import '@fontsource/playfair-display/400-italic.css';
 import '@fontsource/inter/400.css';
+import './persona-editorial-fonts.css';
+import './persona-editorial-v3-fonts.css';
+import {paintEditorialHierarchy,editorialHierarchyLayout,semanticEditorialComposition,type EditorialHierarchy} from './personaEditorialTypography';
+import fridgeV2 from '../../../config/carousel-fridge-hum-v2.json';
+import fridgeV3 from '../../../config/carousel-fridge-hum-v3.json';
+import fridgeV1Images from '../public/carousel-backgrounds/fridge-hum-v1/provenance.json';
+import {backgroundAssetUrl,libraryBackground,validCinematicBackground,isGeneratedBackgroundRef,type CinematicBackground} from './personaEditorialBackgrounds';
+import {personaWorkerUrl} from './personaWorkerUrl';
+import {inspectEditorialRenderedSlides} from './personaCarouselRenderQuality';
+import {reviewRenderedBlob,summarizeVisualPackage,type VisualOpinion} from './personaCarouselVisualReview';
+import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
+import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
+import {renderCreamEditorial} from './personaCreamEditorialRenderer';
+import {photoDeliveryManifest} from './personaDeliveryPolicy';
+import {musicBriefRequest} from './personaMusicBrief';
+import {saveReviewArchive} from './personaReviewArchive';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -157,7 +175,7 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
   throw Error('Неподдерживаемый вариант эталонной карусели');
  const fonts=await Promise.all([
   document.fonts.load('500 100px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 06')
+  document.fonts.load('400 24px "Inter"','А')
  ]);
  if(fonts.some(faces=>faces.length===0))
   throw Error('Локальные шрифты Playfair Display / Inter не загрузились; экспорт остановлен');
@@ -213,14 +231,26 @@ async function renderBaselineArtistSlide(post:EditorialPost,slide:EditorialSlide
    baselineLine(ctx,'действием.',150,870);
    break;
  }
- ctx.save();ctx.textAlign='right';ctx.fillStyle=BASELINE_BEIGE;
- ctx.font='400 24px "Inter", sans-serif';ctx.textBaseline='alphabetic';
- ctx.fillText(String(index+1).padStart(2,'0')+' / 06',990,1260);
- ctx.restore();
+ // Internal page numbering is forbidden on exported PNG.
  return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
 }
 
 async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ if(post.compositionPreset==='cream-editorial-v1'){
+  let blob:Blob|undefined;
+  if(slide.visual==='archive-photo'){
+   if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Нельзя выдавать созданный фон за оригинал');
+   const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):await readEditorialImage(post.id,slide.id);
+   blob=stored?.blob;
+  }else if(slide.background){
+   if(!validCinematicBackground(slide.background))throw Error('Неверная ссылка на кинофон');
+   blob=await readCinematicBackground(slide.background);
+  }
+  if(!blob)throw Error('Cream Editorial: нужен осмысленный визуальный материал для слайда '+(index+1));
+  return renderCreamEditorial(slide,index,blob);
+ }
+ if(isLocalBrandTrialSlide(post,slide))return renderLocalBrandTrial(post,slide,index);
+ if((!post.research||['cormorant-inter','literata-golos'].includes(post.fontPreset??''))&&(slide.background||slide.headline!==undefined))return renderCinematicSlide(post,slide,index);
  if(post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter')
   return renderQuietHorrorSlide(post,slide,index);
  if(post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter')
@@ -231,13 +261,18 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
  // Only the requested baseline preset alternates backgrounds; all other outputs stay unchanged.
  ctx.fillStyle=post.preset==='chocolate-graphite'&&index%2===1?'#1C1C1E':theme.bg;
  ctx.fillRect(0,0,1080,1350);
- const usePhoto=slide.visual==='archive-photo';
+ const usePhoto=slide.visual==='archive-photo'||Boolean(slide.background);
  if(usePhoto){
+  let imageBlob:Blob;
+  if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance. Выберите его как фон.');
   const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):
    await readEditorialImage(post.id,slide.id);
   if(!stored)throw Error('Нет фото для слайда №'+(index+1)+'. Выбери изображение из архива.');
+   imageBlob=stored.blob;
+  }else imageBlob=await readCinematicBackground(slide.background!);
   let image:ImageBitmap;
-  try{image=await createImageBitmap(stored.blob)}catch{throw Error('Повреждено архивное изображение для слайда №'+(index+1))}
+  try{image=await createImageBitmap(imageBlob)}catch{throw Error('Повреждено изображение для слайда №'+(index+1))}
   const scale=Math.max(1080/image.width,1350/image.height),w=image.width*scale,h=image.height*scale;
   ctx.drawImage(image,(1080-w)/2,(1350-h)/2,w,h);image.close();
   // Text remains legible in variable photographs without altering the originals.
@@ -246,6 +281,94 @@ async function renderSlide(post:EditorialPost,slide:EditorialSlide,index:number)
   gradient.addColorStop(.44,'rgba(5,8,12,.54)');
   gradient.addColorStop(1,'rgba(5,8,12,.85)');
   ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+ }
+ // Imported research renders as exact Canvas typography, never rasterized AI letters.
+ // A failed layout aborts export instead of silently cropping the final paragraph.
+ if(post.research){
+  const faces=await document.fonts.load('500 72px "Playfair Display"',slide.text);
+  if(!faces.length)throw Error('Кириллический шрифт не загружен; PNG не создан');
+  ctx.drawImage(baselineGrain(),0,0);
+  // An author can compose headline / body / optional italic coda with blank lines.
+  // This keeps all letters in real browser Canvas instead of asking image AI to draw Cyrillic.
+  const editorialBlocks=slide.text.trim().split(/\n\s*\n/u).map(v=>v.trim()).filter(Boolean);
+  if(editorialBlocks.length>1){
+   if(editorialBlocks.length>3)throw Error('Слайд '+(index+1)+': допускаются три текстовых уровня');
+   const fontReady=await Promise.all([
+    document.fonts.load('500 82px "Playfair Display"',editorialBlocks[0]),
+    document.fonts.load('400 46px "Playfair Display"',editorialBlocks[1]),
+    ...(editorialBlocks[2]?[document.fonts.load('italic 400 42px "Playfair Display"',editorialBlocks[2])]:[])
+   ]);
+   if(fontReady.some(v=>v.length===0))throw Error('Кириллические шрифты не загружены');
+   if(usePhoto){
+    const shade=ctx.createLinearGradient(0,0,1080,0);
+    shade.addColorStop(0,'rgba(5,6,9,.68)');shade.addColorStop(.78,'rgba(5,6,9,.26)');
+    shade.addColorStop(1,'rgba(5,6,9,.1)');
+    ctx.fillStyle=shade;ctx.fillRect(0,0,1080,1350);
+   }
+   const left=94,width=880;
+   const fitCtx:CanvasRenderingContext2D=ctx; // Narrowed context captured by the nested helper.
+   function fit(value:string,weight:400|500,italic:boolean,maxSize:number,minSize:number,height:number,maxLines:number){
+    for(let size=maxSize;size>=minSize;size-=2){
+     fitCtx.font=(italic?'italic ':'')+weight+' '+size+'px "Playfair Display", Georgia, serif';
+     try{
+      const lines=wrapText(fitCtx,value,width,maxLines);
+      const step=Math.round(size*1.33);
+      if(lines.length&&lines.length*step<=height&&lines.every(line=>fitCtx.measureText(line).width<=width))
+       return {lines,step,size};
+     }catch{/* Try a smaller font; never truncate a line. */}
+    }
+    throw Error('Слайд '+(index+1)+': текст не помещается в выбранную типографику');
+   }
+   const headline=fit(editorialBlocks[0],500,false,index===0?88:82,60,335,4);
+   const body=fit(editorialBlocks[1],400,false,52,38,editorialBlocks[2]?385:500,9);
+   const coda=editorialBlocks[2]?fit(editorialBlocks[2],400,true,46,36,155,3):null;
+   ctx.textAlign='left';ctx.textBaseline='top';
+   ctx.fillStyle=theme.fg;
+   let y=195;
+   ctx.font='500 '+headline.size+'px "Playfair Display", Georgia, serif';
+   for(const line of headline.lines){ctx.fillText(line,left,y);y+=headline.step}
+   if(y>550)throw Error('Слайд '+(index+1)+': заголовок перекрывает основной текст');
+   ctx.strokeStyle=theme.accent;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(left,590);ctx.lineTo(left+330,590);ctx.stroke();
+   y=625;ctx.font='400 '+body.size+'px "Playfair Display", Georgia, serif';
+   for(const line of body.lines){ctx.fillText(line,left,y);y+=body.step}
+   if(coda){
+    if(y>1090)throw Error('Слайд '+(index+1)+': абзац перекрывает курсивный акцент');
+    y=1110;ctx.fillStyle=theme.accent;
+    ctx.font='italic 400 '+coda.size+'px "Playfair Display", Georgia, serif';
+    for(const line of coda.lines){ctx.fillText(line,left,y);y+=coda.step}
+    if(y>1290)throw Error('Слайд '+(index+1)+': курсив выходит за границы');
+   }else if(y>1245)throw Error('Слайд '+(index+1)+': текст выходит за границы');
+   return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
+  }
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  const width=884,left=96;
+  let lines:string[]=[],size=0;
+  for(let candidate=index===0?82:70;candidate>=40;candidate-=4){
+   ctx.font='500 '+candidate+'px "Playfair Display", Georgia, serif';
+   try{
+    const wrapped=wrapText(ctx,slide.text,width,12);
+    if(wrapped.length*(candidate+20)<=1020){
+     size=candidate;lines=wrapped;break;
+    }
+   }catch{/* Reduce font until the real text fits. */}
+  }
+  if(!size||!lines.length)throw Error('Слайд '+(index+1)+': текст не помещается без обрезки');
+  // Darkened photo backing gives a stable reading surface; no synthetic text or labels.
+  if(usePhoto){
+   // Avoid the opaque black rectangle that erased actual cinematic photographs.
+   // Keep the left-side text readable while revealing the background on the right.
+   const sideVeil=ctx.createLinearGradient(0,0,1080,0);
+   sideVeil.addColorStop(0,'rgba(5,6,8,.52)');
+   sideVeil.addColorStop(.52,'rgba(5,6,8,.26)');
+   sideVeil.addColorStop(1,'rgba(5,6,8,.03)');
+   ctx.fillStyle=sideVeil;ctx.fillRect(0,0,1080,1350);
+  }
+  const leading=size+20,top=index===0?300:260;
+  const y0=Math.min(Math.max(top,695-(lines.length*leading)/2),1200-(lines.length-1)*leading);
+  ctx.fillStyle=theme.fg;
+  ctx.font='500 '+size+'px "Playfair Display", Georgia, serif';
+  lines.forEach((line,i)=>ctx.fillText(line,left,y0+i*leading));
+  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(Error('PNG не создан')),'image/png'));
  }
  // The final public image contains ONLY authored slide text and the chosen
  // photo/background. Internal Persona labels, section numbers and metadata
@@ -310,7 +433,24 @@ export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  const items:BlobPart[]=[...parts,...central,end].map(x=>new Uint8Array(x));
  return new Blob(items,{type:'application/zip'});
 }
-export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
+export async function convertEditorialPhotoToJpeg(blob:Blob):Promise<Blob>{
+ const image=await createImageBitmap(blob);
+ try{
+  if(image.width!==1080||image.height!==1350)throw Error('Неверный размер слайда: нужен 1080×1350');
+  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas недоступен');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,1080,1350);ctx.drawImage(image,0,0);
+  const result=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('JPEG не создан')),'image/jpeg',.95));
+  const signature=new Uint8Array(await result.slice(0,3).arrayBuffer());
+  if(result.type!=='image/jpeg'||signature[0]!==255||signature[1]!==216||signature[2]!==255)throw Error('Фактический формат не JPEG');
+  if(result.size>20*1024*1024)throw Error('JPEG превышает 20 МБ');
+  return result;
+ }finally{image.close()}
+}
+/** Default remains the original lossless PNG publication contract. */
+export async function buildEditorialExport(post:EditorialPost,platform:'original'|'tiktok'='original'):Promise<Blob>{
+ if(!editorialSourcesPass(post))throw Error('SOURCE_PASS: не все источники исследования подтверждены');
+ if(!independentEditorialGate(post))throw Error('INDEPENDENT_CRITIC_REQUIRED: нужен актуальный положительный вердикт другой семьи моделей');
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
  if(!post.caption.trim())throw Error('Для публикации нужен основной текст поста');
@@ -318,14 +458,88 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
   throw Error('Пункт 6: фото не найдено в архиве IndexedDB; экспорт заблокирован');
  const files:{name:string;data:Uint8Array}[]=[];
  for(const [i,slide] of post.slides.entries()){
-  const blob=await renderSlide(post,slide,i);
-  files.push({name:'slide-'+String(i+1).padStart(2,'0')+'.png',
+  const original=await renderSlide(post,slide,i);
+  const blob=platform==='tiktok'?await convertEditorialPhotoToJpeg(original):original;
+  files.push({name:'slide-'+String(i+1).padStart(2,'0')+(platform==='tiktok'?'.jpg':'.png'),
    data:new Uint8Array(await blob.arrayBuffer())});
  }
  // The downloadable caption is paste-ready: no theme/status/approval metadata.
  const caption=post.caption.trim();
  files.push({name:'caption.txt',data:new TextEncoder().encode(caption)});
+ if(platform==='tiktok')files.push({name:'delivery.json',data:new TextEncoder().encode(JSON.stringify({...photoDeliveryManifest('tiktok'),musicBrief:musicBriefRequest({contentId:post.id,revision:post.revision,destination:'tiktok'},post.topic,caption)},null,2))});
+ if(post.research){
+  const sources={
+   status:'SOURCE_PASS (manual review, not independent automatic verification)',
+   sourceItems:post.research.sourceItems.map(({slideId,title,url,reviewed})=>({slideId,title,url,reviewed})),
+   interpretationSlides:post.research.interpretationSlides
+  };
+  files.push({name:'research-sources.json',data:new TextEncoder().encode(JSON.stringify(sources,null,2))});
+ }
+ if(post.research||post.slides.some(s=>s.background))files.push({name:'image-provenance.json',data:new TextEncoder().encode(JSON.stringify(await editorialImageProvenance(post),null,2))});
  return zipFileBytes(files);
+}
+
+/** Review-only delivery reuses the production renderer; it grants NO approvals.
+ * The publication export above keeps all existing source/content/design gates. */
+export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvidence,localVisualReview=false}:{sourceEvidence?:unknown;localVisualReview?:boolean}={}):Promise<Blob>{
+ validatePost(post);
+ const images=await Promise.all(post.slides.map((s,i)=>renderSlide(post,s,i)));
+ const enc=new TextEncoder(),json=(value:unknown)=>enc.encode(JSON.stringify(value,null,2)+'\n');
+ const files=await Promise.all(images.map(async(blob,i)=>({name:'slide-'+String(i+1).padStart(2,'0')+'.png',data:new Uint8Array(await blob.arrayBuffer())})));
+ files.push({name:'contact-sheet.png',data:new Uint8Array(await(await editorialContactSheet(images)).arrayBuffer())});
+ files.push({name:'caption.txt',data:enc.encode(post.caption.trim())},{name:'draft.json',data:json(post)},
+  {name:'review-manifest.json',data:json({purpose:'author-review-only',publicationAllowed:false,contentHash:editorialContentHash(post),
+   ...(['fridge-hum-v3','semantic-editorial-v1'].includes(post.compositionPreset??'')?{status:'READY_FOR_AUTHOR_REVIEW',technical:'PNG_EXPORT_COMPLETED',sourceAudit:'See scope and checked-copy binding in source-evidence.json; manual source gate unchanged'}:{}),
+   gates:{CONTENT_PASS:post.approvals.content?'AUTHOR_CONFIRMED':'AWAITING_AUTHOR',SOURCE_PASS:editorialSourcesPass(post)?'AUTHOR_CONFIRMED':'UNVERIFIED_AUTHOR',VISUAL_PASS:post.approvals.design?'AUTHOR_CONFIRMED':'AWAITING_AUTHOR'},
+   authorApprovals:post.approvals,slides:images.length,width:1080,height:1350})},
+  {name:'research-sources.json',data:json(post.research??null)},
+  {name:'image-provenance.json',data:json(await editorialImageProvenance(post))});
+ const technical=post.research?.discovery?.mode==='discover'||localVisualReview?await inspectEditorialRenderedSlides(images):null;
+ if(technical)files.push({name:'render-quality.json',data:json(technical)});
+ let visualStatus:'BLOCKED'|'REVISION_SUGGESTED'|'AUTHOR_REVIEW_REQUIRED'='BLOCKED';
+ if(localVisualReview){
+  const receipts:VisualOpinion[]=[];
+  let blocked:string|null=null;
+  const signal=AbortSignal.timeout(20*60*1000);
+  for(const [index,image] of images.entries()){
+   try{receipts.push(await reviewRenderedBlob(post,index,image,signal))}
+   catch(error){blocked=String(error instanceof Error?error.message:error).slice(0,400);break}
+  }
+  const visual=summarizeVisualPackage(receipts,images.length,blocked);
+  visualStatus=visual.status==='AUTHOR_REVIEW_REQUIRED'?'AUTHOR_REVIEW_REQUIRED':visual.status==='REVISION_SUGGESTED'?'REVISION_SUGGESTED':'BLOCKED';
+  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',...visual,independence:'MODEL_FAMILY_NOT_VERIFIED'})});
+ }
+ if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
+ const zip=zipFileBytes(files);
+ if(localVisualReview&&technical)await saveReviewArchive(post,zip,{technical:technical.status==='TECHNICAL_CHECKS_PASS'?'TECHNICAL_CHECKS_PASS':'TECHNICAL_REVIEW_REQUIRED',visual:visualStatus});
+ return zip;
+}
+/** Evidence labels describe actual inputs; bundled photographs are never called live generation. */
+export async function editorialImageProvenance(post:EditorialPost){
+ const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+ return Promise.all(post.slides.map(async(s,index)=>{
+  const treatment=post.compositionPreset?{compositionPreset:post.compositionPreset,renderTreatment:cinematicTreatment(post,index),
+   ...(post.compositionPreset==='semantic-editorial-v1'?{compositionDecision:semanticEditorialComposition(post,index)}:{})}:{};
+  if(s.visual==='archive-photo'){
+   if(s.photoRef&&isGeneratedBackgroundRef(s.photoRef))throw Error('Созданный фон потерял provenance; выберите его как фон, а не авторский архив');
+   const stored=s.photoRef?await readEditorialImageByRef(s.photoRef):await readEditorialImage(post.id,s.id);
+   if(!stored)throw Error('Отсутствует оригинал фото из архива');
+   return {slideId:s.id,source:'author-archive',originalRef:s.photoRef??key(post.id,s.id),sha256:await sha(stored.blob),liveGeneration:false,...treatment};
+  }
+  if(s.background?.generatedRef){
+   const stored=await readEditorialImageByRef(s.background.generatedRef);
+   if(!stored)throw Error('Отсутствует оригинал созданного фона');
+   const digest=await sha(stored.blob);if(digest!==s.background.sha256)throw Error('SHA-256 фона изменился');
+   return {slideId:s.id,source:'provider-generated',sha256:digest,originalRef:s.background.generatedRef,...s.background.provenance,
+    generationMode:s.background.provenance?.provider==='codex-imagegen'?'external-tool-import':s.background.provenance?'worker-api':'legacy-metadata-incomplete',
+    ...treatment,...(post.compositionPreset?{v1AssetReused:digest===fridgeV1Images[index]?.sha256&&s.background.provenance?.provider==='codex-imagegen'}:{})};
+  }
+  if(s.background){
+   const response=await fetch(backgroundAssetUrl(s.background));if(!response.ok)throw Error('Нет библиотечного фона');
+   return {slideId:s.id,source:'pre-generated-library',libraryId:s.background.libraryId,sha256:await sha(await response.blob()),liveGeneration:false,...treatment};
+  }
+  return {slideId:s.id,source:'image-free-canvas',liveGeneration:false};
+ }));
 }
 export function triggerEditorialDownload(blob:Blob,filename:string){
  const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -334,33 +548,33 @@ export function triggerEditorialDownload(blob:Blob,filename:string){
  window.setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
-/** Quiet Horror layout uses the existing Canvas export and the same grain on all slides. */
 async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
  if(post.slides.length!==8||index<0||index>7||slide.visual!=='background'||post.preset!=='chocolate-graphite')
   throw Error('Неподдерживаемый вариант карусели');
  const fonts=await Promise.all([document.fonts.load('500 88px "Playfair Display"',slide.text),
-  document.fonts.load('400 24px "Inter"','01 / 08')]);
+  document.fonts.load('400 24px "Inter"','А')]);
  if(fonts.some(f=>f.length===0))throw Error('Шрифты карусели не загрузились');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
+ const paintCtx:CanvasRenderingContext2D=c; // Narrowed context captured by both nested helpers.
  c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
  c.drawImage(baselineGrain(),0,0);
  c.fillStyle=BASELINE_CREAM;c.strokeStyle=BASELINE_BEIGE;
  function line(x1:number,y1:number,x2:number,y2:number,width=1){
-  c.lineWidth=width;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+  paintCtx.lineWidth=width;paintCtx.beginPath();paintCtx.moveTo(x1,y1);paintCtx.lineTo(x2,y2);paintCtx.stroke();
  }
  function block(text:string,x:number,y:number,width:number,height:number,size:number,
   align:CanvasTextAlign='left',color=BASELINE_CREAM,leading=1.35,exactLines?:string[]){
   let lines:string[]=[],used=size;
   for(;used>=28;used--){
-   c.font='500 '+used+'px "Playfair Display"';
-   lines=exactLines??wrapText(c,text,width,40);
-   if(lines.every(value=>c.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
+   paintCtx.font='500 '+used+'px "Playfair Display"';
+   lines=exactLines??wrapText(paintCtx,text,width,40);
+   if(lines.every(value=>paintCtx.measureText(value).width<=width)&&lines.length*used*leading<=height)break;
   }
   if(used<28)throw Error('Текст не помещается в композицию');
-  c.fillStyle=color;c.textAlign=align;c.textBaseline='top';
+  paintCtx.fillStyle=color;paintCtx.textAlign=align;paintCtx.textBaseline='top';
   const tx=align==='center'?x+width/2:align==='right'?x+width:x;
-  lines.forEach((value,i)=>c.fillText(value,tx,y+i*used*leading));
+  lines.forEach((value,i)=>paintCtx.fillText(value,tx,y+i*used*leading));
  }
  switch(index){
   case 0:
@@ -393,23 +607,167 @@ async function renderQuietHorrorSlide(post:EditorialPost,slide:EditorialSlide,in
     slide.text==='Следующий разбор — про одну ноту, которая меняет финал. Сохраните, если интересно.'?
      ['Следующий разбор — про одну ноту, которая меняет финал.','Сохраните, если интересно.']:undefined);
  }
- c.font='400 24px "Inter"';c.textAlign='right';c.textBaseline='alphabetic';c.fillStyle=BASELINE_BEIGE;
- c.fillText(String(index+1).padStart(2,'0')+' / 08',990,1260);
+ // No page numbering inside individual slide PNG.
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('PNG export failed')),'image/png'));
 }
 
 export async function quietHorrorContactSheet(images:Blob[]):Promise<Blob>{
  if(images.length!==8)throw Error('Нужны восемь слайдов');
+ return editorialContactSheet(images);
+}
+export async function editorialContactSheet(images:Blob[]):Promise<Blob>{
+ if(images.length<3||images.length>8)throw Error('Для контактного листа нужны 3–8 слайдов');
  await document.fonts.load('400 24px "Inter"','01');
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=2160;
  const c=canvas.getContext('2d');if(!c)throw Error('Canvas недоступен');
  c.fillStyle=BASELINE_GRAPHITE;c.fillRect(0,0,1080,2160);
  // 4 × (600 + labels) exceeds the requested sheet height. Keep 4:5 thumbnails.
- for(let i=0;i<8;i++){
+ for(let i=0;i<images.length;i++){
   const image=await createImageBitmap(images[i]),x=132+(i%2)*416,y=8+Math.floor(i/2)*540;
   c.drawImage(image,x,y,400,500);image.close();
   c.font='400 24px "Inter"';c.textAlign='center';c.fillStyle=BASELINE_CREAM;
   c.fillText(String(i+1).padStart(2,'0'),x+200,y+528);
  }
  return new Promise((ok,no)=>canvas.toBlob(blob=>blob?ok(blob):no(Error('Contact sheet failed')),'image/png'));
+}
+
+/** Explicit generation only; browser never receives a provider credential. */
+export async function requestEditorialBackground(post:EditorialPost,index:number,{paidConsent=false}={}):Promise<{status:'READY'|'BLOCKED';background?:CinematicBackground;message:string}>{
+ const blocked=(message:string)=>({status:'BLOCKED' as const,message});
+ if(!paidConsent)return blocked('BLOCKED: нужно отдельное разрешение на один платный запрос. Генерация не выполнена.');
+ const direction=post.slides[index]?.photoDirection?.trim();
+ if(post.research&&!direction)return blocked('NEEDS_INPUT: заполните визуальное решение этого слайда. Генерация не выполнена.');
+ try{
+  const health=await fetch(personaWorkerUrl+'/health',{signal:AbortSignal.timeout(3000)});
+  if(!health.ok)return blocked('BLOCKED: Worker недоступен. Доступны собственный архив и однотонный фон.');
+  const {token}=await health.json();
+  if(typeof token!=='string')return blocked('BLOCKED: Worker не выдал локальный токен.');
+  const response=await fetch(personaWorkerUrl+'/carousel-background',{method:'POST',
+   headers:{'Content-Type':'application/json','X-Persona-Worker-Token':token},
+   body:JSON.stringify({theme:post.topic,index,paidConsent:true,...(direction?{visualDirection:direction}:{})}),signal:AbortSignal.timeout(125000)});
+  if(!response.ok)return blocked('BLOCKED: генератор недоступен. Генерация не выполнена.');
+  const result=await response.json();
+  if(result.source!=='openai'||result.status!=='READY')return blocked(result.warning||'BLOCKED: генерация не выполнена. Доступен собственный архив.');
+  if(typeof result.pngBase64!=='string'||result.pngBase64.length>20*1024*1024)throw Error('Invalid generated image');
+  const bytes=Uint8Array.from(atob(result.pngBase64),c=>c.charCodeAt(0));
+  const id='bg-'+crypto.randomUUID();
+  const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  const background:CinematicBackground={...libraryBackground(index),generatedRef:key(post.id,id),sha256,
+   provenance:{provider:'openai',model:result.model,prompt:result.prompt,createdAt:result.createdAt}};
+  if(!validCinematicBackground(background))throw Error('Invalid image provenance');
+  await saveEditorialImage(post.id,id,new File([bytes],'cinematic-background.png',{type:'image/png'}));
+  return {status:'READY',background,message:'Фон создан OpenAI и сохранён локально. Оформление требует вашего утверждения.'};
+ }catch{
+  return blocked('BLOCKED: Worker или генератор недоступен. Генерация не выполнена. Доступны собственный архив и однотонный фон.');
+ }
+}
+
+/** Photo-backed editorial composition; the older flat layouts remain byte-compatible. */
+async function readCinematicBackground(background:CinematicBackground):Promise<Blob>{
+ if(!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ if(background.generatedRef){
+  const stored=await readEditorialImageByRef(background.generatedRef);
+  if(!stored)throw Error('Созданный фон не найден в локальном архиве');
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await stored.blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,'0')).join('');
+  if(hash!==background.sha256)throw Error('Созданный фон изменился; экспорт остановлен');
+  return stored.blob;
+ }
+ const response=await fetch(backgroundAssetUrl(background));if(!response.ok)throw Error('Локальный кинофон не найден');
+ return response.blob();
+}
+function cinematicTreatment(post:EditorialPost,index:number){
+ if(post.compositionPreset==='fridge-hum-v3')return fridgeV3.visuals[index];
+ if(post.compositionPreset==='fridge-hum-v2')return fridgeV2.visuals[index];
+ // Preserve source-bound photo treatment without applying this story's crops to other projects.
+ if(post.compositionPreset==='semantic-editorial-v1'){
+  const source=fridgeV1Images.findIndex(p=>p.sha256===post.slides[index]?.background?.sha256);
+  if(source>=0)return fridgeV3.visuals[source];
+ }
+ return undefined;
+}
+async function renderCinematicSlide(post:EditorialPost,slide:EditorialSlide,index:number):Promise<Blob>{
+ const background=slide.background;
+ if(background&&!validCinematicBackground(background))throw Error('Неверная ссылка на кинофон');
+ const fonts=await Promise.all([
+  ...(post.fontPreset==='literata-golos'?[
+   document.fonts.load('600 90px "Persona Editorial Literata"',slide.text),
+   document.fonts.load('400 48px "Persona Editorial Golos"',slide.text)
+  ]:slide.headline!==undefined?[
+   document.fonts.load('600 88px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('700 90px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('italic 600 48px "Persona Carousel Cormorant"',slide.text),
+   document.fonts.load('300 32px "Persona Carousel Inter"',slide.text),
+   document.fonts.load('400 24px "Persona Carousel Inter"',slide.text+' 01 / 08')
+  ]:[document.fonts.load('500 80px "Playfair Display"',slide.text),document.fonts.load('italic 500 80px "Playfair Display"',slide.text)]),
+  ...(slide.headline!==undefined?[]:[document.fonts.load('400 24px "Inter"',slide.text+' 01 / 08')])
+ ]);
+ if(fonts.some(f=>!f.length))throw Error('Шрифты карусели не загрузились');
+ let blob:Blob|undefined;
+ if(slide.visual==='archive-photo'){
+  if(slide.photoRef&&isGeneratedBackgroundRef(slide.photoRef))throw Error('Созданный фон нельзя использовать как авторский оригинал без provenance');
+  const stored=slide.photoRef?await readEditorialImageByRef(slide.photoRef):await readEditorialImage(post.id,slide.id);
+  if(!stored)throw Error('Нет оригинального фото для слайда '+(index+1));
+  blob=stored.blob;
+ }else blob=background?await readCinematicBackground(background):undefined;
+ const canvas=document.createElement('canvas');
+ canvas.width=1080;canvas.height=1350;
+ const c=canvas.getContext('2d',post.compositionPreset==='semantic-editorial-v1'?{willReadFrequently:true}:undefined);if(!c)throw Error('Canvas недоступен');
+ c.fillStyle=index%2?BASELINE_GRAPHITE:BASELINE_CHOCOLATE;c.fillRect(0,0,1080,1350);
+ if(blob){
+  const image=await createImageBitmap(blob);
+  const treatment=cinematicTreatment(post,index);
+  if(treatment){
+   const [x,y,w,h]=treatment.crop;
+   c.save();c.filter='brightness('+treatment.brightness+')';
+   const sw=image.width*w,sh=image.height*h,scale=Math.max(1080/sw,1350/sh);
+   c.drawImage(image,image.width*x,image.height*y,sw,sh,(1080-sw*scale)/2,(1350-sh*scale)/2,sw*scale,sh*scale);c.restore();
+  }else{
+   const scale=Math.max(1080/image.width,1350/image.height),width=image.width*scale,height=image.height*scale;
+   c.drawImage(image,(1080-width)/2,(1350-height)/2,width,height);
+  }
+  image.close();
+ }
+ // Keep meaningful objects on the right and reserve a genuinely dark text area.
+ const treatment=cinematicTreatment(post,index);
+ const bottom=[0,2,3,6,7].includes(index);
+ if(treatment){
+  const g=treatment.overlay==='top'?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
+  g.addColorStop(0,'rgba(0,0,0,'+treatment.opacity+')');g.addColorStop(.65,'rgba(0,0,0,'+(treatment.opacity*.65)+')');g.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=g;c.fillRect(0,0,1080,1350);
+ }else{
+ const gradient=bottom?c.createLinearGradient(0,0,0,1350):c.createLinearGradient(0,0,1080,0);
+ gradient.addColorStop(0,bottom?'rgba(0,0,0,0)':'rgba(0,0,0,.6)');
+ gradient.addColorStop(bottom?.48:.84,'rgba(0,0,0,.6)');
+ gradient.addColorStop(1,bottom?'rgba(0,0,0,.6)':'rgba(0,0,0,0)');
+ c.fillStyle=gradient;c.fillRect(0,0,1080,1350);
+ }
+ if(slide.headline!==undefined){
+  const layout=editorialHierarchyLayout(post,index),semantic=post.compositionPreset==='semantic-editorial-v1';
+  if(semantic){
+   // A soft photographic veil follows the selected text zones, not a hard card.
+   for(const role of ['headline','body'] as const){
+    const zone=layout[role];if(!zone||!slide[role])continue;
+    const top=Math.max(0,zone.y-100),bottom=Math.min(1350,zone.y+zone.height+100);
+    const g=c.createLinearGradient(0,top,0,bottom);
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(.16,'rgba(0,0,0,.65)');
+    g.addColorStop(.84,'rgba(0,0,0,.65)');g.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=g;c.fillRect(0,top,1080,bottom-top);
+   }
+  }
+  paintEditorialHierarchy(c,slide as EditorialHierarchy,index,layout,post.fontPreset,semantic);
+ }else{
+ c.fillStyle=BASELINE_CREAM;c.textBaseline='top';
+ const margin=90,maxWidth=index===0?810:860;
+ const size=index===0?88:index===6?74:index===7?60:index===5?58:54;
+ // Each phrase remains a whole authored paragraph; no AI-rendered glyphs.
+ const italic=[3,5,6,7].includes(index);
+ c.font=(italic?'italic ':'')+'500 '+size+'px "Playfair Display"';
+ const lines=wrapText(c,slide.text,maxWidth,12),leading=size*1.25;
+ if(lines.length*leading>860)throw Error('Текст слишком длинный для кинофона');
+ const y=bottom?Math.max(610,1190-lines.length*leading):index===5?260:150;
+ c.textAlign='left';
+ lines.forEach((value,i)=>c.fillText(value,margin,y+i*leading));
+ }
+ // Publication artwork contains no slide numbers; labels belong to the contact sheet.
+ return new Promise((ok,no)=>canvas.toBlob(b=>b?ok(b):no(Error('PNG не создан')),'image/png'));
 }

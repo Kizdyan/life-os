@@ -2,6 +2,11 @@ import approvedRecords from '../../../config/author-approved-carousels.json';
 import baselineCaptions from '../../../config/carousel-baseline-pause-captions.json';
 import quietHorror from '../../../config/carousel-quiet-horror.json';
 import quietHorrorCaptions from '../../../config/carousel-quiet-horror-captions.json';
+import fridgeV2Style from '../../../config/carousel-fridge-hum-v2.json';
+import fridgeV3Style from '../../../config/carousel-fridge-hum-v3.json';
+import {libraryBackground,validCinematicBackground,type CinematicBackground} from './personaEditorialBackgrounds';
+import {hierarchyCopy,semanticEditorialCopy,suggestEvidenceHook,semanticEditorialComposition,SEMANTIC_COMPOSITION_VERSION,type EditorialHierarchy} from './personaEditorialTypography';
+import {carouselReviewInput,currentCarouselReview,validStoredCarouselReview,type StoredCarouselReview} from './personaCarouselIndependentReview';
 export const CAROUSEL_QUIET_HORROR_ID='carousel-quiet-horror';
 
 /** Persona editorial pre-production: never equates a draft with an approved or published post.
@@ -37,15 +42,48 @@ export function editorialContrastPass(post:Pick<EditorialPost,'preset'>):boolean
  const c=PALETTE_CONTRAST[post.preset];
  return c.bg.every(bg=>editorialContrastRatio(c.main,bg)>=4.5&&editorialContrastRatio(c.heading,bg)>=3);
 }
-export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'>):string{
+/** Advisory only: deterministic editorial preflight, not fact checking or visual approval. */
+export function carouselEditorialWarnings(post:Pick<EditorialPost,'kind'|'slides'|'caption'>):string[]{
+ if(post.kind!=='carousel')return [];
+ const warnings:string[]=[];
+ const count=(s:string)=>s.trim()?s.trim().split(/\s+/u).length:0;
+ if(!post.slides.length)return ['В карусели нет слайдов.'];
+ if(count(post.slides[0].text)>12)
+  warnings.push('Обложка перегружена: больше 12 слов. Проверь силу хука на телефоне.');
+ post.slides.forEach((slide,i)=>{
+  if(count(slide.text)>26)
+   warnings.push('Слайд '+(i+1)+': больше 26 слов. Перенеси подробности в подпись.');
+ });
+ const normalized=post.slides.map(s=>s.text.toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}]+/gu,' ').trim());
+ if(new Set(normalized.filter(Boolean)).size<normalized.filter(Boolean).length)
+  warnings.push('Повторяется одинаковый текст на нескольких слайдах.');
+ const last=post.slides[post.slides.length-1].text;
+ if(/(?:сохраните|подпишитесь|ставьте лайк)/iu.test(last))
+  warnings.push('Последний слайд заканчивается шаблонным призывом вместо нового смысла.');
+ if(!post.caption.trim())warnings.push('Нет полноценного текста под публикацией.');
+ return warnings;
+}
+
+export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'|'preset'> & Partial<Pick<EditorialPost,'research'|'compositionPreset'>>):string{
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
-  post.caption,post.preset,post.slides.map(s=>s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection])]));
+  post.caption,post.preset,post.slides.map(s=>{
+   const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
+   const base=s.background?[...values,s.background]:values;
+   const design=s.brandTrialStyle?[...base,s.brandTrialStyle]:base;
+   return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
+  }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,
+   ...(post.compositionPreset==='semantic-editorial-v1'?[SEMANTIC_COMPOSITION_VERSION,post.slides.map((_,i)=>semanticEditorialComposition(post,i)),fridgeV3Style.visuals]:post.compositionPreset==='cream-editorial-v1'?['cream-editorial-render-v1']:post.compositionPreset==='fridge-hum-v3'?[fridgeV3Style.layouts,fridgeV3Style.visuals,'literata-golos-local-v1']:[fridgeV2Style.layouts,fridgeV2Style.visuals])]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
 type ChatCarouselApproval={textApproved:boolean;textApprovedAt:string;designApproved:boolean;
  designApprovedAt:string|null;checkedBy:string;checklist:boolean[];checklistScope:'text';contentHashAtApproval:string};
-const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approvedRecords;
+const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=Object.fromEntries(
+ Object.entries(approvedRecords).map(([id,record])=>{
+  if(record.checklistScope!=='text')throw Error('Invalid chat approval scope');
+  return [id,{...record,checklistScope:'text' as const}];
+ })
+);
 
 /** Use chat-approved data INSIDE the existing editorial approvals/gate, not as a parallel status.
  * A locally changed content fingerprint is never reapproved by this import.
@@ -53,9 +91,9 @@ const authorApprovedCarouselRecords:Record<string,ChatCarouselApproval>=approved
  * Manual approvals for already-approved local projects always take precedence.
  */
 /** Separate text hash: palette changes cannot undo written approval. */
-export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'>):string{
+export function editorialTextHash(post:Pick<EditorialPost,'title'|'topic'|'goal'|'caption'|'slides'> & Partial<Pick<EditorialPost,'research'>>):string{
  return editorialHash(JSON.stringify([post.title,post.topic,post.goal,post.caption,
-  post.slides.map(s=>[s.id,s.text])]));
+  post.slides.map(s=>[s.id,s.text]),...(post.research?[post.research]:[])]));
 }
 function editorialHash(value:string):string{
  let hash=0x811c9dc5;
@@ -65,8 +103,11 @@ function editorialHash(value:string):string{
 /** Content, palette and font-version fingerprint for artist visual approval. */
 export function editorialDesignHash(post:EditorialPost):string{
  return editorialHash(JSON.stringify([editorialContentHash(post),
+  ...(post.id==='jaws-old-money-editorial-v1'?['old-money-local-illustration-v1']:[]),
   post.id===CAROUSEL_BASELINE_ID&&post.fontPreset==='playfair-inter'?
-   'persona-baseline-artist-layout-v2':'persona-editorial-fonts-v1',
+   'persona-baseline-artist-layout-v3-no-page-numbers':
+   post.id===CAROUSEL_QUIET_HORROR_ID&&post.fontPreset==='playfair-inter'?
+    'persona-quiet-horror-v2-no-page-numbers':'persona-editorial-fonts-v1',
   post.fontPreset??'legacy']));
 }
 export const UNAPPROVED_DESIGN_MESSAGE='Оформление не утверждено. Посмотрите PNG и подтвердите';
@@ -137,16 +178,128 @@ export function setEditorialChecklistItem(post:EditorialPost,index:number,checke
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
-export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string};
+export type BrandTrialStyle={palette?:'light'|'dark';layout?:'image-top'|'image-middle'|'image-bottom';font?:'classic'|'literary';image?:'normal'|'smaller'|'larger'};
+export function validBrandTrialStyle(v:unknown):v is BrandTrialStyle{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;
+ const allowed:Record<string,string[]>={palette:['light','dark'],layout:['image-top','image-middle','image-bottom'],font:['classic','literary'],image:['normal','smaller','larger']};
+ return Object.entries(v).every(([k,x])=>Object.hasOwn(allowed,k)&&typeof x==='string'&&allowed[k].includes(x));
+}
+export type EditorialSlide={brandTrialStyle?:BrandTrialStyle;id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
+/** Imported research is evidence supplied by a person, not automatic fact verification. */
+export type EditorialResearch={
+ provider:'manual'|'perplexity';
+ /** Optional provider receipt; presence does not establish claim accuracy. */
+ discovery?:{mode:'topic'|'discover';model:string;receivedAt:string};
+ independentReview?:StoredCarouselReview;
+ sourceItems:{slideId:string;title:string;url:string;reviewed:boolean}[];
+ interpretationSlides:string[];
+ /** Manual review of public title and caption, not machine fact-checking. */
+ copyReviewed?:boolean;
+};
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
-  fontPreset?:'legacy'|'playfair-inter';carouselFormat?:'photo-led'|'mixed';
+  fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter'|'literata-golos';carouselFormat?:'photo-led'|'mixed';
+ compositionPreset?:'fridge-hum-v2'|'fridge-hum-v3'|'semantic-editorial-v1'|'cream-editorial-v1';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
   designApprovedAt?:string|null;contentHashAtDesignApproval?:string};
  createdAt:string;updatedAt:string;revision:number;
- origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string};
+ origin:'seed-carousel'|'topic-choice'|'researched-topic';scheduledDate?:string;researchSourceDoc?:string;research?:EditorialResearch};
+/** Existing legacy projects keep saved approvals. Every NEW researched project
+ * starts with a source contract that is unverified until reviewed by the author. */
+export function editorialSourcesPass(post:EditorialPost):boolean{
+ if(!post.research)return true;
+ if(post.research.copyReviewed!==true)return false;
+ if(currentCarouselReview(post)?.status==='NEEDS_REVISION')return false;
+ return post.slides.every(slide=>{
+  const sources=post.research!.sourceItems.filter(item=>item.slideId===slide.id);
+  const interpretation=post.research!.interpretationSlides.includes(slide.id);
+  return interpretation?sources.length===0:sources.length>0&&sources.every(item=>item.reviewed);
+ });
+}
+/** Explicit human review of a citation; no network request or inferred verification. */
+export function setEditorialSourceReviewed(
+ post:EditorialPost,slideId:string,url:string,reviewed:boolean,
+ now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ if(!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден в проекте');
+ const research:EditorialResearch={...post.research,sourceItems:post.research.sourceItems.map(x=>
+  x.slideId===slideId&&x.url===url?{...x,reviewed}:x)};
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
+/** Changing evidence revokes all dependent content and visual approvals. */
+function changeEditorialEvidence(post:EditorialPost,research:EditorialResearch,now:string):EditorialPost{
+ const approvals={...post.approvals,content:false,design:false,designApproved:false,
+  designApprovedAt:null,contentHashAtDesignApproval:'',textApproved:false,textHashAtApproval:'',
+  contentHashAtApproval:'',checkedAt:'',checkedBy:'',checklist:emptyChecklist()};
+ const result:EditorialPost={...post,research,approvals,revision:post.revision+1,updatedAt:now};
+ validatePost(result);return result;
+}
+/** Independent review never sets human approval flags. */
+export function attachEditorialIndependentReview(post:EditorialPost,audit:StoredCarouselReview,now=new Date().toISOString()):EditorialPost{
+ if(!post.research||!validStoredCarouselReview(audit)||JSON.stringify(audit.input)!==JSON.stringify(carouselReviewInput(post)))throw Error('Отчёт не соответствует текущей редакции');
+ return changeEditorialEvidence(post,{...post.research,independentReview:audit},now);
+}
+export function editorialValidEvidenceUrl(raw:string):boolean{
+ try{
+  const u=new URL(raw),h=u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(!['https:','http:'].includes(u.protocol)||!h||u.username||u.password||
+     raw.length>2048||u.hash.length>512)return false;
+  if(h==='localhost'||h.endsWith('.localhost')||h==='0.0.0.0'||h==='::1'||
+    h.endsWith('.local')||h.startsWith('169.254.')||h.startsWith('192.168.')||
+    h.startsWith('127.')||h.startsWith('10.')||h.startsWith('0.')||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)||h.startsWith('fe80:')||
+    h.startsWith('fc')||h.startsWith('fd'))return false;
+  return true;
+ }catch{return false}
+}
+/** Sources are initially unverified; a URL by itself never proves the fact. */
+export function addEditorialSource(
+ post:EditorialPost,slideId:string,title:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(!title.trim()||title.length>160||!editorialValidEvidenceUrl(url))throw Error('Источник: неверное название или URL');
+ if(post.research.interpretationSlides.includes(slideId))
+  throw Error('Сначала сними пометку об авторской интерпретации');
+ if(post.research.sourceItems.filter(x=>x.slideId===slideId).length>=4)
+  throw Error('Не более четырёх источников на слайд');
+ if(post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Этот источник уже добавлен');
+ const research:EditorialResearch={...post.research,sourceItems:[...post.research.sourceItems,
+  {slideId,title:title.trim(),url,reviewed:false}]};
+ return changeEditorialEvidence(post,research,now);
+}
+export function removeEditorialSource(
+ post:EditorialPost,slideId:string,url:string,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.research.sourceItems.some(x=>x.slideId===slideId&&x.url===url))
+  throw Error('Источник не найден');
+ return changeEditorialEvidence(post,{...post.research,
+  sourceItems:post.research.sourceItems.filter(x=>x.slideId!==slideId||x.url!==url)},now);
+}
+export function setEditorialInterpretationReviewed(
+ post:EditorialPost,slideId:string,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research||!post.slides.some(s=>s.id===slideId))throw Error('Не найден исследовательский слайд');
+ if(reviewed&&post.research.sourceItems.some(x=>x.slideId===slideId))
+  throw Error('У слайда есть источники; нельзя маскировать факт авторской трактовкой');
+ const interpretationSlides=reviewed?[...new Set([...post.research.interpretationSlides,slideId])]:
+  post.research.interpretationSlides.filter(id=>id!==slideId);
+ return changeEditorialEvidence(post,{...post.research,interpretationSlides},now);
+}
+export function setEditorialPublicCopyReviewed(
+ post:EditorialPost,reviewed:boolean,now=new Date().toISOString()
+):EditorialPost{
+ if(!post.research)throw Error('У проекта нет исследовательского пакета');
+ return changeEditorialEvidence(post,{...post.research,copyReviewed:reviewed},now);
+}
 export type StoryNote={id:string;date:string;text:string;state:'idea'|'captured'|'published';createdAt:string};
 export type EditorialStore={version:1;posts:EditorialPost[]};
 export type TopicChoice={id:string;kind:PostKind;title:string;angle:string;
@@ -265,15 +418,25 @@ export function createResearchedEditorialPost(
 ):EditorialPost{
  if(!/^[A-Za-z0-9-]{3,75}$/.test(id)||!title.trim()||title.length>160||
   !angle.trim()||angle.length>500)throw Error('Нужна конкретная тема и задача');
- const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=7
+ const steps=draft?.slides.length&&draft.slides.length>=3&&draft.slides.length<=8
   ?draft.slides.map(s=>s.title.trim().slice(0,170))
   :['Зацепка и вопрос зрителю','Конфликт или контраст','Новая деталь','Поворот в смысле','Незавершённый вывод'];
  const result:EditorialPost={version:1,id,kind:'carousel',title:title.trim(),topic:title.trim(),
   goal:angle.trim(),slides:steps.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
   caption:draft?.caption?.slice(0,4500)??'',preset:'ink',
+  research:{provider:'manual',sourceItems:[],interpretationSlides:[],copyReviewed:false},
   approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
  validatePost(result);return result;
+}
+export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
+ const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
+  title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
+  slides:quietHorror.slides.map((copy,i)=>({...copy,id:'slide-'+(i+1),text:hierarchyCopy(copy),visual:'background',photoDirection:'',background:libraryBackground(i)})),
+  caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
+  preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
+  origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
+ validatePost(post);return post;
 }
 /** Opt-in Editorial Desk seed. Never overwrites PHOTO-001…010. */
 export function createBaselinePauseCarousel(now=new Date().toISOString()):EditorialPost{
@@ -289,17 +452,8 @@ export function createBaselinePauseCarousel(now=new Date().toISOString()):Editor
   title:'Почему пауза сильнее реплики',topic:'Почему пауза сильнее реплики',
   goal:'Авторская мысль · text-only, без фотографий',
   slides:texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
-  caption:baselineCaptions.variants[baselineCaptions.active],preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
+  caption:baselineCaptions.active==='short'||baselineCaptions.active==='medium'||baselineCaptions.active==='long'?baselineCaptions.variants[baselineCaptions.active]:baselineCaptions.variants.medium,preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:freshApproval(),origin:'researched-topic',
   revision:1,createdAt:now,updatedAt:now};
- validatePost(post);return post;
-}
-export function createQuietHorrorCarousel(now=new Date().toISOString()):EditorialPost{
- const post:EditorialPost={version:1,id:CAROUSEL_QUIET_HORROR_ID,kind:'carousel',
-  title:quietHorror.title,topic:quietHorror.title,goal:'Факт + мнение · text-only',
-  slides:quietHorror.texts.map((text,i)=>({id:'slide-'+(i+1),text,visual:'background',photoDirection:''})),
-  caption:quietHorrorCaptions.variants[quietHorrorCaptions.active as '1'|'2'],
-  preset:'chocolate-graphite',fontPreset:'playfair-inter',approvals:{...freshApproval(),textApproved:false,designApproved:false},
-  origin:'researched-topic',revision:1,createdAt:now,updatedAt:now};
  validatePost(post);return post;
 }
 /** Opt-in research-backed fixture; same Editorial Desk, statuses and color preset. */
@@ -399,18 +553,42 @@ export function validatePost(post:EditorialPost):void{
    !Number.isFinite(Date.parse(post.scheduledDate+'T12:00:00Z'))||
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
-  (post.fontPreset!==undefined&&!['legacy','playfair-inter'].includes(post.fontPreset))||
+  (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter','literata-golos'].includes(post.fontPreset))||
+  (post.compositionPreset!==undefined&&(!['fridge-hum-v2','fridge-hum-v3','semantic-editorial-v1','cream-editorial-v1'].includes(post.compositionPreset)||post.fontPreset!==(post.compositionPreset==='fridge-hum-v2'?'cormorant-inter':'literata-golos')||(!['semantic-editorial-v1','cream-editorial-v1'].includes(post.compositionPreset)&&post.slides?.length!==7)||(post.compositionPreset==='cream-editorial-v1'&&(post.kind!=='carousel'||post.preset!=='cream'))))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
   !Array.isArray(post.slides)||post.slides.length!==(post.kind==='photo'?1:post.slides.length)||
-  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?(post.id===CAROUSEL_QUIET_HORROR_ID?8:7):1)||
+  post.slides.length<(post.kind==='carousel'?3:1)||post.slides.length>(post.kind==='carousel'?8:1)||
   new Set(post.slides.map(s=>s.id)).size!==post.slides.length||
-  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>170||
+  post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(s.headline!==undefined?600:post.research?260:170)||
+   (s.headline!==undefined&&(typeof s.kicker!=='string'||s.kicker.length>60||typeof s.headline!=='string'||!s.headline.trim()||s.headline.length>170||typeof s.body!=='string'||s.body.length>350||
+    (s.highlight!==undefined&&(typeof s.highlight!=='string'||s.highlight.length>170))||s.text!==hierarchyCopy(s as EditorialHierarchy)))||
+   (s.brandTrialStyle!==undefined&&(post.id!=='jaws-old-money-editorial-v1'||!validBrandTrialStyle(s.brandTrialStyle)))||
+   (s.background!==undefined&&!validCinematicBackground(s.background))||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
     (s.photoRef!==undefined&&(typeof s.photoRef!=='string'||!/^[-A-Za-z0-9]{3,75}\/[-A-Za-z0-9]{3,75}$/.test(s.photoRef)))))
   throw Error('Invalid editorial project');
+ if(post.research){
+  const r=post.research,ids=new Set(post.slides.map(s=>s.id));
+  if(!['manual','perplexity'].includes(r.provider)||
+    (r.discovery!==undefined&&(r.provider!=='perplexity'||!['topic','discover'].includes(r.discovery.mode)||
+     typeof r.discovery.model!=='string'||!r.discovery.model.trim()||r.discovery.model.length>120||
+     typeof r.discovery.receivedAt!=='string'||!Number.isFinite(Date.parse(r.discovery.receivedAt))))||
+    (r.provider==='perplexity'&&!r.discovery)||
+    (r.independentReview!==undefined&&(r.provider!=='perplexity'||!validStoredCarouselReview(r.independentReview)))||
+    (r.copyReviewed!==undefined&&typeof r.copyReviewed!=='boolean')||
+    !Array.isArray(r.sourceItems)||r.sourceItems.length>32||
+   !Array.isArray(r.interpretationSlides)||
+   r.interpretationSlides.some(id=>!ids.has(id))||
+   new Set(r.interpretationSlides).size!==r.interpretationSlides.length||
+   r.sourceItems.some(x=>!ids.has(x.slideId)||!x.title||x.title.length>160||
+    typeof x.reviewed!=='boolean'||!editorialValidEvidenceUrl(x.url)||
+    r.interpretationSlides.includes(x.slideId))||
+   new Set(r.sourceItems.map(x=>x.slideId+'|'+x.url)).size!==r.sourceItems.length)
+   throw Error('Invalid editorial research evidence');
+ }
  const a=post.approvals;
  if(a.checklist!==undefined&&(!Array.isArray(a.checklist)||a.checklist.length!==7||
   a.checklist.some(x=>typeof x!=='boolean')))throw Error('Invalid carousel checklist');
@@ -432,7 +610,14 @@ export function validatePost(post:EditorialPost):void{
  if(post.approvals.design&&!post.approvals.content)throw Error('Design approved before content');
  if(post.approvals.content&&!post.caption.trim())throw Error('Caption required for approval');
 }
-export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<EditorialPost,'topic'|'title'|'goal'|'caption'|'preset'|'fontPreset'|'compositionPreset'|'slides'|'scheduledDate'>>,now=new Date().toISOString()):EditorialPost{
+ const compositionChanged=Object.hasOwn(changes,'compositionPreset')&&changes.compositionPreset!==post.compositionPreset;
+ if(changes.slides)changes={...changes,slides:changes.slides.map(s=>{
+  if(s.headline===undefined)return s;
+  const previous=post.slides.find(p=>p.id===s.id);
+  const copyChanged=!previous||(['kicker','headline','body','highlight'] as const).some(k=>s[k]!==previous[k]);
+  return copyChanged?{...s,text:hierarchyCopy(s as EditorialHierarchy)}:s;
+ })};
  const result:EditorialPost={...post,...changes,updatedAt:now,revision:post.revision+1,approvals:{...post.approvals}};
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined)
   result.approvals={...result.approvals,topic:false,content:false,design:false};
@@ -443,11 +628,26 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
    changes.slides.some((slide,i)=>slide.id!==post.slides[i]?.id||slide.text!==post.slides[i]?.text);
   result.approvals=copyChanged?{...result.approvals,content:false,design:false}:
    {...result.approvals,design:false};
- }else if(changes.preset!==undefined||changes.fontPreset!==undefined)
+ }else if(changes.preset!==undefined||changes.fontPreset!==undefined||compositionChanged)
   result.approvals={...result.approvals,design:false};
+ // Changed wording invalidates human verification for affected factual claims.
+ if(result.research&&(changes.topic!==undefined||changes.title!==undefined||
+    changes.goal!==undefined||changes.caption!==undefined||changes.slides!==undefined)){
+  const all=changes.topic!==undefined||changes.title!==undefined||
+   changes.goal!==undefined||changes.caption!==undefined;
+  const changed=new Set(changes.slides?.filter((s,i)=>s.text!==post.slides[i]?.text||
+   s.id!==post.slides[i]?.id).map(s=>s.id)??[]);
+  const validIds=new Set(result.slides.map(s=>s.id));
+  result.research={...result.research,
+   copyReviewed:all?false:result.research.copyReviewed,
+   interpretationSlides:result.research.interpretationSlides.filter(
+    id=>validIds.has(id)&&!changed.has(id)),
+   sourceItems:result.research.sourceItems.filter(s=>validIds.has(s.slideId)).map(s=>
+    all||changed.has(s.slideId)?{...s,reviewed:false}:s)};
+ }
  if(changes.topic!==undefined||changes.title!==undefined||changes.goal!==undefined||
   changes.caption!==undefined||changes.slides!==undefined||changes.preset!==undefined||
-  changes.fontPreset!==undefined){
+  changes.fontPreset!==undefined||compositionChanged){
   result.approvals.checklist=emptyChecklist();
   result.approvals.designApproved=false;result.approvals.designApprovedAt=null;
   result.approvals.contentHashAtDesignApproval='';
@@ -460,12 +660,28 @@ export function reviseEditorialPost(post:EditorialPost,changes:Partial<Pick<Edit
  }
  validatePost(result);return result;
 }
+/** Existing editor action: lossless research-copy adapter, deterministic composition, no author PASS. */
+export function composeEditorialByMeaning(post:EditorialPost,now=new Date().toISOString()):EditorialPost{
+ if(post.kind!=='carousel')throw Error('Смысловая композиция предназначена для карусели');
+ const slides=post.slides.map(s=>({...s,...semanticEditorialCopy(s)})),hook=suggestEvidenceHook({...post,slides});
+ let next=reviseEditorialPost(post,{fontPreset:'literata-golos',compositionPreset:'semantic-editorial-v1',
+  slides:hook?slides.map((s,i)=>i?s:{...s,headline:hook.headline}):slides},now);
+ if(hook&&next.research){
+  const cover=next.slides[0].id;
+  next=changeEditorialEvidence(next,{...next.research,
+   sourceItems:[...next.research.sourceItems.filter(s=>s.slideId!==cover),
+    ...next.research.sourceItems.filter(s=>s.slideId===hook.sourceSlideId).map(s=>({...s,slideId:cover,reviewed:false}))]},now);
+ }
+ return next;
+}
 export function approveEditorialStep(post:EditorialPost,step:'topic'|'content'|'design',now=new Date().toISOString()):EditorialPost{
  if(editorialStage(post)!==step)throw Error('Approve steps in order: topic, content, design');
  if(step==='topic'&&(!post.topic.trim()||!post.title.trim()||!post.goal.trim()))
   throw Error('Для утверждения нужна конкретная тема и редакционная задача');
  if(step==='content'&&(!post.caption.trim()||post.slides.some(s=>s.visual==='background'&&!s.text.trim())))
   throw Error('Заполни основной текст поста и тезисы на фоновых слайдах');
+ if(step==='content'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: проверь каждый источник или явно отметь авторскую интерпретацию');
+ if(step==='design'&&!editorialSourcesPass(post))throw Error('SOURCE_PASS: источники не проверены');
  if(step==='design'&&post.kind==='carousel'&&!editorialChecklistReady(post))
   throw Error('Заполни пункты 1–6 и проверь автоматический контраст перед утверждением');
  const approvals={...post.approvals,[step]:true};
@@ -493,6 +709,12 @@ export function loadEditorialStore(storage:Pick<Storage,'getItem'>):EditorialSto
    !Array.isArray((parsed as EditorialStore).posts)||
    (parsed as EditorialStore).posts.length>200)return {version:1,posts:[]};
   const posts=(parsed as EditorialStore).posts.map(post=>{
+   // Revocation on load is safer than hiding all drafts when an old review is stale.
+   if(post.research&&(post.approvals?.content||post.approvals?.design)&&!editorialSourcesPass(post)){
+    return {...post,approvals:{...post.approvals,content:false,design:false,
+     designApproved:false,designApprovedAt:null,contentHashAtDesignApproval:'',
+     textApproved:false,textHashAtApproval:'',checklist:emptyChecklist()}};
+   }
    // Check saved manual approval before importing text approvals from the chat.
    if(post.kind==='carousel'&&post.approvals?.design&&post.approvals?.contentHashAtApproval&&
       post.approvals.contentHashAtApproval!==editorialContentHash(post)){
@@ -546,4 +768,10 @@ export function loadStoryNotes(storage:Pick<Storage,'getItem'>):StoryNote[]{
 export function saveStoryNotes(storage:Pick<Storage,'setItem'>,notes:StoryNote[]){
  if(notes.length>250)throw Error('Story notes limit reached');
  storage.setItem(STORY_KEY,JSON.stringify(notes));
+}
+
+/** A reusable author-selected editorial art direction; never changes wording or evidence. */
+export function applyCreamEditorial(post:EditorialPost,now=new Date().toISOString()):EditorialPost{
+ if(post.kind!=='carousel'||post.id==='jaws-old-money-editorial-v1')throw Error('Этот стиль доступен для обычных каруселей');
+ return reviseEditorialPost(post,{preset:'cream',fontPreset:'literata-golos',compositionPreset:'cream-editorial-v1'},now);
 }
