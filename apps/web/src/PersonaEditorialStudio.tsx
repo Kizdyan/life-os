@@ -152,9 +152,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   if(aboutMeBusy.current)return;aboutMeBusy.current=true;setBusy(true);setError('');
   try{
    const id='about-me-'+crypto.randomUUID(),r=await importAboutMeDraft(id,setAboutMeStatus);
+   if(!mounted.current)return;
    onCreate(r.post);onSelect(id);setArchiveRefresh(n=>n+1);
    setAboutMeStatus('Использовано оценок: '+r.scoresReused+'. Новый черновик; отсутствуют категории: '+(r.missingCategories.join(', ')||'нет')+'. Ошибок импорта: '+r.errors.length+'.');
-  }catch(e){setError(e instanceof Error?e.message:String(e));setAboutMeStatus('Черновик не создан; исходные материалы сохранены.')}
+  }catch(e){if(mounted.current){setError(e instanceof Error?e.message:String(e));setAboutMeStatus('Черновик не создан; исходные материалы сохранены.')}}
   finally{aboutMeBusy.current=false;setBusy(false)}
  }
 
