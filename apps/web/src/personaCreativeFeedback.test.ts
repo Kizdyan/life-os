@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createJawsBrandTrial} from './personaJawsBrandTrial';
-import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,applyCreativeModelPatch} from './personaCreativeFeedback';
+import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,applyCreativeModelPatch,mergeCreativeFeedback,validateCreativeFeedback} from './personaCreativeFeedback';
 describe('creative feedback',()=>{
  it('only replaces requested heading, keeps other slides and does not grant approval',()=>{
   const p=createJawsBrandTrial(),s=p.slides[1];
@@ -34,5 +34,17 @@ describe('local model creative patches',()=>{
  it('rejects arbitrary actions and invalid visual tokens',()=>{
   const p=createJawsBrandTrial();
   for(const patch of [{publish:true},{font:'unknown'},{text:'Persona'}])expect(()=>applyCreativeModelPatch(p,p.slides[0].id,patch)).toThrow();
+ });
+});
+
+describe('creative feedback restore',()=>{
+ it('preserves distinct records and deduplicates exact copies',()=>{
+  const p=createJawsBrandTrial();
+  const a=prepareCreativeFeedback(p,p.slides[0].id,'Сделай темнее').record;
+  const b=prepareCreativeFeedback(p,p.slides[1].id,'Увеличь рисунок').record;
+  expect(mergeCreativeFeedback([a],[a,b])).toEqual([a,b]);
+  expect(mergeCreativeFeedback([a],[])).toEqual([a]);
+  expect(()=>mergeCreativeFeedback([a],[{...a,comment:'Иное замечание'}])).toThrow();
+  expect(()=>validateCreativeFeedback([{...a,revision:0}])).toThrow();
  });
 });
