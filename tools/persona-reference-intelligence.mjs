@@ -81,14 +81,14 @@ export async function indexReferences({cache,model,limit=100,describe=describeRe
   const existing=new Map(rows.map(r=>[[r.assetSha256,r.timeSec,r.frameSha256,r.model].join(':'),r]));
   let reused=0,analyzed=0,remaining=0;const errors=[];
   for(const f of frames){
+   if(analyzed+errors.length>=limit){remaining++;continue}
    try{
     const bytes=await safeThumbnail(dir,f.thumbnail),frameSha256=hash(bytes),key=[f.assetSha256,f.timeSec,frameSha256,model].join(':');
     if(existing.has(key)){reused++;continue}
-    if(analyzed+errors.length>=limit){remaining++;continue}
     if(rows.length>=15000)throw Error('Index capacity reached; archive before further analysis');
     const result=validateFrameFeatures(await describe(bytes,model));
     const row=validateRow({...f,...result,version:VERSION,frameSha256,model,provenance:'local_vision_frame',preference:'unconfirmed'});
-    rows.push(row);existing.set(key,row);await atomic(join(dir,fileName),index);analyzed++;
+    await atomic(join(dir,fileName),{...index,rows:[...rows,row]});rows.push(row);existing.set(key,row);analyzed++;
    }catch(e){errors.push({assetSha256:f.assetSha256,timeSec:f.timeSec,error:String(e.message).replace(/https?:\/\/\S+/g,'[URL omitted]').slice(0,180)})}
    log('References: analyzed '+analyzed+'; reused '+reused+'; failed '+errors.length+'; remaining '+remaining);
   }
