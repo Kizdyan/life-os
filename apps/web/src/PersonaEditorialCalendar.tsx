@@ -7,10 +7,13 @@ const KEY='lifeos:persona:editorial-calendar:v1';
 function load():Slot[]{try{const raw=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(raw)?raw.filter(x=>typeof x?.slotId==='string'):[]}catch{return []}}
 function todayUTC(){const now=new Date();return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')}
 const names:Record<string,string>={photo:'Фотопост + история',reel:'Reels',carousel:'Карусель'};
-export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(slot:Slot)=>void}){
+export default function PersonaEditorialCalendar({onSelectSlot,occupiedDates=[]}:{onSelectSlot?:(slot:Slot)=>void;occupiedDates?:string[]}){
  const [previous,setPrevious]=useState<Slot[]>(load);
  const [startDate,setStartDate]=useState(todayUTC);
  const [expanded,setExpanded]=useState(false);
+ const [sprintStart,setSprintStart]=useState<string|null>(null);
+ const [saveError,setSaveError]=useState('');
+ const sprintPreview=useMemo(()=>sprintStart?buildPersonaEditorialCalendar({startDate:sprintStart,days:30,sprintStartDate:sprintStart,existing:previous.map(slot=>({...slot,weekIndex:slot.weekIndex??0})),occupiedDates}):null,[sprintStart,previous,occupiedDates]);
  const plan=useMemo(()=>buildPersonaEditorialCalendar({startDate,days:90,existing:previous.map(slot=>({...slot,weekIndex:slot.weekIndex??0}))}),[startDate,previous]);
  const upcoming=(plan.slots as Slot[]).slice(0,expanded?plan.slots.length:15);
  const [editing,setEditing]=useState<string|null>(null);
@@ -18,12 +21,20 @@ export default function PersonaEditorialCalendar({onSelectSlot}:{onSelectSlot?:(
  const [briefSlotId,setBriefSlotId]=useState<string|null>(null);
  const briefSlot=plan.slots.find(s=>s.slotId===briefSlotId)||null;
  const brief=useMemo(()=>{if(!briefSlot)return null;let pipeline=startPersonaProductionPipeline({idea:{id:briefSlot.slotId,title:briefSlot.notes||briefSlot.purpose,angle:briefSlot.notes||briefSlot.purpose,format:briefSlot.format as 'reel'|'photo'|'carousel'}});for(let step=0;step<4;step++)pipeline=advancePersonaProductionPipeline(pipeline);return pipeline.materials.productionBrief;},[briefSlot]);
- function persist(slot:Slot){const next=[...previous.filter(s=>s.slotId!==slot.slotId),slot];setPrevious(next);try{localStorage.setItem(KEY,JSON.stringify(next))}catch{}}
+ function persist(slot:Slot){const next=[...previous.filter(s=>s.slotId!==slot.slotId),slot];try{localStorage.setItem(KEY,JSON.stringify(next));setPrevious(next);setSaveError('')}catch{setSaveError('Не удалось сохранить календарь. Прежние данные не изменены.')}}
  function update(slot:Slot,status:string){
   persist({...slot,status,approved:false});
  }
  return <section className="captureCard" aria-label="Редакционный календарь Persona">
   <h3>Контент-план на 90 дней</h3>
+  {saveError&&<p role="alert">{saveError}</p>}
+  <details><summary>30-дневный спринт · предварительный план</summary>
+   <p>Просмотр свободных локальных дат, без изменения расписания и без отправки постов. Цель — запас из 7 проверенных каруселей; пустые слоты не являются готовым контентом.</p>
+   <label>Начало спринта <input type="date" value={sprintStart??''} onChange={e=>setSprintStart(e.target.value||null)}/></label>
+   {sprintPreview&&<div data-testid="persona-daily-sprint-preview"><p>{sprintPreview.sprint?.startDate} — {sprintPreview.sprint?.endDate} · {sprintPreview.slots.filter(s=>s.purpose==='daily-editorial-sprint').length} новых предлагаемых слотов. Внешнее расписание не сверено.</p>
+    {sprintPreview.slots.slice(0,7).map(s=><p key={s.slotId}>{s.date} · {s.contentId?s.notes||s.contentId:s.purpose==='daily-editorial-sprint'?'Карусель: требуется производство':'Сохранённый план'}</p>)}
+   </div>}
+  </details>
   <p>Единый ритм Persona: вторник — Reels, четверг — карусель, суббота — фото. Три публикации в неделю; Stories — дополнительно. Резерв: по два материала каждого формата.</p>
   <label>Начало периода <input type="date" value={startDate} onChange={e=>{if(e.target.value)setStartDate(e.target.value)}}/></label>
   <p><b>Период:</b> {plan.horizon.startDate} — {plan.horizon.endDate} · <b>Всего слотов, включая вручную сохранённые даты:</b> {plan.slots.length} · <b>Отмечено в работе или на проверке:</b> {previous.filter(s=>s.status==='in_production'||s.status==='needs_review').length}</p>
