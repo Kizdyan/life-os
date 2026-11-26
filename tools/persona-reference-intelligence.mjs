@@ -87,18 +87,20 @@ export async function indexReferences({cache,model,limit=100,retryFailed=false,d
   for(const f of frames){
    const failKey=[f.assetSha256,f.timeSec,model].join(':');
    const prior=failures.get(failKey);
+   if(prior?.attempts>=2&&!retryFailed){blocked++;continue}
+   let counted=false;
    try{
     const bytes=await safeThumbnail(dir,f.thumbnail),frameSha256=hash(bytes),key=[f.assetSha256,f.timeSec,frameSha256,model].join(':');
     if(existing.has(key)){reused++;continue}
-    if(prior?.attempts>=2&&!retryFailed){blocked++;continue}
     if(attempted>=limit){remaining++;continue}
-    attempted++;
+    attempted++;counted=true;
     if(rows.length>=15000)throw Error('Index capacity reached; archive before further analysis');
     const result=validateFrameFeatures(await describe(bytes,model));
     const row=validateRow({...f,...result,version:VERSION,frameSha256,model,provenance:'local_vision_frame',preference:'unconfirmed'});
     const nextFailures=[...failures.values()].filter(x=>[x.assetSha256,x.timeSec,x.model].join(':')!==failKey);
     await atomic(join(dir,fileName),{...index,rows:[...rows,row],failures:nextFailures});failures.delete(failKey);rows.push(row);existing.set(key,row);analyzed++;
    }catch(e){
+    if(!counted){if(attempted>=limit){remaining++;continue}attempted++}
     const failure={assetSha256:f.assetSha256,timeSec:f.timeSec,model,attempts:Math.min(2,(prior?.attempts??0)+1)};
     failures.set(failKey,failure);await atomic(join(dir,fileName),{...index,rows,failures:[...failures.values()]});
     errors.push({assetSha256:f.assetSha256,timeSec:f.timeSec,error:String(e.message).replace(/https?:\/\/\S+/g,'[URL omitted]').slice(0,180)})
