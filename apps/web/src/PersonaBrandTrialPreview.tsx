@@ -1,8 +1,8 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import type {EditorialPost} from './personaEditorialModel';
 import {renderEditorialSlide} from './personaEditorialMedia';
 
-import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,type CreativeFeedback} from './personaCreativeFeedback';
+import {prepareCreativeFeedback,appendCreativeFeedback,loadCreativeFeedback,requestCreativeModelPatch,markCreativeFeedbackPrepared,type CreativeFeedback} from './personaCreativeFeedback';
 
 export default function PersonaBrandTrialPreview({post,onChange}:{post:EditorialPost;onChange:(post:EditorialPost)=>void}){
  const [selected,setSelected]=useState(post.slides[0]?.id??'');
@@ -10,14 +10,29 @@ export default function PersonaBrandTrialPreview({post,onChange}:{post:Editorial
  const [records,setRecords]=useState<CreativeFeedback[]>([]);
  const [feedbackStatus,setFeedbackStatus]=useState('');
  useEffect(()=>{try{setRecords(loadCreativeFeedback(localStorage).filter(r=>r.postId===post.id))}catch(e){setFeedbackStatus(e instanceof Error?e.message:String(e))}},[post.id]);
- function submitFeedback(){
+ const [feedbackBusy,setFeedbackBusy]=useState(false);
+ const active=useRef(true),latest=useRef(post),inFlight=useRef(false);latest.current=post;
+ useEffect(()=>{active.current=true;return()=>{active.current=false}},[]);
+ async function submitFeedback(){
+  if(inFlight.current)return;
+  inFlight.current=true;setFeedbackBusy(true);
+  const original=post;
   try{
    const result=prepareCreativeFeedback(post,selected,comment);
    setRecords(appendCreativeFeedback(localStorage,result.record).filter(r=>r.postId===post.id));
-   if(result.revised){onChange(result.revised);setFeedbackStatus('Предложенная редакция передана в редактор; проверь новый PNG. Утверждение сброшено.')}
-   else setFeedbackStatus('Замечание сохранено. Автоматическая художественная правка этого типа пока не подключена.');
    setComment('');
-  }catch(e){setFeedbackStatus(e instanceof Error?e.message:String(e))}
+   if(result.revised){onChange(result.revised);setFeedbackStatus('Новый заголовок передан в редактор; проверь PNG.');return}
+   setFeedbackStatus('Локальная модель разбирает замечание…');
+   const model=await requestCreativeModelPatch(original,selected,result.record.comment);
+   if(!active.current)return;
+   if(latest.current.id!==original.id||latest.current.revision!==original.revision){setFeedbackStatus('Проект изменился. Правка сохранена в журнале, но не применена к другой редакции.');return}
+   if(model.revised){
+    setRecords(markCreativeFeedbackPrepared(localStorage,result.record.id).filter(r=>r.postId===post.id));
+    onChange(model.revised);
+    setFeedbackStatus(model.message+'. Проверь новый PNG; утверждение сброшено.');
+   }else setFeedbackStatus(model.message+'. Замечание сохранено, слайд не изменён.');
+  }catch(e){if(active.current)setFeedbackStatus((e instanceof Error?e.message:String(e))+'. Если замечание записано, оно остаётся в журнале.')}
+  finally{inFlight.current=false;if(active.current)setFeedbackBusy(false)}
  }
  const [images,setImages]=useState<string[]>([]);
  const [error,setError]=useState('');
@@ -49,8 +64,8 @@ export default function PersonaBrandTrialPreview({post,onChange}:{post:Editorial
     {post.slides.map((s,i)=><option key={s.id} value={s.id}>{i+1}</option>)}
    </select></label>
    <label>Что изменить<textarea maxLength={1500} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Например: Заголовок: Как музыка предупреждает об опасности"/></label>
-   <button type="button" disabled={!comment.trim()} onClick={submitFeedback}>Передать правку Persona</button>
-   <p>Пока автоматически поддерживается явная замена заголовка; другие замечания сохраняются без имитации исполнения.</p>
+   <button type="button" disabled={feedbackBusy||!comment.trim()} onClick={()=>void submitFeedback()}>{feedbackBusy?'Обрабатываю…':'Передать правку Persona'}</button>
+   <p>Persona использует локальную модель для текста, выбора из двух гарнитур, светлой/тёмной палитры, позиции и размера иллюстрации. Новые изображения и произвольные шрифты пока не поддерживаются. Неподдержанные замечания остаются в журнале.</p>
    {feedbackStatus&&<p role="status">{feedbackStatus}</p>}
    {records.length>0&&<details><summary>История замечаний ({records.length})</summary>{records.slice().reverse().map(r=><p key={r.id}>{r.slideId} · редакция {r.revision}: {r.comment} · {r.status==='pending'?'ожидает исполнения':'редакция подготовлена'}</p>)}</details>}
   </fieldset>
