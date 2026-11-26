@@ -34,3 +34,18 @@ it('creates a single cautious experiment only from age-matched same-format obser
  expect(editorialExperiment([{...row,saves:null}],'carousel').comparablePosts).toBe(0);
  expect(editorialExperiment([{...row,observedAt:'2026-01-05T10:00:00+03:00'}],'carousel').comparablePosts).toBe(0);
 });
+
+it('retains the comparable historical checkpoint after later lifetime readings',()=>{
+ const checkpoint={...row,observedAt:'2026-01-03T10:00:00+03:00',reach:80,saves:2};
+ const later={...row,observedAt:'2026-01-10T10:00:00+03:00',reach:200,saves:10};
+ const brief=editorialExperiment([row,checkpoint,later],'carousel');
+ expect(brief.comparablePosts).toBe(1);expect(brief.evidence[0].observedAt).toBe(checkpoint.observedAt);expect(brief.evidence[0].saves).toBe(2);
+});
+it('validates TikTok native permalinks without mixing platform cohorts or inventing missing saves',()=>{
+ const t:MetricSnapshot={...row,platform:'tiktok',url:'https://www.tiktok.com/@fixture/photo/12345678',saves:null};
+ expect(validatePublicationAnalytics([t])).toEqual([t]);
+ expect(editorialExperiment([row,t],'carousel').observedPosts).toBe(1);
+ expect(editorialExperiment([row,t],'carousel','tiktok').comparablePosts).toBe(0);
+ expect(editorialExperiment([row,{...t,saves:1}],'carousel','tiktok').comparablePosts).toBe(1);
+ expect(()=>validatePublicationAnalytics([{...t,url:row.url}])).toThrow();
+});
