@@ -34,6 +34,7 @@ import PersonaCarouselVisualReview from './PersonaCarouselVisualReview';
 import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
 import {importAboutMeDraft} from './personaAboutMe';
 import PersonaRuntimeStatus from './PersonaRuntimeStatus';
+import {editorialExperiment,loadPublicationAnalytics} from './personaPublicationAnalytics';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -168,6 +169,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [archiveError,setArchiveError]=useState('');
  const [archiveRefresh,setArchiveRefresh]=useState(0);
  const allTopics=proposeTopics(kind,posts.map(p=>p.title));
+ let learning:ReturnType<typeof editorialExperiment>|null=null;
+ try{learning=editorialExperiment(loadPublicationAnalytics(localStorage),post?.kind??kind)}catch{/* damaged history remains untouched */}
  const publishRows=PUBLICATION_CAROUSEL_IDS.map(id=>
   posts.find(p=>p.id===id)??applyChatCarouselApproval(publicationCarouselDraft(id)));
  const seedCount=SEED_CAROUSELS.filter(x=>!posts.some(p=>p.id===x.id)).length;
@@ -542,6 +545,12 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    </button>
    <button type="button" data-testid="open-carousel-fridge-hum-v2" disabled={busy} onClick={()=>void openFridgeV2()}>V2 · музыка под видом шума</button>
    <button type="button" data-testid="open-carousel-fridge-hum-v3" disabled={busy} onClick={()=>void openFridgeV3()}>V3 · финальная редакция для просмотра</button>
+   {learning&&<details className="personaEditorialNote" data-testid="persona-editorial-learning"><summary>Редакционное задание на основе статистики</summary>
+    <p>Публикаций этого формата: {learning.observedPosts}. Сопоставимых наблюдений через 24–72 ч: {learning.comparablePosts}. Привязано к материалам: {learning.boundPosts}.</p>
+    <p>{learning.status==='INSUFFICIENT_EVIDENCE'?'Недостаточно сопоставимых данных. ': 'Проверяемая гипотеза, не установленная причина. '}{learning.experiment}</p>
+    {learning.guardrails.map(rule=><p key={rule}>{rule}</p>)}
+    <small>Стратегия, факты и авторское утверждение не изменяются автоматически.</small>
+   </details>}
    <div className="personaEditorialSplit">
     <div>
      <h3>Темы от Persona</h3>
