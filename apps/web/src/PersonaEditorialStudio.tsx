@@ -292,6 +292,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   const pendingKey='lifeos:persona:pending-editorial-run:v1';
   let pending: {runId:string;mode:'discover';history:string[];consent:true;maxCalls:4}|null=null;
   try{const raw=localStorage.getItem(pendingKey);if(raw){pending=JSON.parse(raw);if(!pending||!(/^[a-f0-9-]{36}$/.test(pending.runId))||pending.mode!=='discover'||pending.consent!==true||pending.maxCalls!==4||!Array.isArray(pending.history))throw Error('Повреждён журнал ожидания')}}catch(e){setError(String(e));return}
+  if(retrySame&&!pending){setError('Нет незавершённого запуска для повторной отправки');return}
   if(!pending&&!window.confirm('Разрешить до 4 платных запросов: поиск темы, независимая проверка, при необходимости одна доработка и повторная проверка?'))return;
   if(pending&&retrySame&&!window.confirm('Повторить запрос с тем же ID? Worker вернёт сохранённый результат или потребует сверку. Если запуск ещё не принят, возможно до 4 платных запросов.'))return;
   researchInFlight.current=true;setResearchBusy(true);setError('');
