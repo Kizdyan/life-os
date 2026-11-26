@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {personaWorkerUrl} from './personaWorkerUrl';
 import type {EditorialPost} from './personaEditorialModel';
 import {improveCarouselDraft,type ImprovementAttempt} from './personaCarouselSelfImprove';
 import {isLocalBrandTrialSlide} from './personaJawsBrandTrial';
@@ -31,9 +32,25 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
   return()=>{alive=false;urls.forEach(u=>URL.revokeObjectURL(u))};
  },[post,candidate,attempts]);
  const active=useRef<AbortController|null>(null);
+ const [indexBusy,setIndexBusy]=useState(false),[indexMessage,setIndexMessage]=useState('');
+ const indexLock=useRef(false);
+ async function indexNext(){
+  if(indexLock.current||active.current)return;
+  indexLock.current=true;setIndexBusy(true);setIndexMessage('Анализ одного нового кадра…');
+  try{
+   const h=await fetch(personaWorkerUrl+'/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+   if(!h.ok)throw Error('Worker недоступен');
+   const health=await h.json();if(health.service!=='persona-media-worker'||typeof health.token!=='string')throw Error('Worker не подтверждён');
+   const r=await fetch(personaWorkerUrl+'/reference-intelligence/index',{method:'POST',headers:{'Content-Type':'application/json','X-Persona-Worker-Token':health.token},body:JSON.stringify({limit:1}),signal:AbortSignal.timeout(210000)});
+   const data=await r.json();
+   if(!r.ok)throw Error(typeof data.error==='string'?data.error:'Ошибка индекса');
+   setIndexMessage('Новых кадров: '+data.analyzed+'; повторно использовано: '+data.reused+'; осталось: '+data.remaining+'; ошибок: '+data.errors.length+'.');
+  }catch(e){setIndexMessage(e instanceof Error?e.message:String(e))}
+  finally{indexLock.current=false;setIndexBusy(false)}
+ }
  useEffect(()=>()=>{active.current?.abort();active.current=null},[]);
  async function run(improve=false){
-  if(active.current)return;
+  if(active.current||indexLock.current)return;
   const controller=new AbortController();active.current=controller;
   setRows([]);setError('');setCompleted(false);setBusy(true);setCandidate(null);setAttempts([]);setRemaining([]);
   try{
@@ -49,9 +66,11 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
  const revisionNeeded=rows.some(r=>r.status==='REVISION_SUGGESTED');
  return <section aria-label="Визуальная экспертиза готовых слайдов" data-testid="persona-carousel-visual-review">
   <h4>Визуальный критик Persona</h4>
-  <p>Локальная модель оценивает реальные PNG текущей редакции. Это рекомендации, не утверждение автора. Проверка не сравнивает с личным банком референсов и не проверяет факты.</p>
-  <button type="button" disabled={busy} onClick={()=>void run()}>{busy?'Проверяю слайды…':'Проверить оформление'}</button>
-  {canImprove&&<button type="button" disabled={busy} onClick={()=>void run(true)}>Проверить и улучшить автоматически (до 3 попыток)</button>}
+  <p>Локальная модель оценивает реальные PNG текущей редакции. Это рекомендации, не утверждение автора. Если настроен локальный банк, модель получает до двух релевантных кадров. Это не утверждённые предпочтения и не фактчекинг.</p>
+  <button type="button" disabled={busy||indexBusy} onClick={()=>void indexNext()}>Проанализировать следующий кадр банка</button>
+  {indexMessage&&<p role="status">{indexMessage}</p>}
+  <button type="button" disabled={busy||indexBusy} onClick={()=>void run()}>{busy?'Проверяю слайды…':'Проверить оформление'}</button>
+  {canImprove&&<button type="button" disabled={busy||indexBusy} onClick={()=>void run(true)}>Проверить и улучшить автоматически (до 3 попыток)</button>}
   {busy&&<button type="button" onClick={()=>active.current?.abort()}>Остановить получение результатов</button>}
   <p role="status">Проверено {rows.length} из {post.slides.length}{completed?(revisionNeeded?' · Предложены правки':' · Требуется авторская оценка'):''}</p>
   {error&&<p role="alert">{error}</p>}
@@ -67,6 +86,7 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
   {rows.map(r=><details key={r.sha256+'-'+r.index} open={r.status==='REVISION_SUGGESTED'}>
    <summary>Слайд {r.index} · {r.status==='REVISION_SUGGESTED'?'Предложены правки':'Рекомендации'} · {r.model}</summary>
    <p>{r.summary}</p>
+   <p>Кадров референсов: {r.referenceEvidence?.length??0}. {(r.referenceEvidence??[]).map(e=>e.assetSha256.slice(0,12)+' @ '+e.timeSec+' с').join(' · ')}</p>
    <ul>{Object.entries(r.scores).map(([k,v])=><li key={k}>{labels[k as VisualDimension]}: {v}/5</li>)}</ul>
    {r.issues.map((i,n)=><p key={n}><strong>{labels[i.dimension]}:</strong> {i.observation} — {i.change}</p>)}
   </details>)}
