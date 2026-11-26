@@ -37,3 +37,32 @@ test('no silent retries for missing critic, budget, stale receipt or provider fa
  const unchanged=await runEditorialPipeline({request,env,research,review:async({input})=>report(input,false)});
  assert.equal(unchanged.status,'NEEDS_REVISION');assert.equal(unchanged.calls,3);
 });
+
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {createPersonaMediaWorker} from './persona-media-worker.mjs';
+test('authenticated Worker replays the same run after process replacement without provider calls',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'persona-editorial-replay-'));
+ let worker,calls=0;
+ const start=async()=>{
+  worker=createPersonaMediaWorker({port:0,outputRoot:root,ollamaModel:'unused',apiEnv:env,
+   carouselResearch:async()=>{calls++;return draft(packet)},carouselIndependentReview:async({input})=>{calls++;return report(input,true)}});
+  const base='http://127.0.0.1:'+await worker.start();
+  return {base,headers:{'Content-Type':'application/json','X-Persona-Worker-Token':worker.token}};
+ };
+ const stop=async()=>{if(worker){const w=worker;worker=null;await new Promise(r=>w.server.close(r))}};
+ try{
+  let {base,headers}=await start();
+  const body={...request,runId:randomUUID()};
+  const post=()=>fetch(base+'/carousel-editorial-pipeline',{method:'POST',headers,body:JSON.stringify(body)});
+  const first=await post();assert.equal(first.status,200);
+  const result=await first.json();assert.equal(result.status,'AUTHOR_REVIEW_REQUIRED');assert.equal(calls,2);
+  await stop();({base,headers}=await start());
+  const read=await fetch(base+'/carousel-editorial-pipeline/'+body.runId,{headers});
+  assert.equal(read.status,200);assert.deepEqual(await read.json(),result);
+  const repeated=await post();assert.equal(repeated.status,200);assert.deepEqual(await repeated.json(),result);assert.equal(calls,2);
+  const bad=await fetch(base+'/carousel-editorial-pipeline/'+body.runId);assert.equal(bad.status,401);
+ }finally{await stop();await rm(root,{recursive:true,force:true})}
+});
