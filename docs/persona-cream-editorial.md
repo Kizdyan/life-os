@@ -1,0 +1,9 @@
+# Cream Editorial v1 — reusable art direction
+
+The author liked the new cream-paper cinematic magazine references shown in chat on 26 November. They are aesthetic references, not Persona-generated production evidence or approval of their copy.
+
+The new optional cream-editorial-v1 composition uses deterministic 1080×1350 Canvas output: warm textured paper, espresso typography, muted olive rule, large Literata headline, Golos explanatory text, separate photograph window with varying height, no page numbering (existing author preference). Fonts are existing local bundled fonts, not exact matches to raster-generated typography. Images must resolve from existing archive or validated background provenance. Missing images block rendering; no invented photograph, fake archive credit or text rasterized by a generative model. Text hierarchy retains existing wording; long copy fails rather than being clipped. This is a first layout family, not a fully equivalent reproduction of the generated references. Image selection/cropping, multiple distinct compositions and critic integration require real artistic review.
+
+In Editorial Desk choose Apply Cream Editorial. Existing draft copy and sources are preserved; design approval is invalidated. After actual PNG review and explicit author design approval, Remember design stores the composition in the existing backed-up Creative Memory, and fresh unapproved ordinary carousels can inherit it. Old drafts and the Jaws special trial are not rewritten. The existing approved style memory is not automatically overwritten by this change. No external inference or publishing action.
+
+Acceptance: render real source-backed slides with Russian typography, compare side by side with the reference, check readability on phone, crop suitability, no numbers, text completeness and source correctness. Confirm the style is remembered and inherited by a different new topic. CI tests alone do not establish artistic equivalence.
