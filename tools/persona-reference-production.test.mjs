@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {buildReferenceProductionGuide} from './persona-reference-production.mjs';
-const record=(n,medianShotSec=2.1)=>({assetSha256:n.repeat(64),evidenceSha256:'e'.repeat(64),preference:'unconfirmed',description:'кинематографическая история театр свет',technical:{durationSec:20},montage:{status:'HEURISTIC',medianShotSec,candidateCuts:[1,4,7]},color:{measurement:{luma:{median:100}}}});
+import {buildReferenceProductionGuide,compareReferenceColor} from './persona-reference-production.mjs';
+const record=(n,medianShotSec=2.1)=>({assetSha256:n.repeat(64),evidenceSha256:'e'.repeat(64),preference:'unconfirmed',description:'кинематографическая история театр свет',technical:{durationSec:20,colorSpace:'bt709',transfer:'bt709',colorRange:'tv'},montage:{status:'HEURISTIC',medianShotSec,candidateCuts:[1,4,7]},color:{status:'measured',measurement:{luma:{median:100}}}});
 test('reference pacing is bounded, relevant and requires distinct sources',()=>{
  const records=[record('a'),record('b',2.5),{...record('c'),description:'другая тематика'}];
  const guide=buildReferenceProductionGuide({format:'cinematic',query:'театр',records});
@@ -10,4 +10,11 @@ test('reference pacing is bounded, relevant and requires distinct sources',()=>{
  for(const format of ['auto','acting','dialogue','music','explainer','voiceover'])assert.equal(buildReferenceProductionGuide({format,query:'театр',records}).status,'ABSTAIN');
  assert.equal(buildReferenceProductionGuide({format:'cinematic',query:'театр',records:[record('a'),record('a')]}).status,'ABSTAIN');
  assert.equal(buildReferenceProductionGuide({format:'cinematic',query:'неизвестный',records}).status,'ABSTAIN');
+});
+
+test('color comparison is evidence only and rejects unknown or HDR color spaces',()=>{
+ const guide=buildReferenceProductionGuide({format:'cinematic',query:'театр',records:[record('a'),record('b')]});
+ const quality={video:{sha256:'a'.repeat(64),colorSpace:'bt709',transfer:'bt709',colorRange:'tv'},findings:[{id:'visual_metrics',status:'measured',measurement:{luma:{median:112}}}]};
+ const r=compareReferenceColor(guide,quality);assert.equal(r.status,'MEASURED_DIFFERENCE_ONLY');assert.equal(r.delta,12);assert.equal(r.colorPresetChanged,false);
+ assert.equal(compareReferenceColor(guide,{...quality,video:{...quality.video,transfer:'smpte2084'}}).status,'NOT_COMPARABLE');
 });
