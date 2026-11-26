@@ -34,6 +34,7 @@ import {createPersonaQuickRenderService,quickRenderRoot} from './persona-quick-r
 import {seedCarousels} from './seed_carousels.mjs';
 import {ProductionJob} from './persona_orchestrator.mjs';
 import {generateCarouselBackground,carouselBackgroundStatus} from './persona-carousel-backgrounds.mjs';
+import {localCreativeRevision} from './persona-creative-revision.mjs';
 
 const here=resolve(fileURLToPath(new URL('.',import.meta.url)));
 const host='127.0.0.1';
@@ -313,6 +314,13 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
    if(await quickRender.handle(req,res,url))return;
    if(req.method==='GET'&&url.pathname==='/carousel-background/status'){
     respond(res,200,carouselBackgroundStatus(config.apiEnv??process.env));return;
+   }
+   if(req.method==='POST'&&url.pathname==='/carousel-creative-revision'){
+    const body=await json(req,10000);
+    if(ideationBusy||directorPending||activeExport||[...sessions.values()].some(j=>j.state==='running'))fail('Local AI is busy');
+    ideationBusy=true;
+    try{respond(res,200,await (config.creativeRevision??localCreativeRevision)({request:body,model:config.ollamaModel}));}
+    finally{ideationBusy=false}return;
    }
    if(req.method==='POST'&&url.pathname==='/carousel-background'){
     const request=await json(req,4096);
