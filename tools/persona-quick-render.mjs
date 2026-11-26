@@ -62,6 +62,7 @@ export function continuityEditPlan(videos,format){
 
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {loadReferenceProductionGuide,compareReferenceColor} from './persona-reference-production.mjs';
+import {selectLocalGrade} from './persona-grade-selection.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
@@ -238,7 +239,7 @@ export function createPersonaQuickRenderService(config={}){
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
   fullReady:job.fullRender?.status==='COMPLETED',finalQuality:job.finalQuality??null,
   moments:job.moments??[],referenceGuide:job.referenceGuide??null,
-  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
+  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,gradeDecision:job.gradeDecision??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
   contentType:job.contentType??'video',videoFormat:job.videoFormat??'auto',carouselAspect:job.carouselAspect??'4:5',
   carouselFiles:job.carouselFiles??[],exportStatus:job.exportStatus??null,
@@ -679,6 +680,21 @@ export function createPersonaQuickRenderService(config={}){
     }
     }
    }
+   let gradeDecision={version:1,status:'NOT_RUN',reason:'Local grade comparison disabled, manual choice or Fast Draft',publicationApproved:false};
+   if(job.autoStyle&&!job.fastDraft&&env.PERSONA_LOCAL_GRADE_COMPARE==='1'&&QUICK_COLORS.has(job.appearance.colorPreset)){
+    try{
+     job.stage='Локальный колорист: сравнение обработанных кадров';await save(job);
+     await verifyUploadedFiles(input,job.files);
+     const makeSample=(choice,fraction)=>({fileIndex:choice.fileIndex,atSec:choice.startSec+choice.durationSec*fraction,sourceSha256:vids[choice.fileIndex].sha256});
+     const first=makeSample(plan.choices[0],.25),last=makeSample(plan.choices.at(-1),.75);
+     gradeDecision=await selectLocalGrade({baseline:job.appearance.colorPreset,samples:[first,last],out,topic:job.prompt,model:env.PERSONA_CAROUSEL_VISION_MODEL,
+      renderFrame:async(sample,filter)=>runBounded(mediaBin('ffmpeg',config),['-nostdin','-hide_banner','-loglevel','error','-ss',String(sample.atSec),'-i',join(input,vids[sample.fileIndex].name),'-frames:v','1','-vf',filter,'-q:v','5','-f','image2pipe','-vcodec','mjpeg','pipe:1'],{env,timeoutMs:30000,maxStdout:500000})});
+     await verifyUploadedFiles(input,job.files);
+     if(gradeDecision.status==='ALTERNATIVE_SUGGESTED')job.appearance=quickRenderAppearance({...job.appearance,colorPreset:gradeDecision.selected});
+    }catch(error){gradeDecision={version:1,status:'BASELINE_RETAINED',reason:'Local comparison inconclusive: '+String(error.message||error).slice(0,140),publicationApproved:false}}
+   }
+   await writeFile(join(out,'grade-decision.json'),JSON.stringify(gradeDecision,null,2)+'\n',{flag:'wx'});
+   job.gradeDecision=gradeDecision;
    const appearance=quickRenderAppearance(job.appearance);
    let accentCues=null;
    if(job.textAccents){
@@ -733,7 +749,7 @@ export function createPersonaQuickRenderService(config={}){
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
     appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset},
-    styleDecision:job.styleDecision,referenceGuide,captionDecision:job.captionDecision??null},null,2)+'\n');
+    styleDecision:job.styleDecision,gradeDecision,referenceGuide,captionDecision:job.captionDecision??null},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
@@ -796,7 +812,7 @@ export function createPersonaQuickRenderService(config={}){
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,videoFormat:job.videoFormat??'auto',visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,referenceGuide,referenceColor,
+    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,gradeDecision,referenceGuide,referenceColor,
     textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
