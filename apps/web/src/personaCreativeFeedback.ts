@@ -22,11 +22,28 @@ export function prepareCreativeFeedback(post:EditorialPost,slideId:string,raw:st
  const record:CreativeFeedback={id:globalThis.crypto.randomUUID(),postId:post.id,slideId,revision:post.revision,createdAt:now,comment,decision:'change-request',status:revised?'revision-prepared':'pending'};
  return {record,revised};
 }
-export function loadCreativeFeedback(storage:Pick<Storage,'getItem'>):CreativeFeedback[]{
- const raw=storage.getItem(CREATIVE_FEEDBACK_KEY);if(!raw)return [];
- const data:unknown=JSON.parse(raw);
- if(!Array.isArray(data)||data.some(x=>!x||typeof x.id!=='string'||typeof x.postId!=='string'||typeof x.slideId!=='string'||typeof x.comment!=='string'||!['pending','revision-prepared'].includes(x.status)))throw Error('Журнал замечаний повреждён; существующие данные сохранены');
+export function validateCreativeFeedback(data:unknown):CreativeFeedback[]{
+ if(!Array.isArray(data)||data.length>5000||data.some(x=>!x||typeof x.id!=='string'||!x.id||x.id.length>100||
+  typeof x.postId!=='string'||!x.postId||x.postId.length>75||typeof x.slideId!=='string'||!x.slideId||x.slideId.length>100||
+  typeof x.comment!=='string'||!x.comment.trim()||x.comment.length>1500||!Number.isSafeInteger(x.revision)||x.revision<1||
+  typeof x.createdAt!=='string'||!Number.isFinite(Date.parse(x.createdAt))||x.decision!=='change-request'||
+  !['pending','revision-prepared'].includes(x.status)||Object.keys(x).some(k=>!['id','postId','slideId','revision','createdAt','comment','decision','status'].includes(k)))||
+  new Set(data.map(x=>x.id)).size!==data.length)throw Error('Журнал замечаний повреждён; существующие данные сохранены');
  return data as CreativeFeedback[];
+}
+export function mergeCreativeFeedback(local:CreativeFeedback[],incoming:CreativeFeedback[]):CreativeFeedback[]{
+ const byId=new Map(validateCreativeFeedback(local).map(r=>[r.id,r]));
+ for(const r of validateCreativeFeedback(incoming)){
+  const old=byId.get(r.id);
+  if(old){
+   if((['id','postId','slideId','revision','createdAt','comment','decision','status'] as const).some(k=>old[k]!==r[k]))throw Error('Конфликт записи творческой правки '+r.id);
+  }else byId.set(r.id,r);
+ }
+ return validateCreativeFeedback([...byId.values()]);
+}
+export function loadCreativeFeedback(storage:Pick<Storage,'getItem'>):CreativeFeedback[]{
+ const raw=storage.getItem(CREATIVE_FEEDBACK_KEY);if(raw===null)return [];
+ return validateCreativeFeedback(JSON.parse(raw));
 }
 export function appendCreativeFeedback(storage:Pick<Storage,'getItem'|'setItem'>,record:CreativeFeedback):CreativeFeedback[]{
  const records=loadCreativeFeedback(storage);
