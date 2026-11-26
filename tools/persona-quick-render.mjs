@@ -61,6 +61,7 @@ export function continuityEditPlan(videos,format){
 }
 
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
+import {loadReferenceProductionGuide} from './persona-reference-production.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
@@ -236,7 +237,7 @@ export function createPersonaQuickRenderService(config={}){
   fastDraft:job.fastDraft===true,
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
   fullReady:job.fullRender?.status==='COMPLETED',finalQuality:job.finalQuality??null,
-  moments:job.moments??[],
+  moments:job.moments??[],referenceGuide:job.referenceGuide??null,
   autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
   contentType:job.contentType??'video',videoFormat:job.videoFormat??'auto',carouselAspect:job.carouselAspect??'4:5',
@@ -493,7 +494,10 @@ export function createPersonaQuickRenderService(config={}){
      {env,timeoutMs:15000,maxStdout:10000});}
     catch{await writeFile(lightingPath,JSON.stringify({status:'unavailable',note:'План света не обязателен для монтажа уже снятого видео.'}));}
    }
-   const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256}));
+   const candidateInput=vids.map((f)=>({durationSec:f.media.durationSec,sha256:f.sha256,hasAudio:f.media.hasAudio}));
+   const referenceGuide=await loadReferenceProductionGuide({cache:env.PERSONA_YANDEX_CACHE_DIR,format:job.videoFormat??'auto',query:job.prompt}).catch(error=>({status:'ABSTAIN',reason:'Reference evidence unavailable: '+String(error.message||error).slice(0,140)}));
+   job.referenceGuide=referenceGuide;
+   await writeFile(join(out,'reference-production-guide.json'),JSON.stringify(referenceGuide,null,2)+'\n',{flag:'wx'});
    // In Fast Draft, optional text accents explicitly opt in to a real local
    // Whisper attempt. Previously Fast Draft skipped ASR entirely. Unavailable
    // ASR is never silently interpreted as silence or a license to invent words.
@@ -637,7 +641,8 @@ export function createPersonaQuickRenderService(config={}){
        highlight.startSec<=segment.endSec&&highlight.endSec>=segment.startSec)?4:0}))}));
     let chosen;
     try{chosen=makeSmartEditPlan({prompt:job.prompt,videos:candidateInput,scored:vision.scored,
-     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec});}
+     audio:ranked,visionProvider:vision.provider,visionModel:vision.model,frameIntervalSec:vision.frameIntervalSec,
+     referenceShotSec:referenceGuide.status==='REFERENCE_GUIDANCE'?referenceGuide.shotSec:null});}
     catch(error){
      if(!job.fastDraft)throw error;
      plan=offlineEditPlan(candidateInput);
@@ -728,7 +733,7 @@ export function createPersonaQuickRenderService(config={}){
    if(appearance.stylePack)plan={...plan,stylePack:appearance.stylePack};
    await writeFile(join(out,'edit-plan.json'),JSON.stringify({...plan,provenance,
     appearance:{styleChoice:appearance.styleChoice,colorPreset:appearance.colorPreset,subtitlePreset:appearance.subtitlePreset},
-    styleDecision:job.styleDecision,captionDecision:job.captionDecision??null},null,2)+'\n');
+    styleDecision:job.styleDecision,referenceGuide,captionDecision:job.captionDecision??null},null,2)+'\n');
    await production.transition('EDITING',{reason:'Real provider or explicit test-fixture chose verified intervals'});
    job.stage='Монтаж FFmpeg';await save(job);
    await verifyUploadedFiles(input,job.files);
