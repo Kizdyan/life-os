@@ -118,8 +118,8 @@ export async function generatePersonaCarouselResearch({theme,mode='topic',histor
  const urls=searchUrls(data);
  if(!urls.size)throw Error('В ответе нет поисковых результатов. Исследование заблокировано.');
  const packet=parsePacket(raw,urls);
- if(input.mode==='discover'||revisionRequest)verifyDiscovery(packet,input.history);
- return {provider:'perplexity',status:'UNVERIFIED',model:data.model||model,mode:input.mode,
+ if(input.mode==='discover'||revisionRequest)verifyDiscovery(packet,input.history??[]);
+ return {provider:'perplexity',status:'UNVERIFIED',model:data.model||model,modelVerified:data.model===model,mode:input.mode,
   sourceEvidence:'web_search_results',packet,
   notice:'URL присутствовали в результатах поиска Perplexity. Содержимое статей и факты должны быть проверены человеком.',
   published:false,approved:false};
