@@ -28,6 +28,7 @@ import {proposePersonaIdeas,selectPersonaIdea} from './persona-idea-selection.mj
 import {parseManualScript,validateManualSource} from './persona-manual-script.mjs';
 import {externalIdeaStatus,generateExternalIdeas} from './persona-external-ideas.mjs';
 import {generatePersonaCarouselResearch,normalizeCarouselResearchInput} from './persona-carousel-research.mjs';
+import {independentCritic} from '../packages/core/src/persona-critic-independence.mjs';
 import {reviewPersonaCarousel,normalizeCarouselReviewInput} from './persona-carousel-independent-review.mjs';
 import {commercialPrompt} from './persona-commercial-prompt.mjs';
 import {analyzeMusicMaster,audioMode,musicFormats,renderMusicCandidate} from './persona-music-studio.mjs';
@@ -795,8 +796,8 @@ export function createPersonaMediaWorker(config=parseWorkerArgs(process.argv.sli
     const body=await json(req,140000);
     if(body.consent!==true)fail('Нужно согласие на платную независимую проверку');
     const input=normalizeCarouselReviewInput(body.input),env=config.apiEnv??process.env;
-    if(!env.PERPLEXITY_API_KEY||!env.PERSONA_CAROUSEL_REVIEW_MODEL||env.PERSONA_CAROUSEL_REVIEW_MODEL.trim()===input.researchModel)
-     fail('Нужна отдельная настроенная модель проверки');
+    if(!env.PERPLEXITY_API_KEY||!env.PERSONA_CAROUSEL_REVIEW_MODEL||!independentCritic(input.researchModel,env.PERSONA_CAROUSEL_REVIEW_MODEL).eligible)
+     fail('Нужен критик другого подтверждаемого семейства, не OpenAI');
     const now=Date.now();while(externalCalls.length&&now-externalCalls[0]>3600000)externalCalls.shift();
     if(externalBusy||externalCalls.length>=5)fail('Предел 5 внешних запросов в час или Worker занят');
     externalBusy=true;externalCalls.push(now);
