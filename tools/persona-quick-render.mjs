@@ -63,6 +63,7 @@ export function continuityEditPlan(videos,format){
 import {runSmartVision,makeSmartEditPlan} from './persona-smart-moments.mjs';
 import {loadReferenceProductionGuide,compareReferenceColor} from './persona-reference-production.mjs';
 import {selectLocalGrade} from './persona-grade-selection.mjs';
+import {buildSoundDesign} from './persona-sound-design.mjs';
 import {analyzeWhisperAudio,rankSpeechHighlights} from './persona-smart-audio.mjs';
 import {defaultPersonaStrategy} from '../packages/core/src/persona-strategy.mjs';
 import {burnPersonaSubtitles} from './persona-subtitle-burn.mjs';
@@ -239,7 +240,7 @@ export function createPersonaQuickRenderService(config={}){
   fullRenderStatus:job.fullRender?.status??null,fullRenderError:job.fullRender?.error??null,
   fullReady:job.fullRender?.status==='COMPLETED',finalQuality:job.finalQuality??null,
   moments:job.moments??[],referenceGuide:job.referenceGuide??null,
-  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,gradeDecision:job.gradeDecision??null,
+  autoStyle:job.autoStyle===true,styleDecision:job.styleDecision??null,gradeDecision:job.gradeDecision??null,soundDesign:job.soundDesign??null,
   textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
   contentType:job.contentType??'video',videoFormat:job.videoFormat??'auto',carouselAspect:job.carouselAspect??'4:5',
   carouselFiles:job.carouselFiles??[],exportStatus:job.exportStatus??null,
@@ -759,11 +760,14 @@ export function createPersonaQuickRenderService(config={}){
     preserveOriginalAudio:false,beat:c.order,
    }));
    const music=job.files.find(x=>x.kind==='audio');
+   const soundDesign=music?buildSoundDesign({format:job.videoFormat??'auto',sourceAudio:plan.choices.map(c=>vids[c.fileIndex].media.hasAudio),enabled:env.PERSONA_ADAPTIVE_SOUND==='1',fastDraft:job.fastDraft}):{status:'NO_SOUNDTRACK',publicationApproved:false};
+   job.soundDesign=soundDesign;
+   await writeFile(join(out,'sound-design.json'),JSON.stringify(soundDesign,null,2)+'\n',{flag:'wx'});
    const timeline={version:1,width:job.directFull?1080:720,height:job.directFull?1920:1280,fps:job.fastDraft?24:30,
     ...(job.fastDraft?{renderProfile:'fast-draft'}:job.directFull?{renderProfile:'full-quality'}:{}),visualIdentity:'persona-visual-identity-v1',
     stylePack:plan.stylePack,
     ...(appearance.colorPreset?{visualPreset:appearance.colorPreset}:{}),clips:sources,
-    ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74}}:{})};
+    ...(music?{soundtrack:{path:join(input,music.name),volume:.38,originalVolume:.74,...(soundDesign.status==='ADAPTIVE_MIX_REQUESTED'?{adaptiveMode:soundDesign.mode}: {})}}:{})};
    const timelinePath=join(out,'timeline.json'),draft=join(out,'edited.mp4');
    await writeFile(timelinePath,JSON.stringify(timeline,null,2)+'\n',{flag:'wx'});
    await production.transition('QUALITY_CHECK',{reason:'FFmpeg timeline render and source hash verification'});
@@ -812,7 +816,7 @@ export function createPersonaQuickRenderService(config={}){
     strategy:{status:audit.status,recommendation:audit.recommendation},
     stylePack:plan.stylePack,videoFormat:job.videoFormat??'auto',visualPreset:appearance.colorPreset,
     subtitlePreset:appearance.subtitlePreset,styleChoice:appearance.styleChoice,
-    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,gradeDecision,referenceGuide,referenceColor,
+    autoStyle:job.autoStyle===true,styleDecision:job.styleDecision,gradeDecision,referenceGuide,referenceColor,soundDesign,
     textAccents:job.textAccents===true,captionDecision:job.captionDecision??null,
     visionAttempted:Boolean(provenance.visionAttempted||provenance.kind==='smart-moment-evidence'),
     performance:{renderElapsedMs:Date.now()-startedAt,
