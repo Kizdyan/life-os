@@ -33,6 +33,7 @@ import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
 import PersonaCarouselVisualReview from './PersonaCarouselVisualReview';
 import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
 import {importAboutMeDraft} from './personaAboutMe';
+import PersonaRuntimeStatus from './PersonaRuntimeStatus';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -491,6 +492,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     <button type="button" className="personaEditorialBack" onClick={onClose}>Все темы ↖</button>
    </div>}
   </header>
+  {!post&&!showPublish&&<details><summary>Готовность Persona и локальной библиотеки</summary><PersonaRuntimeStatus/></details>}
   {!post&&!showPublish&&<div><button type="button" disabled={busy} onClick={()=>void prepareAboutMeDraft()}>Подготовить «Обо мне» из локального архива</button><p>Повторный отбор по сохранённым оценкам, без Qwen. Создаётся отдельный черновик.</p></div>}
   {aboutMeStatus&&<p role="status">{aboutMeStatus}</p>}
   {!post&&showPublish?<div className="personaEditorialPublish" data-testid="editorial-publication-package">
