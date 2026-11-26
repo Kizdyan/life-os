@@ -21,7 +21,7 @@ export default function LifeOSContentHub(){
  return <section aria-label="Управление контентом Life OS" data-testid="lifeos-content-hub">
   <h2>Контент · Life OS</h2>
   <p>Здесь расписание, идеи Stories и аналитика. Persona отвечает за производство. Планы и метрики не являются разрешением на публикацию.</p>
-  <PersonaWeeklyContentCalendar videos={projects} editorialPosts={posts} onStartVideo={id=>{location.hash='#persona/project/'+id}} onStartCarousel={openEditorial} onStartPhoto={openEditorial} onImportReels={()=>{location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
+  <PersonaWeeklyContentCalendar videos={projects} editorialPosts={posts} onStartVideo={id=>{location.hash='#persona/from-calendar/video/'+id}} onStartCarousel={openEditorial} onStartPhoto={openEditorial} onImportReels={()=>{location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
   <details><summary>План на 90 дней</summary><PersonaEditorialCalendar/></details>
   <section aria-label="Аналитика публикаций">
    <h3>Результаты публикаций · Metricool</h3>
@@ -39,7 +39,7 @@ export default function LifeOSContentHub(){
    </div>)}
    <label>Импорт JSON наблюдений <textarea value={raw} onChange={e=>setRaw(e.target.value)}/></label>
    <button type="button" disabled={!raw.trim()} onClick={record}>Сохранить статистику</button>
-   <label>Или выбрать JSON-файл <input type="file" accept=".json,application/json" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>2000000)throw Error('Файл слишком большой');setRecords(importPublicationAnalytics(localStorage,JSON.parse(await file.text())));setNotice('Наблюдения сохранены')}catch(error){setNotice(String(error))}e.target.value=''}}/></label>
+   <label>Или выбрать JSON-файл <input type="file" accept=".json,application/json" onChange={async e=>{const input=e.currentTarget,file=input.files?.[0];if(!file)return;try{if(file.size>2000000)throw Error('Файл слишком большой');setRecords(importPublicationAnalytics(localStorage,JSON.parse(await file.text())));setNotice('Наблюдения сохранены')}catch(error){setNotice(String(error))}input.value=''}}/></label>
    {notice&&<p role="status">{notice}</p>}
   </section>
  </section>;
