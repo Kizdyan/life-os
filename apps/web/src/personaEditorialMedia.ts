@@ -1,3 +1,4 @@
+import {independentEditorialGate} from './personaCarouselIndependentReview';
 import {CAROUSEL_BASELINE_ID,CAROUSEL_QUIET_HORROR_ID,editorialArchiveProvenancePass,editorialSourcesPass,validatePost,editorialContentHash,type EditorialPost,type EditorialSlide} from './personaEditorialModel';
 import '@fontsource/playfair-display/400.css';
 import '@fontsource/playfair-display/500.css';
@@ -446,6 +447,7 @@ export async function convertEditorialPhotoToJpeg(blob:Blob):Promise<Blob>{
 /** Default remains the original lossless PNG publication contract. */
 export async function buildEditorialExport(post:EditorialPost,platform:'original'|'tiktok'='original'):Promise<Blob>{
  if(!editorialSourcesPass(post))throw Error('SOURCE_PASS: не все источники исследования подтверждены');
+ if(!independentEditorialGate(post))throw Error('INDEPENDENT_CRITIC_REQUIRED: нужен актуальный положительный вердикт другой семьи моделей');
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
  if(!post.caption.trim())throw Error('Для публикации нужен основной текст поста');
