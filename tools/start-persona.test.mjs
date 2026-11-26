@@ -4,7 +4,7 @@ import {createServer,request} from 'node:http';
 import {mkdtemp,mkdir,writeFile,readFile,symlink,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve,sep} from 'node:path';
-import {createPersonaFrontendHandler} from './start-persona.mjs';
+import {createPersonaFrontendHandler,parseLauncherArgs,existingWorkerCompatible} from './start-persona.mjs';
 
 async function serve(handler){
  const server=createServer((req,res)=>handler(req,res,new URL(req.url,'http://localhost')));
@@ -70,4 +70,12 @@ test('static asset discovery never follows a nested directory symlink or Windows
   assert.ok(resolve(temporary).startsWith(resolve(tmpdir())+sep+'persona-public-assets-'));
   await rm(temporary,{recursive:true,force:true});
  }
+});
+
+test('launcher refuses incompatible previous Worker and supports explicit headless/cache arguments',()=>{
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker'}),false);
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1}),true);
+ assert.deepEqual(parseLauncherArgs(['--no-browser','--cache','cache']),{noBrowser:true,cache:resolve('cache')});
+ assert.throws(()=>parseLauncherArgs(['--cache']));
+ assert.throws(()=>parseLauncherArgs(['--no-browser','--no-browser']));
 });
