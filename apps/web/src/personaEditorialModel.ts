@@ -72,7 +72,7 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
    const design=s.brandTrialStyle?[...base,s.brandTrialStyle]:base;
    return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
   }),...(post.research?[post.research]:[]),...(post.compositionPreset?[post.compositionPreset,
-   ...(post.compositionPreset==='semantic-editorial-v1'?[SEMANTIC_COMPOSITION_VERSION,post.slides.map((_,i)=>semanticEditorialComposition(post,i)),fridgeV3Style.visuals]:post.compositionPreset==='fridge-hum-v3'?[fridgeV3Style.layouts,fridgeV3Style.visuals,'literata-golos-local-v1']:[fridgeV2Style.layouts,fridgeV2Style.visuals])]:[])]));
+   ...(post.compositionPreset==='semantic-editorial-v1'?[SEMANTIC_COMPOSITION_VERSION,post.slides.map((_,i)=>semanticEditorialComposition(post,i)),fridgeV3Style.visuals]:post.compositionPreset==='cream-editorial-v1'?['cream-editorial-render-v1']:post.compositionPreset==='fridge-hum-v3'?[fridgeV3Style.layouts,fridgeV3Style.visuals,'literata-golos-local-v1']:[fridgeV2Style.layouts,fridgeV2Style.visuals])]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
  return 'fnv1a32:'+hash.toString(16).padStart(8,'0');
 }
@@ -199,7 +199,7 @@ export type EditorialResearch={
 export type EditorialPost={version:1;id:string;kind:PostKind;title:string;topic:string;
  goal:string;slides:EditorialSlide[];caption:string;preset:EditorialPreset;
   fontPreset?:'legacy'|'playfair-inter'|'cormorant-inter'|'literata-golos';carouselFormat?:'photo-led'|'mixed';
- compositionPreset?:'fridge-hum-v2'|'fridge-hum-v3'|'semantic-editorial-v1';
+ compositionPreset?:'fridge-hum-v2'|'fridge-hum-v3'|'semantic-editorial-v1'|'cream-editorial-v1';
  approvals:{topic:boolean;content:boolean;design:boolean;
  checklist?:boolean[];checkedAt?:string;checkedBy?:string;contentHashAtApproval?:string;
   textApproved?:boolean;textHashAtApproval?:string;designApproved?:boolean;
@@ -554,7 +554,7 @@ export function validatePost(post:EditorialPost):void{
    new Date(post.scheduledDate+'T12:00:00Z').toISOString().slice(0,10)!==post.scheduledDate))||
   (post.carouselFormat!==undefined&&!['photo-led','mixed'].includes(post.carouselFormat))||
   (post.fontPreset!==undefined&&!['legacy','playfair-inter','cormorant-inter','literata-golos'].includes(post.fontPreset))||
-  (post.compositionPreset!==undefined&&(!['fridge-hum-v2','fridge-hum-v3','semantic-editorial-v1'].includes(post.compositionPreset)||post.fontPreset!==(post.compositionPreset==='fridge-hum-v2'?'cormorant-inter':'literata-golos')||(post.compositionPreset!=='semantic-editorial-v1'&&post.slides?.length!==7)))||
+  (post.compositionPreset!==undefined&&(!['fridge-hum-v2','fridge-hum-v3','semantic-editorial-v1','cream-editorial-v1'].includes(post.compositionPreset)||post.fontPreset!==(post.compositionPreset==='fridge-hum-v2'?'cormorant-inter':'literata-golos')||(!['semantic-editorial-v1','cream-editorial-v1'].includes(post.compositionPreset)&&post.slides?.length!==7)||(post.compositionPreset==='cream-editorial-v1'&&(post.kind!=='carousel'||post.preset!=='cream'))))||
   !['ink','cream','chocolate','filmic','chocolate-graphite'].includes(post.preset)||
   !post.approvals||['topic','content','design'].some(k=>typeof post.approvals[k as keyof typeof post.approvals]!=='boolean')||
   !Number.isInteger(post.revision)||post.revision<1||!Number.isFinite(Date.parse(post.updatedAt))||
@@ -768,4 +768,10 @@ export function loadStoryNotes(storage:Pick<Storage,'getItem'>):StoryNote[]{
 export function saveStoryNotes(storage:Pick<Storage,'setItem'>,notes:StoryNote[]){
  if(notes.length>250)throw Error('Story notes limit reached');
  storage.setItem(STORY_KEY,JSON.stringify(notes));
+}
+
+/** A reusable author-selected editorial art direction; never changes wording or evidence. */
+export function applyCreamEditorial(post:EditorialPost,now=new Date().toISOString()):EditorialPost{
+ if(post.kind!=='carousel'||post.id==='jaws-old-money-editorial-v1')throw Error('Этот стиль доступен для обычных каруселей');
+ return reviseEditorialPost(post,{preset:'cream',fontPreset:'literata-golos',compositionPreset:'cream-editorial-v1'},now);
 }
