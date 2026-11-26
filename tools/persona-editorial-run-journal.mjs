@@ -1,7 +1,7 @@
 /** Durable idempotency for paid editorial cycles. Never replay an ambiguous call.
  * One immutable claim per run ID; completed results replay without provider calls.
  * An interrupted claim requires reconciliation, not automatic resumption. */
-import {mkdir,readFile,writeFile,rename,open,readdir} from 'node:fs/promises';
+import {mkdir,readFile,rename,open,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {normalizeEditorialPipelineRequest} from './persona-carousel-editorial-pipeline.mjs';
@@ -22,7 +22,7 @@ export async function readEditorialRun(root,id){
  if(claim.version!==1||claim.runId!==id||!/^([a-f0-9]{64})$/.test(claim.requestHash)||![2,4].includes(claim.maxCalls))throw Error('Некорректный журнал редакционного запуска');
  const result=await readOptional(join(dir,'result.json'));
  if(result){
-  if(result.runId!==id||result.approved!==false||result.published!==false||result.calls>claim.maxCalls)throw Error('Некорректный результат редакционного запуска');
+  if(result.version!==1||result.runId!==id||result.approved!==false||result.published!==false||!Number.isInteger(result.calls)||result.calls<0||result.calls>claim.maxCalls||!['AUTHOR_REVIEW_REQUIRED','NEEDS_REVISION','BLOCKED'].includes(result.status))throw Error('Некорректный результат редакционного запуска');
   return {claim,result};
  }
  const checkpoints=(await readdir(dir)).filter(n=>/^call-[1-4]-started\.json$/.test(n)).sort();
@@ -44,11 +44,13 @@ export async function claimEditorialRun(root,id,request){
 }
 export async function recordEditorialCall(root,id,call,stage){
  if(!Number.isInteger(call)||call<1||call>4||!['research','revision','independent-review'].includes(stage))throw Error('Некорректный этап редакционного запуска');
+ const existing=await readEditorialRun(root,id);
+ if(!existing||existing.result||call>existing.claim.maxCalls||call!==(existing.checkpoints?.length??0)+1)throw Error('Нарушена последовательность платных запросов');
  await durableWrite(join(directory(root,id),'call-'+call+'-started.json'),{call,stage,startedAt:new Date().toISOString()});
 }
 export async function finishEditorialRun(root,id,result){
  const dir=directory(root,id),existing=await readEditorialRun(root,id);
- if(!existing||existing.result||result.approved!==false||result.published!==false||result.calls>existing.claim.maxCalls)throw Error('Нельзя перезаписать редакционный запуск');
+ if(!existing||existing.result||result.version!==1||result.approved!==false||result.published!==false||!Number.isInteger(result.calls)||result.calls!==(existing.checkpoints?.length??0)||result.calls>existing.claim.maxCalls||!['AUTHOR_REVIEW_REQUIRED','NEEDS_REVISION','BLOCKED'].includes(result.status))throw Error('Нельзя перезаписать редакционный запуск');
  const final={...result,runId:id};
  await durableWrite(join(dir,'result.tmp'),final);
  await rename(join(dir,'result.tmp'),join(dir,'result.json'));
