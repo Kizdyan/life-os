@@ -5,7 +5,8 @@
 import { mkdir, readFile, writeFile, copyFile, open, rename, unlink, realpath } from 'node:fs/promises';
 import { join, resolve, basename, relative, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash } from 'node:crypto';
+import {createReadStream} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { syncLibrary,FOLDERS } from './persona-yandex-library.mjs';
 const OLLAMA='http://127.0.0.1:11434';
@@ -134,10 +135,52 @@ export async function rankPhotos({cache,model,assess=assessPhoto,log=console.log
   if(timer)clearInterval(timer);await heartbeat.catch(()=>{});await lock.close();await unlink(lockPath);
  }
 }
+/** Reselect with no model calls. Keep legacy checkpoint and original shortlist
+ * untouched; output a new, independently identifiable candidate package. */
+export async function reselectPhotos({cache}){
+ const dir=join(cache,'catalogs',FOLDERS[0]),out=join(cache,'about-me');
+ const lockPath=join(out,'photo-review.lock'),lock=await open(lockPath,'wx');
+ try{
+  const raw=await readFile(join(out,'photo-scores.json'));
+  const saved=JSON.parse(raw);
+  if(!Array.isArray(saved.rows)||typeof saved.model!=='string'||!saved.model.trim()||saved.rows.length>5000)throw Error('Unsupported score checkpoint; original preserved');
+  const catalog=JSON.parse(await readFile(join(dir,'persona-assets-v1.json'),'utf8'));
+  if(!Array.isArray(catalog.assets))throw Error('Invalid local catalog');
+  const assets=new Map(catalog.assets.filter(a=>a.kind==='image'&&a.availability==='local').map(a=>[a.sha256,a]));
+  const rows=[],errors=[];
+  for(const r of saved.rows){
+   if(!r||!/^[a-f0-9]{64}$/i.test(r.sha256)||!validScore(r)||!assets.has(r.sha256)){errors.push({sha256:r?.sha256??null,error:'Score has no valid current catalog asset'});continue}
+   try{
+    const sourcePath=await contained(join(cache,'sources',FOLDERS[0]),assets.get(r.sha256).sourcePath);
+    rows.push({sha256:r.sha256,sourcePath,scores:r.scores,reason:r.reason});
+   }catch(e){errors.push({sha256:r.sha256,error:cleanError(e)})}
+  }
+  if(!rows.length)throw Error('No reusable scores; original preserved');
+  const selected=selectPhotos(rows),runId=randomUUID(),shortlist=join(out,'reselection-'+runId);
+  // Verify the selected source bytes, not just the recorded name/path.
+  for(const a of selected){
+   const h=createHash('sha256');for await(const b of createReadStream(a.sourcePath))h.update(b);
+   if(h.digest('hex')!==a.sha256)throw Error('Selected source differs from saved score; sync required');
+  }
+  await mkdir(shortlist);
+  for(const [i,a] of selected.entries()){
+   const name=String(i+1).padStart(2,'0')+'-'+a.category+'-'+basename(a.sourcePath);
+   await copyFile(a.sourcePath,join(shortlist,name));a.shortlistFile=name;
+  }
+  const coverage=photoCoverage(rows,selected);
+  const report={version:1,kind:'persona-about-me-candidate',status:'AUTHOR_REVIEW_REQUIRED',model:saved.model,
+   checkpointSha256:createHash('sha256').update(raw).digest('hex'),scoresReused:rows.length,modelCalls:0,
+   coverage,missingCategories:CRITERIA.filter(k=>coverage[k].selected===0),selected,shortlist,errors,
+   publicationApproved:false,limitations:'Legacy scores are estimates. Category coverage is not verified role evidence or artistic approval.'};
+  await atomicJson(join(shortlist,'selection.json'),report);
+  return report;
+ }finally{await lock.close();await unlink(lockPath)}
+}
 async function main(){
  const [folder,...args]=process.argv.slice(2);
- if(!folder||args.some(x=>x!=='--review-only'))throw Error('Specify private cache and optional --review-only');
+ if(!folder||args.some(x=>!['--review-only','--reselect-only'].includes(x))||args.length>1)throw Error('Specify private cache and optional --review-only');
  const cache=resolve(folder);await mkdir(cache,{recursive:true});
+ if(args.includes('--reselect-only')){console.log(JSON.stringify(await reselectPhotos({cache}),null,2));return}
  let syncStatus='NOT_REQUESTED';
  if(!args.includes('--review-only')){
   const hasFF=['ffmpeg','ffprobe'].every(bin=>spawnSync(bin,['-version'],{stdio:'ignore',windowsHide:true}).status===0);
