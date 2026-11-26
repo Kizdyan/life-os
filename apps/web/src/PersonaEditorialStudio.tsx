@@ -438,10 +438,10 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   }catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
  }
- async function exportReview(){
+ async function exportReview(localVisualReview=false){
   if(!post||busy)return;
   setBusy(true);setError('');
-  try{triggerEditorialDownload(await buildEditorialReviewExport(post,{sourceEvidence:post.id===FRIDGE_HUM_ID?fridgeHumSourceEvidence(post):isFridgeHumV2(post)?fridgeHumV2Evidence(post):post.id===FRIDGE_HUM_V3_ID?fridgeHumV3Evidence(post,localStorage.getItem(fridgeHumFinalSnapshotKey(post))):undefined}),post.id+'-DRAFT.zip')}
+  try{triggerEditorialDownload(await buildEditorialReviewExport(post,{localVisualReview,sourceEvidence:post.id===FRIDGE_HUM_ID?fridgeHumSourceEvidence(post):isFridgeHumV2(post)?fridgeHumV2Evidence(post):post.id===FRIDGE_HUM_V3_ID?fridgeHumV3Evidence(post,localStorage.getItem(fridgeHumFinalSnapshotKey(post))):undefined}),post.id+(localVisualReview?'-LOCAL-REVIEW.zip':'-DRAFT.zip'))}
   catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  async function openFridgeHum(){
@@ -699,6 +699,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
      {batchMessage&&<p role="status">{batchMessage}</p>}
     </div>}
     <button type="button" disabled={busy} onClick={()=>void exportReview()}>Скачать черновик для проверки</button>
+    {post.kind==='carousel'&&post.slides.length>=5&&post.slides.length<=8&&<button type="button" disabled={busy} onClick={()=>void exportReview(true)}>Скачать черновик с проверкой готовых PNG локальной моделью</button>}
+    <p>Локальная проверка использует фактические файлы из ZIP; при недоступности модели сохраняется BLOCKED, а не художественное утверждение.</p>
     {!post.approvals.content&&<>
      <div className="personaEditorialSlides">{post.slides.map((s,i)=><button key={s.id} type="button" aria-pressed={selectedSlide===i} onClick={()=>setSelectedSlide(i)}>Проверить слайд {i+1}</button>)}</div>
      {baselinePreviewUrl?<img data-testid="research-draft-preview" src={baselinePreviewUrl} alt={'Черновой PNG слайда '+(selectedSlide+1)} style={{width:'100%',maxWidth:432,height:'auto'}}/>:<p>{baselinePreviewError||'Готовится PNG…'}</p>}
