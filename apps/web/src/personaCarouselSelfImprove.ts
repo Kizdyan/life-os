@@ -4,6 +4,7 @@ import {reviewRenderedSlide,type VisualOpinion} from './personaCarouselVisualRev
 
 export type ImprovementAttempt={index:number;before:VisualOpinion;after:VisualOpinion|null;accepted:boolean;reason:string};
 export function betterVisualOpinion(before:VisualOpinion,after:VisualOpinion):boolean{
+ if(JSON.stringify(before.referenceEvidence??[])!==JSON.stringify(after.referenceEvidence??[]))return false;
  if(before.model!==after.model||before.index!==after.index||before.sha256===after.sha256)return false;
  const keys=Object.keys(before.scores) as (keyof VisualOpinion['scores'])[];
  if(keys.some(k=>after.scores[k]<before.scores[k]))return false;
