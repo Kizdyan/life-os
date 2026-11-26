@@ -57,3 +57,19 @@ export function publicationLearning(rows:MetricSnapshot[]){
    limitations:'Время запроса не равно времени обновления провайдера. Просмотры не измеряют дочитывание; метрики не доказывают причину результата.'};
  });
 }
+
+/** Select one next experiment, not a ranking or a learned causal claim.
+ * Comparisons across formats and unknown observation ages are excluded. */
+export function editorialExperiment(rows:MetricSnapshot[],format:MetricSnapshot['format']){
+ const observations=publicationLearning(rows).filter(r=>r.latest.format===format);
+ const eligible=observations.filter(r=>r.ageHours!==null&&r.ageHours>=24&&r.ageHours<=72&&
+  r.latest.reach!==null&&r.latest.reach>0&&r.latest.saves!==null&&r.latest.shares!==null);
+ const bound=eligible.filter(r=>r.contentId!==null);
+ const weak=eligible.filter(r=>r.latest.saves===0&&r.latest.shares===0);
+ const status=eligible.length===0?'INSUFFICIENT_EVIDENCE':'EXPERIMENT_ONLY';
+ return {status,format,observedPosts:observations.length,comparablePosts:eligible.length,boundPosts:bound.length,
+  evidence:eligible.map(r=>({url:r.latest.url,contentId:r.contentId,observedAt:r.latest.observedAt,ageHours:r.ageHours,reach:r.latest.reach,saves:r.latest.saves,shares:r.latest.shares})),
+  experiment:weak.length?'Проверить один конкретный повод сохранить или переслать материал: профессиональное наблюдение, которое читатель сможет использовать.':'Зафиксировать исходные результаты и повторить наблюдение в одинаковом временном окне.',
+  guardrails:['Не менять эстетику бренда по одному посту.','Не считать просмотры дочитываниями.','Не менять одновременно тему, обложку, время выхода и формат ради эксперимента.','Не добавлять непроверенные факты или выдуманный личный опыт.'],
+  automaticStrategyChange:false,publicationApproved:false};
+}
