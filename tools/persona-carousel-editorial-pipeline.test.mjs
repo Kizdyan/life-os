@@ -5,7 +5,7 @@ import {carouselReviewFingerprint} from './persona-carousel-independent-review.m
 const env={PERPLEXITY_API_KEY:'test-only',PERSONA_CAROUSEL_RESEARCH_MODEL:'openai/gpt-test',PERSONA_CAROUSEL_REVIEW_MODEL:'anthropic/claude-test'};
 const request={mode:'discover',history:[],maxCalls:4,consent:true};
 const packet={title:'A distinct film story',angle:'An angle',caption:'Initial caption',slides:Array.from({length:5},(_,i)=>({text:'Slide '+i,visualDirection:'Specific image '+i,sources:[{title:'Source',url:'https://example.org/story'}],interpretation:false}))};
-const draft=p=>({provider:'perplexity',model:env.PERSONA_CAROUSEL_RESEARCH_MODEL,status:'UNVERIFIED',packet:p,approved:false,published:false});
+const draft=p=>({provider:'perplexity',model:env.PERSONA_CAROUSEL_RESEARCH_MODEL,status:'UNVERIFIED',modelVerified:true,packet:p,approved:false,published:false});
 const report=(input,pass)=>({provider:'perplexity',model:env.PERSONA_CAROUSEL_REVIEW_MODEL,fingerprint:carouselReviewFingerprint(input),status:pass?'REVIEW_CANDIDATE':'NEEDS_REVISION',editorial:{verdict:pass?'PASS':'REVISE',revision:'Fix the caption'},approved:false,published:false});
 test('passes in two calls, no automatic author approval or publication',async()=>{
  let charged=0;
