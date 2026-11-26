@@ -30,6 +30,7 @@ import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt}
 import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
 import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
+import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
 import './persona-editorial-studio.css';
 
 type Props={posts:EditorialPost[];targetId:string|null;onCreate:(post:EditorialPost)=>void;
@@ -143,6 +144,8 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
  const [showPublish,setShowPublish]=useState(false);
  const [publishError,setPublishError]=useState('');
  const [error,setError]=useState('');
+ const [styleMemoryMessage,setStyleMemoryMessage]=useState('');
+ function rememberStyle(){if(!post)return;try{rememberCreativeStyle(localStorage,post);setStyleMemoryMessage('Палитра и гарнитура сохранены для новых каруселей.')}catch(e){setStyleMemoryMessage(e instanceof Error?e.message:String(e))}}
  const [asset,setAsset]=useState<{name:string;url:string}|null>(null);
  const [archiveChoices,setArchiveChoices]=useState<{key:string;name:string;url:string}[]>([]);
  const [archiveLoading,setArchiveLoading]=useState(false);
@@ -230,7 +233,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
   try{
    const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
    const created=importResearchCarousel(id,researchJson);
-   onCreate(created);onSelect(id);setError('');setResearchJson('');
+   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));onSelect(id);setError('');setResearchJson('');
   }catch(e){setError('Импорт не выполнен: '+(e as Error).message)}
  }
  async function researchWithPerplexity(mode:'topic'|'discover'='topic'){
@@ -261,7 +264,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    const id='editorial-research-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
    const receivedAt=new Date().toISOString();
    const created=importResearchCarousel(id,JSON.stringify(data.packet),receivedAt,{mode,model:data.model,receivedAt});
-   onCreate(created);onSelect(id);setResearchTheme('');
+   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));onSelect(id);setResearchTheme('');
   }catch(e){setError('Исследование не импортировано: '+(e instanceof Error?e.message:'Ошибка запроса'))}
   finally{researchInFlight.current=false;setResearchBusy(false)}
  }
@@ -354,7 +357,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
     ?targetId:'editorial-'+choice.kind+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
    const created=createEditorialFromTopic(id,choice);
    if(id.startsWith('photo-week-'))created.scheduledDate=undefined; // reserved calendar slot
-   onCreate(created);onSelect(id);setError('');
+   onCreate(applyCreativeStyle(created,loadCreativeStyle(localStorage)));onSelect(id);setError('');
   }catch(e){setError((e as Error).message)}
  }
 
@@ -894,6 +897,7 @@ export default function PersonaEditorialStudio({posts,targetId,onCreate,onChange
    </section>}
    {post.approvals.design&&<section aria-label="Шаг 4. Производство и экспорт">
     <h4>4. Производство</h4>
+    {post.kind==='carousel'&&post.id!==JAWS_BRAND_TRIAL_ID&&publicationDesignApproved(post)&&<div><button type="button" onClick={rememberStyle}>Запомнить палитру и шрифты для новых каруселей</button>{styleMemoryMessage&&<p role="status">{styleMemoryMessage}</p>}</div>}
     <p>Тема, подпись и оформление утверждены. Экспорт создаст {post.slides.length} PNG 1080×1350
      {post.kind==='carousel'?' для карусели':' для фото-поста'} и отдельный <code>caption.txt</code> в ZIP.</p>
     <p>Исходные фотографии остаются без изменений. Готовность экспорта не означает публикацию.</p>
