@@ -22,6 +22,8 @@ import {
 
 import {CREATIVE_FEEDBACK_KEY,loadCreativeFeedback,mergeCreativeFeedback,validateCreativeFeedback,type CreativeFeedback} from './personaCreativeFeedback';
 
+import {CREATIVE_STYLE_KEY,loadCreativeStyle,mergeCreativeStyle,validateCreativeStyle,type CreativeStyle} from './personaCreativeMemory';
+
 type StorageAccess=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 type PhotoManifest={key:string;name:string;mime:'image/png'|'image/jpeg';size:number;sha256:string;file:string};
 type BackupManifest={
@@ -29,6 +31,7 @@ type BackupManifest={
  legacy:unknown;editorial:{version:1;posts:EditorialPost[]};stories:StoryNote[];
  referenceLab?:ReferenceLabState;
  creativeFeedback?:CreativeFeedback[];
+ creativeStyle?:CreativeStyle|null;
  photos:PhotoManifest[];
 };
 export type FullBackupStats=PortableStats&{editorial:number;stories:number;photos:number};
@@ -36,7 +39,7 @@ const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
 const MAX_ARCHIVE=512*1024*1024;
 const MAIN_FILE='persona-backup.json';
 const rollbackKeys=['life-os:local-runtime:v1','lifeos:persona:idea-history:v2',
- 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY,CREATIVE_FEEDBACK_KEY];
+ 'lifeos:persona:projects:v1',EDITORIAL_KEY,STORY_KEY,REFERENCE_LAB_KEY,CREATIVE_FEEDBACK_KEY,CREATIVE_STYLE_KEY];
 
 function fail(reason:string):never{throw Error('Резервная копия Persona: '+reason)}
 function assertImage(m:PhotoManifest){
@@ -64,6 +67,7 @@ function parseManifest(bytes:Uint8Array):BackupManifest{
   x.editorial.posts.forEach(validatePost);
   if(x.referenceLab!==undefined)validateReferenceLab(x.referenceLab);
   if(x.creativeFeedback!==undefined)validateCreativeFeedback(x.creativeFeedback);
+  if(x.creativeStyle!==undefined&&x.creativeStyle!==null)validateCreativeStyle(x.creativeStyle);
   const ids=x.editorial.posts.map(p=>p.id);
   if(new Set(ids).size!==ids.length)fail('Повторяющиеся ID редакционных проектов');
   const check=loadStoryNotes({getItem:k=>k===STORY_KEY?JSON.stringify(x.stories):null});
@@ -170,7 +174,7 @@ function snapshot(storage:StorageAccess){
  // Throws rather than silently replacing damaged local data: no partial backup.
  const referenceLab=loadReferenceLab(storage);
  const creativeFeedback=loadCreativeFeedback(storage);
- return {legacy,editorial,stories,referenceLab,creativeFeedback};
+ return {legacy,editorial,stories,referenceLab,creativeFeedback,creativeStyle:loadCreativeStyle(storage)};
 }
 export async function exportFullPersonaBackup(storage:StorageAccess):Promise<Blob>{
  const data=snapshot(storage);
@@ -209,6 +213,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
  const local=snapshot(storage); // raises on corrupt local data, before any writes
  const incomingLab=manifest.referenceLab;
  const mergedFeedback=mergeCreativeFeedback(local.creativeFeedback,manifest.creativeFeedback??[]);
+ const mergedStyle=mergeCreativeStyle(local.creativeStyle,manifest.creativeStyle??null);
  if(incomingLab!==undefined&&local.referenceLab.revision>1&&
   JSON.stringify(local.referenceLab)!==JSON.stringify(incomingLab)){
   fail('Конфликт исследовательской мастерской. Экспортируй текущий ZIP перед импортом другой версии.');
@@ -247,6 +252,7 @@ export async function importFullPersonaBackup(storage:StorageAccess,blob:Blob):P
   if(incomingLab!==undefined&&local.referenceLab.revision===1)
    storage.setItem(REFERENCE_LAB_KEY,JSON.stringify(incomingLab));
   if(manifest.creativeFeedback!==undefined)storage.setItem(CREATIVE_FEEDBACK_KEY,JSON.stringify(mergedFeedback));
+  if(mergedStyle)storage.setItem(CREATIVE_STYLE_KEY,JSON.stringify(mergedStyle));
   return {...base,editorial:addedPosts.length,stories:addedStories.length,photos:created.length};
  }catch(error){
   // Roll back all localStorage keys as well as newly added IndexedDB records.
