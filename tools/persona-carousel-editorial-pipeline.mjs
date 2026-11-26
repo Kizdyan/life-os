@@ -27,7 +27,7 @@ export async function runEditorialPipeline({request,env=process.env,research=gen
    stage=round?'revision':'research';
    const previous=draft;
    const proposal=await call(research,round?{mode:'topic',theme:previous.packet.title,revisionRequest:{packet:previous.packet,review:attempts.at(-1).report}}:input);
-   if(proposal?.provider!=='perplexity'||proposal.status!=='UNVERIFIED'||proposal.approved!==false||proposal.published!==false||proposal.model!==models.creator||!proposal.packet)throw Error('Модель автора или исследовательский результат не подтверждены');
+   if(proposal?.provider!=='perplexity'||proposal.status!=='UNVERIFIED'||proposal.approved!==false||proposal.published!==false||proposal.model!==models.creator||proposal.modelVerified!==true||!proposal.packet)throw Error('Модель автора или исследовательский результат не подтверждены');
    const checked=reviewInput(proposal);
    if(previous&&carouselReviewFingerprint(checked)===carouselReviewFingerprint(reviewInput(previous)))return result('NEEDS_REVISION','Исполнитель не изменил отклонённый текст');
    draft=proposal;
