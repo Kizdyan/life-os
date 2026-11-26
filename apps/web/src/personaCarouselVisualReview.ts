@@ -48,3 +48,11 @@ export async function reviewRenderedCarousel(post:EditorialPost,options:{signal:
  if(post.kind!=='carousel'||post.slides.length<3||post.slides.length>8)throw Error('Нужна карусель из 3–8 слайдов');
  for(const [i] of post.slides.entries())options.onSlide(await reviewRenderedSlide(post,i,options.signal));
 }
+
+/** A partial critic result never counts as a complete review. */
+export function summarizeVisualPackage(receipts:VisualOpinion[],expectedSlides:number,blocked:string|null){
+ if(!Number.isInteger(expectedSlides)||expectedSlides<3||expectedSlides>8||receipts.length>expectedSlides||
+  receipts.some((r,i)=>r.index!==i+1))throw Error('Некорректная последовательность проверки');
+ return {status:blocked||receipts.length!==expectedSlides?'BLOCKED':receipts.some(r=>r.status==='REVISION_SUGGESTED')?'REVISION_SUGGESTED':'AUTHOR_REVIEW_REQUIRED',
+  blocked:blocked??(receipts.length!==expectedSlides?'Проверены не все слайды':null),expectedSlides,receipts,approved:false,published:false};
+}
