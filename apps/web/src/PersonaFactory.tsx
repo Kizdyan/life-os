@@ -539,9 +539,21 @@ export default function PersonaFactory(){
   }catch(error){setEditorialError('Не удалось сохранить редакционный проект: '+String((error as Error).message||error))}
  }
  useEffect(()=>{
-  const openFromCalendar=()=>{const match=/^#persona\/editorial\/([-A-Za-z0-9]{3,75})$/.exec(location.hash);if(match)openEditorial(match[1])};
+  const openFromCalendar=()=>{
+   const match=/^#persona\/editorial\/([-A-Za-z0-9]{3,75})$/.exec(location.hash);
+   if(match){if(canLeaveGuide())openEditorial(match[1]);return}
+   const video=/^#persona\/from-calendar\/video\/([-A-Za-z0-9]{3,75})$/.exec(location.hash);
+   if(video){
+    try{
+     const target=loadPersonaProjects(localStorage,newProjectId).projects.find(p=>p.id===video[1]&&p.contentType==='reel');
+     if(!target)throw Error('Проект календаря не найден');
+     if(target.id===activeProjectId)location.hash='#persona/project/'+target.id;
+     else continueProject(target);
+    }catch(e){setEditorialError(String(e))}
+   }
+  };
   openFromCalendar();window.addEventListener('hashchange',openFromCalendar);return()=>window.removeEventListener('hashchange',openFromCalendar);
- },[]);
+ },[activeProjectId]);
  function openEditorial(id:string){
   try{
    const current=loadEditorialStore(localStorage);
