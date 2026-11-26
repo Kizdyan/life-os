@@ -4,6 +4,7 @@ import {loadEditorialStore} from './personaEditorialModel';
 import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import {loadPublicationAnalytics,importPublicationAnalytics,bindPublication,publicationLearning,type MetricSnapshot} from './personaPublicationAnalytics';
+import {editorialReserve,moscowCalendarDate} from './personaEditorialReserve';
 import {PERSONA_ARCHITECT_IMPORT_HASH} from './personaArchitectSeeds';
 
 export default function LifeOSContentHub(){
@@ -12,6 +13,7 @@ export default function LifeOSContentHub(){
  });
  const [binding,setBinding]=useState<Record<string,string>>({});
  const projects=loadPersonaProjects(localStorage,()=>crypto.randomUUID()).projects,posts=loadEditorialStore(localStorage).posts;
+ const reserve=editorialReserve(posts,moscowCalendarDate(new Date()));
  const choices=[...posts.map(p=>({id:p.id,title:p.title})),...projects.map(p=>({id:p.id,title:p.title}))];
  function openEditorial(id:string){location.hash='#persona/editorial/'+id}
  function record(){
@@ -22,6 +24,15 @@ export default function LifeOSContentHub(){
   <h2>Контент · Life OS</h2>
   <p>Здесь расписание, идеи Stories и аналитика. Persona отвечает за производство. Планы и метрики не являются разрешением на публикацию.</p>
   <PersonaWeeklyContentCalendar videos={projects} editorialPosts={posts} onStartVideo={id=>{location.hash='#persona/from-calendar/video/'+id}} onStartCarousel={openEditorial} onStartPhoto={openEditorial} onImportReels={()=>{location.hash=PERSONA_ARCHITECT_IMPORT_HASH}}/>
+  <section aria-label="Недельный производственный резерв" data-testid="persona-editorial-reserve">
+   <h3>Резерв · следующие 7 дней</h3>
+   <p>{reserve.startDate} — {reserve.endDate} · МСК. Дней с назначенным редакционным материалом: {reserve.assignedDays}/7. Дней с пройденными редакционными условиями: {reserve.editorialCandidateDays}/7.</p>
+   <p>Количество проверенных файлов: неизвестно. Музыка и доставка не подтверждаются по редакционным флагам.</p>
+   {reserve.rows.map(row=><div key={row.date} className="captureCard">
+    <b>{row.date}</b>{row.materials.length===0?<p>Свободный редакционный слот; внешнее расписание не сверено.</p>:row.materials.map(item=><div key={item.id}><button type="button" onClick={()=>openEditorial(item.id)}>{item.title}</button><p>{item.blockers.length?item.blockers.join(' · '):'Редакционные условия выполнены; нужны реальные файлы и музыкальное сопровождение'}</p></div>)}
+    {row.status==='MULTIPLE_COMMITMENTS'&&<p>Несколько назначенных материалов: не переносить автоматически.</p>}
+   </div>)}
+  </section>
   <details><summary>План на 90 дней</summary><PersonaEditorialCalendar occupiedDates={posts.flatMap(p=>p.scheduledDate?[p.scheduledDate]:[])}/></details>
   <section aria-label="Аналитика публикаций">
    <h3>Результаты публикаций · Metricool</h3>
