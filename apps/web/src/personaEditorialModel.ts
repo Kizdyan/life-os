@@ -65,7 +65,8 @@ export function editorialContentHash(post:Pick<EditorialPost,'title'|'topic'|'go
  const bytes=new TextEncoder().encode(JSON.stringify([post.title,post.topic,post.goal,
   post.caption,post.preset,post.slides.map(s=>{
    const values=s.photoRef?[s.id,s.text,s.visual,s.photoDirection,s.photoRef]:[s.id,s.text,s.visual,s.photoDirection];
-   const design=s.background?[...values,s.background]:values;
+   const base=s.background?[...values,s.background]:values;
+   const design=s.brandTrialStyle?[...base,s.brandTrialStyle]:base;
    return s.headline!==undefined?[...design,s.kicker,s.headline,s.body,s.highlight??'','cormorant-inter-art-direction-v4']:design;
   }),...(post.research?[post.research]:[])]));
  let hash=0x811c9dc5;for(const b of bytes)hash=Math.imul(hash^b,0x01000193)>>>0;
@@ -173,7 +174,13 @@ export function setEditorialChecklistItem(post:EditorialPost,index:number,checke
 export type PostKind='carousel'|'photo';
 export type SlideVisual='background'|'archive-photo';
 export type EditorialPreset='ink'|'cream'|'chocolate'|'filmic'|'chocolate-graphite';
-export type EditorialSlide={id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
+export type BrandTrialStyle={palette?:'light'|'dark';layout?:'image-top'|'image-middle'|'image-bottom';font?:'classic'|'literary';image?:'normal'|'smaller'|'larger'};
+export function validBrandTrialStyle(v:unknown):v is BrandTrialStyle{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;
+ const allowed:Record<string,string[]>={palette:['light','dark'],layout:['image-top','image-middle','image-bottom'],font:['classic','literary'],image:['normal','smaller','larger']};
+ return Object.entries(v).every(([k,x])=>Object.hasOwn(allowed,k)&&typeof x==='string'&&allowed[k].includes(x));
+}
+export type EditorialSlide={brandTrialStyle?:BrandTrialStyle;id:string;text:string;visual:SlideVisual;photoDirection:string;photoRef?:string;background?:CinematicBackground}&Partial<EditorialHierarchy>;
 /** Imported research is evidence supplied by a person, not automatic fact verification. */
 export type EditorialResearch={
  provider:'manual';
@@ -542,6 +549,7 @@ export function validatePost(post:EditorialPost):void{
   post.slides.some(s=>!s.id||typeof s.text!=='string'||s.text.length>(s.headline!==undefined?600:post.research?260:170)||
    (s.headline!==undefined&&(typeof s.kicker!=='string'||s.kicker.length>60||typeof s.headline!=='string'||!s.headline.trim()||s.headline.length>170||typeof s.body!=='string'||s.body.length>350||
     (s.highlight!==undefined&&(typeof s.highlight!=='string'||s.highlight.length>170))||s.text!==hierarchyCopy(s as EditorialHierarchy)))||
+   (s.brandTrialStyle!==undefined&&(post.id!=='jaws-old-money-editorial-v1'||!validBrandTrialStyle(s.brandTrialStyle)))||
    (s.background!==undefined&&!validCinematicBackground(s.background))||
    (post.approvals.content&&s.visual==='background'&&!s.text.trim())||
    !['background','archive-photo'].includes(s.visual)||typeof s.photoDirection!=='string'||s.photoDirection.length>350||
