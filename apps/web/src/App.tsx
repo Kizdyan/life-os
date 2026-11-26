@@ -5,6 +5,7 @@ import { deleteLocalTask } from './localRuntime';
 import { planLocalDate } from './planner';
 import ErikaSheet from './ErikaSheet';
 import MediaBrainCard from './MediaBrainCard';
+import LifeOSContentHub from './LifeOSContentHub';
 import PersonaFactory from './PersonaFactory';
 import PersonaMusicStudio from './PersonaMusicStudio';
 import DataPortability from './DataPortability';
@@ -212,7 +213,7 @@ export default function App() {
         onClick={() => setMediaOpen(v => !v)}>
         Контент-контур {mediaOpen ? '−' : '+'}
       </button>
-      {mediaOpen && <MediaBrainCard />}
+      {mediaOpen && <><MediaBrainCard/><LifeOSContentHub/></>}
       {error && <p className="error" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">
         {notice} <button onClick={() => setNotice('')}>Закрыть</button>
