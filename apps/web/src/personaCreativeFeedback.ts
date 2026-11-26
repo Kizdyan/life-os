@@ -10,6 +10,7 @@ export type CreativeFeedback={id:string;postId:string;slideId:string;revision:nu
 export function prepareCreativeFeedback(post:EditorialPost,slideId:string,raw:string,now=new Date().toISOString(),scope?:'brand'){
  const comment=raw.trim(),slide=post.slides.find(s=>s.id===slideId);
  if(!slide||!comment||comment.length>1500)throw Error('Выбери слайд и напиши замечание (до 1500 символов)');
+ if(scope==='brand'&&comment.length>600)throw Error('Общее пожелание должно содержать не более 600 символов');
  let revised:EditorialPost|null=null;
  const match=/^(?:заголовок|новый заголовок|замени заголовок на)\s*[:—-]?\s+([^\n]+)$/iu.exec(comment);
  if(match&&slide.headline===undefined){
