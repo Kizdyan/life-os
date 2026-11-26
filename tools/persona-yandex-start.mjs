@@ -65,8 +65,9 @@ export async function rankPhotos({cache,model,assess=assessPhoto,log=console.log
   try{
    const saved=JSON.parse(await readFile(state,'utf8'));
    if(!Array.isArray(saved.rows))throw Error('Invalid previous scores');
-   if(saved.model===model)for(const r of saved.rows)if(/^[a-f0-9]{64}$/i.test(r.sha256)&&validScore(r))previous.set(r.sha256,r);
-  }catch(e){if(e.code!=='ENOENT')throw Error('Existing score checkpoint unreadable; preserved without overwrite')}
+   if(saved.model!==model)throw Error('Checkpoint belongs to a different model; archive it before starting a new evaluation');
+   for(const r of saved.rows)if(/^[a-f0-9]{64}$/i.test(r.sha256)&&validScore(r))previous.set(r.sha256,r);
+  }catch(e){if(e.code!=='ENOENT')throw Error('Existing score checkpoint unreadable or belongs to another model; preserved without overwrite')}
   const runId=randomUUID(),started=Date.now();
   // Retain prior valid rows during resume, including items not yet revisited.
   const checkpoints=new Map(previous);
