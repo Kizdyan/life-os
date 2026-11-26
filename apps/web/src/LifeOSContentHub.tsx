@@ -27,7 +27,7 @@ export default function LifeOSContentHub(){
    <h3>Результаты публикаций · Metricool</h3>
    <p>История наблюдений. Прямое обновление из Metricool пока не подключено к приложению; импортируй полученный JSON. Недоступные метрики остаются неизвестными.</p>
    {publicationLearning(records).map(item=><div key={item.latest.url} className="captureCard">
-    <a href={item.latest.url} target="_blank" rel="noreferrer">{choices.find(c=>c.id===item.contentId)?.title??'Публикация Instagram'}</a>
+    <a href={item.latest.url} target="_blank" rel="noreferrer">{choices.find(c=>c.id===item.contentId)?.title??(item.latest.platform==='tiktok'?'Публикация TikTok':'Публикация Instagram')}</a>
     <p>Наблюдение: {new Date(item.latest.observedAt).toLocaleString('ru-RU')} · {item.history.length} снимков статистики</p>
     <p>Просмотры: {item.latest.views??'—'} · охват: {item.latest.reach??'—'} · лайки: {item.latest.likes??'—'} · комментарии: {item.latest.comments??'—'}</p>
     <p>Сохранения: {item.latest.saves??'—'} · репосты: {item.latest.shares??'—'} · подписки: {item.latest.follows??'—'}</p>
