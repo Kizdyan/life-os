@@ -1,6 +1,7 @@
 /** Life OS owns observation history; Persona consumes evidence, never inferred approval. */
 export const PUBLICATION_ANALYTICS_KEY='lifeos:content:publication-analytics:v1';
-export type MetricSnapshot={version:1;provider:'metricool';platform:'instagram';url:string;publishedAt:string|null;observedAt:string;format:'carousel'|'photo'|'reel';contentId:string|null;views:number|null;reach:number|null;likes:number|null;comments:number|null;saves:number|null;shares:number|null;follows:number|null};
+export type MetricSnapshot={version:1;provider:'metricool';platform:'instagram'|'tiktok';url:string;publishedAt:string|null;observedAt:string;format:'carousel'|'photo'|'reel';contentId:string|null;views:number|null;reach:number|null;likes:number|null;comments:number|null;saves:number|null;shares:number|null;follows:number|null};
+const validPlatformUrl=(platform:MetricSnapshot['platform'],url:unknown)=>typeof url==='string'&&(platform==='instagram'?/^https:\/\/www\.instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{3,80}\/$/.test(url):platform==='tiktok'&&/^https:\/\/www\.tiktok\.com\/@[A-Za-z0-9_.-]{1,80}\/(?:photo|video)\/\d{5,30}\/?$/.test(url));
 const fields=['views','reach','likes','comments','saves','shares','follows'] as const;
 const instant=(s:unknown):s is string=>typeof s==='string'&&/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(s)&&Number.isFinite(Date.parse(s));
 export function validatePublicationAnalytics(value:unknown):MetricSnapshot[]{
@@ -8,7 +9,7 @@ export function validatePublicationAnalytics(value:unknown):MetricSnapshot[]{
  const keys=new Set<string>(),bindings=new Map<string,string>();
  for(const item of value){
   const r=item as MetricSnapshot;
-  if(!r||r.version!==1||r.provider!=='metricool'||r.platform!=='instagram'||typeof r.url!=='string'||!/^https:\/\/www\.instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{3,80}\/$/.test(r.url)||
+  if(!r||r.version!==1||r.provider!=='metricool'||!validPlatformUrl(r.platform,r.url)||
    !instant(r.observedAt)||(r.publishedAt!==null&&(!instant(r.publishedAt)||Date.parse(r.publishedAt)>Date.parse(r.observedAt)))||!['carousel','photo','reel'].includes(r.format)||
    (r.contentId!==null&&(typeof r.contentId!=='string'||!/^[-A-Za-z0-9]{3,75}$/.test(r.contentId)))||
    fields.some(k=>r[k]!==null&&(!Number.isSafeInteger(r[k])||r[k]!<0)))throw Error('Некорректная запись Metricool');
@@ -60,14 +61,20 @@ export function publicationLearning(rows:MetricSnapshot[]){
 
 /** Select one next experiment, not a ranking or a learned causal claim.
  * Comparisons across formats and unknown observation ages are excluded. */
-export function editorialExperiment(rows:MetricSnapshot[],format:MetricSnapshot['format']){
- const observations=publicationLearning(rows).filter(r=>r.latest.format===format);
- const eligible=observations.filter(r=>r.ageHours!==null&&r.ageHours>=24&&r.ageHours<=72&&
-  r.latest.reach!==null&&r.latest.reach>0&&r.latest.saves!==null&&r.latest.shares!==null);
+export function editorialExperiment(rows:MetricSnapshot[],format:MetricSnapshot['format'],platform:MetricSnapshot['platform']='instagram'){
+ const observations=publicationLearning(rows).filter(r=>r.latest.format===format&&r.latest.platform===platform);
+ // Use a fixed historical observation nearest 48h (ties: earlier), not the latest
+ // lifetime count. Later snapshots must not erase an eligible observation.
+ const eligible=observations.flatMap(r=>{
+  const candidates=r.history.filter(s=>s.format===format&&s.platform===platform&&s.publishedAt!==null&&s.reach!==null&&s.reach>0&&s.saves!==null&&s.shares!==null)
+   .map(s=>({snapshot:s,ageHours:(Date.parse(s.observedAt)-Date.parse(s.publishedAt!))/3600000}))
+   .filter(s=>s.ageHours>=24&&s.ageHours<=72).sort((a,b)=>Math.abs(a.ageHours-48)-Math.abs(b.ageHours-48)||a.ageHours-b.ageHours);
+  const pick=candidates[0];return pick?[{...r,latest:pick.snapshot,ageHours:pick.ageHours}]:[];
+ });
  const bound=eligible.filter(r=>r.contentId!==null);
  const weak=eligible.filter(r=>r.latest.saves===0&&r.latest.shares===0);
  const status=eligible.length===0?'INSUFFICIENT_EVIDENCE':'EXPERIMENT_ONLY';
- return {status,format,observedPosts:observations.length,comparablePosts:eligible.length,boundPosts:bound.length,
+ return {status,format,platform,observedPosts:observations.length,comparablePosts:eligible.length,boundPosts:bound.length,
   evidence:eligible.map(r=>({url:r.latest.url,contentId:r.contentId,observedAt:r.latest.observedAt,ageHours:r.ageHours,reach:r.latest.reach,saves:r.latest.saves,shares:r.latest.shares})),
   experiment:weak.length?'Проверить один конкретный повод сохранить или переслать материал: профессиональное наблюдение, которое читатель сможет использовать.':'Зафиксировать исходные результаты и повторить наблюдение в одинаковом временном окне.',
   guardrails:['Не менять эстетику бренда по одному посту.','Не считать просмотры дочитываниями.','Не менять одновременно тему, обложку, время выхода и формат ради эксперимента.','Не добавлять непроверенные факты или выдуманный личный опыт.'],
