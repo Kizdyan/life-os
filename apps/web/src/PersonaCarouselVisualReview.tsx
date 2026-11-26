@@ -19,6 +19,9 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
     for(const [i,s] of post.slides.entries()){
      if(JSON.stringify(s)===JSON.stringify(candidate.slides[i]))continue;
      const a=await renderEditorialSlide(post,s,i),b=await renderEditorialSlide(candidate,candidate.slides[i],i);
+     const receipt=attempts.find(r=>r.index===i+1&&r.accepted);
+     const sha=async(blob:Blob)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(b=>b.toString(16).padStart(2,'0')).join('');
+     if(!receipt?.after||await sha(a)!==receipt.before.sha256||await sha(b)!==receipt.after.sha256)throw Error('PNG изменились после проверки. Повтори экспертизу.');
      if(!alive)return;
      const before=URL.createObjectURL(a),after=URL.createObjectURL(b);urls.push(before,after);next.push({index:i+1,before,after});
     }
@@ -26,7 +29,7 @@ export default function PersonaCarouselVisualReview({post,onChange}:{post:Editor
    }catch(e){if(alive)setError(e instanceof Error?e.message:String(e))}
   })();
   return()=>{alive=false;urls.forEach(u=>URL.revokeObjectURL(u))};
- },[post,candidate]);
+ },[post,candidate,attempts]);
  const active=useRef<AbortController|null>(null);
  useEffect(()=>()=>{active.current?.abort();active.current=null},[]);
  async function run(improve=false){
