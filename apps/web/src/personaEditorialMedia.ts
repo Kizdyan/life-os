@@ -428,7 +428,22 @@ export function zipFileBytes(files:{name:string;data:Uint8Array}[]):Blob{
  const items:BlobPart[]=[...parts,...central,end].map(x=>new Uint8Array(x));
  return new Blob(items,{type:'application/zip'});
 }
-export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
+export async function convertEditorialPhotoToJpeg(blob:Blob):Promise<Blob>{
+ const image=await createImageBitmap(blob);
+ try{
+  if(image.width!==1080||image.height!==1350)throw Error('Неверный размер слайда: нужен 1080×1350');
+  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas недоступен');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,1080,1350);ctx.drawImage(image,0,0);
+  const result=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('JPEG не создан')),'image/jpeg',.95));
+  const signature=new Uint8Array(await result.slice(0,3).arrayBuffer());
+  if(result.type!=='image/jpeg'||signature[0]!==255||signature[1]!==216||signature[2]!==255)throw Error('Фактический формат не JPEG');
+  if(result.size>20*1024*1024)throw Error('JPEG превышает 20 МБ');
+  return result;
+ }finally{image.close()}
+}
+/** Default remains the original lossless PNG publication contract. */
+export async function buildEditorialExport(post:EditorialPost,platform:'original'|'tiktok'='original'):Promise<Blob>{
  if(!editorialSourcesPass(post))throw Error('SOURCE_PASS: не все источники исследования подтверждены');
  if(!post.approvals.topic||!post.approvals.content||!post.approvals.design)
   throw Error('Сначала утверди тему, текст и оформление');
@@ -437,8 +452,9 @@ export async function buildEditorialExport(post:EditorialPost):Promise<Blob>{
   throw Error('Пункт 6: фото не найдено в архиве IndexedDB; экспорт заблокирован');
  const files:{name:string;data:Uint8Array}[]=[];
  for(const [i,slide] of post.slides.entries()){
-  const blob=await renderSlide(post,slide,i);
-  files.push({name:'slide-'+String(i+1).padStart(2,'0')+'.png',
+  const original=await renderSlide(post,slide,i);
+  const blob=platform==='tiktok'?await convertEditorialPhotoToJpeg(original):original;
+  files.push({name:'slide-'+String(i+1).padStart(2,'0')+(platform==='tiktok'?'.jpg':'.png'),
    data:new Uint8Array(await blob.arrayBuffer())});
  }
  // The downloadable caption is paste-ready: no theme/status/approval metadata.
