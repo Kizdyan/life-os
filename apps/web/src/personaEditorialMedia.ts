@@ -19,6 +19,7 @@ import {renderLocalBrandTrial} from './personaBrandTrialRenderer';
 import {renderCreamEditorial} from './personaCreamEditorialRenderer';
 import {photoDeliveryManifest} from './personaDeliveryPolicy';
 import {musicBriefRequest} from './personaMusicBrief';
+import {saveReviewArchive} from './personaReviewArchive';
 
 const DB='persona-editorial-assets-v1';
 const STORE='images';
@@ -493,7 +494,9 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
    authorApprovals:post.approvals,slides:images.length,width:1080,height:1350})},
   {name:'research-sources.json',data:json(post.research??null)},
   {name:'image-provenance.json',data:json(await editorialImageProvenance(post))});
- if(post.research?.discovery?.mode==='discover'||localVisualReview)files.push({name:'render-quality.json',data:json(await inspectEditorialRenderedSlides(images))});
+ const technical=post.research?.discovery?.mode==='discover'||localVisualReview?await inspectEditorialRenderedSlides(images):null;
+ if(technical)files.push({name:'render-quality.json',data:json(technical)});
+ let visualStatus:'BLOCKED'|'REVISION_SUGGESTED'|'AUTHOR_REVIEW_REQUIRED'='BLOCKED';
  if(localVisualReview){
   const receipts:VisualOpinion[]=[];
   let blocked:string|null=null;
@@ -502,10 +505,14 @@ export async function buildEditorialReviewExport(post:EditorialPost,{sourceEvide
    try{receipts.push(await reviewRenderedBlob(post,index,image,signal))}
    catch(error){blocked=String(error instanceof Error?error.message:error).slice(0,400);break}
   }
-  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',...summarizeVisualPackage(receipts,images.length,blocked),independence:'MODEL_FAMILY_NOT_VERIFIED'})});
+  const visual=summarizeVisualPackage(receipts,images.length,blocked);
+  visualStatus=visual.status==='AUTHOR_REVIEW_REQUIRED'?'AUTHOR_REVIEW_REQUIRED':visual.status==='REVISION_SUGGESTED'?'REVISION_SUGGESTED':'BLOCKED';
+  files.push({name:'local-visual-review.json',data:json({version:1,contentId:post.id,revision:post.revision,scope:'exact-exported-png-bytes',...visual,independence:'MODEL_FAMILY_NOT_VERIFIED'})});
  }
  if(sourceEvidence!==undefined)files.push({name:'source-evidence.json',data:json(sourceEvidence)});
- return zipFileBytes(files);
+ const zip=zipFileBytes(files);
+ if(localVisualReview&&technical)await saveReviewArchive(post,zip,{technical:technical.status==='TECHNICAL_CHECKS_PASS'?'TECHNICAL_CHECKS_PASS':'TECHNICAL_REVIEW_REQUIRED',visual:visualStatus});
+ return zip;
 }
 /** Evidence labels describe actual inputs; bundled photographs are never called live generation. */
 export async function editorialImageProvenance(post:EditorialPost){
