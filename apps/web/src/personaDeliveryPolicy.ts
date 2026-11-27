@@ -1,7 +1,7 @@
 /** Publication policy is not a publisher. A notification or a planner flag is not a receipt. */
 export type Destination='instagram'|'tiktok'|'youtube-community'|'vk'|'threads';
 export type MusicEvidence={kind:'native-confirmed';title:string;artist:string}|{kind:'licensed-embedded';title:string;assetSha256:string};
-export type DeliveryEvidence={mode:'automatic'|'manual';status:string;publicUrl?:string;music?:MusicEvidence;manualPublication?:{state:'AUTHOR_REPORTED'|'CONFIRMED';observedAt:string;publicUrl?:string};visibility?:{state:'PUBLIC'|'NOT_VISIBLE'|'UNKNOWN';url:string;observedAt:string;source:'platform-public-status'|'independent-viewer'}};
+export type DeliveryEvidence={mode:'automatic'|'manual';status:string;publicUrl?:string;music?:MusicEvidence;failureProof?:{state:'NOT_CREATED';source:'platform-public-status';observedAt:string};manualPublication?:{state:'AUTHOR_REPORTED'|'CONFIRMED';observedAt:string;publicUrl?:string};visibility?:{state:'PUBLIC'|'NOT_VISIBLE'|'UNKNOWN';url:string;observedAt:string;source:'platform-public-status'|'independent-viewer'}};
 const hosts:Record<Destination,string[]>={instagram:['www.instagram.com','instagram.com'],tiktok:['www.tiktok.com','tiktok.com'], 'youtube-community':['www.youtube.com','youtube.com'],vk:['vk.com','www.vk.com'],threads:['threads.net','www.threads.net','threads.com','www.threads.com']};
 function validPublicUrl(destination:Destination,value:string|undefined):boolean{
  if(!value)return false;
@@ -16,14 +16,16 @@ function validPublicUrl(destination:Destination,value:string|undefined):boolean{
  }catch{return false}
 }
 export function assessDelivery(destination:Destination,evidence:DeliveryEvidence){
- const published=evidence.status==='PUBLISHED'&&validPublicUrl(destination,evidence.publicUrl);
+ const providerReceipt=evidence.status==='PUBLISHED'&&validPublicUrl(destination,evidence.publicUrl);
  const v=evidence.visibility;
- const visibility=published&&v&&v.url===evidence.publicUrl&&Number.isFinite(Date.parse(v.observedAt))&&['platform-public-status','independent-viewer'].includes(v.source)&&['PUBLIC','NOT_VISIBLE'].includes(v.state)?v.state:'UNKNOWN';
+ const visibility=providerReceipt&&v&&v.url===evidence.publicUrl&&Number.isFinite(Date.parse(v.observedAt))&&['platform-public-status','independent-viewer'].includes(v.source)&&['PUBLIC','NOT_VISIBLE'].includes(v.state)?v.state:'UNKNOWN';
  const manualReported=Boolean(evidence.manualPublication);
  const music=evidence.music;
  const musicConfirmed=Boolean(music&&music.title.trim()&&(music.kind==='native-confirmed'?music.artist.trim():/^[a-f0-9]{64}$/.test(music.assetSha256)));
- return {published,publiclyVisible:visibility==='PUBLIC',visibility,musicConfirmed,status:manualReported?'RECONCILIATION_REQUIRED':published?(visibility==='PUBLIC'?'PUBLISHED_CONFIRMED':visibility==='NOT_VISIBLE'?'RECONCILIATION_REQUIRED':'PROVIDER_RECEIPT_ONLY'):evidence.status==='ERROR'?'FAILED':evidence.mode==='manual'?'MANUAL_UNVERIFIED':'AWAITING_RECEIPT',
-  retryAllowed:!manualReported&&evidence.mode==='automatic'&&evidence.status==='ERROR'&&!evidence.publicUrl,
+ const published=!manualReported&&visibility==='PUBLIC';
+ const provenNotCreated=evidence.failureProof?.state==='NOT_CREATED'&&evidence.failureProof.source==='platform-public-status'&&Number.isFinite(Date.parse(evidence.failureProof.observedAt));
+ return {published,providerReceipt,publiclyVisible:published,visibility,musicConfirmed,status:manualReported?'RECONCILIATION_REQUIRED':providerReceipt?(visibility==='PUBLIC'?'PUBLISHED_CONFIRMED':visibility==='NOT_VISIBLE'?'RECONCILIATION_REQUIRED':'PROVIDER_RECEIPT_ONLY'):evidence.status==='ERROR'?'FAILED':evidence.mode==='manual'?'MANUAL_UNVERIFIED':'AWAITING_RECEIPT',
+  retryAllowed:!manualReported&&evidence.mode==='automatic'&&evidence.status==='ERROR'&&!evidence.publicUrl&&provenNotCreated===true&&v?.state!=='NOT_VISIBLE',
   musicRequired:destination==='tiktok'||destination==='instagram',musicGatePassed:destination!=='tiktok'&&destination!=='instagram'||musicConfirmed};
 }
 /** Exported guidance; the recipient must still choose/verify the track in the app. */
