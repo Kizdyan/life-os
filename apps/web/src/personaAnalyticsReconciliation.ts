@@ -35,3 +35,26 @@ export function measurementDue(publishedAt:string,now:string,recorded:number[]):
  const age=(Date.parse(now)-Date.parse(publishedAt))/3600000;
  return Number.isFinite(age)?[24,48,72].filter(h=>age>=h&&!recorded.includes(h)):[];
 }
+
+/** Exact fields requested from the connected Metricool API; keep the column order fixed. */
+export const METRICOOL_POST_FIELDS={
+ instagram:['IGPO06','IGPO28','IGPO14','IGPO13','IGPO08','IGPO27','IGPO15','IGPO29'],
+ tiktok:['TKPO03','TKPO07','TKPO11','TKPO08','TKPO09','TKPO10']
+} as const;
+function parseMetric(raw:unknown):number|null{
+ if(raw==null||raw==='')return null;
+ if(typeof raw!=='number'&&typeof raw!=='string')throw Error('Invalid Metricool metric type');
+ if(typeof raw==='string'&&!/^\d+(?:\.0+)?$/.test(raw.trim()))throw Error('Invalid Metricool metric value');
+ const n=Number(raw);if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid Metricool metric value');return n;
+}
+export function decodeMetricoolPosts(network:Network,response:unknown,observedAt:string):{state:'READY'|'DATA_UNAVAILABLE'|'INVALID_RESPONSE';samples:Sample[]}{
+ if(!Number.isFinite(Date.parse(observedAt))||typeof response!=='object'||response===null||!('rows' in response)||!Array.isArray(response.rows))return {state:'INVALID_RESPONSE',samples:[]};
+ if(!response.rows.length)return {state:'DATA_UNAVAILABLE',samples:[]};
+ const samples:Sample[]=[];
+ try{for(const row of response.rows){
+  if(!Array.isArray(row)||row.length!==METRICOOL_POST_FIELDS[network].length||typeof row[0]!=='string'||!postKey(network,row[0]))throw Error('Invalid Metricool row');
+  const metrics:Metrics={views:parseMetric(row[1]),reach:parseMetric(row[2]),likes:parseMetric(row[3]),comments:parseMetric(row[4]),shares:parseMetric(row[5]),saves:network==='instagram'?parseMetric(row[6]):null,follows:network==='instagram'?parseMetric(row[7]):null};
+  samples.push({network,url:row[0],source:'metricool',observedAt,metrics});
+ }}catch{return {state:'INVALID_RESPONSE',samples:[]}}
+ return {state:'READY',samples};
+}
