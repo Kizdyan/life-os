@@ -437,13 +437,16 @@ export async function convertEditorialPhotoToJpeg(blob:Blob):Promise<Blob>{
  const image=await createImageBitmap(blob);
  try{
   if(image.width!==1080||image.height!==1350)throw Error('Неверный размер слайда: нужен 1080×1350');
-  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
+  const {width,height}=photoDeliveryManifest('tiktok');
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas недоступен');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,1080,1350);ctx.drawImage(image,0,0);
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,width,height);
   const result=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('JPEG не создан')),'image/jpeg',.95));
   const signature=new Uint8Array(await result.slice(0,3).arrayBuffer());
   if(result.type!=='image/jpeg'||signature[0]!==255||signature[1]!==216||signature[2]!==255)throw Error('Фактический формат не JPEG');
   if(result.size>20*1024*1024)throw Error('JPEG превышает 20 МБ');
+  const decoded=await createImageBitmap(result);
+  try{if(decoded.width!==width||decoded.height!==height||Math.max(decoded.width,decoded.height)>1080)throw Error('JPEG не соответствует лимиту доставки TikTok');}finally{decoded.close()}
   return result;
  }finally{image.close()}
 }
