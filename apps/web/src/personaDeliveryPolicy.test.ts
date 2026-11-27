@@ -30,3 +30,16 @@ it('a provider permalink is not independent confirmation of public visibility',(
  expect(assessDelivery('tiktok',{...base,visibility:{...visibility,state:'PUBLIC'}}).publiclyVisible).toBe(true);
  expect(assessDelivery('tiktok',{...base,visibility:{...visibility,state:'PUBLIC',url:'https://www.tiktok.com/@example/photo/456'}}).publiclyVisible).toBe(false);
 });
+
+it('TikTok conservative delivery profile preserves 4:5 under the observed 1080 px limit',()=>{
+ const tik=photoDeliveryManifest('tiktok'),ig=photoDeliveryManifest('instagram');
+ expect([tik.width,tik.height]).toEqual([864,1080]);expect(tik.width*5).toBe(tik.height*4);
+ expect([ig.width,ig.height]).toEqual([1080,1350]);
+});
+it('never retries when the author already reports publishing manually',()=>{
+ const manualPublication={state:'AUTHOR_REPORTED' as const,observedAt:'2026-11-27T16:10:00Z'};
+ for(const status of ['ERROR','PUBLISHING','PUBLISHED']){
+  const x=assessDelivery('tiktok',{mode:'automatic',status,manualPublication});
+  expect(x.retryAllowed).toBe(false);expect(x.status).toBe('RECONCILIATION_REQUIRED');
+ }
+});
