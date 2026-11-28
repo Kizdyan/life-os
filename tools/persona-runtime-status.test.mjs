@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {inspectPersonaRuntime} from './persona-runtime-status.mjs';
+import {inspectPersonaRuntime,readPersonaBuildIdentity} from './persona-runtime-status.mjs';
 import {FOLDERS} from './persona-yandex-library.mjs';
+test('source identity abstains on unknown or dirty worktrees without exposing Git diagnostics',()=>{
+ const runFor=(head,status)=>{let i=0;return (...args)=>{assert.equal(args[2].windowsHide,true);assert.equal(args[2].env.GIT_OPTIONAL_LOCKS,'0');return i++===0?head:status}};
+ const revision='a'.repeat(40);
+ assert.deepEqual(readPersonaBuildIdentity({run:runFor({status:0,stdout:revision},{status:0,stdout:''})}),{revision,dirty:false,verified:true});
+ assert.deepEqual(readPersonaBuildIdentity({run:runFor({status:0,stdout:revision},{status:0,stdout:' M private-file'})}),{revision,dirty:true,verified:false});
+ assert.deepEqual(readPersonaBuildIdentity({run:runFor({status:1,stderr:'private path'},{})}),{revision:null,dirty:null,verified:false});
+});
 test('runtime distinguishes configured library, actual scores, legacy report and unindexed references',async()=>{
  const cache=await mkdtemp(join(tmpdir(),'persona-runtime-'));
  try{

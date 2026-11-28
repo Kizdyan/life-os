@@ -1,8 +1,23 @@
 /** Read-only runtime diagnostics. No inference, network calls, secrets, paths or filenames in receipts. */
 import {readFile,stat} from 'node:fs/promises';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import {FOLDERS} from './persona-yandex-library.mjs';
 export const RUNTIME_PROTOCOL=1;
+/** Capture at process/module startup, never recompute an old Worker's identity
+ * from a subsequently changed HEAD. No paths or Git diagnostics leave this helper. */
+export function readPersonaBuildIdentity({run=spawnSync}={}){
+ const root=fileURLToPath(new URL('../',import.meta.url));
+ const call=args=>run('git',['-c','safe.directory='+root,'-C',root,...args],{encoding:'utf8',timeout:2000,maxBuffer:65536,windowsHide:true,env:{...process.env,GIT_OPTIONAL_LOCKS:'0'}});
+ try{
+  const head=call(['rev-parse','HEAD']),revision=String(head.stdout??'').trim();
+  if(head.status!==0||!/^([a-f0-9]{40}|[a-f0-9]{64})$/.test(revision))return {revision:null,dirty:null,verified:false};
+  const status=call(['status','--porcelain','--untracked-files=no']);
+  const dirty=status.status===0?Boolean(String(status.stdout??'').trim()):null;
+  return {revision,dirty,verified:dirty===false};
+ }catch{return {revision:null,dirty:null,verified:false}}
+}
 const count=n=>Number.isSafeInteger(n)&&n>=0?n:null;
 async function report(path,max=16*1024*1024){
  try{
