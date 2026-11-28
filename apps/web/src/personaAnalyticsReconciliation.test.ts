@@ -5,6 +5,11 @@ const id:Identity={contentId:'post-1',network:'tiktok',approvedVersion:'v1',stat
 const metrics:Metrics={views:800,reach:null,likes:25,comments:2,shares:4,saves:null,follows:null};
 const sample:Sample={network:'tiktok',url,source:'public',observedAt:'2026-11-27T12:00:00Z',metrics};
 describe('analytics identity and missing data',()=>{
+ it('rejects partial, null and array metrics from damaged imports without throwing',()=>{
+  for(const broken of [{views:1},null,[1,2,3]]){
+   expect(reconcileAnalytics(id,[{...sample,metrics:broken} as unknown as Sample]).state).toBe('INVALID_SAMPLE');
+  }
+ });
  it('never associates deleted auto-post metrics with manual replacement',()=>expect(reconcileAnalytics(id,[{...sample,url:old}]).state).toBe('DATA_UNAVAILABLE'));
  it('waits for independent public identity',()=>expect(reconcileAnalytics({...id,state:'UNRESOLVED'},[sample]).state).toBe('IDENTITY_UNRESOLVED'));
  it('recognizes matching photo and video aliases by TikTok ID',()=>expect(reconcileAnalytics(id,[{...sample,url:url.replace('/photo/','/video/')+'?x=1'}]).state).toBe('READY'));

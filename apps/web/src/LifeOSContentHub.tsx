@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {loadPersonaProjects} from './personaProjectStore';
 import {loadEditorialStore} from './personaEditorialModel';
-import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar';
+import PersonaWeeklyContentCalendar from './PersonaWeeklyContentCalendar.tsx';
 import PersonaEditorialCalendar from './PersonaEditorialCalendar';
 import {loadPublicationAnalytics,importPublicationAnalytics,bindPublication,publicationLearning,type MetricSnapshot} from './personaPublicationAnalytics';
 import {readReviewArchive,type ReviewArchiveEvidence} from './personaReviewArchive';
@@ -10,9 +10,11 @@ import {editorialReserve,moscowCalendarDate} from './personaEditorialReserve';
 import {PERSONA_ARCHITECT_IMPORT_HASH} from './personaArchitectSeeds';
 
 export default function LifeOSContentHub(){
- const [notice,setNotice]=useState(''),[raw,setRaw]=useState(''),[records,setRecords]=useState<MetricSnapshot[]>(()=>{
-  try{return loadPublicationAnalytics(localStorage)}catch{return []}
+ const [initialAnalytics]=useState(()=>{
+  try{return {rows:loadPublicationAnalytics(localStorage),error:''}}
+  catch{return {rows:[] as MetricSnapshot[],error:'Не удалось прочитать статистику. Исходная история сохранена; восстановите проверенную резервную копию.'}}
  });
+ const [notice,setNotice]=useState(''),[raw,setRaw]=useState(''),[records,setRecords]=useState<MetricSnapshot[]>(initialAnalytics.rows);
  const [binding,setBinding]=useState<Record<string,string>>({});
  const projects=loadPersonaProjects(localStorage,()=>crypto.randomUUID()).projects,posts=loadEditorialStore(localStorage).posts;
  const [archiveState,setArchiveState]=useState<{key:string;records:Map<string,ReviewArchiveEvidence>;error:string}>({key:'',records:new Map(),error:''});
@@ -66,7 +68,8 @@ export default function LifeOSContentHub(){
   <details><summary>План на 90 дней</summary><PersonaEditorialCalendar occupiedDates={posts.flatMap(p=>p.scheduledDate?[p.scheduledDate]:[])}/></details>
   <section aria-label="Аналитика публикаций">
    <h3>Результаты публикаций · Metricool</h3>
-   <p>История наблюдений. Прямое обновление из Metricool пока не подключено к приложению; импортируй полученный JSON. Недоступные метрики остаются неизвестными.</p>
+   {initialAnalytics.error&&<p role="alert">{initialAnalytics.error}</p>}
+   <p>История наблюдений. Прямое обновление из Metricool пока не подключено к приложению; можно импортировать снимки или пакет ответа подключённого сервиса с площадкой, временем и порядком полей. Недоступные метрики остаются неизвестными. Импорт не подтверждает публичную видимость публикации.</p>
    {publicationLearning(records).map(item=><div key={item.latest.url} className="captureCard">
     <a href={item.latest.url} target="_blank" rel="noreferrer">{choices.find(c=>c.id===item.contentId)?.title??(item.latest.platform==='tiktok'?'Публикация TikTok':'Публикация Instagram')}</a>
     <p>Наблюдение: {new Date(item.latest.observedAt).toLocaleString('ru-RU')} · {item.history.length} снимков статистики</p>

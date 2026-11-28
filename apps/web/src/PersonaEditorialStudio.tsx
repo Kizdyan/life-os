@@ -30,7 +30,7 @@ import {carouselReviewInput,currentCarouselReview,validateCarouselReviewReceipt,
 import {generateMissingAutonomousBackgrounds,missingAutonomousBackgrounds} from './personaCarouselImageBatch';
 import {JAWS_BRAND_TRIAL_ID,createJawsBrandTrial} from './personaJawsBrandTrial';
 import PersonaBrandTrialPreview from './PersonaBrandTrialPreview';
-import PersonaCarouselVisualReview from './PersonaCarouselVisualReview';
+import PersonaCarouselVisualReview from './PersonaCarouselVisualReview.tsx';
 import {applyCreativeStyle,loadCreativeStyle,rememberCreativeStyle} from './personaCreativeMemory';
 import {importAboutMeDraft} from './personaAboutMe';
 import PersonaRuntimeStatus from './PersonaRuntimeStatus';

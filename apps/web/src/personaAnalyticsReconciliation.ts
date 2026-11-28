@@ -5,6 +5,12 @@ export type Metrics={views:number|null;reach:number|null;likes:number|null;comme
 export type Sample={network:Network;url:string;source:'metricool'|'native'|'public';observedAt:string;metrics:Metrics};
 export type Snapshot={state:'READY'|'IDENTITY_UNRESOLVED'|'DATA_UNAVAILABLE'|'INVALID_SAMPLE';contentId:string;network:Network;ageHours:number|null;metrics:Metrics|null;source:Sample['source']|null;observedAt:string|null};
 const valid=(n:number|null)=>n===null||(Number.isSafeInteger(n)&&n>=0);
+const metricKeys=['views','reach','likes','comments','shares','saves','follows'] as const;
+function validMetrics(value:unknown):value is Metrics{
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==metricKeys.length)return false;
+ const row=value as Metrics;
+ return metricKeys.every(k=>Object.hasOwn(row,k)&&valid(row[k]))&&metricKeys.some(k=>row[k]!==null);
+}
 function postKey(network:Network,url:string|undefined):string|null{
  if(!url)return null;
  try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return null;
@@ -21,7 +27,7 @@ export function reconcileAnalytics(identity:Identity,samples:Sample[]):Snapshot{
   return {...blank,state:'IDENTITY_UNRESOLVED'};
  const matched=samples.filter(s=>s.network===identity.network&&postKey(s.network,s.url)===key);
  if(!matched.length)return {...blank,state:'DATA_UNAVAILABLE'};
- const usable=matched.filter(s=>Number.isFinite(Date.parse(s.observedAt))&&Date.parse(s.observedAt)>=published&&Object.values(s.metrics).every(valid)&&Object.values(s.metrics).some(v=>v!==null)).sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt));
+ const usable=matched.filter(s=>Number.isFinite(Date.parse(s.observedAt))&&Date.parse(s.observedAt)>=published&&validMetrics(s.metrics)).sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt));
  if(!usable.length)return {...blank,state:'INVALID_SAMPLE'};
  const s=usable[0];return {...blank,state:'READY',ageHours:(Date.parse(s.observedAt)-published)/3600000,metrics:{...s.metrics},source:s.source,observedAt:s.observedAt};
 }

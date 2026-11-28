@@ -1,4 +1,5 @@
 /** Life OS owns observation history; Persona consumes evidence, never inferred approval. */
+import {decodeMetricoolPosts,METRICOOL_POST_FIELDS} from './personaAnalyticsReconciliation';
 export const PUBLICATION_ANALYTICS_KEY='lifeos:content:publication-analytics:v1';
 export type MetricSnapshot={version:1;provider:'metricool';platform:'instagram'|'tiktok';url:string;publishedAt:string|null;observedAt:string;format:'carousel'|'photo'|'reel';contentId:string|null;views:number|null;reach:number|null;likes:number|null;comments:number|null;saves:number|null;shares:number|null;follows:number|null};
 const validPlatformUrl=(platform:MetricSnapshot['platform'],url:unknown)=>typeof url==='string'&&(platform==='instagram'?/^https:\/\/www\.instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{3,80}\/$/.test(url):platform==='tiktok'&&/^https:\/\/www\.tiktok\.com\/@[A-Za-z0-9_.-]{1,80}\/(?:photo|video)\/\d{5,30}\/?$/.test(url));
@@ -34,8 +35,27 @@ export function mergePublicationAnalytics(current:MetricSnapshot[],incoming:Metr
  return validatePublicationAnalytics(result);
 }
 export function importPublicationAnalytics(storage:Pick<Storage,'getItem'|'setItem'>,incoming:unknown){
- const result=mergePublicationAnalytics(loadPublicationAnalytics(storage),validatePublicationAnalytics(incoming));
+ const result=mergePublicationAnalytics(loadPublicationAnalytics(storage),Array.isArray(incoming)?validatePublicationAnalytics(incoming):decodePublicationObservation(incoming));
  storage.setItem(PUBLICATION_ANALYTICS_KEY,JSON.stringify(result));return result;
+}
+/** Read-only connector handoff into the existing observation store. This is NOT
+ * local Metricool authentication, a publication receipt or public visibility proof. */
+export function decodePublicationObservation(incoming:unknown):MetricSnapshot[]{
+ if(!incoming||typeof incoming!=='object')throw Error('Некорректный пакет наблюдений');
+ const v=incoming as Record<string,unknown>,platform=v.platform;
+ if(v.version!==1||v.provider!=='metricool'||(platform!=='instagram'&&platform!=='tiktok')||
+  !['carousel','photo','reel'].includes(String(v.format))||!instant(v.observedAt)||
+  JSON.stringify(v.fields)!==JSON.stringify(METRICOOL_POST_FIELDS[platform]))throw Error('Нужны точная площадка, формат, время и порядок полей Metricool');
+ const decoded=decodeMetricoolPosts(platform,v.response,v.observedAt);
+ if(decoded.state==='DATA_UNAVAILABLE')throw Error('Metricool пока не вернул наблюдения. Это отсутствие данных, а не нулевые показатели.');
+ if(decoded.state!=='READY')throw Error('Некорректный ответ Metricool; прежние наблюдения сохранены');
+ return validatePublicationAnalytics(decoded.samples.map(s=>{
+  const u=new URL(s.url);u.hostname='www.'+u.hostname.replace(/^www\./,'');u.search='';u.hash='';if(platform==='instagram'&&!u.pathname.endsWith('/'))u.pathname+='/';
+  return {version:1,provider:'metricool',platform,url:u.toString(),observedAt:s.observedAt,format:v.format,
+   // Compact provider timestamps have no confirmed timezone. Never invent age
+   // or bind a manually republished post to the old content identity.
+   publishedAt:null,contentId:null,...s.metrics};
+ }));
 }
 export function bindPublication(storage:Pick<Storage,'getItem'|'setItem'>,url:string,contentId:string){
  const rows=loadPublicationAnalytics(storage);

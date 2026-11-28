@@ -1,7 +1,18 @@
 import {describe,it,expect} from 'vitest';
 import {editorialExperiment,validatePublicationAnalytics,mergePublicationAnalytics,publicationLearning,importPublicationAnalytics,bindPublication,PUBLICATION_ANALYTICS_KEY,type MetricSnapshot} from './personaPublicationAnalytics';
+import {METRICOOL_POST_FIELDS} from './personaAnalyticsReconciliation';
 const row:MetricSnapshot={version:1,provider:'metricool',platform:'instagram',url:'https://www.instagram.com/p/fixture01/',publishedAt:'2026-01-01T10:00:00+03:00',observedAt:'2026-01-02T10:00:00+03:00',format:'carousel',contentId:null,views:100,reach:50,likes:5,comments:0,saves:0,shares:0,follows:0};
 describe('publication observation history',()=>{
+ it('imports an explicitly scoped Metricool response through the existing history without inventing age or content identity',()=>{
+  const m=new Map<string,string>(),storage={getItem:(k:string)=>m.get(k)??null,setItem:(k:string,v:string)=>{m.set(k,v)}};
+  const wire={version:1,provider:'metricool',platform:'tiktok',format:'carousel',observedAt:row.observedAt,fields:METRICOOL_POST_FIELDS.tiktok,response:{rows:[['https://www.tiktok.com/@fixture/photo/12345678','800',null,'25','0','0']]}};
+  const result=importPublicationAnalytics(storage,wire);expect(result).toHaveLength(1);expect(result[0]).toMatchObject({platform:'tiktok',views:800,reach:null,saves:null,follows:null,publishedAt:null,contentId:null});
+  expect(publicationLearning(result)[0].ageHours).toBeNull();
+  expect(importPublicationAnalytics(storage,wire)).toHaveLength(1);
+  const before=m.get(PUBLICATION_ANALYTICS_KEY);
+  expect(()=>importPublicationAnalytics(storage,{...wire,fields:[...wire.fields].reverse()})).toThrow();
+  expect(m.get(PUBLICATION_ANALYTICS_KEY)).toBe(before);
+ });
  it('keeps identical readings at different times and does not invent causal conclusions',()=>{
   const next={...row,observedAt:'2026-01-03T10:00:00+03:00'};
   const history=mergePublicationAnalytics([row],[next,row]);
