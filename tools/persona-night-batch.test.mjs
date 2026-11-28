@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import * as batch from './persona-local-batch.mjs';
 const task=(id,status='READY',execution={type:'node-test',file:'tools/persona-evidence.test.mjs'})=>({id,status,dependsOn:[],priority:'P0',kind:'engineering',title:id,acceptance:'Actual local evidence, no creative approval',...(execution?{execution}:{})});
 const good={availableRamBytes:8*1024**3,systemDiskFreeBytes:3*1024**3,workingDiskFreeBytes:30*1024**3,loadedHeavyModels:0};
@@ -45,4 +47,17 @@ test('safe stop marker finishes without touching a ready task',async()=>{
  await writeFile(join(output,'STOP'),JSON.stringify({kind:'persona-night-stop-v1',requested:true}));
  const r=await batch.runNightBatch({input,output,resourceProbe:async()=>good});assert.equal(r.status,'STOPPED');assert.equal(r.executed,0);
  assert.equal(JSON.parse(await readFile(input,'utf8')).revision,0);
+});
+test('native night status accepts ISO dates under permitted installed Windows PowerShell versions',{skip:process.platform!=='win32'},async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'night-native-status-'));
+ await writeFile(join(dir,'night-state.json'),JSON.stringify({kind:'EXISTING_LOCAL_BATCH_NIGHT',status:'FINISHED',executed:0,results:[],heartbeatAt:new Date().toISOString()}));
+ let checked=0;
+ for(const shell of ['powershell.exe','pwsh']){
+  const found=spawnSync(shell,['-NoProfile','-Command','$PSVersionTable.PSVersion.ToString()'],{encoding:'utf8',windowsHide:true,timeout:15000});if(found.error?.code==='ENOENT')continue;
+  assert.equal(found.status,0,found.stderr);
+  const r=spawnSync(shell,['-NoProfile','-File',fileURLToPath(new URL('../night-status.ps1',import.meta.url)),'-StateRoot',dir],{encoding:'utf8',windowsHide:true,timeout:15000});
+  if(r.status!==0&&/FullyQualifiedErrorId\s*:\s*UnauthorizedAccess/.test(r.stderr??'')){t.diagnostic(shell+': unsigned script execution blocked by existing Windows policy; no bypass or policy change');continue}
+  assert.equal(r.status,0,r.stderr);const status=JSON.parse(r.stdout);assert.equal(status.status,'FINISHED');assert.equal(status.stale,false);assert.ok(status.heartbeatAgeSeconds>=0);checked++;
+ }
+ if(!checked)t.skip('Installed shells deny unsigned files; actual authorized-host check is recorded separately, Node CLI remains available');
 });
