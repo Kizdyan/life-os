@@ -56,7 +56,7 @@ test('Worker queue is opt-in, requires existing local token, and rejects arbitra
  assert.equal((await request(off,'/production-queue/tick',{})).status,400);
 });
 
-test('actual unavailable local processor retries only twice across Worker restart and retains source',async t=>{
+test('actual unavailable local processor retries only twice across Worker restart and retains source',{timeout:60000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'persona-queue-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const job=await ProductionJob.create(join(root,'production-retry'));
  const source=join(job.directory,'input','photo.png');await writeFile(source,Buffer.alloc(2048,1));
@@ -65,8 +65,14 @@ test('actual unavailable local processor retries only twice across Worker restar
  let worker=await start(root,{ffmpegDir:join(root,'missing-local-processor')});
  try{
   // Startup tick performs the first real unavailable-executable attempt.
-  for(let wait=0;wait<300&&['running','pending'].includes((await job.read()).productionSchedule.stages[0].status);wait++)await new Promise(done=>setTimeout(done,10));
+  // The stage budget bounds the child, not slow Windows/USB filesystem setup.
+  // Wait for its persisted result within a wall-clock bound, not 3s of sleeps.
+  const deadline=Date.now()+20000;
+  while(['running','pending'].includes((await job.read()).productionSchedule.stages[0].status)&&Date.now()<deadline)
+   await new Promise(done=>setTimeout(done,25));
   assert.equal((await job.read()).productionSchedule.stages[0].status,'retry_wait');
+  // The stage receipt can precede the queue owner's final lock release.
+  await waitIdle(worker);
   await close(worker);worker=await start(root,{ffmpegDir:join(root,'missing-local-processor')});
   await waitIdle(worker);
   assert.equal((await job.read()).productionSchedule.stages[0].attempts,1);

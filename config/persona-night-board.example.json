@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "revision": 0,
+  "tasks": [
+    {"id":"NIGHT-001","status":"QUEUED","priority":"P0","kind":"review","title":"New reference evidence only","dependsOn":[],"acceptance":"Use existing reference index and exact frame hashes. Block until a vision model passes actual validation; hypotheses are not approved preferences."},
+    {"id":"NIGHT-002","status":"QUEUED","priority":"P0","kind":"engineering","title":"Persona existing queue regression checks","dependsOn":[],"acceptance":"Actual allowlisted tests pass in the isolated checkout; no merge or publication.","execution":{"type":"node-test","file":"tools/persona-task-operations.test.mjs"}},
+    {"id":"NIGHT-003","status":"QUEUED","priority":"P1","kind":"marketing","title":"Source-backed editorial shortlist","dependsOn":[],"acceptance":"At most ten proposals and five independently verified topics. Block without verified source-fetch capability. Local model claims alone are not evidence."},
+    {"id":"NIGHT-004","status":"QUEUED","priority":"P2","kind":"production","title":"Cream Editorial draft packages and Reel scripts","dependsOn":[],"acceptance":"Target two actual carousels and three scripts only with sufficient verified sources, permitted assets and approved current Cream style. Missing capabilities block; never invent successful production."},
+    {"id":"NIGHT-005","status":"QUEUED","priority":"P3","kind":"marketing","title":"Actual Instagram and TikTok observations","dependsOn":[],"acceptance":"Authorized adapter and confirmed canonical publication IDs; missing metrics remain unknown, not zero. Never treat inflated follower counts as active audience."}
+  ]
+}

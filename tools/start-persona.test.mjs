@@ -75,6 +75,11 @@ test('static asset discovery never follows a nested directory symlink or Windows
 test('launcher refuses incompatible previous Worker and supports explicit headless/cache arguments',()=>{
  assert.equal(existingWorkerCompatible({service:'persona-media-worker'}),false);
  assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1}),true);
+ const expected={revision:'a'.repeat(40),dirty:false};
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1},expected),false);
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1,build:{revision:'b'.repeat(40),dirty:false}},expected),false);
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1,build:expected},expected),true);
+ assert.equal(existingWorkerCompatible({service:'persona-media-worker',runtimeProtocol:1,build:expected},{...expected,dirty:true}),false);
  assert.deepEqual(parseLauncherArgs(['--no-browser','--cache','cache']),{noBrowser:true,cache:resolve('cache')});
  assert.throws(()=>parseLauncherArgs(['--cache']));
  assert.throws(()=>parseLauncherArgs(['--no-browser','--no-browser']));

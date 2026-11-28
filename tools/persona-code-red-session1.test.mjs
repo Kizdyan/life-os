@@ -166,19 +166,28 @@ test('no OpenRouter key: Worker health, local one-click MP4, canonical state and
 test('failed Quick Render: canonical FAILED persists and dashboard displays error',{skip:!mediaAvailable,timeout:80000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-fail-s1-')),video=join(root,'original.mp4');mkVideo(video);
  const bytes=await readFile(video);
+ let releaseFailure,reachFailure,id;
+ const failureGate=new Promise(resolve=>{releaseFailure=resolve});
+ const failureReached=new Promise(resolve=>{reachFailure=resolve});
  const worker=createPersonaMediaWorker({port:0,outputRoot:join(root,'worker'),quickRenderRoot:join(root,'quick'),musicLut:null,
   apiEnv:{OPENROUTER_API_KEY:'',OPENAI_API_KEY:''},
   quickStrategy:async()=>{throw Error('Injected render failure TEST_RED')},
+  beforeQuickStateCommit:async card=>{if(card.state==='failed'){reachFailure();await failureGate}},
   quickLighting:async()=>({}),quickPlanner:async()=>({})});
  const base='http://127.0.0.1:'+await worker.start(),head={'X-Persona-Worker-Token':worker.token};
  try{
   const created=await fetch(base+'/quick-render',{method:'POST',headers:{...head,'Content-Type':'application/json'},body:JSON.stringify({
    prompt:'Проверь отказ рендера',consent:true,files:[{kind:'video',name:'original.mp4',size:bytes.length}]})});
   assert.equal(created.status,201);
-  const id=(await created.json()).id;
+  id=(await created.json()).id;
   assert.equal((await fetch(base+'/quick-render/'+id+'/upload/0',{method:'PUT',
    headers:{...head,'X-Persona-Original-Name':'original.mp4'},body:bytes})).status,200);
   assert.equal((await fetch(base+'/quick-render/'+id+'/run',{method:'POST',headers:head})).status,202);
+  await failureReached;
+  const pending=await(await fetch(base+'/quick-render/'+id+'/status',{headers:head})).json();
+  assert.equal(pending.state,'running','failure is not observable until its final card commit');
+  assert.equal(pending.error,null);
+  releaseFailure();
   let card;for(let n=0;n<120;n++){
    card=await(await fetch(base+'/quick-render/'+id+'/status',{headers:head})).json();
    if(card.state==='failed')break;
@@ -189,10 +198,28 @@ test('failed Quick Render: canonical FAILED persists and dashboard displays erro
   const record=await new ProductionJob(join(root,'quick','quick-'+id)).read();
   assert.equal(record.status,'FAILED');assert.match(record.failure.message,/TEST_RED/);
   assert.equal(record.history.at(-1).to,'FAILED');
- }finally{await close(worker);await rm(root,{recursive:true,force:true})}
+ }finally{
+  releaseFailure();await close(worker);
+  // A failing assertion must not delete the background writer's directory.
+  let committed=!id;
+  for(let n=0;id&&n<100;n++){
+   try{committed=JSON.parse(await readFile(join(root,'quick','quick-'+id,'quick-state.json'),'utf8')).stage==='Ошибка'}catch{}
+   if(committed)break;await pause(50);
+  }
+  if(committed)await rm(root,{recursive:true,force:true});
+ }
 });
 test('Worker subprocess failure writes FAILED and survives a fresh Worker instance',{skip:!mediaAvailable,timeout:85000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-worker-fail-s1-')),video=join(root,'original.mp4');mkVideo(video);
+ const originalMarkFailed=ProductionJob.prototype.markFailed;
+ let releaseFailure,reachFailure;
+ const gate=new Promise(resolve=>{releaseFailure=resolve});
+ const reached=new Promise(resolve=>{reachFailure=resolve});
+ ProductionJob.prototype.markFailed=async function(...args){
+  const result=await originalMarkFailed.apply(this,args);
+  if(this.directory.startsWith(root)){reachFailure();await gate}
+  return result;
+ };
  const bytes=await readFile(video);
  const settings={port:0,outputRoot:join(root,'worker'),musicLut:null,ffmpegDir:null,
   whisperCli:'missing-whisper.exe',whisperModel:'missing-whisper-model.bin',ollamaModel:'missing-local-model'};
@@ -210,6 +237,11 @@ test('Worker subprocess failure writes FAILED and survives a fresh Worker instan
   }
   const run=await fetch(base+'/session/'+id+'/run',{method:'POST',headers:head});
   assert.equal(run.status,202,await run.clone().text());
+  await reached;
+  const pending=await(await fetch(base+'/session/'+id+'/status',{headers:head})).json();
+  assert.equal(pending.state,'running','canonical failure must wait for its owning callback to settle');
+  assert.equal(pending.error,null);
+  releaseFailure();
   let state;for(let n=0;n<160;n++){
    state=await(await fetch(base+'/session/'+id+'/status',{headers:head})).json();
    if(state.state==='failed')break;
@@ -230,6 +262,7 @@ test('Worker subprocess failure writes FAILED and survives a fresh Worker instan
   assert.equal(view.state,'failed');
   assert.equal(view.error,canonical.failure.message);
  }finally{
+  releaseFailure();ProductionJob.prototype.markFailed=originalMarkFailed;
   if(next)await close(next);
   else if(worker.server.listening)await close(worker);
   await rm(root,{recursive:true,force:true});
