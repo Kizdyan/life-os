@@ -147,10 +147,13 @@ async function inspectUploadedTake(path,config,{musicMaster=false}={}){
 }
 async function sessionView(s){
  const canonical=await s.production.read();
- const state=canonical.status==='FAILED'?(s.cancelled?'cancelled':'failed'):
+ // The live subprocess callback still owns its final lifecycle write and lock.
+ // Restart recovery has no live running session and trusts the durable record.
+ const pendingTerminal=s.state==='running'&&['FAILED','AWAITING_APPROVAL'].includes(canonical.status);
+ const state=pendingTerminal?'running':canonical.status==='FAILED'?(s.cancelled?'cancelled':'failed'):
   canonical.status==='AWAITING_APPROVAL'?'completed':
   ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':'uploading';
- const error=canonical.status==='FAILED'?canonical.failure?.message??'Ошибка рендера':null;
+ const error=['failed','cancelled'].includes(state)?canonical.failure?.message??'Ошибка рендера':null;
  const evidence=join(s.output,'evidence','analysis.json'), decisions=join(s.output,'decisions.ai.json'), timeline=join(s.output,'timeline.json'), finished=join(s.output,'ai-edited-reel.mp4');
  let stage=s.stage;
  if(state==='running')stage=s.files.has('result')?'technical_qa':s.files.has('finished')?'color_render':s.files.has('timeline')?'ffmpeg_timeline':s.files.has('decisions')?'ollama_selection':s.files.has('evidence')?'whisper_asr':'intake';

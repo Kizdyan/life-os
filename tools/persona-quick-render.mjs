@@ -193,13 +193,13 @@ export function createPersonaQuickRenderService(config={}){
   if(!canonical.productionSchedule&&!cached&&!active&&['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)){
    canonical=await production.markFailed('Локальный Worker перезапущен до проверки MP4. Начните новый монтаж; исходные файлы сохранены.');
   }
-  // Never expose completed before the final quick-state card metadata is
+  // Never expose a terminal state before the final quick-state card metadata is
   // committed. The canonical production record transitions first; on a live
   // Worker the final captionDecision/exportItems are saved shortly afterwards.
   // With no cached job (after restart), recovery trusts the persisted receipt.
   const pendingCardSave=Boolean(cached&&cached.state==='running'&&
-   canonical.status==='AWAITING_APPROVAL');
-  const state=canonical.status==='FAILED'?'failed':pendingCardSave?'running':
+   ['AWAITING_APPROVAL','FAILED'].includes(canonical.status));
+  const state=pendingCardSave?'running':canonical.status==='FAILED'?'failed':
    canonical.status==='AWAITING_APPROVAL'?'completed':
    ['ANALYZING','EDITING','QUALITY_CHECK'].includes(canonical.status)?'running':
    meta.seedKey&&meta.files.length===0?'waiting_for_footage':'uploading';
@@ -210,7 +210,7 @@ export function createPersonaQuickRenderService(config={}){
   // polling client close/back up the job while that final writer is pending.
   const pendingFullCardSave=Boolean(active===id&&cached?.fullRender?.status==='RENDERING'&&
    canonical.fullRender?.status==='COMPLETED');
-  const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null,
+  const job={...meta,state,error:state==='failed'?canonical.failure?.message??'Ошибка обработки':null,
    fullRender:pendingFullCardSave?cached.fullRender:canonical.fullRender??null};
   // Worker restarts cannot leave an in-flight platform export indefinitely stuck.
   // Recover the package status without revoking the already verified master.
