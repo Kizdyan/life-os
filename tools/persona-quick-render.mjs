@@ -205,8 +205,13 @@ export function createPersonaQuickRenderService(config={}){
    meta.seedKey&&meta.files.length===0?'waiting_for_footage':'uploading';
   if(!cached&&!active&&canonical.fullRender?.status==='RENDERING')
    canonical=await production.updateFullRender('FAILED',{reason:'Worker перезапущен до проверки полноразмерного MP4. Черновик сохранён.'});
+  // Full promotion has the same commit boundary as the draft card: the
+  // canonical receipt is written first, then the UI metadata. Do not let a
+  // polling client close/back up the job while that final writer is pending.
+  const pendingFullCardSave=Boolean(active===id&&cached?.fullRender?.status==='RENDERING'&&
+   canonical.fullRender?.status==='COMPLETED');
   const job={...meta,state,error:canonical.status==='FAILED'?canonical.failure?.message??'Ошибка обработки':null,
-   fullRender:canonical.fullRender??null};
+   fullRender:pendingFullCardSave?cached.fullRender:canonical.fullRender??null};
   // Worker restarts cannot leave an in-flight platform export indefinitely stuck.
   // Recover the package status without revoking the already verified master.
   if(!cached&&!active&&job.exportStatus==='RENDERING'){
@@ -224,6 +229,8 @@ export function createPersonaQuickRenderService(config={}){
   const view={...job};delete view.child;delete view.promise;
   // quick-state.json retains upload/UX metadata only. job.json owns lifecycle and failure.
   const disk={...view};delete disk.state;delete disk.error;delete disk.fullRender;
+  // Trusted in-process persistence seam; never accepted from HTTP request data.
+  if(config.beforeQuickStateCommit)await config.beforeQuickStateCommit(view);
   await atomicFile(metaFile(job.id),disk);
   // A completed card is observable only after its atomic disk commit. Otherwise
   // polling clients can back up/restart/clean up while the writer is still active.

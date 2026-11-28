@@ -9,6 +9,8 @@ import {createPersonaMediaWorker} from './persona-media-worker.mjs';
 const available=['ffmpeg','ffprobe'].every(name=>spawnSync(name,['-version'],{stdio:'ignore'}).status===0);
 test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan without more Vision',{skip:!available,timeout:360000},async()=>{
  const root=await mkdtemp(join(tmpdir(),'persona-real-smart-click-'));let server=null;
+ let finalCardHeld=false,releaseFinalCard,observedBeforeCommit=null;
+ const finalCardGate=new Promise(resolve=>{releaseFinalCard=resolve});
  try{
   const files=[];
   for(const [i,duration] of [9.0,9.5].entries()){
@@ -24,6 +26,9 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   let visionCalls=0,styleCalls=0;
   const worker=createPersonaMediaWorker({port:0,outputRoot:join(root,'other'),
    quickRenderRoot:join(root,'quick'),
+   beforeQuickStateCommit:async card=>{
+    if(card.stage==='Полный MP4 готов'){finalCardHeld=true;await finalCardGate}
+   },
    quickStrategy:async()=>({status:'WARNING',recommendation:'Preserve expressive acting, confirm performance manually'}),
    quickLighting:async()=>({style:'Quiet Luxury'}),
    quickAudioOverride:async()=>({status:'no-speech-detected',segments:[],provenance:'synthetic-test-fixture'}),
@@ -121,8 +126,12 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   for(let attempt=0;attempt<420;attempt++){
    await new Promise(r=>setTimeout(r,350));
    full=await(await fetch(base+'/quick-render/'+id+'/status',{headers})).json();
-   if(['COMPLETED','FAILED'].includes(full.fullRenderStatus))break;
+   if(finalCardHeld&&!observedBeforeCommit){observedBeforeCommit=full;releaseFinalCard()}
+   const disk=JSON.parse(await readFile(join(root,'quick','quick-'+id,'quick-state.json'),'utf8'));
+   if(full.fullRenderStatus==='FAILED'||full.fullRenderStatus==='COMPLETED'&&disk.stage==='Полный MP4 готов')break;
   }
+  assert.equal(observedBeforeCommit?.fullRenderStatus,'RENDERING','polling must not publish full completion before the final card commit');
+  assert.equal(observedBeforeCommit?.fullReady,false);
   assert.equal(full.fullRenderStatus,'COMPLETED',full.fullRenderError);
   assert.equal(visionCalls,2,'1080p promotion never re-runs sparse Vision');
   assert.equal(styleCalls,1,'1080p promotion must reuse mood and color without repeating Director');
@@ -146,6 +155,7 @@ test('two MP4s: sparse 2.5s Vision -> draft -> 1080p from identical EditPlan wit
   assert.ok((await stat(join(output,fullResult.videoName))).size>20000);
 
  }finally{
+  releaseFinalCard();
   if(server?.listening)await new Promise(resolve=>server.close(resolve));
   await rm(root,{recursive:true,force:true});
  }
